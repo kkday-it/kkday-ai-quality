@@ -1,0 +1,64 @@
+"""售前售後進線 adapter：fetch_presale_postsale → NormalizedTicket[]。
+
+第一階段主力管道（取代評論為首發）。
+- fixture（MVP）：讀 fixtures/presale_postsale.json，零網路/零 BQ 權限，含客服對話 ground truth
+- live（production）：BigQuery 售後聚合 SQL（dw_kkdb.message+chatbot）/ 售前 freshdesk_tickets，待 BQ 權限
+
+售後 session_oid / 售前 freshdesk ticket id 為冪等鍵；cs_conversation 末筆 agent ＝客服政策原文（L3/L4 ground truth）。
+評論（reviews.py）/ 工單 API 列後續迭代。
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from app.core.schema import CSTurn, NormalizedTicket
+
+FIXTURES = Path(__file__).resolve().parents[3] / "fixtures"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def fetch_presale_postsale(source: str = "fixture", since: str = "", until: str = "") -> list[NormalizedTicket]:
+    """拉售前售後進線 → NormalizedTicket[]。source=fixture（MVP）| live（BQ，待權限）。"""
+    if source == "live":
+        return _from_live(since, until)
+    return _from_fixture()
+
+
+def _from_fixture() -> list[NormalizedTicket]:
+    fp = FIXTURES / "presale_postsale.json"
+    if not fp.exists():
+        return []
+    data = json.loads(fp.read_text(encoding="utf-8"))
+    out: list[NormalizedTicket] = []
+    for t in data.get("tickets", []):
+        cs = [CSTurn(role=c.get("role", ""), content=c.get("content", "")) for c in t.get("cs_conversation", [])]
+        out.append(
+            NormalizedTicket(
+                ticket_id=t["ticket_id"],
+                source=t.get("source", "order_message"),
+                prod_oid=str(t.get("prod_oid", "")),
+                pkg_oid=str(t.get("pkg_oid", "")),
+                rating=t.get("rating"),
+                comment=t.get("comment", ""),
+                cs_conversation=cs,
+                created_at=t.get("created_at", "") or _now(),
+            )
+        )
+    return out
+
+
+def _from_live(since: str, until: str) -> list[NormalizedTicket]:
+    """production：BigQuery 批次拉售後（message+chatbot 聚合）+ 售前（freshdesk）。
+
+    待 BQ 讀取權限（Gary 申請中）。SQL 見 Confluence 子2 §六（已驗證）。
+    聚合對話 aggregated_messages 依角色標記（K=客服/M=user/S=供應商）parse 成 cs_conversation。
+    """
+    raise NotImplementedError(
+        "live 模式待 BigQuery 權限；現用 source=fixture 或 CSV 上傳（entry.py 已支援 aggregated_messages 別名）"
+    )

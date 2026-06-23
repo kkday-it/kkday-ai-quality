@@ -1,0 +1,70 @@
+{
+  "_note": "售前售後進線 mock 樣本（BQ 權限到位前用，結構對齊已驗證 SQL）。售後=order_message/chatbot（session_oid 冪等鍵 + cs_conversation K/M/S 角色），售前=ticket（freshdesk）。cs_conversation 末筆 agent 為客服政策原文＝ground truth。",
+  "tickets": [
+    {
+      "ticket_id": "session-150665-001",
+      "source": "order_message",
+      "prod_oid": "150665",
+      "order_oid": "OD20250612001",
+      "msg_handler": "KKDAY",
+      "comment": "上午行程超趕，一個景點只給 50 分鐘還含走路時間，根本不是介紹說的可以充分拍照",
+      "cs_conversation": [
+        {"role": "customer", "content": "為什麼行程這麼趕？每個點都來不及"},
+        {"role": "agent", "content": "您好，本行程實際車程約 4 小時，景點停留時間偏短屬正常安排，行程表已載明各站停留時間"}
+      ],
+      "created_at": "2026-04-01T09:12:00+08:00"
+    },
+    {
+      "ticket_id": "session-150665-002",
+      "source": "order_message",
+      "prod_oid": "150665",
+      "order_oid": "OD20250612002",
+      "msg_handler": "supplier",
+      "comment": "頁面寫贈送纜車體驗，結果到現場說當天停駛不能搭也不退錢",
+      "cs_conversation": [
+        {"role": "customer", "content": "贈送的纜車沒搭到，要退費"},
+        {"role": "agent", "content": "纜車遇強風停駛屬天候因素，依條款恕不退費或補償，此為供應商既定政策"}
+      ],
+      "created_at": "2026-04-01T11:30:00+08:00"
+    },
+    {
+      "ticket_id": "ticket-FD-88231",
+      "source": "ticket",
+      "prod_oid": "150665",
+      "order_oid": "",
+      "msg_handler": "KKDAY",
+      "comment": "請問集合地點到底在哪？只寫新宿站很大找不到",
+      "cs_conversation": [
+        {"role": "customer", "content": "新宿站這麼大集合點在哪"},
+        {"role": "agent", "content": "集合地點為新宿站南口 7-11 便利商店前，導遊持 KKday 旗幟"}
+      ],
+      "created_at": "2026-04-02T08:05:00+08:00"
+    },
+    {
+      "ticket_id": "session-88102-001",
+      "source": "order_message",
+      "prod_oid": "88102",
+      "order_oid": "OD20250612010",
+      "msg_handler": "KKDAY",
+      "comment": "電子票到了門口刷不進去，現場才知道要先在 App 綁定",
+      "cs_conversation": [
+        {"role": "customer", "content": "電子票無法入園"},
+        {"role": "agent", "content": "電子票須先於官方 App 完成綁定才可入園，使用說明應載明此步驟"}
+      ],
+      "created_at": "2026-04-02T14:20:00+08:00"
+    },
+    {
+      "ticket_id": "session-203344-001",
+      "source": "order_message",
+      "prod_oid": "203344",
+      "order_oid": "OD20250612020",
+      "msg_handler": "supplier",
+      "comment": "頁面寫那霸市區飯店接送，結果我的飯店不在接送範圍還要自己搭車過去",
+      "cs_conversation": [
+        {"role": "customer", "content": "說好的飯店接送呢"},
+        {"role": "agent", "content": "接送僅限指定 12 家合作飯店，您的飯店不在範圍內，此限制應於集合資訊明確標示"}
+      ],
+      "created_at": "2026-04-03T10:00:00+08:00"
+    }
+  ]
+}

@@ -46,6 +46,8 @@ def diagnose_ticket(ticket: NormalizedTicket, prod_source: str = "fixture") -> T
     action, detail, handoff = L4.build_action(verdict, cls)
     owner_role, exec_platform = L4.build_exec(verdict)
     channel, system = _SOURCE_MAP.get(ticket.source, ("unknown", ticket.source))
+    # 客服對話末筆 agent ＝ ground truth（售前售後進線政策原文，零幻覺；評論無對話則空）
+    gt = next((t.content for t in reversed(ticket.cs_conversation) if t.role == "agent"), "")
     fid = "finding-" + hashlib.sha1(f"{ticket.ticket_id}|{verdict}".encode()).hexdigest()[:12]
     return TicketFinding(
         finding_id=fid,
@@ -55,6 +57,7 @@ def diagnose_ticket(ticket: NormalizedTicket, prod_source: str = "fixture") -> T
         problem_summary=cls.get("problem_summary", ""),
         suspected_field=field,
         evidence_quote=evidence,
+        ground_truth_quote=gt,
         verdict=verdict,
         confidence=conf,
         recommended_action=action,
