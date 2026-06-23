@@ -1,0 +1,77 @@
+{
+  "_note": "PoC fixture — 真實資料，2026-06-22 由瀏覽器同源 fetch + DOM 抓取（商品 150665 富士山一日遊）。差評來源 fetch-product-comments-v2?sort=RATING_ASC；商品文案來源商品頁 DOM/標題。expectedVerdict 為人工標註 golden，供 LLM 判決結果對照。",
+  "product": {
+    "prod_oid": "150665",
+    "prod_name": "【1人成團｜贈送纜車體驗】富士山打卡一日遊｜河口湖天上山公園纜車＋忍野八海＋羅森便利店＋淺間公園 (東京出發)",
+    "selected_pkg_name": "（贈送河口湖纜車體驗）平日出行方案（8:50/9:20集合）",
+    "rating_avg": 4.89,
+    "review_total": 4949,
+    "fields": {
+      "prod_name": "【1人成團｜贈送纜車體驗】富士山打卡一日遊｜河口湖天上山公園纜車＋忍野八海＋羅森便利店＋淺間公園 (東京出發)",
+      "prod_notice_excerpt": "河口湖纜車將於5月11日…（維修/停運公告，內文片段，標題與方案名未同步更新）",
+      "field_headings": ["費用包含/不包含", "方案描述", "注意事項", "如何使用", "憑證兌換期限", "使用期限", "觀光行程", "商品說明", "購買須知"]
+    }
+  },
+  "reviews": [
+    {
+      "rating": 1,
+      "title": "沒有贈送纜車體驗，臨場才知道，商戶不誠實",
+      "body": "本來看到內容有贈送纜車體驗，但到集合時才告知關閉，這就是商戶不誠實，早知道不會選這個。可否改一下？不要再騙其他人了。KKDAY也不負責任，說商品頁面有告知纜車有提維期。天哪，大大的標題怎麼解釋？？是舊資料不更新來招徠客人？！以後不再信任KK",
+      "postDate": "2026-06-05 14:13:22",
+      "expectedVerdict": "content_unclear",
+      "expectedDimension": "承諾與SLA",
+      "expectedField": "prod_name",
+      "goldenNote": "標題/方案名強打「贈送纜車」為賣點，但纜車維修關閉、公告僅藏內文且未同步標題 → 內容誤導。ground_truth=頁面公告「纜車5月11日維修」。建議 action：標題/方案名移除或標註纜車維修期改遊船。"
+    },
+    {
+      "rating": 1,
+      "title": "時間倉促 導遊會一直催促你給五星好評。",
+      "body": "當天有個團友上錯車，聽見許導直接在其他客人面前斥責他。坐車時間比實際活動久，每個景點活動的時間都不足夠…還會一直提醒你給五星",
+      "postDate": "2026-04-05 06:07:43",
+      "expectedVerdict": "escalate_ops",
+      "expectedDimension": "non_content",
+      "expectedField": "none",
+      "goldenNote": "導遊服務態度/催評，非商品內容問題 → 轉營運/客服，不進 PM 內容修改清單。"
+    },
+    {
+      "rating": 1,
+      "title": "體驗不佳",
+      "body": "集合時間遲到被導遊羞辱 當眾公審 導致心理不舒服 導遊素質太差",
+      "postDate": "2026-02-02 22:35:25",
+      "expectedVerdict": "escalate_ops",
+      "expectedDimension": "non_content",
+      "expectedField": "none",
+      "goldenNote": "導遊服務問題，非內容。"
+    },
+    {
+      "rating": 1,
+      "title": "對這次體驗感到非常失望",
+      "body": "上午行程非常倉促，一個點只給50～60分鐘，還含走到景點的時間，完全不是介紹內所說可以充足拍照舒適遊玩。因天氣纜車換遊船、遊船又停改去大石公園…",
+      "postDate": "2026-01-15 11:53:10",
+      "expectedVerdict": "content_unclear",
+      "expectedDimension": "行程流程",
+      "expectedField": "prod_schedules",
+      "goldenNote": "「充足拍照、舒適遊玩」描述與實際每點50-60分鐘倉促不符 → 行程時間描述過度承諾/不清。屬內容（履約承諾）邊界，需 PM 校正描述。"
+    },
+    {
+      "rating": 1,
+      "title": "時間非常趕",
+      "body": "時間非常趕 很多地方都匆匆走過 回到市區才17:03 原定18:00結束 每個景點停留時間過短",
+      "postDate": "2026-01-14 13:21:20",
+      "expectedVerdict": "content_unclear",
+      "expectedDimension": "行程流程",
+      "expectedField": "prod_schedules",
+      "goldenNote": "結束時間/停留時長與頁面描述落差，內容履約邊界，與上一筆同類可聚合。"
+    },
+    {
+      "rating": 1,
+      "title": "一日遊司機服務",
+      "body": "當日遊玩司機並未下車進行導覽，行程較無聊",
+      "postDate": "2025-12-26 15:50:53",
+      "expectedVerdict": "escalate_ops",
+      "expectedDimension": "non_content",
+      "expectedField": "none",
+      "goldenNote": "司機服務，非內容。"
+    }
+  ]
+}

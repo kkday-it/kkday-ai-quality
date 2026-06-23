@@ -1,0 +1,30 @@
+[project]
+name = "kkday-ai-product-quality-backend"
+version = "0.0.1"
+description = "AI 商品質檢平台 — 後端（FastAPI + 判決引擎，沿用 ProductContentAIChecker 資產）"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "pydantic>=2.9.0",
+    "openai>=1.50.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# 啟動：uvicorn app.api.main:app --reload --port 8100（先 pip install -e .）
+# 模組：app.core（共用）· app.judge（③ 法官）· app.api（FastAPI gateway）
+# 未來支柱：app.audit（① 審品）· app.writer（② 撰寫）—— 待遷
