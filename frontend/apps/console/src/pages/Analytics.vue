@@ -81,12 +81,6 @@ const option = computed(() => ({
   visualMap: { min: 0, max: maxN.value, calculable: true, orient: 'horizontal', left: 'center', bottom: '2%' },
   series: [{ type: 'heatmap', data: DIMS.flatMap((d, di) => VKEYS.map((v, vi) => [vi, di, mtx.value[d][v]])), label: { show: true } }],
 }));
-// 點格＝快捷套用「維度＋verdict」篩選（連動保留，但非唯一入口）
-const onClick = (p: any) => {
-  if (!p?.data) return;
-  const [vi, di] = p.data;
-  if (mtx.value[DIMS[di]][VKEYS[vi]] > 0) { fDim.value = DIMS[di]; fVerdict.value = VKEYS[vi]; }
-};
 
 const gaps = computed(() =>
   DIMS.map((d) => ({ d, pain: mtx.value[d].content_missing + mtx.value[d].content_unclear }))
@@ -137,9 +131,9 @@ const drawerTitle = computed(() => {
       <a-col :span="6"><a-card hoverable class="kpi" @click="openDrawer('lowconf')"><div class="kl">低信心待人工</div><div class="kv">{{ kpi.lowConf }}</div><div class="ks">點擊查看 →</div></a-card></a-col>
     </a-row>
 
-    <a-card title="維度 × verdict 熱力矩陣" style="margin-bottom: 16px">
-      <template #extra><span class="muted">點任一格＝快速套用下方篩選</span></template>
-      <v-chart :option="option" style="height: 440px" autoresize @click="onClick" />
+    <a-card title="維度 × verdict 熱力矩陣（概覽）" style="margin-bottom: 16px">
+      <template #extra><span class="muted">問題分布熱點概覽 · 查看明細請用下方「問題明細」篩選器</span></template>
+      <v-chart :option="option" style="height: 440px" autoresize />
     </a-card>
 
     <a-card title="⚠ 規則缺口" style="margin-bottom: 16px">
