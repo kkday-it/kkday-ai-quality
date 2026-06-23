@@ -10,7 +10,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.core.schema import InboundItem
+from app.core.schema import InboundItem, TicketFinding
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "aiqc.db"
 
@@ -100,3 +100,54 @@ def list_inbound(status: str | None = None) -> list[dict]:
                 "SELECT * FROM inbound_items ORDER BY created_at DESC"
             ).fetchall()
     return [dict(r) for r in rows]
+
+
+def insert_finding(f: TicketFinding) -> None:
+    """寫入判決結果（冪等：finding_id 重複則覆蓋）。"""
+    with _conn() as c:
+        c.execute(
+            """
+            INSERT OR REPLACE INTO findings
+                (finding_id, item_id, prod_oid, dimension, verdict, confidence, data, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f.finding_id,
+                f.ticket_id,
+                f.prod_oid,
+                f.dimension,
+                f.verdict,
+                f.confidence,
+                f.model_dump_json(),
+                f.status,
+                f.created_at,
+            ),
+        )
+
+
+def insert_findings_batch(items: list[TicketFinding]) -> int:
+    for it in items:
+        insert_finding(it)
+    return len(items)
+
+
+def list_findings(prod_oid: str | None = None) -> list[dict]:
+    """列出判決結果（可依 prod_oid 過濾），新到舊。data 欄還原為完整 Finding。"""
+    import json as _json
+
+    with _conn() as c:
+        if prod_oid:
+            rows = c.execute(
+                "SELECT * FROM findings WHERE prod_oid = ? ORDER BY created_at DESC",
+                (prod_oid,),
+            ).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM findings ORDER BY created_at DESC").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d.get("data"):
+            d["finding"] = _json.loads(d["data"])
+        out.append(d)
+    return out
+

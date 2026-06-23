@@ -14,7 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.core import db
+from app.judge import pipeline
+from app.judge.datasource import reviews
 from app.judge.ingest import entry
+from app.judge.llm import client as llm_client
 
 app = FastAPI(title="kkday-ai-product-quality", version="0.0.1")
 
@@ -70,7 +73,35 @@ def get_inbound(status: str | None = None) -> list[dict]:
     return db.list_inbound(status)
 
 
+# ── L2–L4 判決（評論線）+ L5 結果查詢 ─────────────────────────────
+class DiagnoseIn(BaseModel):
+    prod_oid: str
+    source: str = "fixture"  # fixture(MVP) | live(production)
+
+
+@app.post("/api/diagnose")
+def diagnose(body: DiagnoseIn) -> dict:
+    """評論線判決：拉差評 → classify→adequacy→arbiter→diagnose → 存 Finding。
+
+    無 OpenAI key 時走 stub（啟發式）；key 到位自動切真 LLM。
+    """
+    tickets = reviews.fetch_reviews(body.prod_oid, source=body.source)
+    findings = pipeline.diagnose_many(tickets, prod_source=body.source)
+    db.insert_findings_batch(findings)
+    return {
+        "prod_oid": body.prod_oid,
+        "count": len(findings),
+        "stub_mode": llm_client.is_stub(),
+        "findings": [f.model_dump() for f in findings],
+    }
+
+
+@app.get("/api/findings")
+def get_findings(prod_oid: str | None = None) -> list[dict]:
+    """列出判決結果（可依 prod_oid 過濾）。"""
+    return db.list_findings(prod_oid)
+
+
 # ── 預留路由 ───────────────────────────────────────────────────────
-# L0/L1 自動拉（M1）：GET /api/product/{id}/reviews · /config
-# L2–L4 判決（M2，需 OpenAI key）：POST /api/diagnose  inbound → TicketFinding[]
-# L5 dashboard（M3）：GET /api/findings · /aggregate · /export · PATCH status
+# L0 自動拉：fetch_product(live, api-b2c) · M3 dashboard：/aggregate · /export · PATCH status
+# P2 多管道：order/工單 adapter + 聯合判定
