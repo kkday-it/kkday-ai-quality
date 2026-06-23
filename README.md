@@ -78,9 +78,9 @@ curl http://localhost:8100/api/inbound
 ### 前端（M3 已完成）
 ```bash
 cd frontend && pnpm install        # 首次
-cd apps/console && npx vite         # http://localhost:5173（需後端先起於 8100）
+cd apps/console && npx vite         # http://localhost:5273（config 固定 port；需後端先起於 8100）
 ```
-兩出口：**品控分析**（dimension×verdict 熱力矩陣 + KPI）/ **單品診斷**（拉評論判決 + Finding 卡片 + 確認/忽略/已修）。dev 經 vite proxy `/api` → 後端 8100。
+網址（history 模式，無 #）：**品控分析** http://localhost:5273/analytics（KPI + 熱力矩陣下鑽 + 規則缺口）· **單品診斷** http://localhost:5273/product（商品下拉 + 依欄位分組 + Finding 卡片雙路徑動作）。dev 經 vite proxy `/api` → 後端 8100。
 
 ## API 一覽
 | method | path | 說明 |
