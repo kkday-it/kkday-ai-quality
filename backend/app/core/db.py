@@ -131,18 +131,25 @@ def insert_findings_batch(items: list[TicketFinding]) -> int:
     return len(items)
 
 
-def list_findings(prod_oid: str | None = None) -> list[dict]:
-    """列出判決結果（可依 prod_oid 過濾），新到舊。data 欄還原為完整 Finding。"""
+def list_findings(
+    prod_oid: str | None = None,
+    dimension: str | None = None,
+    verdict: str | None = None,
+) -> list[dict]:
+    """列出判決結果（可依 prod_oid / dimension / verdict 過濾），新到舊。data 還原為完整 Finding。"""
     import json as _json
 
+    clauses: list[str] = []
+    params: list[str] = []
+    for col, val in (("prod_oid", prod_oid), ("dimension", dimension), ("verdict", verdict)):
+        if val:
+            clauses.append(f"{col} = ?")
+            params.append(val)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     with _conn() as c:
-        if prod_oid:
-            rows = c.execute(
-                "SELECT * FROM findings WHERE prod_oid = ? ORDER BY created_at DESC",
-                (prod_oid,),
-            ).fetchall()
-        else:
-            rows = c.execute("SELECT * FROM findings ORDER BY created_at DESC").fetchall()
+        rows = c.execute(
+            f"SELECT * FROM findings{where} ORDER BY created_at DESC", params
+        ).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -150,6 +157,16 @@ def list_findings(prod_oid: str | None = None) -> list[dict]:
             d["finding"] = _json.loads(d["data"])
         out.append(d)
     return out
+
+
+def list_products() -> list[dict]:
+    """有 finding 的商品清單（PM 下拉用），依問題數排序。"""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT prod_oid, COUNT(*) AS n FROM findings "
+            "WHERE dimension != 'non_content' GROUP BY prod_oid ORDER BY n DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def update_finding_status(finding_id: str, status: str) -> bool:

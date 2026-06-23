@@ -9,8 +9,16 @@ async function j(url: string, init?: RequestInit) {
 
 export const getAggregate = () => j(`${BASE}/findings/aggregate`);
 
-export const getFindings = (prodOid?: string) =>
-  j(`${BASE}/findings${prodOid ? `?prod_oid=${encodeURIComponent(prodOid)}` : ''}`);
+export const getFindings = (params: { prodOid?: string; dimension?: string; verdict?: string } = {}) => {
+  const q = new URLSearchParams();
+  if (params.prodOid) q.set('prod_oid', params.prodOid);
+  if (params.dimension) q.set('dimension', params.dimension);
+  if (params.verdict) q.set('verdict', params.verdict);
+  const s = q.toString();
+  return j(`${BASE}/findings${s ? `?${s}` : ''}`);
+};
+
+export const getProducts = () => j(`${BASE}/products`);
 
 export const diagnose = (prodOid: string) =>
   j(`${BASE}/diagnose`, {

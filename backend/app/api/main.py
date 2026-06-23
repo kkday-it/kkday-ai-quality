@@ -97,9 +97,19 @@ def diagnose(body: DiagnoseIn) -> dict:
 
 
 @app.get("/api/findings")
-def get_findings(prod_oid: str | None = None) -> list[dict]:
-    """列出判決結果（可依 prod_oid 過濾）。"""
-    return db.list_findings(prod_oid)
+def get_findings(
+    prod_oid: str | None = None,
+    dimension: str | None = None,
+    verdict: str | None = None,
+) -> list[dict]:
+    """列出判決結果（可依 prod_oid / dimension / verdict 過濾；下鑽用）。"""
+    return db.list_findings(prod_oid, dimension, verdict)
+
+
+@app.get("/api/products")
+def get_products() -> list[dict]:
+    """有 finding 的商品清單（PM 單品頁下拉）。"""
+    return db.list_products()
 
 
 class StatusIn(BaseModel):
