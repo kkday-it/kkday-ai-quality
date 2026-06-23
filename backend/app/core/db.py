@@ -151,3 +151,45 @@ def list_findings(prod_oid: str | None = None) -> list[dict]:
         out.append(d)
     return out
 
+
+def update_finding_status(finding_id: str, status: str) -> bool:
+    """更新單筆 Finding 狀態（confirmed/dismissed/fixed）。回傳是否命中。"""
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE findings SET status = ? WHERE finding_id = ?", (status, finding_id)
+        )
+        return cur.rowcount > 0
+
+
+def aggregate_findings() -> dict:
+    """dimension×verdict 熱力矩陣聚合 + KPI（出口B 用）。"""
+    with _conn() as c:
+        matrix = [
+            dict(r)
+            for r in c.execute(
+                "SELECT dimension, verdict, COUNT(*) AS count "
+                "FROM findings GROUP BY dimension, verdict"
+            ).fetchall()
+        ]
+        total = c.execute("SELECT COUNT(*) FROM findings").fetchone()[0]
+        content = c.execute(
+            "SELECT COUNT(*) FROM findings WHERE verdict IN "
+            "('real_config_issue','content_missing','content_unclear')"
+        ).fetchone()[0]
+        by_dim = [
+            dict(r)
+            for r in c.execute(
+                "SELECT dimension, COUNT(*) AS count FROM findings "
+                "WHERE dimension != 'non_content' GROUP BY dimension ORDER BY count DESC"
+            ).fetchall()
+        ]
+    return {
+        "matrix": matrix,
+        "kpi": {
+            "total": total,
+            "content_issue_pct": round(content / total, 3) if total else 0.0,
+            "top_dimension": by_dim[0]["dimension"] if by_dim else "",
+        },
+        "by_dimension": by_dim,
+    }
+

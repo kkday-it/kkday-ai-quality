@@ -102,6 +102,24 @@ def get_findings(prod_oid: str | None = None) -> list[dict]:
     return db.list_findings(prod_oid)
 
 
+class StatusIn(BaseModel):
+    status: str  # confirmed | dismissed | fixed
+
+
+@app.get("/api/findings/aggregate")
+def findings_aggregate() -> dict:
+    """dimension×verdict 熱力矩陣聚合 + KPI（出口B 用）。"""
+    return db.aggregate_findings()
+
+
+@app.patch("/api/findings/{finding_id}/status")
+def patch_finding_status(finding_id: str, body: StatusIn) -> dict:
+    """更新 Finding 狀態（出口A 確認/忽略/已修）。"""
+    if not db.update_finding_status(finding_id, body.status):
+        raise HTTPException(status_code=404, detail="finding not found")
+    return {"finding_id": finding_id, "status": body.status}
+
+
 # ── 預留路由 ───────────────────────────────────────────────────────
-# L0 自動拉：fetch_product(live, api-b2c) · M3 dashboard：/aggregate · /export · PATCH status
+# L0 自動拉：fetch_product(live, api-b2c) · M3：/findings/export(xlsx)
 # P2 多管道：order/工單 adapter + 聯合判定
