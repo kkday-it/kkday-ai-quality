@@ -172,6 +172,36 @@ def diagnose_presale_postsale(body: IntakeIn) -> dict:
     }
 
 
+class SettingsIn(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_token: str | None = None
+    temperature: float | None = None
+    thinking: str | None = None
+    reasoning_effort: str | None = None
+
+
+@app.get("/api/settings")
+def get_settings() -> dict:
+    """LLM 模型配置（api_token 遮罩，附 has_token / stub_mode）。"""
+    from app.core import settings as app_settings
+
+    data = app_settings.masked()
+    data["stub_mode"] = llm_client.is_stub()
+    return data
+
+
+@app.post("/api/settings")
+def update_settings(body: SettingsIn) -> dict:
+    """更新模型配置（空/遮罩 token 不覆蓋既有）。"""
+    from app.core import settings as app_settings
+
+    data = app_settings.save_settings(body.model_dump(exclude_none=True))
+    data["stub_mode"] = llm_client.is_stub()
+    return data
+
+
 @app.get("/api/findings")
 def get_findings(
     prod_oid: str | None = None,
