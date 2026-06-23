@@ -65,6 +65,20 @@
 - 可重生（`writer_handoff = True`）僅限 `content_unclear` / `real_config_issue` 且欄位 ∈ {prod_name, prod_feature, prod_summary}（既有事實改寫）。
 - `contract_breach` / `customer_misread` / `escalate_ops` 皆不重生（非內容改寫範疇）。
 
+## 機器檢查規則庫（Phase1 · R1-1~R5-5）
+
+完整 30 條可機器檢查規則已結構化落地 repo，供 AI 法官 arbiter/diagnose 程式化套用：
+- 資料：`backend/app/judge/judge_rules.json`（忠實鏡像 Sheets 的 Rule ID 規則表）
+- 載入器：`backend/app/judge/codex.py`（`all_rules` / `get_rule` / `rules_by_dimension` / `severity_of` / `contract_breach_rules`）
+
+**覆蓋分布（30 條）**：行程流程 6 · 集合資訊 9 · 使用兌換 1 · 成團條件 3 · 承諾與SLA 5 · 限制與風險 1 · 資訊錯位/過期 5。風險等級 High 15 / Medium 15（→ severity P1/P2）。
+
+**每條欄位**：`rule_id` · `dimension` · `field` · `governance_principle`（治理原則）· `verification_logic`（檢驗邏輯）· `risk_level` · `flag_message`（標記訊息）· `phase1`/`phase2` · `verdict_hint`（對映本系統 6 verdict）。
+
+**履約違規橋接**：承諾與SLA 5 條（R3-6~R3-10）標 `contract_breach_applicable`——事前查欄位缺失 → `content_missing`；事後「已揭露但未履約」→ `contract_breach`（計點違規 ERC）。
+
+> ⚠️ 本 JSON 是法典的 **Phase1 可執行子集（30 條判決機器規則）**；法典完整版（58 欄位 × Level1-3 條文/好壞範例/phase 分類）SSOT 仍為 Google Sheets（`sheet_id` 見 judge_rules.json）。攥寫/SEO 類規則另見 ProductContentAIChecker `ai_writer_mvp/rules.json`。
+
 ## 北極星
 
 降低售後進線的內容類占比。`contract_breach` 的計點違規回饋供應商管理，`content_missing` / `content_unclear` 的規則缺口回饋 `rules.json` 修法，形成閉環。
