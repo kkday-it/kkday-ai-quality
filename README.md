@@ -75,11 +75,12 @@ curl http://localhost:8100/api/inbound
 ```
 > API 文件（Swagger UI）：啟動後開 http://localhost:8100/docs
 
-### 前端（M3 待實作）
-目前為 scaffold（`frontend/apps/console` 僅 package.json + 共用 types），尚缺 `vite.config.ts`/`index.html`/`App.vue`。M3 補齊後：
+### 前端（M3 已完成）
 ```bash
-cd frontend && pnpm install && pnpm dev   # （M3 後可用）
+cd frontend && pnpm install        # 首次
+cd apps/console && npx vite         # http://localhost:5173（需後端先起於 8100）
 ```
+兩出口：**品控分析**（dimension×verdict 熱力矩陣 + KPI）/ **單品診斷**（拉評論判決 + Finding 卡片 + 確認/忽略/已修）。dev 經 vite proxy `/api` → 後端 8100。
 
 ## API 一覽
 | method | path | 說明 |
@@ -90,10 +91,13 @@ cd frontend && pnpm install && pnpm dev   # （M3 後可用）
 | GET | `/api/inbound` | 錄入清單（`?status=`）|
 | POST | `/api/diagnose` | 評論線判決（`{prod_oid, source}`，source=fixture/live）|
 | GET | `/api/findings` | 判決結果（`?prod_oid=`）|
+| GET | `/api/findings/aggregate` | dimension×verdict 熱力矩陣 + KPI（出口B）|
+| PATCH | `/api/findings/{id}/status` | 更新狀態 confirmed/dismissed/fixed（出口A）|
 
 ## 狀態（2026-06-23）
 - ✅ M1a 錄入層（CSV/Excel/單個 → SQLite）
 - ✅ M1b 資料拉取（fetch_reviews/fetch_product，fixture+live）
 - ✅ M2-stub 判決層（評論線端到端走通，150665 纜車案例判對，stub 粗判 5/6）
+- ✅ M3 Dashboard（Vue3+Arco+ECharts 兩出口：熱力矩陣 + 單品診斷，瀏覽器驗證通過）
 - 🟡 M2 真 LLM + golden 驗收（等 OpenAI key 6/25）
-- ⬜ M3 Dashboard（Arco+ECharts 兩出口 + 導入導出）· M4 閉環 · P2 多管道
+- ⬜ M3+ 表格導入導出（SheetJS/openpyxl）· M4 閉環 calibration · P2 多管道
