@@ -2,6 +2,7 @@
 
 > 深化補充版。融合三組來源：① Confluence folder 2117435397 工單驅動 SA/SD（Justin v1）+ ② 總覽頁 2126970899 四問 V3 + ③ 內容治理法典 SSOT（Google Sheets 8 面向 58/60 欄位 R1-1~R5-5）。
 > 本版重點：把法典**逐欄位**落地為可判斷「具體問題欄位」（如 商品定位-商品名稱）的 judge prompt 體系。
+> **Confluence 整合方案（並列 folder 532676666）**：[AI 法官 — 完整實作方案（整合版）](https://kkday.atlassian.net/wiki/spaces/VM/pages/2125561898) 父頁 `2125561898` + 7 子頁（架構/四問/法典/閉環，~18 mermaid 流程圖 + 多維度可行性風險）。本 repo doc 為實作對照版。
 
 ## 一、V2 定位與融合來源
 
