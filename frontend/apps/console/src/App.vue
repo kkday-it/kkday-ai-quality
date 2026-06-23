@@ -1,35 +1,38 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
 const router = useRouter();
-const PAGES: Record<string, string> = {
-  '/analytics': 'RD／品控 分析',
-  '/product': 'PM／AM 單品',
-};
-const onSelect = (v: string | number | Record<string, any>) => router.push(String(v));
+
+// 功能模組（下拉選擇，默認第一個；目前僅 AI 法官）
+const MODULES = [{ value: 'ai-judge', label: '⚖️ AI 法官' }];
+const activeModule = ref(MODULES[0].value);
+
+// AI 法官的兩個視角（橫向 tab）
+const TABS = [
+  { key: '/analytics', label: 'RD／品控 分析' },
+  { key: '/product', label: 'PM／AM 單品' },
+];
+const activeTab = ref(route.path);
+watch(() => route.path, (p) => (activeTab.value = p));
+const onTab = (key: string | number) => router.push(String(key));
 </script>
 
 <template>
   <a-layout style="min-height: 100vh">
     <div class="topnav">
-      <a-dropdown trigger="hover" @select="onSelect">
-        <span class="brand">AI 商品質檢 <span class="caret">▾</span></span>
-        <template #content>
-          <a-dsubmenu>
-            <template #default>⚖️ AI 法官</template>
-            <template #content>
-              <a-doption value="/analytics">RD／品控 分析</a-doption>
-              <a-doption value="/product">PM／AM 單品</a-doption>
-            </template>
-          </a-dsubmenu>
-        </template>
-      </a-dropdown>
-      <span class="sep">/</span>
-      <span class="pillar">AI 法官</span>
-      <span class="sep">/</span>
-      <span class="current">{{ PAGES[route.path] || '' }}</span>
+      <span class="brand">AI 商品質檢</span>
+      <span class="divider">/</span>
+      <a-select v-model="activeModule" class="mod-select" :bordered="false">
+        <a-option v-for="m in MODULES" :key="m.value" :value="m.value">{{ m.label }}</a-option>
+      </a-select>
     </div>
+
+    <a-tabs :active-key="activeTab" type="line" class="subtabs" @change="onTab">
+      <a-tab-pane v-for="t in TABS" :key="t.key" :title="t.label" />
+    </a-tabs>
+
     <a-layout-content class="ct">
       <router-view />
     </a-layout-content>
@@ -37,11 +40,11 @@ const onSelect = (v: string | number | Record<string, any>) => router.push(Strin
 </template>
 
 <style>
-.topnav { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 20px; background: #fff; border-bottom: 1px solid #eee; }
-.brand { font-weight: 700; color: #165dff; font-size: 16px; cursor: pointer; user-select: none; }
-.pillar { color: #4e5969; font-weight: 600; }
-.caret { font-size: 12px; }
-.sep { color: #c9cdd4; }
-.current { color: #1d2129; font-weight: 600; }
+.topnav { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 20px; background: #fff; border-bottom: 1px solid #f0f0f0; }
+.brand { font-weight: 700; color: #165dff; font-size: 16px; user-select: none; }
+.divider { color: #c9cdd4; }
+.mod-select { width: 150px; font-weight: 600; }
+.subtabs { background: #fff; padding: 0 12px; border-bottom: 1px solid #f0f0f0; }
+.subtabs .arco-tabs-nav::before { display: none; }
 .ct { padding: 20px; background: #f7f8fa; }
 </style>
