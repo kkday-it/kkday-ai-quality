@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { patchStatus } from '../api/client';
 
 const props = defineProps<{ f: any }>();
@@ -22,6 +23,15 @@ const ALABEL: Record<string, string> = {
 const CHANNEL: Record<string, string> = {
   A_platform: '平台主動', B_customer: '客人進線', C_supplier: '供應商申訴', unknown: '其他',
 };
+const SLABEL: Record<string, string> = {
+  new: '待處理', confirmed: '已確認', dismissed: '已忽略', fixed: '已修', data_missing: '缺資料',
+};
+const SCOLOR: Record<string, string> = {
+  confirmed: 'green', fixed: 'cyan', dismissed: 'gray', data_missing: 'red', new: 'arcoblue',
+};
+
+const conf = computed(() => Number(props.f.confidence ?? 0));
+const confLevel = computed(() => (conf.value >= 0.85 ? 'hi' : conf.value >= 0.7 ? 'mid' : 'lo'));
 
 const setStatus = async (s: string) => {
   await patchStatus(props.f.finding_id, s);
@@ -31,14 +41,19 @@ const setStatus = async (s: string) => {
 
 <template>
   <a-card class="fcard">
-    <a-space wrap style="margin-bottom: 4px">
+    <!-- 突顯識別列：信心 / 商品 OID / 訂單 OID / 狀態 -->
+    <div class="metabar">
+      <span class="conf" :class="confLevel">信心 {{ conf.toFixed(2) }}</span>
+      <span class="oid"><span class="oid-k">商品</span> {{ f.prod_oid }}</span>
+      <span v-if="f.order_oid" class="oid"><span class="oid-k">訂單</span> {{ f.order_oid }}</span>
+      <a-tag :color="SCOLOR[f.status]" style="margin-left: auto">{{ SLABEL[f.status] || f.status }}</a-tag>
+    </div>
+
+    <a-space wrap style="margin: 8px 0 4px">
       <a-tag color="arcoblue">{{ f.dimension }}</a-tag>
       <a-tag :color="VCOLOR[f.verdict]">{{ VLABEL[f.verdict] || f.verdict }}</a-tag>
       <a-tag v-if="f.suspected_field && f.suspected_field !== 'none'" color="purple">{{ FLABEL[f.suspected_field] }}</a-tag>
       <a-tag v-if="f.is_primary" color="purple" bordered>主要</a-tag>
-      <span class="muted">信心 {{ Number(f.confidence ?? 0).toFixed(2) }}</span>
-      <a-tag :color="f.status === 'confirmed' ? 'green' : f.status === 'fixed' ? 'cyan' : f.status === 'dismissed' ? 'gray' : undefined">{{ f.status }}</a-tag>
-      <span v-if="f.prod_oid" class="muted mono" style="margin-left: auto">prod {{ f.prod_oid }}</span>
     </a-space>
 
     <div class="summary">{{ f.problem_summary }}</div>
@@ -73,6 +88,13 @@ const setStatus = async (s: string) => {
 
 <style scoped>
 .fcard { margin-bottom: 12px; }
+.metabar { display: flex; align-items: center; gap: 12px; padding: 6px 10px; background: #f7f8fa; border-radius: 8px; }
+.conf { font-weight: 700; font-size: 14px; padding: 1px 8px; border-radius: 6px; }
+.conf.hi { color: #00875a; background: #e3fcef; }
+.conf.mid { color: #165dff; background: #e8f3ff; }
+.conf.lo { color: #d4380d; background: #fff1f0; }
+.oid { font-family: ui-monospace, monospace; font-size: 13px; color: #1d2129; font-weight: 600; }
+.oid-k { color: #86909c; font-weight: 400; font-size: 11px; margin-right: 2px; }
 .summary { font-size: 14px; line-height: 1.55; margin: 4px 0; }
 .quote { color: #86909c; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
 .gt { background: #e8fffb; border: 1px solid #a3e8dd; border-radius: 8px; padding: 8px 11px; margin-top: 8px; font-size: 12.5px; line-height: 1.5; }
@@ -80,7 +102,6 @@ const setStatus = async (s: string) => {
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .muted { color: #86909c; font-size: 12px; }
 .muted.warn { color: #fb923c; }
-.mono { font-family: ui-monospace, monospace; }
 .meta-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { font-size: 11.5px; color: #4e5969; background: #f2f3f5; border-radius: 6px; padding: 2px 8px; }
 </style>

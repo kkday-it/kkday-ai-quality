@@ -151,6 +151,7 @@ def build_mock() -> list[TicketFinding]:
                 source_system=sys_,
                 owner_role=role,
                 exec_platform=platform,
+                order_oid=f"OD20250612{i:03d}" if ch == "B_customer" else "",
             )
         )
     return out

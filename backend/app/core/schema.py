@@ -127,6 +127,7 @@ class TicketFinding(BaseModel):
     # 執行層對應（誰處理 · 在哪改）
     owner_role: str = ""      # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
     exec_platform: str = ""   # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
+    order_oid: str = ""       # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
 
 
 class InboundItem(BaseModel):
@@ -142,3 +143,4 @@ class InboundItem(BaseModel):
     raw: dict = Field(default_factory=dict)  # 原始列（audit）
     status: Literal["pending", "diagnosed", "failed"] = "pending"
     created_at: str = ""
+    order_oid: str = ""  # 訂單編號（選填，B 客人進線管道）
