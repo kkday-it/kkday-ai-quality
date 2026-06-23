@@ -19,6 +19,9 @@ const ALABEL: Record<string, string> = {
   fix_contradiction: '修正矛盾', add_missing_info: '補充缺漏', clarify_wording: '改寫釐清',
   no_action: '無需動作', escalate_ops: '轉其他單位', escalate_ux: 'UX 議題',
 };
+const CHANNEL: Record<string, string> = {
+  A_platform: '平台主動', B_customer: '客人進線', C_supplier: '供應商申訴', unknown: '其他',
+};
 
 const setStatus = async (s: string) => {
   await patchStatus(props.f.finding_id, s);
@@ -41,6 +44,12 @@ const setStatus = async (s: string) => {
     <div class="summary">{{ f.problem_summary }}</div>
     <div v-if="f.evidence_quote" class="quote">📄 目前頁面：{{ f.evidence_quote }}</div>
     <div v-if="f.ground_truth_quote" class="gt"><b>✅ 客服標準答案（待補事實）：</b>{{ f.ground_truth_quote }}</div>
+
+    <div class="meta-row">
+      <span class="chip">📥 感知層：{{ CHANNEL[f.source_channel] || '其他' }}<template v-if="f.source_system"> · {{ f.source_system }}</template></span>
+      <span v-if="f.owner_role" class="chip">👤 {{ f.owner_role }}</span>
+      <span v-if="f.exec_platform" class="chip">🛠 {{ f.exec_platform }}</span>
+    </div>
 
     <div class="actions">
       <span v-if="f.verdict === 'customer_misread'" class="muted">內容其實清楚 → 不需修改（呈現/UX 議題）</span>
@@ -72,4 +81,6 @@ const setStatus = async (s: string) => {
 .muted { color: #86909c; font-size: 12px; }
 .muted.warn { color: #fb923c; }
 .mono { font-family: ui-monospace, monospace; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 11.5px; color: #4e5969; background: #f2f3f5; border-radius: 6px; padding: 2px 8px; }
 </style>

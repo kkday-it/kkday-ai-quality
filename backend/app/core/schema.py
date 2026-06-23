@@ -121,6 +121,12 @@ class TicketFinding(BaseModel):
     is_primary: bool = False
     status: Literal["new", "confirmed", "dismissed", "fixed", "data_missing"] = "new"
     created_at: str = ""
+    # 感知層來源（管道 A 平台主動 / B 客人進線 / C 供應商申訴）
+    source_channel: str = ""  # A_platform | B_customer | C_supplier | unknown
+    source_system: str = ""   # 商品評論 / FreshDesk工單 / 訂單訊息 / Feedback / Mixpanel / NPS
+    # 執行層對應（誰處理 · 在哪改）
+    owner_role: str = ""      # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
+    exec_platform: str = ""   # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
 
 
 class InboundItem(BaseModel):
@@ -128,6 +134,7 @@ class InboundItem(BaseModel):
 
     item_id: str = ""  # 冪等鍵（source + prod_oid + comment hash）
     source: Literal["review", "ticket", "manual", "csv", "excel"] = "manual"
+    source_channel: str = ""  # 感知層管道：A_platform | B_customer | C_supplier | unknown
     prod_oid: str = ""
     pkg_oid: str = ""
     rating: Optional[int] = None  # 評分/星等（嚴重度訊號）

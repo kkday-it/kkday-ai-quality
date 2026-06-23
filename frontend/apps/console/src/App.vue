@@ -4,8 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 const route = useRoute();
 const router = useRouter();
 const PAGES: Record<string, string> = {
-  '/analytics': '品控分析（出口B）',
-  '/product': '單品診斷（出口A）',
+  '/analytics': 'RD／品控 分析',
+  '/product': 'PM／AM 單品',
 };
 const onSelect = (v: string | number | Record<string, any>) => router.push(String(v));
 </script>
@@ -16,12 +16,17 @@ const onSelect = (v: string | number | Record<string, any>) => router.push(Strin
       <a-dropdown trigger="hover" @select="onSelect">
         <span class="brand">AI 商品質檢 <span class="caret">▾</span></span>
         <template #content>
-          <a-dgroup title="AI 法官">
-            <a-doption value="/analytics">品控分析（出口B）</a-doption>
-            <a-doption value="/product">單品診斷（出口A）</a-doption>
-          </a-dgroup>
+          <a-dsubmenu>
+            <template #default>⚖️ AI 法官</template>
+            <template #content>
+              <a-doption value="/analytics">RD／品控 分析</a-doption>
+              <a-doption value="/product">PM／AM 單品</a-doption>
+            </template>
+          </a-dsubmenu>
         </template>
       </a-dropdown>
+      <span class="sep">/</span>
+      <span class="pillar">AI 法官</span>
       <span class="sep">/</span>
       <span class="current">{{ PAGES[route.path] || '' }}</span>
     </div>
@@ -34,6 +39,7 @@ const onSelect = (v: string | number | Record<string, any>) => router.push(Strin
 <style>
 .topnav { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 20px; background: #fff; border-bottom: 1px solid #eee; }
 .brand { font-weight: 700; color: #165dff; font-size: 16px; cursor: pointer; user-select: none; }
+.pillar { color: #4e5969; font-weight: 600; }
 .caret { font-size: 12px; }
 .sep { color: #c9cdd4; }
 .current { color: #1d2129; font-weight: 600; }

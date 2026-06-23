@@ -39,3 +39,18 @@ def build_action(verdict: str, classify: dict, ground_truth: str = "") -> tuple[
     if ground_truth:
         detail += f"（ground truth：{ground_truth[:80]}）"
     return action, detail, handoff
+
+
+# 執行層映射：verdict → (owner_role, exec_platform)＝誰處理、在哪改（對齊五層治理角色）
+_EXEC_MAP: dict[str, tuple[str, str]] = {
+    "real_config_issue": ("Coach（AM/BD）", "SCM2.0·Be2"),
+    "content_missing": ("Rule Maker（PM）", "PM 後台"),
+    "content_unclear": ("Rule Maker（PM）", "PM 後台 / Writer"),
+    "customer_misread": ("Rule Maker（PM/UED）", "（UX 呈現，免改內容）"),
+    "escalate_ops": ("Customer Advocate（CS）", "客服系統"),
+}
+
+
+def build_exec(verdict: str) -> tuple[str, str]:
+    """verdict → (owner_role, exec_platform)：執行層誰處理、在哪改。"""
+    return _EXEC_MAP.get(verdict, ("Rule Maker（PM）", "PM 後台"))

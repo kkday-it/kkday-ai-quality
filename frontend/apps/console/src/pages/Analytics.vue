@@ -2,13 +2,15 @@
 import { ref, onMounted, computed } from 'vue';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
-import { HeatmapChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, VisualMapComponent } from 'echarts/components';
+import { HeatmapChart, PieChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent, VisualMapComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { getFindings } from '../api/client';
 import FindingCard from '../components/FindingCard.vue';
 
-use([HeatmapChart, GridComponent, TooltipComponent, VisualMapComponent, CanvasRenderer]);
+use([HeatmapChart, PieChart, GridComponent, TooltipComponent, VisualMapComponent, LegendComponent, CanvasRenderer]);
+
+const SRC_CH: Record<string, string> = { A_platform: '平台主動', B_customer: '客人進線', C_supplier: '供應商申訴', unknown: '其他' };
 
 const DIMS = ['商品定位', '行程流程', '費用資訊', '集合資訊', '使用兌換', '成團條件', '限制與風險', '承諾與SLA'];
 const VKEYS = ['real_config_issue', 'content_missing', 'content_unclear', 'customer_misread', 'escalate_ops'];
@@ -73,6 +75,21 @@ const gaps = computed(() =>
     .filter((g) => g.pain >= GAP_THRESHOLD && !RULE_COVERED[g.d])
     .sort((a, b) => b.pain - a.pain),
 );
+
+// 感知層：問題來源分布（管道/系統）
+const sourceStats = computed(() => {
+  const m: Record<string, number> = {};
+  all.value.forEach((f) => {
+    const k = f.source_system || SRC_CH[f.source_channel] || '其他';
+    m[k] = (m[k] || 0) + 1;
+  });
+  return Object.entries(m).map(([name, value]) => ({ name, value }));
+});
+const sourceOption = computed(() => ({
+  tooltip: { trigger: 'item' },
+  legend: { bottom: 0 },
+  series: [{ type: 'pie', radius: ['40%', '68%'], data: sourceStats.value, label: { formatter: '{b}：{c}' } }],
+}));
 </script>
 
 <template>
@@ -100,6 +117,11 @@ const gaps = computed(() =>
         <span class="muted">缺漏+模糊 {{ g.pain }} 筆 · 現有規則無對應</span>
         <a-link style="margin-left: auto">建議新增審核規則 →</a-link>
       </div>
+    </a-card>
+
+    <a-card title="感知層問題來源分布" style="margin-bottom: 16px">
+      <template #extra><span class="muted">工單 / 評論 / 訂單訊息… 各來源占比</span></template>
+      <v-chart :option="sourceOption" style="height: 300px" autoresize />
     </a-card>
 
     <a-card :title="drillDim ? `下鑽明細 · ${drillDim} × ${VLABEL[VKEYS.indexOf(drillV)]}` : '下鑽明細'">
