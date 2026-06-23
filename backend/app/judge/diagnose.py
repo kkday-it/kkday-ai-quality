@@ -10,6 +10,7 @@ _ACTION_MAP: dict[str, tuple[str, bool]] = {
     "real_config_issue": ("fix_contradiction", True),
     "content_missing": ("add_missing_info", False),  # 防幻覺：缺事實一律 False
     "content_unclear": ("clarify_wording", True),
+    "contract_breach": ("penalize_breach", False),  # 履約違規 → 計點，不改內容
     "customer_misread": ("no_action", False),
     "escalate_ops": ("escalate_ops", False),
 }
@@ -21,6 +22,7 @@ _DETAIL = {
     "real_config_issue": "設定自相矛盾，請修正欄位內容使其一致。",
     "content_missing": "缺少必要事實，請 PM 補入真實資訊（writer 不可生成）。",
     "content_unclear": "描述模糊易誤解，建議改寫使其清楚。",
+    "contract_breach": "內容撰寫合規，但供應商承諾履約不符，計點違規並要求改善（ERC）。",
     "customer_misread": "內容其實已清楚，屬呈現/UX 洞察，無需改內容。",
     "escalate_ops": "非內容類（服務/出貨等），轉營運/客服處理。",
 }
@@ -46,6 +48,7 @@ _EXEC_MAP: dict[str, tuple[str, str]] = {
     "real_config_issue": ("Coach（AM/BD）", "SCM2.0·Be2"),
     "content_missing": ("Rule Maker（PM）", "PM 後台"),
     "content_unclear": ("Rule Maker（PM）", "PM 後台 / Writer"),
+    "contract_breach": ("Disciplinary（ERC）", "供應商計點系統·SCM2.0"),
     "customer_misread": ("Rule Maker（PM/UED）", "（UX 呈現，免改內容）"),
     "escalate_ops": ("Customer Advocate（CS）", "客服系統"),
 }

@@ -13,8 +13,8 @@ use([HeatmapChart, PieChart, GridComponent, TooltipComponent, VisualMapComponent
 const SRC_CH: Record<string, string> = { A_platform: '平台主動', B_customer: '客人進線', C_supplier: '供應商申訴', unknown: '其他' };
 
 const DIMS = ['商品定位', '行程流程', '費用資訊', '集合資訊', '使用兌換', '成團條件', '限制與風險', '承諾與SLA'];
-const VKEYS = ['real_config_issue', 'content_missing', 'content_unclear', 'customer_misread', 'escalate_ops'];
-const VLABEL = ['設定錯誤', '缺漏', '模糊', '客戶誤解', '非內容'];
+const VKEYS = ['real_config_issue', 'content_missing', 'content_unclear', 'contract_breach', 'customer_misread', 'escalate_ops'];
+const VLABEL = ['設定錯誤', '缺漏', '模糊', '履約違規', '客戶誤解', '非內容'];
 const STATUS_OPTS = [
   { k: 'new', l: '待處理' }, { k: 'confirmed', l: '已確認' }, { k: 'dismissed', l: '已忽略' },
   { k: 'fixed', l: '已修' }, { k: 'data_missing', l: '缺資料' },

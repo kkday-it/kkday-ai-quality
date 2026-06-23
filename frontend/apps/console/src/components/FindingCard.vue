@@ -6,11 +6,11 @@ const props = defineProps<{ f: any }>();
 
 const VLABEL: Record<string, string> = {
   real_config_issue: '設定錯誤', content_missing: '缺漏', content_unclear: '模糊',
-  customer_misread: '客戶誤解', escalate_ops: '非內容',
+  contract_breach: '履約違規', customer_misread: '客戶誤解', escalate_ops: '非內容',
 };
 const VCOLOR: Record<string, string> = {
   real_config_issue: 'magenta', content_missing: 'red', content_unclear: 'orange',
-  customer_misread: 'gray', escalate_ops: 'blue',
+  contract_breach: 'pinkpurple', customer_misread: 'gray', escalate_ops: 'blue',
 };
 const FLABEL: Record<string, string> = {
   prod_name: '商品名稱', prod_summary: '商品說明', prod_feature: '商品特色',
@@ -18,7 +18,7 @@ const FLABEL: Record<string, string> = {
 };
 const ALABEL: Record<string, string> = {
   fix_contradiction: '修正矛盾', add_missing_info: '補充缺漏', clarify_wording: '改寫釐清',
-  no_action: '無需動作', escalate_ops: '轉其他單位', escalate_ux: 'UX 議題',
+  penalize_breach: '計點違規', no_action: '無需動作', escalate_ops: '轉其他單位', escalate_ux: 'UX 議題',
 };
 const CHANNEL: Record<string, string> = {
   A_platform: '平台主動', B_customer: '客人進線', C_supplier: '供應商申訴', unknown: '其他',
@@ -67,7 +67,8 @@ const setStatus = async (s: string) => {
     </div>
 
     <div class="actions">
-      <span v-if="f.verdict === 'customer_misread'" class="muted">內容其實清楚 → 不需修改（呈現/UX 議題）</span>
+      <span v-if="f.verdict === 'contract_breach'" class="muted warn">⚠ 內容合規但承諾履約不符 → 計點違規 + 要求供應商改善（ERC）</span>
+      <span v-else-if="f.verdict === 'customer_misread'" class="muted">內容其實清楚 → 不需修改（呈現/UX 議題）</span>
       <span v-else-if="f.verdict === 'escalate_ops'" class="muted">非內容問題 → 轉其他單位</span>
       <template v-else-if="f.writer_handoff">
         <a-button size="mini" type="primary">✎ 用 writer 重生{{ FLABEL[f.suspected_field] }}</a-button>

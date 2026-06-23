@@ -36,11 +36,12 @@ LogicalField = Literal[
 
 # verdict 五分類 —「是不是真內容問題」的判準（L3 靈魂）
 Verdict = Literal[
-    "real_config_issue",  # 設定寫錯/矛盾 → 進 PM 清單
-    "content_missing",    # 該講沒講 → 進 PM 清單
-    "content_unclear",    # 模糊易誤解 → 進 PM 清單
+    "real_config_issue",  # 設定寫錯/矛盾 → 進 PM 清單（規則已定義、供應商沒寫對）
+    "content_missing",    # 該講沒講 → 進 PM 清單（規則未定義、回饋修法）
+    "content_unclear",    # 模糊易誤解 → 進 PM 清單（規則未定義、回饋修法）
+    "contract_breach",    # 內容合規但承諾履約不符 → 計點違規（ERC）+ 要求供應商改善
     "customer_misread",   # 其實寫清楚了 → 不進清單（UX 洞察）
-    "escalate_ops",       # 服務/出貨等非內容 → 不進清單
+    "escalate_ops",       # 服務/出貨等非內容 → 不進清單（感知通報 + 協作）
 ]
 
 # 進 PM 修改清單的 verdict（純內容問題）
@@ -55,6 +56,7 @@ RecommendedAction = Literal[
     "fix_contradiction",
     "add_missing_info",
     "clarify_wording",
+    "penalize_breach",  # 計點違規 + 要求供應商改善（履約不符）
     "no_action",
     "escalate_ops",
     "escalate_ux",

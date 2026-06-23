@@ -24,6 +24,7 @@ ACTION = {
     "real_config_issue": "fix_contradiction",
     "content_missing": "add_missing_info",
     "content_unclear": "clarify_wording",
+    "contract_breach": "penalize_breach",
     "customer_misread": "escalate_ux",
     "escalate_ops": "escalate_ops",
 }
@@ -63,6 +64,10 @@ MOCK: list[tuple] = [
      "客人反映入園後部分設施維修，屬樂園營運非內容問題",
      "",
      "設施維修為樂園即時公告，轉 CS 安撫並引導官方資訊", 0.65, "new", "B_customer", "FreshDesk工單", False),
+    ("88102", "承諾與SLA", "prod_summary", "contract_breach",
+     "頁面載明含中文語音導覽機，現場未提供（內容合規但履約不符）",
+     "費用包含：中文語音導覽機 ×1",
+     "客服：該設施中文導覽機缺貨未補，供應商未依頁面承諾提供", 0.84, "new", "B_customer", "FreshDesk工單", True),
 
     # ── 203344 沖繩青之洞窟浮潛 ──
     ("203344", "限制與風險", "prod_summary", "content_missing",
@@ -77,6 +82,10 @@ MOCK: list[tuple] = [
      "寫「那霸市區飯店接送」實際僅限指定飯店",
      "提供那霸市區飯店免費接送",
      "AM：接送僅限指定 12 家合作飯店", 0.80, "fixed", "C_supplier", "Feedback", False),
+    ("203344", "承諾與SLA", "prod_feature", "contract_breach",
+     "頁面承諾專業教練 1:2 貼身指導，旺季實際 1:6（內容合規但履約不符）",
+     "專業教練 1:2 貼身指導，確保安全",
+     "供應商旺季超收，實際比例 1:6，違反頁面承諾配置", 0.81, "new", "C_supplier", "供應商申訴", True),
 
     # ── 91256 京都祇園和服體驗 ──
     ("91256", "使用兌換", "pkg_schedules", "content_unclear",
