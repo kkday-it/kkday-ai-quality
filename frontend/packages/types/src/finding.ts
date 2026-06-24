@@ -26,6 +26,7 @@ export const VERDICTS = [
   'real_config_issue',
   'content_missing',
   'content_unclear',
+  'contract_breach', // 內容合規但承諾履約不符 → 計點違規（ERC）；對齊後端 schema.py
   'customer_misread',
   'escalate_ops',
 ] as const;
@@ -58,6 +59,8 @@ export interface TicketFinding {
   ticket_id: string;
   prod_oid: string;
   pkg_oid: string;
+  order_oid: string; // 訂單編號（B 客人進線可定位；對齊後端 schema.py）
+  supplier_oid: string; // 供應商編號（order_message 進線可定位；對齊後端 schema.py）
   dimension: Dimension;
   problem_summary: string;
   suspected_field: LogicalField;
