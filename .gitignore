@@ -1,11 +1,16 @@
 node_modules/
 dist/
+*.tsbuildinfo
 .env
 .env.local
 *.log
 .DS_Store
+.playwright-mcp/
 findings/
 .venv/
 backend/data/
 __pycache__/
 *.pyc
+
+# AI 法官 intake 真實樣本（含客戶對話/訂單ID 等個資，禁止 commit）
+backend/fixtures/intake/*.csv
