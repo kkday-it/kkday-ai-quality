@@ -1,0 +1,62 @@
+{
+  "_note": "方案① 即時撈商品內容 mock（BQ 權限到位前用）。結構＝product_content_by_oids.sql 輸出列，欄位對齊 roster.upsert_product_content_rows。內容刻意對齊 presale_postsale.json 三張票的客訴點，供判決鏈端到端驗證。BQ 到位後此檔停用、改 source='live'。",
+  "rows": [
+    {
+      "prod_oid": "150665",
+      "prod_mid": "M150665",
+      "master_lang": "zh-tw",
+      "pkg_oid": "P150665A",
+      "prod_name": "東京近郊一日遊｜河口湖・纜車・採果",
+      "prod_summary": "專車帶您暢遊河口湖，飽覽富士山美景，行程包含纜車體驗與季節限定採果，悠閒一日輕鬆出遊。",
+      "prod_feature": "贈送河口湖天上山纜車體驗券一張；專業中文導遊全程隨行。",
+      "prod_desc": "適合親子與長輩的舒適行程。",
+      "prod_schedules": "08:00 新宿出發 → 10:30 河口湖（停留 50 分鐘）→ 12:00 午餐 → 14:00 纜車 → 16:00 採果 → 18:30 返抵新宿",
+      "prod_notice": "天候因素（強風、大雨）可能導致纜車停駛，恕不另行退費。",
+      "prod_fee": "包含：來回車資、纜車券、採果體驗。不包含：午餐、個人消費。",
+      "prod_meetup": "集合地點：新宿站",
+      "prod_redeem": "",
+      "prod_purchase": "出發前一日 17:00 後不可取消。",
+      "pkg_name": "標準方案（含纜車）",
+      "pkg_desc": "含纜車券與採果，無自由行程。",
+      "pkg_schedules": "同商品行程，午餐自理。"
+    },
+    {
+      "prod_oid": "88102",
+      "prod_mid": "M88102",
+      "master_lang": "zh-tw",
+      "pkg_oid": "P88102A",
+      "prod_name": "大阪環球影城電子門票｜快速入園",
+      "prod_summary": "免排隊兌換，電子票直接掃碼入園，暢玩大阪環球影城一整天。",
+      "prod_feature": "電子票即買即用，手機出示 QR Code 即可。",
+      "prod_desc": "適合自由行旅客。",
+      "prod_schedules": "",
+      "prod_notice": "門票一經售出不可退換。",
+      "prod_fee": "包含：一日入園門票。不包含：園內設施快速通關。",
+      "prod_meetup": "",
+      "prod_redeem": "至園區入口閘門出示電子票 QR Code 掃碼入園。",
+      "prod_purchase": "電子票將於下單後 1 小時內寄送至訂購信箱。",
+      "pkg_name": "一日票",
+      "pkg_desc": "標準一日入園票。",
+      "pkg_schedules": ""
+    },
+    {
+      "prod_oid": "203344",
+      "prod_mid": "M203344",
+      "master_lang": "zh-tw",
+      "pkg_oid": "P203344A",
+      "prod_name": "沖繩美麗海水族館一日遊｜含飯店接送",
+      "prod_summary": "專車從那霸市區飯店接送，前往美麗海水族館與古宇利島，省去自駕煩惱。",
+      "prod_feature": "提供那霸市區飯店接送服務。",
+      "prod_desc": "輕鬆暢遊沖繩北部經典景點。",
+      "prod_schedules": "08:30 飯店接送 → 11:00 美麗海水族館 → 14:00 古宇利島 → 17:30 返回那霸",
+      "prod_notice": "請於下單時填寫住宿飯店名稱。",
+      "prod_fee": "包含：來回接送、水族館門票。不包含：午餐。",
+      "prod_meetup": "提供那霸市區飯店接送（接送範圍以系統確認為準）。",
+      "prod_redeem": "",
+      "prod_purchase": "出發前兩日可免費取消。",
+      "pkg_name": "含接送方案",
+      "pkg_desc": "含那霸市區飯店接送。",
+      "pkg_schedules": "同商品行程。"
+    }
+  ]
+}
