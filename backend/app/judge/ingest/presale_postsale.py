@@ -27,7 +27,62 @@ def fetch_presale_postsale(source: str = "fixture", since: str = "", until: str 
     """拉售前售後進線 → NormalizedTicket[]。source=fixture（MVP）| live（BQ，待權限）。"""
     if source == "live":
         return _from_live(since, until)
+    if source == "db":
+        return _from_db()
     return _from_fixture()
+
+
+def _parse_conversation(agg: str) -> tuple[list[CSTurn], str]:
+    """aggregated_messages（每行「role: content」）→ (cs_conversation, 客訴文字)。
+
+    role 前綴：user→customer；KKday 客服 / 供應商 / bot→agent。無前綴行視為上一輪續行。
+    客訴文字＝所有 user 發話串接（classify 的 comment 輸入）。
+    """
+    turns: list[CSTurn] = []
+    user_parts: list[str] = []
+    for line in (agg or "").split("\n"):
+        if ": " in line:
+            prefix, content = line.split(": ", 1)
+            role = "customer" if prefix.strip() == "user" else "agent"
+            turns.append(CSTurn(role=role, content=content))
+            if role == "customer":
+                user_parts.append(content)
+        elif turns:
+            turns[-1].content += "\n" + line  # 續行接上一輪
+            if turns[-1].role == "customer":
+                user_parts.append(line)
+    return turns, " ".join(user_parts).strip()
+
+
+def _from_db() -> list[NormalizedTicket]:
+    """本地 inquiries 表（merged CSV 灌入）→ NormalizedTicket[]。session_oid 為冪等鍵。"""
+    from app.core.db import _conn
+
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT session_oid, sessionable_type, prod_oid, pkg_oid, order_oid, supplier_oid, "
+            "session_create_date, aggregated_messages "
+            "FROM inquiries WHERE aggregated_messages != '' AND aggregated_messages IS NOT NULL"
+        ).fetchall()
+    out: list[NormalizedTicket] = []
+    for r in rows:
+        cs, comment = _parse_conversation(r["aggregated_messages"])
+        src = r["sessionable_type"] if r["sessionable_type"] in ("order_message", "chatbot") else "order_message"
+        out.append(
+            NormalizedTicket(
+                ticket_id=str(r["session_oid"]),
+                source=src,
+                prod_oid=str(r["prod_oid"] or ""),
+                pkg_oid=str(r["pkg_oid"] or ""),
+                order_oid=str(r["order_oid"] or ""),
+                supplier_oid=str(r["supplier_oid"] or ""),
+                rating=None,
+                comment=comment,
+                cs_conversation=cs,
+                created_at=r["session_create_date"] or _now(),
+            )
+        )
+    return out
 
 
 def _from_fixture() -> list[NormalizedTicket]:

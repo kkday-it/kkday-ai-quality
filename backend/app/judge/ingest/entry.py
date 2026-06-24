@@ -17,7 +17,11 @@ FIELD_ALIASES: dict[str, list[str]] = {
     "prod_oid": ["prod_oid", "prodid", "product_id", "商品id", "商品編號", "商品oid"],
     "pkg_oid": ["pkg_oid", "pkgid", "方案id", "方案oid"],
     "rating": ["rating", "score", "評分", "星等", "分數"],
-    "comment": ["comment", "body", "content", "客訴", "差評", "評論", "內容", "問題", "text"],
+    "comment": [
+        "comment", "body", "content", "客訴", "差評", "評論", "內容", "問題", "text",
+        # 售前售後進線（SQL 結果）對話欄位別名
+        "aggregated_messages", "order_conversation", "chatbot_conversation", "對話", "客服對話",
+    ],
 }
 
 

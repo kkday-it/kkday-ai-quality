@@ -14,8 +14,8 @@ from app.core import settings as _settings
 
 
 def _resolve() -> dict:
-    """合併 settings.json 與 env，回傳實際生效配置。"""
-    cfg = _settings.load_settings()
+    """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。"""
+    cfg = _settings.current()
     token = cfg.get("api_token") or os.environ.get("OPENAI_API_KEY", "")
     base_url = (cfg.get("base_url") or "").strip()
     model = cfg.get("model") or os.environ.get("AI_JUDGE_MODEL", "gpt-5-mini")

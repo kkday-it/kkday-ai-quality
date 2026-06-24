@@ -161,6 +161,7 @@ def build_mock() -> list[TicketFinding]:
                 owner_role=role,
                 exec_platform=platform,
                 order_oid=f"OD20250612{i:03d}" if ch == "B_customer" else "",
+                supplier_oid=f"SUP{2000 + (i % 4)}" if ch in ("B_customer", "C_supplier") else "",
             )
         )
     return out
@@ -169,7 +170,7 @@ def build_mock() -> list[TicketFinding]:
 def main() -> None:
     init_db()
     with _conn() as c:
-        c.execute("DELETE FROM findings")
+        c.execute("DELETE FROM judgments")
     findings = build_mock()
     n = insert_findings_batch(findings)
     print(f"已塞入 {n} 筆 mock findings，覆蓋 5 商品 / 8 維度 / 5 verdict / 3 感知管道 / 5 status")

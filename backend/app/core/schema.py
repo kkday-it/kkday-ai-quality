@@ -71,10 +71,12 @@ class CSTurn(BaseModel):
 class NormalizedTicket(BaseModel):
     """L1 正規化工單（評論/工單/訂單訊息共用）。"""
 
-    ticket_id: str  # 冪等鍵（review id / thread ts）
-    source: Literal["review", "ticket", "order_message", "manual"]
+    ticket_id: str  # 冪等鍵（review id / thread ts / session_oid）
+    source: Literal["review", "ticket", "order_message", "chatbot", "manual"]
     prod_oid: str = ""
     pkg_oid: str = ""
+    order_oid: str = ""       # 訂單編號（進線可定位具體訂單）
+    supplier_oid: str = ""    # 供應商編號（order_message 進線可定位）
     lang: str = "zh-tw"
     rating: Optional[int] = None  # 評論星等（嚴重度訊號）
     comment: str = ""  # 客訴/差評自由文字 → L2 主輸入
@@ -108,8 +110,8 @@ class TicketFinding(BaseModel):
     # L2 問題理解
     dimension: Dimension
     problem_summary: str = ""
-    # L3 歸因 + 驗證
-    suspected_field: LogicalField = "none"
+    # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
+    suspected_field: str = "none"
     evidence_quote: str = ""       # 害客戶誤解的商品原文段
     ground_truth_quote: str = ""   # 客服對話擷取的正確答案（零幻覺）
     verdict: Verdict
@@ -121,6 +123,7 @@ class TicketFinding(BaseModel):
     writer_handoff: bool = False  # 防幻覺：content_missing 一律 false
     # 簿記
     is_primary: bool = False
+    hit_rule_id: str = ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
     status: Literal["new", "confirmed", "dismissed", "fixed", "data_missing"] = "new"
     created_at: str = ""
     # 感知層來源（管道 A 平台主動 / B 客人進線 / C 供應商申訴）
@@ -130,13 +133,15 @@ class TicketFinding(BaseModel):
     owner_role: str = ""      # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
     exec_platform: str = ""   # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
     order_oid: str = ""       # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
+    supplier_oid: str = ""    # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
 
 
 class InboundItem(BaseModel):
     """待判決標的（人工錄入：CSV/Excel 批量 或 單個新增）。存本地 SQLite，供 L2–L4 判決。"""
 
     item_id: str = ""  # 冪等鍵（source + prod_oid + comment hash）
-    source: Literal["review", "ticket", "manual", "csv", "excel"] = "manual"
+    source: str = "manual"  # 來源標記（review/ticket/presale_postsale/manual…，種類會擴張故用 str）
+    batch_id: str = ""  # 所屬上傳批次（upload_batches.batch_id）
     source_channel: str = ""  # 感知層管道：A_platform | B_customer | C_supplier | unknown
     prod_oid: str = ""
     pkg_oid: str = ""

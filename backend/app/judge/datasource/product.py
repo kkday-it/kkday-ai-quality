@@ -18,17 +18,53 @@ LOGICAL_FIELDS = [
     "prod_feature",
     "prod_schedules",
     "prod_notice",
+    "prod_fee",       # 費用資訊 PMDL_INC_NINC
+    "prod_meetup",    # 集合資訊 PMDL_VENUE_LOCATION
+    "prod_redeem",    # 使用兌換 PMDL_EXCHANGE_LOCATION
+    "prod_purchase",  # 購買須知 PMDL_PURCHASE_SUMMARY
     "pkg_desc",
     "pkg_schedules",
 ]
 
 
 def fetch_product(prod_id: str, source: str = "fixture") -> dict:
-    """取商品原始 JSON。source=fixture（MVP）| live（production，api-b2c）。"""
+    """取商品原始 JSON。source=fixture（MVP）| db（本地 products/packages 表）| live（api-b2c）。"""
     if source == "live":
         return _from_live(prod_id)
+    if source == "db":
+        return _from_db(prod_id)
     fp = FIXTURES / f"product_{prod_id}.json"
     return json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else {}
+
+
+def _from_db(prod_id: str) -> dict:
+    """本地 DB：products/packages 表 → extract_fields 可吃的 {product:{fields:{邏輯欄位}}}。"""
+    from app.core.db import _conn
+
+    with _conn() as c:
+        p = c.execute(
+            "SELECT prod_name, prod_summary, prod_feature, prod_schedules, prod_notice, "
+            "prod_fee, prod_meetup, prod_redeem, prod_purchase "
+            "FROM products WHERE prod_oid = ?",
+            (str(prod_id),),
+        ).fetchone()
+        pk = c.execute(
+            "SELECT pkg_desc, pkg_schedules FROM packages WHERE prod_oid = ? LIMIT 1",
+            (str(prod_id),),
+        ).fetchone()
+    if not p:
+        return {}
+    fields = {
+        k: (p[k] or "")
+        for k in (
+            "prod_name", "prod_summary", "prod_feature", "prod_schedules", "prod_notice",
+            "prod_fee", "prod_meetup", "prod_redeem", "prod_purchase",
+        )
+    }
+    if pk:
+        fields["pkg_desc"] = pk["pkg_desc"] or ""
+        fields["pkg_schedules"] = pk["pkg_schedules"] or ""
+    return {"product": {"fields": fields}}
 
 
 def extract_fields(prod_id: str, product_json: dict) -> ProductConfig:
