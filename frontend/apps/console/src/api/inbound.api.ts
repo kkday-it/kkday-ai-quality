@@ -15,10 +15,6 @@ export const uploadInbound = (file: File, source = 'csv') => {
   return j(`${BASE}/inbound/upload`, { method: 'POST', body: fd });
 };
 
-/** 列出已錄入標的（可依 status 過濾），新到舊。 */
-export const getInbound = (status?: string) =>
-  j(`${BASE}/inbound${status ? `?status=${encodeURIComponent(status)}` : ''}`);
-
 /** 上傳批次清單（新到舊）。 */
 export const getBatches = () => j(`${BASE}/batches`);
 

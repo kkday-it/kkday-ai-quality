@@ -1,7 +1,5 @@
-// Findings 領域 API：聚合、查詢、狀態更新、判決鏈路。
+// Findings 領域 API：查詢、狀態更新、判決鏈路。
 import { BASE, JSON_HEADERS, j } from './http.api';
-
-export const getAggregate = () => j(`${BASE}/findings/aggregate`);
 
 export const getFindings = (
   params: { prodOid?: string; dimension?: string; verdict?: string } = {},
@@ -26,12 +24,4 @@ export const diagnose = (prodOid: string) =>
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ prod_oid: prodOid }),
-  });
-
-/** 售前售後進線判定鏈路（第一階段主力管道）。source=fixture(MVP)|live(BQ)。 */
-export const diagnoseConversations = (source = 'fixture') =>
-  j(`${BASE}/diagnose/conversations`, {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ source }),
   });

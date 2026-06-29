@@ -1,4 +1,2 @@
-// ⚙️ 設定模組頁面 barrel。
+// ⚙️ 設定模組頁面 barrel。（Settings/DatasourceSettings 為 ConfigPanels 內部實作，不對外暴露）
 export { default as ConfigPanels } from './ConfigPanels.vue';
-export { default as Settings } from './Settings.vue';
-export { default as DatasourceSettings } from './DatasourceSettings.vue';
