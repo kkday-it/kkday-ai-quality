@@ -1,8 +1,9 @@
 // ⚖️ AI 法官模組路由子樹：/judge 為頂級節點，三個視圖為其子路由。
 import type { RouteRecordRaw } from 'vue-router';
 import JudgeLayout from '../JudgeLayout.vue';
-import DataUpload from '../pages/DataUpload.vue';
 import Analytics from '../pages/Analytics.vue';
+import AttributionPanel from '../pages/AttributionPanel.vue';
+import DataUpload from '../pages/DataUpload.vue';
 import ProductDetail from '../pages/ProductDetail.vue';
 
 export const judgeRoutes: RouteRecordRaw = {
@@ -11,6 +12,7 @@ export const judgeRoutes: RouteRecordRaw = {
   redirect: '/judge/upload',
   children: [
     { path: 'upload', component: DataUpload, meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
+    { path: 'attribution', component: AttributionPanel, meta: { text: '歸因總覽' } }, // 判定層脊椎·多維展示
     { path: 'analytics', component: Analytics, meta: { text: 'RD／品控 分析' } }, // 出口 B
     { path: 'product', component: ProductDetail, meta: { text: 'PM／AM 單品' } }, // 出口 A
   ],

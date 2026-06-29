@@ -31,6 +31,12 @@ onMounted(() => auth.fetchMe()); // 以既有 token 拉當前 user（顯示 emai
     <div class="z-10 flex-none">
       <AppTopbar :user="auth.user" @open-settings="openSettings" />
       <FeatureTabs :tabs="JUDGE_TABS" />
+      <!--
+        頁面級工具列插槽：頁面以 <Teleport to="#page-toolbar"> 把自己的全局工具列（如歸因總覽的
+        篩選列）送進這條固定 header，使其恆常可見且絕不與內容區的 ECharts canvas 重疊。
+        無頁面注入時為空 div（0 高），不影響其餘 tab。
+      -->
+      <div id="page-toolbar"></div>
     </div>
 
     <!-- 內容區：內部滾動 -->
