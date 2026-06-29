@@ -8,18 +8,10 @@
   },
   "llm": {
     "reasoning": ["none", "low", "medium", "high", "xhigh"],
-    "stages": [
-      { "id": "classify", "label": "L2 分類", "desc": "客訴分類·輕量，可用便宜模型" },
-      { "id": "adequacy", "label": "L3 充分度", "desc": "內容判定·需細緻，可用強模型" }
-    ],
-    "overridableKeys": ["model", "reasoning_effort"],
     "modelMinVersion": "5.4",
     "_modelMeta_comment": "價格＝input/output 美元/1M tokens（2026-06 第三方追蹤站約值，以 OpenAI dashboard 為準；Batch −50%、prompt caching 另省）。",
     "modelMeta": {
-      "gpt-5.5-pro": "極高 · 最強·最貴 · $30/$180",
       "gpt-5.5": "高 · 最新旗艦 · $5/$30",
-      "gpt-5.4-pro": "高 · 5.4 旗艦 · $30/$180",
-      "o3-pro": "高 · 高階推理 · ~$20/$80",
       "gpt-5.4": "中 · 標準均衡 · $2.50/$15",
       "o3": "中 · 推理·步驟邏輯 · $2/$8",
       "o4-mini": "省 · 輕量推理 · $0.55/$2.20",
@@ -32,7 +24,7 @@
         "label": "GPT (OpenAI)",
         "base_url": "https://api.openai.com/v1",
         "defaultModel": "gpt-5.4-mini",
-        "defaultModels": ["gpt-5.5-pro", "gpt-5.5", "gpt-5.4-pro", "o3-pro", "gpt-5.4", "o3", "o4-mini", "gpt-5.4-mini", "gpt-5.4-nano"],
+        "defaultModels": ["gpt-5.5", "gpt-5.4", "o3", "o4-mini", "gpt-5.4-mini", "gpt-5.4-nano"],
         "thinking": "off",
         "reasoning_effort": "medium"
       },

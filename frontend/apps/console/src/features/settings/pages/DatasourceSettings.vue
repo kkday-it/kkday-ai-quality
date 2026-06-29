@@ -72,17 +72,38 @@ const onSave = async () => {
   }
 };
 
+// 即時測試：用「當前表單值」測連線（未改密碼則後端沿用既存明文），完整結果輸出按鈕下方 log
+const testResult = ref<Record<string, unknown> | null>(null);
 const onTest = async () => {
   testing.value = true;
+  testResult.value = null;
   try {
-    const r = await testQcDb(buildPatch()); // 未改密碼則後端沿用既存明文
+    const r = await testQcDb(buildPatch());
+    testResult.value = {
+      ...r,
+      target: `${qc.value.qc_db_host}:${qc.value.qc_db_port}/${qc.value.qc_db_name}`,
+    };
     if (r.ok) Message.success('連線成功');
     else Message.error('連線失敗：' + (r.error || '未知錯誤'));
   } catch (e: any) {
+    testResult.value = { ok: false, error: e?.message || String(e) };
     Message.error('測試失敗：' + (e?.message || e));
   } finally {
     testing.value = false;
   }
+};
+
+// 恢復預設：還原成 config/defaults.json 的 QC DB 預設（帳密留空；需按儲存才寫入後端）
+const onRestoreDefaults = () => {
+  qc.value.qc_db_host = QC.host;
+  qc.value.qc_db_port = QC.port;
+  qc.value.qc_db_name = QC.name;
+  qc.value.qc_db_schema = QC.schema;
+  qc.value.qc_db_user = '';
+  qc.value.qc_db_password = '';
+  pwDirty.value = false;
+  testResult.value = null;
+  Message.info('已還原為專案預設配置（需按「儲存配置」才寫入後端）');
 };
 </script>
 
@@ -148,7 +169,25 @@ const onTest = async () => {
         <a-space>
           <a-button type="primary" :loading="saving" @click="onSave">儲存配置</a-button>
           <a-button :loading="testing" @click="onTest">測試連線</a-button>
+          <a-button @click="onRestoreDefaults">恢復預設</a-button>
         </a-space>
+
+        <!-- 測試結果完整 log（即時測當前配置；非已儲存）-->
+        <div
+          v-if="testResult"
+          class="mt-3 rounded-lg border p-2.5 font-mono text-[12px] leading-[1.6]"
+          :class="
+            testResult.ok
+              ? 'border-[#a3e8dd] bg-[#e8fffb] text-[#0f9b8e]'
+              : 'border-[#ffccc7] bg-[#fff1f0] text-[#cf1322]'
+          "
+        >
+          <div class="mb-1 font-bold">{{ testResult.ok ? '✅ 連線成功' : '❌ 連線失敗' }}</div>
+          <div v-if="testResult.target">目標：{{ testResult.target }}</div>
+          <div v-if="testResult.error" class="whitespace-pre-wrap">
+            錯誤：{{ testResult.error }}
+          </div>
+        </div>
       </a-form>
 
       <ul class="mb-0 mt-4 pl-[18px] text-[13px] leading-[1.7] text-[#4e5969]">

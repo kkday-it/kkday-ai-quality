@@ -15,9 +15,10 @@ export const saveSettings = (patch: Record<string, unknown>) =>
     body: JSON.stringify(patch),
   });
 
-/** 測試 LLM 連線：以已儲存設定送極短 prompt，回 `{ ok, model, sent, reply, latency_ms, tokens?, error? }`。 */
-export const testLlm = () =>
-  j(`${BASE}/settings/test-llm`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
-
-/** 動態列出當前配置可用的 model id（後端已過濾 ≥ 門檻版本）；無 token 回 `{ models: [] }`。 */
-export const listModels = (): Promise<{ models: string[] }> => j(`${BASE}/settings/models`);
+/** 即時測試 LLM 連線：用「當前表單值」送極短 prompt（不寫入），回 `{ ok, model, base_url, sent, reply, latency_ms, tokens?, error? }`。 */
+export const testLlm = (cfg: Record<string, unknown> = {}) =>
+  j(`${BASE}/settings/test-llm`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(cfg),
+  });

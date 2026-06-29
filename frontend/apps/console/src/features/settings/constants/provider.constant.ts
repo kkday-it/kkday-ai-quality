@@ -48,16 +48,6 @@ export const MODEL_META: Record<string, string> = defaults.llm.modelMeta;
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = defaults.llm.modelMinVersion;
 
-/** 可做 per-stage 覆寫的判決階段（目前 LLM 階段：classify / adequacy）。 */
-export interface LlmStage {
-  id: string;
-  label: string;
-  desc?: string;
-}
-
-/** AI 法官 LLM 階段註冊表；前端「各階段覆寫」UI 依此動態長出。資料源＝config/defaults.json。 */
-export const STAGES: LlmStage[] = defaults.llm.stages;
-
 /** openai 為預設供應商；其 preset 作為 LLM 設定表單的初始展示預設（與後端「未設定即用 API 預設」語義不同，故獨立）。 */
 const openai = PROVIDERS.find((p) => p.id === 'openai');
 

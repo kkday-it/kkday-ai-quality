@@ -16,29 +16,18 @@ from app.core.config import env
 _log = logging.getLogger(__name__)
 
 
-def _resolve(stage: str = "default") -> dict:
-    """合併當前 request 的 user 設定（contextvar）與 env，回傳該 stage 實際生效配置。
-
-    全域為底，再疊上 stage_overrides[stage] 的非空 key（目前可覆寫：model / reasoning_effort）；
-    token / base_url 一律取全域（per-stage 不換 provider）。stage="default" 不套覆寫。
-    """
+def _resolve() -> dict:
+    """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。"""
     cfg = _settings.current()
-    ov = (cfg.get("stage_overrides") or {}).get(stage, {}) if stage != "default" else {}
-
-    def pick(key: str, fallback):
-        v = ov.get(key)
-        return v if v not in (None, "") else fallback
-
     token = cfg.get("api_token") or env.openai_api_key
     base_url = (cfg.get("base_url") or "").strip()
-    model = pick("model", cfg.get("model")) or env.ai_judge_model
+    model = cfg.get("model") or env.ai_judge_model
     return {
         "token": token,
         "base_url": base_url,
         "model": model,
         "temperature": cfg.get("temperature"),
-        "reasoning_effort": pick("reasoning_effort", cfg.get("reasoning_effort", "default")),
-        "stage": stage,
+        "reasoning_effort": cfg.get("reasoning_effort", "default"),
     }
 
 
@@ -77,10 +66,10 @@ def is_stub() -> bool:
 
 def chat_json(system: str, user: str, stage: str = "default") -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
-    傳入 stage 時套用該階段的 per-stage 覆寫（model / reasoning_effort）。"""
+    stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。"""
     from openai import OpenAI
 
-    cfg = _resolve(stage)
+    cfg = _resolve()
     client = (
         OpenAI(api_key=cfg["token"], base_url=cfg["base_url"])
         if cfg["base_url"]
@@ -111,15 +100,16 @@ def chat_json(system: str, user: str, stage: str = "default") -> dict:
         return {}
 
 
-def ping(prompt: str = "回覆 OK") -> dict:
-    """測試連線：以當前生效設定送一個極短 prompt，回傳終端機顯示用的 I/O。
+def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
+    """測試連線：送一個極短 prompt，回傳終端機顯示用的 I/O。
 
-    不丟例外（錯誤收進 error）。回 {ok, model, base_url, sent, reply, latency_ms, tokens, error}。
-    無 token（stub 模式）→ ok=False，提示先設定 token。
+    cfg=None → 用當前生效（已儲存）設定；傳入 cfg（token/base_url/model/temperature/reasoning_effort）
+    → 即時測「當前表單值」不經儲存。不丟例外（錯誤收進 error）。
+    回 {ok, model, base_url, sent, reply, latency_ms, tokens, error}；無 token → ok=False。
     """
     import time
 
-    cfg = _resolve()
+    cfg = cfg or _resolve()
     base = cfg["base_url"] or "https://api.openai.com/v1"
     if not cfg["token"]:
         return {

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { isNil, uniq } from 'lodash-es';
 import { Message } from '@arco-design/web-vue';
-import { getSettingsRaw, saveSettings, testLlm, listModels } from '@/api';
+import { getSettingsRaw, saveSettings, testLlm } from '@/api';
 import { StateGuard } from '@/components';
 import {
   PROVIDERS,
@@ -10,23 +10,17 @@ import {
   DEFAULT_LLM_FORM,
   MODEL_META,
   MODEL_MIN_VERSION,
-  STAGES,
 } from '../constants';
 import {
   modelKey,
   readOverrides,
   writeOverride,
-  mergeProviderModels,
-  persistProviderModels,
   readSettingsCache,
   writeSettingsCache,
   deriveProviderId,
   deriveBackendProvider,
   modelMeetsMin,
 } from '../utils';
-
-// 供應商 → model 列表（preset merge localStorage 自訂值；持久化邏輯見 utils/storage.util）
-const providerModels = ref<Record<string, string[]>>({});
 
 // 表單初始值衍生自 config/defaults.json 的 openai preset（DEFAULT_LLM_FORM），不再寫死字面量。
 const form = ref({ ...DEFAULT_LLM_FORM, api_token: '' });
@@ -39,54 +33,19 @@ const loading = ref(true);
 const saving = ref(false);
 const testing = ref(false);
 
-// 當前供應商的 model 下拉選項（過濾 ≥ 門檻版本；gpt-* 才受限，非 gpt 一律放行）
-const modelOptions = computed(() =>
-  (providerModels.value[selectedProvider.value] ?? []).filter((m) =>
-    modelMeetsMin(m, MODEL_MIN_VERSION),
-  ),
-);
+// 當前供應商的 model 下拉選項：直接讀 config/defaults.json 的 curated defaultModels。
+// union 當前已選/已存 model（即使不在 curated 也顯示，如歷史保存值），再過濾版本門檻。
+const modelOptions = computed(() => {
+  const p = PROVIDERS.find((x) => x.id === selectedProvider.value);
+  const curated = p?.defaultModels ?? [];
+  const all = form.value.model ? uniq([...curated, form.value.model]) : curated;
+  return all.filter((m) => modelMeetsMin(m, MODEL_MIN_VERSION));
+});
 
-// Model 下拉動態載入：開下拉時打 /api/settings/models 撈即時清單，過濾後合併進 curated。
-// 成本/評價（消耗）由 modelMeta 提供——API 無此資訊，故 hybrid：動態 id + 靜態評價。
-const modelsLoading = ref(false);
-let modelsFetched = false;
+// model id → 質性評價（成本/用途 hint），來自 config/defaults.json modelMeta。
 const modelMeta = (id: string): string => MODEL_META[id] ?? '';
 
-async function onModelDropdown(visible: boolean): Promise<void> {
-  if (!visible || modelsFetched || !hasToken.value) return; // 未開 / 已抓過 / 無 token → 略過
-  modelsLoading.value = true;
-  try {
-    const { models } = await listModels();
-    const live = (models ?? []).filter((m) => modelMeetsMin(m, MODEL_MIN_VERSION));
-    if (live.length) {
-      const id = selectedProvider.value;
-      // curated 在前、API 新增者接後（uniq 保留首次出現順序，維持弱→強排序）
-      providerModels.value[id] = uniq([...(providerModels.value[id] ?? []), ...live]);
-      persistProviderModels(providerModels.value);
-    }
-    modelsFetched = true;
-  } catch {
-    // 失敗靜默：保留 curated 清單，不阻斷選擇
-  } finally {
-    modelsLoading.value = false;
-  }
-}
-
-// 各階段覆寫（稀疏）：{ classify: { model, reasoning_effort }, ... }；空＝繼承全域，不寫入。
-const stageOverrides = ref<Record<string, Record<string, string>>>({});
-const stageVal = (stage: string, key: string): string => stageOverrides.value[stage]?.[key] ?? '';
-function setStageVal(stage: string, key: string, v: string): void {
-  const next = { ...stageOverrides.value };
-  const cur = { ...(next[stage] ?? {}) };
-  if (v) cur[key] = v;
-  else delete cur[key]; // 清空＝回到繼承全域
-  if (Object.keys(cur).length) next[stage] = cur;
-  else delete next[stage];
-  stageOverrides.value = next;
-}
-
 onMounted(async () => {
-  providerModels.value = mergeProviderModels(PROVIDERS);
   // 1) localStorage 快取（非敏感欄位）
   const cached = readSettingsCache<typeof form.value>();
   if (cached) {
@@ -107,15 +66,13 @@ onMounted(async () => {
     useTemp.value = !isNil(s.temperature);
     hasToken.value = !!s.has_token;
     stubMode.value = !!s.stub_mode;
-    stageOverrides.value = (s.stage_overrides as Record<string, Record<string, string>>) ?? {};
     // 已設定 → 欄位帶入完整明文 token（password 預設遮罩，眼睛切換顯示全文）；未動則不重送
     if (hasToken.value && s.api_token) {
       form.value.api_token = s.api_token;
       tokenDirty.value = false;
     }
-    // 供應商由 base_url 反推；若當前 model 不在該供應商列表，補進去（讓下拉顯示）
+    // 供應商由 base_url 反推（當前 model 已由 modelOptions union 進下拉，無需另補）
     selectedProvider.value = deriveProviderId(form.value.base_url);
-    ensureModelListed();
   } catch {
     // 後端 raw 端點未就緒（如後端未重啟）時靜默降級：沿用 localStorage 快取 / default，不阻斷面板
   } finally {
@@ -123,21 +80,11 @@ onMounted(async () => {
   }
 });
 
-// 把當前 model 補進當前供應商列表（去重）
-function ensureModelListed(): void {
-  const id = selectedProvider.value;
-  const list = providerModels.value[id] ?? [];
-  if (form.value.model && !list.includes(form.value.model)) {
-    providerModels.value[id] = [...list, form.value.model];
-  }
-}
-
-// 切換供應商：帶入 base_url / token；model 取顯式 defaultModel（缺省回退清單首項）；旋鈕沿 preset + override
+// 切換供應商：帶入 base_url / token；model 取顯式 defaultModel（缺省回退 curated 首項）；旋鈕沿 preset + override
 const selectProvider = (id: unknown) => {
   const p = PROVIDERS.find((x) => x.id === String(id));
   if (!p) return;
   selectedProvider.value = p.id;
-  modelsFetched = false; // 換供應商 → 下次開下拉重新抓該供應商的即時清單
   form.value.base_url = p.base_url;
   if (p.api_token) {
     form.value.api_token = p.api_token;
@@ -146,7 +93,7 @@ const selectProvider = (id: unknown) => {
     form.value.api_token = ''; // 新供應商需自填 token
     tokenDirty.value = false;
   }
-  form.value.model = p.defaultModel ?? (providerModels.value[p.id] ?? [])[0] ?? '';
+  form.value.model = p.defaultModel ?? p.defaultModels[0] ?? '';
   if (p.thinking !== undefined) form.value.thinking = p.thinking;
   if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
   const ov = readOverrides()[modelKey(p.base_url, form.value.model)];
@@ -158,30 +105,27 @@ const selectProvider = (id: unknown) => {
   }
 };
 
+// 由當前表單組 patch（save / 即時測 共用）；token 僅在 dirty 時帶（form 已是明文，不誤送遮罩）
+function buildPatch(): Record<string, unknown> {
+  const patch: Record<string, unknown> = {
+    provider: deriveBackendProvider(form.value.base_url),
+    model: form.value.model,
+    base_url: form.value.base_url,
+    thinking: form.value.thinking,
+    reasoning_effort: form.value.reasoning_effort,
+    temperature: useTemp.value ? form.value.temperature : null,
+  };
+  if (tokenDirty.value && form.value.api_token) patch.api_token = form.value.api_token;
+  return patch;
+}
+
 const onSave = async () => {
   saving.value = true;
   try {
-    const patch: Record<string, unknown> = {
-      provider: deriveBackendProvider(form.value.base_url),
-      model: form.value.model,
-      base_url: form.value.base_url,
-      thinking: form.value.thinking,
-      reasoning_effort: form.value.reasoning_effort,
-      temperature: useTemp.value ? form.value.temperature : null,
-      stage_overrides: stageOverrides.value, // 稀疏覆寫（後端 sanitize）
-    };
-    // 僅當使用者輸入新 token（dirty、非空）才送；form 內已是明文，不會誤送遮罩值
-    if (tokenDirty.value && form.value.api_token) {
-      patch.api_token = form.value.api_token;
-    }
-    const s = await saveSettings(patch);
+    const s = await saveSettings(buildPatch());
     hasToken.value = !!s.has_token;
     stubMode.value = !!s.stub_mode;
     tokenDirty.value = false;
-    modelsFetched = false; // 新 token 可能有不同可用 model → 下次開下拉重新抓
-    // 手動輸入的新 model 持久化進該供應商列表
-    ensureModelListed();
-    persistProviderModels(providerModels.value);
     // 旋鈕記憶 + 非敏感快取
     writeOverride(form.value.base_url, form.value.model, {
       thinking: form.value.thinking,
@@ -205,21 +149,36 @@ const onSave = async () => {
   }
 };
 
-// 測試連線：先存當前選擇（test_llm 讀「已儲存」設定）→ 再實打一次最小 LLM 呼叫，回報成功/失敗
+// 即時測試：用「當前表單值」（非已儲存）實打一次最小呼叫，完整結果輸出在按鈕下方 log
+const testResult = ref<Record<string, unknown> | null>(null);
 const onTest = async () => {
   testing.value = true;
+  testResult.value = null;
   try {
-    // 先儲存，確保測的是螢幕上選的 model/設定，而非上次儲存的舊值
-    if (!(await onSave())) return; // 儲存失敗則不測（避免測到舊設定誤導）
-    const r = await testLlm();
-    if (r.ok)
-      Message.success(`連線成功（${r.model}${r.latency_ms ? ' · ' + r.latency_ms + 'ms' : ''}）`);
+    const r = await testLlm(buildPatch());
+    testResult.value = r;
+    if (r.ok) Message.success('連線成功');
     else Message.error('連線失敗：' + (r.error || '未知錯誤'));
   } catch (e: any) {
+    testResult.value = { ok: false, error: e?.message || String(e) };
     Message.error('測試失敗：' + (e?.message || e));
   } finally {
     testing.value = false;
   }
+};
+
+// 恢復預設：把表單還原成 config/defaults.json 最底層 openai preset（不動已儲存值，需按儲存才生效）
+const onRestoreDefaults = () => {
+  const p = PROVIDERS.find((x) => x.id === 'openai');
+  selectedProvider.value = 'openai';
+  form.value.base_url = p?.base_url ?? DEFAULT_LLM_FORM.base_url;
+  form.value.model = p?.defaultModel ?? DEFAULT_LLM_FORM.model;
+  form.value.thinking = p?.thinking ?? DEFAULT_LLM_FORM.thinking;
+  form.value.reasoning_effort = p?.reasoning_effort ?? DEFAULT_LLM_FORM.reasoning_effort;
+  useTemp.value = false;
+  form.value.temperature = 0;
+  testResult.value = null;
+  Message.info('已還原為專案預設配置（需按「儲存配置」才寫入後端）');
 };
 </script>
 
@@ -267,9 +226,7 @@ const onTest = async () => {
                 v-model="form.model"
                 allow-create
                 allow-clear
-                :loading="modelsLoading"
-                placeholder="選擇或手動輸入（臨時，儲存後併入清單）"
-                @popup-visible-change="onModelDropdown"
+                placeholder="從預設清單選（也可手動輸入臨時 model）"
               >
                 <a-option v-for="m in modelOptions" :key="m" :value="m" :label="m">
                   <span>{{ m }}</span>
@@ -318,67 +275,57 @@ const onTest = async () => {
           </a-radio-group>
         </a-form-item>
 
-        <a-form-item label="各階段覆寫（選填，留空＝繼承全域）">
-          <div class="w-full space-y-2">
-            <div
-              v-for="st in STAGES"
-              :key="st.id"
-              class="rounded-md border border-[var(--color-neutral-3)] p-3"
-            >
-              <div class="mb-2 text-sm font-medium">
-                {{ st.label }}
-                <span class="ml-2 text-xs font-normal text-[#86909c]">{{ st.desc }}</span>
-              </div>
-              <a-row :gutter="12">
-                <a-col :span="14">
-                  <a-select
-                    :model-value="stageVal(st.id, 'model')"
-                    allow-clear
-                    placeholder="繼承全域 model"
-                    @change="(v) => setStageVal(st.id, 'model', String(v ?? ''))"
-                  >
-                    <a-option v-for="m in modelOptions" :key="m" :value="m" :label="m">
-                      <span>{{ m }}</span>
-                      <span v-if="modelMeta(m)" class="ml-2 text-xs text-[#86909c]">{{
-                        modelMeta(m)
-                      }}</span>
-                    </a-option>
-                  </a-select>
-                </a-col>
-                <a-col :span="10">
-                  <a-select
-                    :model-value="stageVal(st.id, 'reasoning_effort')"
-                    allow-clear
-                    placeholder="繼承全域 effort"
-                    @change="(v) => setStageVal(st.id, 'reasoning_effort', String(v ?? ''))"
-                  >
-                    <a-option v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-option>
-                  </a-select>
-                </a-col>
-              </a-row>
-            </div>
-          </div>
-        </a-form-item>
-
         <a-space>
           <a-button type="primary" :loading="saving" @click="onSave">儲存配置</a-button>
           <a-button :loading="testing" @click="onTest">測試連線</a-button>
-          <span class="text-xs text-[#86909c]">寫入後端 user_settings，立即生效於判決鏈路</span>
+          <a-button @click="onRestoreDefaults">恢復預設</a-button>
+          <span class="text-xs text-[#86909c]"
+            >儲存＝寫入 user_settings；測試＝即時測當前配置（不寫入）</span
+          >
         </a-space>
+
+        <!-- 測試結果完整 log（即時測當前配置；非已儲存）-->
+        <div
+          v-if="testResult"
+          class="mt-3 rounded-lg border p-2.5 font-mono text-[12px] leading-[1.6]"
+          :class="
+            testResult.ok
+              ? 'border-[#a3e8dd] bg-[#e8fffb] text-[#0f9b8e]'
+              : 'border-[#ffccc7] bg-[#fff1f0] text-[#cf1322]'
+          "
+        >
+          <div class="mb-1 font-bold">
+            {{ testResult.ok ? '✅ 連線成功' : '❌ 連線失敗' }}
+            <span v-if="testResult.latency_ms" class="font-normal">
+              · {{ testResult.latency_ms }}ms</span
+            >
+          </div>
+          <div>model：{{ testResult.model }}</div>
+          <div>base_url：{{ testResult.base_url }}</div>
+          <div v-if="testResult.sent">送出：{{ testResult.sent }}</div>
+          <div v-if="testResult.reply">回覆：{{ testResult.reply }}</div>
+          <div v-if="testResult.tokens">tokens：{{ testResult.tokens }}</div>
+          <div v-if="testResult.error" class="whitespace-pre-wrap">
+            錯誤：{{ testResult.error }}
+          </div>
+        </div>
       </a-form>
 
       <ul class="mb-0 mt-4 pl-[18px] text-[13px] leading-[1.7] text-[#4e5969]">
         <li>
-          選供應商一鍵帶入 token / base_url 與該供應商 model 清單；GPT 對齊 OpenAI 官方 gpt-5.5 /
-          gpt-5.4 / mini / nano。
+          選供應商一鍵帶入 token / base_url；Model 下拉只列 config 預設清單（不混入
+          whisper/embedding 等）。
         </li>
-        <li>Model 可從下拉選，也可手動輸入新 model；儲存後該 model 會累積進對應供應商的清單。</li>
         <li>
-          Reasoning effort 對齊官方 GPT-5.4 支援值（none / low / medium / high /
+          「測試連線」即時測「當前螢幕上的配置」（非已儲存），完整 log 顯示在按鈕下方，耗極少
+          token。
+        </li>
+        <li>「恢復預設」把表單還原成專案最底層預設（需再按「儲存配置」才寫入後端）。</li>
+        <li>
+          Reasoning effort 對齊官方支援值（none / low / medium / high /
           xhigh）；切換模型後旋鈕會記憶。
         </li>
         <li>gpt-5 系列 temperature 鎖定，建議維持「API 預設」。</li>
-        <li>「測試連線」會先儲存當前選擇，再實打一次極短呼叫，回報連線成功/失敗（耗極少 token）。</li>
       </ul>
     </div>
   </StateGuard>

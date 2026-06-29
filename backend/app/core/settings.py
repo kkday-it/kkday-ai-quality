@@ -26,9 +26,6 @@ QC_DB_DEFAULTS: dict = _SHARED["qc_db"]
 LLM_MODEL_MIN_VERSION: str = _SHARED["llm"].get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
 LLM_PROVIDERS: list = _SHARED["llm"].get("providers", [])
-# AI 法官可 per-stage 覆寫的階段 id 與可覆寫 key（save 時 sanitize stage_overrides 用）。
-LLM_STAGE_IDS: tuple = tuple(s["id"] for s in _SHARED["llm"].get("stages", []))
-LLM_OVERRIDABLE_KEYS: tuple = tuple(_SHARED["llm"].get("overridableKeys", []))
 
 # 機密欄位：回前端一律遮罩，空/遮罩值 save 不覆蓋既有（避免遮罩值回寫清空真值）
 _SECRET_KEYS = ("api_token", "qc_db_password")
@@ -42,8 +39,6 @@ _DEFAULT: dict = {
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
     "provider_models": {},  # 各供應商自訂 model 清單（per-user 累積）
-    # 各判決階段的 LLM 覆寫（稀疏；缺 key 繼承全域）：{ "classify": {"model": ...}, "adequacy": {...} }
-    "stage_overrides": {},
     # ── 資料來源：QC DB（PostgreSQL）連線配置（前端「資料來源配置」面板管理）──
     # host/name 留空＝要求顯式設定才連線（前端表單以 config/defaults.json 預填）；
     # schema 預設取共用檔，與前端一致。
@@ -67,20 +62,6 @@ def load_settings(user_id: str) -> dict:
     return {**_DEFAULT, **data} if data else dict(_DEFAULT)
 
 
-def _sanitize_stage_overrides(raw: object) -> dict:
-    """只保留已知 stage 與可覆寫 key 的非空值，防止寫入未知欄位 / 垃圾。"""
-    if not isinstance(raw, dict):
-        return {}
-    out: dict = {}
-    for stage, ov in raw.items():
-        if stage not in LLM_STAGE_IDS or not isinstance(ov, dict):
-            continue
-        clean = {k: v for k, v in ov.items() if k in LLM_OVERRIDABLE_KEYS and v not in (None, "")}
-        if clean:
-            out[stage] = clean
-    return out
-
-
 def save_settings(user_id: str, patch: dict) -> dict:
     """合併寫入某 user。空或遮罩(*** / …)的 api_token 不覆蓋既有，回 masked()。"""
     cur = load_settings(user_id)
@@ -88,9 +69,6 @@ def save_settings(user_id: str, patch: dict) -> dict:
         if k not in _DEFAULT:
             continue
         if k in _SECRET_KEYS and (not v or "***" in str(v) or "…" in str(v)):
-            continue
-        if k == "stage_overrides":
-            cur[k] = _sanitize_stage_overrides(v)  # 稀疏覆寫：sanitize 後整份取代
             continue
         cur[k] = v
     db.save_user_settings(user_id, cur)

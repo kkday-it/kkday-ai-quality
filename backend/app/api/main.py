@@ -263,7 +263,6 @@ class SettingsIn(BaseModel):
     thinking: str | None = None
     reasoning_effort: str | None = None
     provider_models: dict | None = None  # 各供應商自訂 model 清單（per-user）
-    stage_overrides: dict | None = None  # 各判決階段 LLM 覆寫（稀疏；後端 sanitize）
     # ── 資料來源：QC DB（PostgreSQL）連線配置（qc_db_password 機密，遮罩同 api_token）──
     qc_db_host: str | None = None
     qc_db_port: int | None = None
@@ -312,10 +311,27 @@ def get_settings_raw(user: dict = Depends(load_user_context)) -> dict:
 
 
 @app.post("/api/settings/test-llm")
-def test_llm(user: dict = Depends(load_user_context)) -> dict:
-    """測試 LLM 連線：以當前 user 已儲存的設定送一個極短 prompt，回終端機顯示用的 I/O。"""
-    _activate_settings(user["user_id"])  # 載入該 user 的 token/model 到 contextvar 供 ping 讀取
-    return llm_client.ping()
+def test_llm(body: SettingsIn, user: dict = Depends(load_user_context)) -> dict:
+    """即時測試 LLM 連線：用「當前表單值」（body，非已儲存）送極短 prompt，**不寫入** user_settings。
+
+    token 為空 / 遮罩時沿用已儲存明文（免重輸）；其餘欄位以 body 覆蓋已儲存值。
+    """
+    from app.core import settings as app_settings
+
+    saved = app_settings.load_settings(user["user_id"])  # 含明文 token
+    patch = body.model_dump(exclude_none=True)
+    tok = patch.get("api_token")
+    if not tok or "***" in str(tok) or "…" in str(tok):
+        patch.pop("api_token", None)  # 空/遮罩 → 沿用已儲存 token
+    merged = {**saved, **patch}
+    cfg = {
+        "token": merged.get("api_token") or config.env.openai_api_key,
+        "base_url": (merged.get("base_url") or "").strip(),
+        "model": merged.get("model") or config.env.ai_judge_model,
+        "temperature": merged.get("temperature"),
+        "reasoning_effort": merged.get("reasoning_effort") or "default",
+    }
+    return llm_client.ping(cfg=cfg)
 
 
 def _model_meets_min(model_id: str, min_version: str) -> bool:
