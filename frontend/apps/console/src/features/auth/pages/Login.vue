@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { useAuthStore } from '@/stores';
+import { Message } from '@arco-design/web-vue';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { Message } from '@arco-design/web-vue';
-import { useAuthStore } from '@/stores';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -34,22 +34,40 @@ const submit = async () => {
 <template>
   <div class="flex h-screen items-center justify-center bg-[#f7f8fa]">
     <a-card class="w-[380px]">
-      <div class="text-lg font-bold text-[#165dff]">⚖️ AI 商品質檢 · AI 法官</div>
-      <div class="mb-[18px] mt-1 text-[13px] text-[#86909c]">{{ mode === 'login' ? '登入以繼續' : '註冊新帳號' }}</div>
+      <div class="text-lg font-bold text-[#165dff]">⚖️ AI 商品質檢</div>
+      <div class="mb-[18px] mt-1 text-[13px] text-[#86909c]">
+        {{ mode === 'login' ? '登入以繼續' : '註冊新帳號' }}
+      </div>
       <a-form :model="{ email, password }" layout="vertical" @submit.prevent>
         <a-form-item label="Email">
-          <a-input v-model="email" placeholder="you@example.com" allow-clear @keyup.enter="submit" />
+          <a-input
+            v-model="email"
+            placeholder="you@example.com"
+            allow-clear
+            @keyup.enter="submit"
+          />
         </a-form-item>
         <a-form-item label="密碼（至少 6 碼）">
-          <a-input-password v-model="password" placeholder="密碼" allow-clear @keyup.enter="submit" />
+          <a-input-password
+            v-model="password"
+            placeholder="密碼"
+            allow-clear
+            @keyup.enter="submit"
+          />
         </a-form-item>
         <a-button type="primary" long :loading="submitting" @click="submit">
           {{ mode === 'login' ? '登入' : '註冊' }}
         </a-button>
       </a-form>
       <div class="mt-3.5 text-center text-[13px] text-[#86909c]">
-        <span v-if="mode === 'login'">還沒有帳號？<a class="cursor-pointer text-[#165dff]" @click="mode = 'register'">註冊</a></span>
-        <span v-else>已有帳號？<a class="cursor-pointer text-[#165dff]" @click="mode = 'login'">登入</a></span>
+        <span v-if="mode === 'login'"
+          >還沒有帳號？<a class="cursor-pointer text-[#165dff]" @click="mode = 'register'"
+            >註冊</a
+          ></span
+        >
+        <span v-else
+          >已有帳號？<a class="cursor-pointer text-[#165dff]" @click="mode = 'login'">登入</a></span
+        >
       </div>
     </a-card>
   </div>

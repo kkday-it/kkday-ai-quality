@@ -13,7 +13,9 @@ defineProps<{
   <a-card :title="title">
     <template v-if="$slots.title" #title><slot name="title" /></template>
     <template v-if="$slots.extra || hint" #extra>
-      <slot name="extra"><span class="text-xs text-[#86909c]">{{ hint }}</span></slot>
+      <slot name="extra"
+        ><span class="text-xs text-[#86909c]">{{ hint }}</span></slot
+      >
     </template>
     <slot />
   </a-card>

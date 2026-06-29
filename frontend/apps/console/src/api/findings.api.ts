@@ -3,7 +3,9 @@ import { BASE, JSON_HEADERS, j } from './http.api';
 
 export const getAggregate = () => j(`${BASE}/findings/aggregate`);
 
-export const getFindings = (params: { prodOid?: string; dimension?: string; verdict?: string } = {}) => {
+export const getFindings = (
+  params: { prodOid?: string; dimension?: string; verdict?: string } = {},
+) => {
   const q = new URLSearchParams();
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.dimension) q.set('dimension', params.dimension);
@@ -27,8 +29,8 @@ export const diagnose = (prodOid: string) =>
   });
 
 /** 售前售後進線判定鏈路（第一階段主力管道）。source=fixture(MVP)|live(BQ)。 */
-export const diagnosePresalePostsale = (source = 'fixture') =>
-  j(`${BASE}/diagnose/presale-postsale`, {
+export const diagnoseConversations = (source = 'fixture') =>
+  j(`${BASE}/diagnose/conversations`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ source }),

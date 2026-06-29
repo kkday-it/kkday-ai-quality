@@ -95,7 +95,11 @@ const exportBatch = (batch: any) => {
 
 <template>
   <div>
-    <CardSection title="資料上傳" hint="選擇來源 → 上傳 CSV/Excel → 自動建批次並錄入 SQLite（冪等去重）" class="mb-4">
+    <CardSection
+      title="資料上傳"
+      hint="選擇來源 → 上傳 CSV/Excel → 自動建批次並錄入 SQLite（冪等去重）"
+      class="mb-4"
+    >
       <div class="mb-4">
         <div class="mb-2 text-[13px] font-semibold">資料來源</div>
         <a-radio-group v-model="source" type="button">
@@ -117,15 +121,24 @@ const exportBatch = (batch: any) => {
             :class="uploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
           >
             <div class="text-2xl leading-none text-[#165dff]">⬆</div>
-            <div class="text-sm font-medium text-[#1d2129]">{{ uploading ? '上傳中…' : `拖拉或點擊上傳「${sourceLabel(source)}」檔案` }}</div>
-            <div class="text-xs text-[#86909c]">支援 .csv / .xlsx / .xls；表頭需含商品 ID 與對話/評論欄（中英別名容錯）</div>
+            <div class="text-sm font-medium text-[#1d2129]">
+              {{ uploading ? '上傳中…' : `拖拉或點擊上傳「${sourceLabel(source)}」檔案` }}
+            </div>
+            <div class="text-xs text-[#86909c]">
+              支援 .csv / .xlsx / .xls；表頭需含商品 ID 與對話/評論欄（中英別名容錯）
+            </div>
           </div>
         </template>
       </a-upload>
     </CardSection>
 
     <CardSection title="上傳批次" :hint="`共 ${batches.length} 批 · 新到舊 · 點「查看」展開明細`">
-      <StateGuard :loading="loading" :error="error" :empty="!batches.length" empty-text="尚無上傳批次，請於上方上傳檔案">
+      <StateGuard
+        :loading="loading"
+        :error="error"
+        :empty="!batches.length"
+        empty-text="尚無上傳批次，請於上方上傳檔案"
+      >
         <a-table
           :columns="batchCols"
           :data="batches"
@@ -134,8 +147,12 @@ const exportBatch = (batch: any) => {
           row-key="batch_id"
           :scroll="{ x: 900 }"
         >
-          <template #name="{ record }"><b>{{ record.name }}</b></template>
-          <template #src="{ record }"><a-tag>{{ sourceLabel(record.source) }}</a-tag></template>
+          <template #name="{ record }"
+            ><b>{{ record.name }}</b></template
+          >
+          <template #src="{ record }"
+            ><a-tag>{{ sourceLabel(record.source) }}</a-tag></template
+          >
           <template #op="{ record }">
             <a-space>
               <a-link @click="openDetail(record)">查看</a-link>
@@ -154,9 +171,16 @@ const exportBatch = (batch: any) => {
       unmount-on-close
     >
       <template #extra>
-        <a-button v-if="detailBatch" size="small" @click="exportBatch(detailBatch)">導出 CSV</a-button>
+        <a-button v-if="detailBatch" size="small" @click="exportBatch(detailBatch)"
+          >導出 CSV</a-button
+        >
       </template>
-      <StateGuard :loading="itemsLoading" :error="itemsError" :empty="!items.length" empty-text="此批次無明細資料">
+      <StateGuard
+        :loading="itemsLoading"
+        :error="itemsError"
+        :empty="!items.length"
+        empty-text="此批次無明細資料"
+      >
         <a-table
           class="min-h-0 flex-1"
           :columns="itemCols"

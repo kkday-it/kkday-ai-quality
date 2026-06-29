@@ -9,7 +9,8 @@ import {
 } from '../constants';
 
 /** base_url::model 組鍵。 */
-export const modelKey = (base_url: string, model: string): string => `${base_url || ''}::${model || ''}`;
+export const modelKey = (base_url: string, model: string): string =>
+  `${base_url || ''}::${model || ''}`;
 
 /** 讀全部 model 旋鈕記憶（壞檔回 {}）。 */
 export function readOverrides(): Record<string, ModelOverride> {

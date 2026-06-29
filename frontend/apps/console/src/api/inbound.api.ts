@@ -4,7 +4,7 @@ import { BASE, j } from './http.api';
 /**
  * 批量上傳資料檔（CSV/Excel）→ 後端解析錄入。
  * @param file 使用者選的檔案
- * @param source 來源標記（如 presale_postsale 售前售後進線 / review 評論）
+ * @param source 來源標記（如 conversations 售前售後進線 / review 評論）
  * @returns 後端回傳 { inserted, total, source, preview }
  */
 export const uploadInbound = (file: File, source = 'csv') => {

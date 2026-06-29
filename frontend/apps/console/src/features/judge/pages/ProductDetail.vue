@@ -15,12 +15,17 @@ const error = ref('');
 
 const loadFindings = async () => {
   if (!sel.value) return;
-  rows.value = (await getFindings({ prodOid: sel.value })).filter((r: any) => r.dimension !== 'non_content').map(flat);
+  rows.value = (await getFindings({ prodOid: sel.value }))
+    .filter((r: any) => r.dimension !== 'non_content')
+    .map(flat);
 };
 const loadProducts = async () => {
   try {
     products.value = await getProducts();
-    if (!sel.value && products.value[0]) { sel.value = products.value[0].prod_oid; await loadFindings(); }
+    if (!sel.value && products.value[0]) {
+      sel.value = products.value[0].prod_oid;
+      await loadFindings();
+    }
   } catch (e: any) {
     error.value = '載入商品失敗：' + (e?.message || e);
   }
@@ -56,8 +61,15 @@ loadProducts();
     <a-card class="mb-4">
       <a-space wrap>
         <span class="text-xs text-[#86909c]">選擇商品</span>
-        <a-select v-model="sel" class="w-[300px]" placeholder="有 finding 的商品" @change="loadFindings">
-          <a-option v-for="p in products" :key="p.prod_oid" :value="p.prod_oid">prod {{ p.prod_oid }} · {{ p.n }} 個問題</a-option>
+        <a-select
+          v-model="sel"
+          class="w-[300px]"
+          placeholder="有 finding 的商品"
+          @change="loadFindings"
+        >
+          <a-option v-for="p in products" :key="p.prod_oid" :value="p.prod_oid"
+            >prod {{ p.prod_oid }} · {{ p.n }} 個問題</a-option
+          >
         </a-select>
         <a-divider direction="vertical" />
         <a-input v-model="prodId" class="w-40" placeholder="新商品 prod_oid" />
@@ -68,7 +80,10 @@ loadProducts();
     <a-card title="商品問題清單（依欄位分組）">
       <a-empty v-if="!rows.length" description="此商品近期無客訴衍生問題（或先拉評論判決）" />
       <div v-for="(items, field) in groups" :key="field" class="mb-[18px]">
-        <div class="mb-[9px] text-[13px] font-semibold text-[#165dff]">📄 {{ FLABEL[field] || field }} <span class="text-xs text-[#86909c]">· {{ items.length }} 個問題</span></div>
+        <div class="mb-[9px] text-[13px] font-semibold text-[#165dff]">
+          📄 {{ FLABEL[field] || field }}
+          <span class="text-xs text-[#86909c]">· {{ items.length }} 個問題</span>
+        </div>
         <FindingCard v-for="f in items" :key="f.finding_id" :f="f" />
       </div>
     </a-card>

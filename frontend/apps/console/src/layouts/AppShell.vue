@@ -7,7 +7,7 @@ import { AppTopbar, FeatureTabs, SettingsDrawer } from './components';
 
 // 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 設定抽屜。
 // 公開頁（登入/註冊）全屏直通，不套殼層。
-type SettingsTab = 'account' | 'model';
+type SettingsTab = 'account' | 'config';
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -15,7 +15,7 @@ const auth = useAuthStore();
 const isPublic = computed(() => route.meta.public === true);
 
 const settingsVisible = ref(false);
-const settingsTab = ref<SettingsTab>('model');
+const settingsTab = ref<SettingsTab>('config');
 const openSettings = (tab: SettingsTab) => {
   settingsTab.value = tab;
   settingsVisible.value = true;
