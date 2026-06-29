@@ -109,7 +109,7 @@ def _from_live(prod_id: str) -> dict:
         "locale": "tw",
         "currency": "TWD",
     }
-    with httpx.Client(timeout=30) as c:  # 正規 TLS 驗證（預設 verify=True）
+    with httpx.Client(timeout=env.http_timeout) as c:  # 正規 TLS 驗證（預設 verify=True）
         resp = c.get(f"{base}/{prod_id}", headers=headers)
         resp.raise_for_status()
         return resp.json()

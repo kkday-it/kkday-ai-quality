@@ -30,6 +30,12 @@ class Settings(BaseSettings):
 
     # ── 認證 ──
     aipq_jwt_secret: str | None = None
+    jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
+    # ── 服務 / 部署（可 env 覆蓋，免改碼）──
+    cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
+    http_timeout: int = 30  # 外部 API（B2C / 評論）httpx timeout 秒
+    qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
+    bigquery_project_id: str = "kkday-data-dap"  # BQ live 抽取 project
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
     ai_judge_model: str = "gpt-5.4-mini"  # 對齊 config/defaults.json defaultModels（gpt-5-mini 不在清單且被 modelMinVersion 過濾）

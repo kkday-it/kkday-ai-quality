@@ -28,7 +28,8 @@ app = FastAPI(title="kkday-ai-product-quality", version="0.0.1")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # 部署換 domain / 加 staging 免改碼：env CORS_ALLOW_ORIGINS 逗號分隔（預設對齊 vite dev 5273）
+    allow_origins=[o.strip() for o in config.env.cors_allow_origins.split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -420,7 +421,7 @@ def _try_qc_db_connect(cfg: dict) -> dict:
             dbname=name,
             user=cfg.get("qc_db_user") or "",
             password=cfg.get("qc_db_password") or "",
-            connect_timeout=5,
+            connect_timeout=config.env.qc_db_connect_timeout,
         )
         conn.close()
         return {"ok": True}

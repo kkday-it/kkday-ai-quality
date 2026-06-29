@@ -21,7 +21,7 @@ from app.core.config import env
 _log = logging.getLogger(__name__)
 
 _JWT_ALGORITHM = "HS256"
-_TOKEN_TTL = timedelta(days=7)
+_TOKEN_TTL = timedelta(days=env.jwt_ttl_days)  # env JWT_TTL_DAYS（prod 可縮短）
 _DEV_SECRET = "dev-insecure-secret-change-me"  # 僅開發 fallback，正式須設 AIPQ_JWT_SECRET
 _BCRYPT_MAX_BYTES = 72  # bcrypt 演算法上限，超過會拋 ValueError，故先截斷
 

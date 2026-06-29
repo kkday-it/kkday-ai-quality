@@ -143,7 +143,9 @@ def _from_live(oids: list[int]) -> list[dict]:
             "live 模式需 google-cloud-bigquery，且需 DAP 讀取權限；現用 source='fixture'。\n"
             "已產生可手動貼進 DAP console 的字面剪枝 SQL（見 build_product_content_sql）。"
         ) from e
-    client = bigquery.Client(project="kkday-data-dap")
+    from app.core.config import env
+
+    client = bigquery.Client(project=env.bigquery_project_id)
     return [dict(row) for row in client.query(sql).result()]
 
 

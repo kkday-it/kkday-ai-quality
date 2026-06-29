@@ -58,10 +58,12 @@ def _from_live(prod_id: str, sort: str, page: int) -> list[NormalizedTicket]:
     """production：打 Review Service（內網優先；正規憑證，不用 verify=False）。"""
     import httpx
 
+    from app.core.config import env
+
     # TODO(prod)：改打內網 api-review.kkday.com/api/v1/product/reviews（避 datadome）
     url = "https://www.kkday.com/api/_nuxt/cpath/fetch-product-comments-v2"
     params = {"prodId": prod_id, "sort": sort, "page": page, "tags": ""}
-    with httpx.Client(timeout=30) as c:
+    with httpx.Client(timeout=env.http_timeout) as c:
         resp = c.get(url, params=params, headers={"market": "zh-tw"})
         resp.raise_for_status()
         data = (resp.json() or {}).get("data", {})
