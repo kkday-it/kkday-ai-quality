@@ -16,15 +16,16 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5273,
+    // 可 env 覆蓋（VITE_DEV_PORT），預設 5273；對齊後端 CORS_ALLOW_ORIGINS 預設
+    port: Number(process.env.VITE_DEV_PORT) || 5273,
     strictPort: true,
     // config/ 在 pnpm workspace（frontend/）之外，dev server 預設拒讀；顯式放行該目錄。
     fs: {
       allow: [searchForWorkspaceRoot(process.cwd()), configDir],
     },
     proxy: {
-      // 開發時前端 /api → 後端 FastAPI（8100）
-      '/api': 'http://localhost:8100',
+      // 開發時前端 /api → 後端 FastAPI；可 env 覆蓋（VITE_BACKEND_URL），預設 8100
+      '/api': process.env.VITE_BACKEND_URL || 'http://localhost:8100',
     },
   },
 });

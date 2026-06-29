@@ -9,7 +9,8 @@ import { flatFinding as flat } from '../utils';
 const products = ref<any[]>([]);
 const sel = ref('');
 const rows = ref<any[]>([]);
-const prodId = ref('150665');
+// dev 可選預設（VITE_SAMPLE_PROD_OID）；預設空字串，不在 UI 露寫死的真實 prod_oid
+const prodId = ref(import.meta.env.VITE_SAMPLE_PROD_OID ?? '');
 const loading = ref(false);
 const error = ref('');
 
