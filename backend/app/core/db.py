@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.core.schema import InboundItem, TicketFinding
+from app.core.schema import ACTIONABLE_VERDICTS, InboundItem, TicketFinding
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "kkdb_product_quality.db"
 
@@ -310,9 +310,11 @@ def aggregate_findings() -> dict:
             ).fetchall()
         ]
         total = c.execute("SELECT COUNT(*) FROM judgments").fetchone()[0]
+        # 內容問題 verdict 集合＝schema.ACTIONABLE_VERDICTS（單一真相源；勿在 SQL 硬寫）
+        _ph = ",".join("?" * len(ACTIONABLE_VERDICTS))
         content = c.execute(
-            "SELECT COUNT(*) FROM judgments WHERE verdict IN "
-            "('real_config_issue','content_missing','content_unclear')"
+            f"SELECT COUNT(*) FROM judgments WHERE verdict IN ({_ph})",
+            ACTIONABLE_VERDICTS,
         ).fetchone()[0]
         by_dim = [
             dict(r)

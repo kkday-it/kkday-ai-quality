@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.db import DB_PATH, _conn, init_db
+from app.core.schema import ACTIONABLE_VERDICTS
 
 _SQL_FILE = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
 _DEFAULT_CSV = (
@@ -51,7 +52,7 @@ _VERDICT_SEVERITY: dict[str, int] = {
     "customer_misread": 2,
     "escalate_ops": 1,
 }
-_ACTIONABLE = ("real_config_issue", "content_missing", "content_unclear")
+_ACTIONABLE = ACTIONABLE_VERDICTS  # 單一真相源＝schema.ACTIONABLE_VERDICTS（勿在此另寫一份）
 
 
 def _now() -> str:

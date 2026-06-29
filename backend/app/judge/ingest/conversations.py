@@ -27,7 +27,7 @@ def fetch_conversations(
     source: str = "fixture", since: str = "", until: str = ""
 ) -> list[NormalizedTicket]:
     """拉售前售後進線 → NormalizedTicket[]。source=fixture（MVP）| live（BQ，待權限）。"""
-if source == "live":
+    if source == "live":
         return _from_live(since, until)
     if source == "db":
         return _from_db()
