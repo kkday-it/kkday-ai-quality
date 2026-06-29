@@ -196,17 +196,21 @@ const onSave = async () => {
       temperature: useTemp.value ? form.value.temperature : null,
     });
     Message.success('已儲存模型配置');
+    return true;
   } catch (e: any) {
     Message.error('儲存失敗：' + (e?.message || e));
+    return false;
   } finally {
     saving.value = false;
   }
 };
 
-// 測試連線：實打一次最小 LLM 呼叫（用已儲存設定），只回報成功/失敗
+// 測試連線：先存當前選擇（test_llm 讀「已儲存」設定）→ 再實打一次最小 LLM 呼叫，回報成功/失敗
 const onTest = async () => {
   testing.value = true;
   try {
+    // 先儲存，確保測的是螢幕上選的 model/設定，而非上次儲存的舊值
+    if (!(await onSave())) return; // 儲存失敗則不測（避免測到舊設定誤導）
     const r = await testLlm();
     if (r.ok)
       Message.success(`連線成功（${r.model}${r.latency_ms ? ' · ' + r.latency_ms + 'ms' : ''}）`);
@@ -374,7 +378,7 @@ const onTest = async () => {
           xhigh）；切換模型後旋鈕會記憶。
         </li>
         <li>gpt-5 系列 temperature 鎖定，建議維持「API 預設」。</li>
-        <li>「測試連線」以已儲存設定實打一次極短呼叫，僅回報連線成功/失敗（耗極少 token）。</li>
+        <li>「測試連線」會先儲存當前選擇，再實打一次極短呼叫，回報連線成功/失敗（耗極少 token）。</li>
       </ul>
     </div>
   </StateGuard>
