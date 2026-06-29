@@ -1,29 +1,31 @@
-"""模型連線診斷：逐一 ping config/defaults.json 各 provider 的 defaultModels。
+"""模型連線診斷（per-provider token 版）：逐一 ping 各 provider 的 defaultModels。
 
-用「DB 內已存的真 token」逐一打最小 prompt，回 OK / FAIL + latency + error。
-token 絕不輸出（只顯示長度/前後綴）。
+用 DB user_settings.provider_tokens 各 provider 自己的 token 測連線，回 OK / FAIL + latency。
+token 絕不輸出（只顯示長度/遮罩）。
 執行：cd backend && .venv/bin/python ../scripts/diag_models.py
+可選：指定 user_id 為第一參數；預設挑 provider_tokens 最多者。
 """
 
 from __future__ import annotations
 
 import sqlite3
+import sys
 import time
 
 from app.core import settings as app_settings
 from app.core.db import DB_PATH
 
 
-def _pick_token_user() -> tuple[str, dict]:
-    """挑「有真實 token」的 user 設定（token 最長者視為真）。"""
+def _pick_user(arg: str | None) -> tuple[str, dict]:
+    if arg:
+        return arg, app_settings.load_settings(arg)
     c = sqlite3.connect(DB_PATH)
-    c.row_factory = sqlite3.Row
     best: tuple[int, str, dict] = (-1, "", {})
     for r in c.execute("SELECT user_id FROM user_settings").fetchall():
-        cfg = app_settings.load_settings(r["user_id"])
-        tok = cfg.get("api_token") or ""
-        if len(tok) > best[0]:
-            best = (len(tok), r["user_id"], cfg)
+        cfg = app_settings.load_settings(r[0])
+        n = len(cfg.get("provider_tokens") or {})
+        if n > best[0]:
+            best = (n, r[0], cfg)
     return best[1], best[2]
 
 
@@ -55,28 +57,26 @@ def _ping(base_url: str, token: str, model: str) -> dict:
 
 
 def main() -> None:
-    user_id, cfg = _pick_token_user()
-    token = cfg.get("api_token") or ""
-    masked = (token[:7] + "…" + token[-4:]) if len(token) > 12 else "(無)"
-    print(f"使用 user={user_id}  token={masked} ({len(token)} chars)")
+    uid, cfg = _pick_user(sys.argv[1] if len(sys.argv) > 1 else None)
+    ptokens = cfg.get("provider_tokens") or {}
+    print(f"使用 user={uid}  已設定 token 的 provider={list(ptokens)}")
     print("=" * 78)
 
-    providers = app_settings.LLM_PROVIDERS
-    for prov in providers:
+    for prov in app_settings.LLM_PROVIDERS:
         pid = prov.get("id")
         base = prov.get("base_url") or ""
-        models = prov.get("defaultModels", [])
-        own_token = pid == cfg.get("provider")  # 此 provider 是否就是 token 所屬
+        token = ptokens.get(pid, "")
         print(f"\n▌ {prov.get('label')} [{pid}]  base_url={base}")
-        if not own_token:
-            print(f"  ⚠ 此 provider 非當前 token 所屬（token=openai），預期 401/auth 失敗")
-        for m in models:
+        if not token:
+            print("  ⚠ 此 provider 無 token，跳過")
+            continue
+        for m in prov.get("defaultModels", []):
             r = _ping(base, token, m)
             if r["ok"]:
                 tok = f" tokens={r['tokens']}" if r.get("tokens") else ""
-                print(f"  ✅ {m:<16} {r['latency_ms']:>6}ms  reply={r['reply']!r}{tok}")
+                print(f"  ✅ {m:<22} {r['latency_ms']:>6}ms  reply={r['reply']!r}{tok}")
             else:
-                print(f"  ❌ {m:<16} {r['latency_ms']:>6}ms  {r['error']}")
+                print(f"  ❌ {m:<22} {r['latency_ms']:>6}ms  {r['error']}")
 
 
 if __name__ == "__main__":
