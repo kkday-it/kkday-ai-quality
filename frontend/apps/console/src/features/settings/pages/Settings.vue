@@ -1,16 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { isNil, uniq } from 'lodash-es';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { isNil } from 'lodash-es';
 import { Message } from '@arco-design/web-vue';
 import { getSettingsRaw, saveSettings, testLlm } from '@/api';
-import { StateGuard } from '@/components';
-import {
-  PROVIDERS,
-  REASONING,
-  DEFAULT_LLM_FORM,
-  MODEL_META,
-  MODEL_MIN_VERSION,
-} from '../constants';
+import { StateGuard, Terminal } from '@/components';
+import { PROVIDERS, REASONING, DEFAULT_LLM_FORM, MODEL_MIN_VERSION } from '../constants';
 import {
   modelKey,
   readOverrides,
@@ -26,6 +20,9 @@ import {
 const form = ref({ ...DEFAULT_LLM_FORM, api_token: '' });
 const selectedProvider = ref('openai');
 const hasToken = ref(false);
+// 各 provider 各自一把 token（key＝provider id，與 deriveProviderId 對齊）；切換 provider 時由此還原。
+// 後端 provider_tokens 單一真相源，前端僅暫存供切換還原；form.api_token 為「當前 provider 的綁定欄位」。
+const providerTokens = ref<Record<string, string>>({});
 const stubMode = ref(true);
 const tokenDirty = ref(false);
 const useTemp = ref(false);
@@ -33,17 +30,15 @@ const loading = ref(true);
 const saving = ref(false);
 const testing = ref(false);
 
-// 當前供應商的 model 下拉選項：直接讀 config/defaults.json 的 curated defaultModels。
-// union 當前已選/已存 model（即使不在 curated 也顯示，如歷史保存值），再過濾版本門檻。
+// 當前供應商的 model 下拉選項（{ id, desc }）：直接讀 config/defaults.json 的 curated defaultModels。
+// 當前已選/已存 model 若不在 curated（如歷史保存值 / 手動輸入）→ 補一筆（無 desc），再過濾版本門檻。
 const modelOptions = computed(() => {
   const p = PROVIDERS.find((x) => x.id === selectedProvider.value);
   const curated = p?.defaultModels ?? [];
-  const all = form.value.model ? uniq([...curated, form.value.model]) : curated;
-  return all.filter((m) => modelMeetsMin(m, MODEL_MIN_VERSION));
+  const has = curated.some((m) => m.id === form.value.model);
+  const all = form.value.model && !has ? [...curated, { id: form.value.model }] : curated;
+  return all.filter((m) => modelMeetsMin(m.id, MODEL_MIN_VERSION));
 });
-
-// model id → 質性評價（成本/用途 hint），來自 config/defaults.json modelMeta。
-const modelMeta = (id: string): string => MODEL_META[id] ?? '';
 
 onMounted(async () => {
   // 1) localStorage 快取（非敏感欄位）
@@ -64,15 +59,14 @@ onMounted(async () => {
       : DEFAULT_LLM_FORM.reasoning_effort;
     form.value.temperature = s.temperature ?? DEFAULT_LLM_FORM.temperature;
     useTemp.value = !isNil(s.temperature);
-    hasToken.value = !!s.has_token;
     stubMode.value = !!s.stub_mode;
-    // 已設定 → 欄位帶入完整明文 token（password 預設遮罩，眼睛切換顯示全文）；未動則不重送
-    if (hasToken.value && s.api_token) {
-      form.value.api_token = s.api_token;
-      tokenDirty.value = false;
-    }
     // 供應商由 base_url 反推（當前 model 已由 modelOptions union 進下拉，無需另補）
     selectedProvider.value = deriveProviderId(form.value.base_url);
+    // per-provider token：raw 端點回明文 map；帶入當前 provider 的 token（眼睛切換顯示全文）
+    providerTokens.value = (s.provider_tokens as Record<string, string>) ?? {};
+    form.value.api_token = providerTokens.value[selectedProvider.value] ?? '';
+    hasToken.value = !!form.value.api_token;
+    tokenDirty.value = false;
   } catch {
     // 後端 raw 端點未就緒（如後端未重啟）時靜默降級：沿用 localStorage 快取 / default，不阻斷面板
   } finally {
@@ -86,14 +80,11 @@ const selectProvider = (id: unknown) => {
   if (!p) return;
   selectedProvider.value = p.id;
   form.value.base_url = p.base_url;
-  if (p.api_token) {
-    form.value.api_token = p.api_token;
-    tokenDirty.value = true;
-  } else {
-    form.value.api_token = ''; // 新供應商需自填 token
-    tokenDirty.value = false;
-  }
-  form.value.model = p.defaultModel ?? p.defaultModels[0] ?? '';
+  // 還原該 provider 已存的 token（無則空欄要求自填）；hasToken 跟著真實狀態走，不再顯示上一個 provider 的旗標
+  form.value.api_token = providerTokens.value[p.id] ?? '';
+  hasToken.value = !!form.value.api_token;
+  tokenDirty.value = false;
+  form.value.model = p.defaultModel ?? p.defaultModels[0]?.id ?? '';
   if (p.thinking !== undefined) form.value.thinking = p.thinking;
   if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
   const ov = readOverrides()[modelKey(p.base_url, form.value.model)];
@@ -115,7 +106,9 @@ function buildPatch(): Record<string, unknown> {
     reasoning_effort: form.value.reasoning_effort,
     temperature: useTemp.value ? form.value.temperature : null,
   };
-  if (tokenDirty.value && form.value.api_token) patch.api_token = form.value.api_token;
+  // token 僅在 dirty 時帶，且以「當前 provider id」為 key 送 provider_tokens（後端逐 key 合併、空/遮罩不覆蓋）
+  if (tokenDirty.value && form.value.api_token)
+    patch.provider_tokens = { [selectedProvider.value]: form.value.api_token };
   return patch;
 }
 
@@ -125,6 +118,9 @@ const onSave = async () => {
     const s = await saveSettings(buildPatch());
     hasToken.value = !!s.has_token;
     stubMode.value = !!s.stub_mode;
+    // 同步本地 token map：剛存的 token 記住，切走再切回免重新整理即可還原
+    if (tokenDirty.value && form.value.api_token)
+      providerTokens.value[selectedProvider.value] = form.value.api_token;
     tokenDirty.value = false;
     // 旋鈕記憶 + 非敏感快取
     writeOverride(form.value.base_url, form.value.model, {
@@ -149,8 +145,20 @@ const onSave = async () => {
   }
 };
 
-// 即時測試：用「當前表單值」（非已儲存）實打一次最小呼叫，完整結果輸出在按鈕下方 log
-const testResult = ref<Record<string, unknown> | null>(null);
+// 即時測試：用「當前表單值」（非已儲存）實打一次最小呼叫，結果以終端風格輸出在按鈕下方
+/** 後端 /settings/test-llm 回傳形狀（ping）。 */
+interface PingResult {
+  ok: boolean;
+  model?: string;
+  base_url?: string;
+  sent?: string;
+  reply?: string;
+  latency_ms?: number;
+  tokens?: number;
+  error?: string;
+}
+const testResult = ref<PingResult | null>(null);
+const termRef = ref<InstanceType<typeof Terminal>>();
 const onTest = async () => {
   testing.value = true;
   testResult.value = null;
@@ -167,6 +175,31 @@ const onTest = async () => {
   }
 };
 
+// 測試結果 → 終端輸出（ANSI 上色）。await nextTick 等 v-if 掛載 + expose 就緒
+const ANSI = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  red: '\x1b[31m',
+  cyan: '\x1b[36m',
+  magenta: '\x1b[35m',
+  dim: '\x1b[90m',
+} as const;
+watch(testResult, async (r) => {
+  if (!r) return;
+  await nextTick();
+  const t = termRef.value;
+  if (!t) return;
+  t.clear();
+  const head = r.ok ? `${ANSI.green}● 連線成功` : `${ANSI.red}● 連線失敗`;
+  const lat = r.latency_ms ? ` ${ANSI.dim}· ${r.latency_ms}ms` : '';
+  t.writeln(`${head}${lat}${ANSI.reset}`);
+  t.writeln(`${ANSI.dim}# ${r.model ?? ''} @ ${r.base_url ?? ''}${ANSI.reset}`);
+  if (r.sent) t.writeln(`${ANSI.green}➜${ANSI.reset} ${ANSI.cyan}send${ANSI.reset} ${r.sent}`);
+  if (r.reply) t.writeln(`${ANSI.magenta}←${ANSI.reset} ${r.reply}`);
+  if (r.tokens) t.writeln(`${ANSI.dim}tokens: ${r.tokens}${ANSI.reset}`);
+  if (r.error) t.writeln(`${ANSI.red}✗ ${r.error}${ANSI.reset}`);
+});
+
 // 恢復預設：把表單還原成 config/defaults.json 最底層 openai preset（不動已儲存值，需按儲存才生效）
 const onRestoreDefaults = () => {
   const p = PROVIDERS.find((x) => x.id === 'openai');
@@ -177,6 +210,10 @@ const onRestoreDefaults = () => {
   form.value.reasoning_effort = p?.reasoning_effort ?? DEFAULT_LLM_FORM.reasoning_effort;
   useTemp.value = false;
   form.value.temperature = 0;
+  // 還原 openai 時帶回 openai 已存的 token（與切換 provider 一致）
+  form.value.api_token = providerTokens.value['openai'] ?? '';
+  hasToken.value = !!form.value.api_token;
+  tokenDirty.value = false;
   testResult.value = null;
   Message.info('已還原為專案預設配置（需按「儲存配置」才寫入後端）');
 };
@@ -228,11 +265,9 @@ const onRestoreDefaults = () => {
                 allow-clear
                 placeholder="從預設清單選（也可手動輸入臨時 model）"
               >
-                <a-option v-for="m in modelOptions" :key="m" :value="m" :label="m">
-                  <span>{{ m }}</span>
-                  <span v-if="modelMeta(m)" class="ml-2 text-xs text-[#86909c]">{{
-                    modelMeta(m)
-                  }}</span>
+                <a-option v-for="m in modelOptions" :key="m.id" :value="m.id" :label="m.id">
+                  <span>{{ m.id }}</span>
+                  <span v-if="m.desc" class="ml-2 text-xs text-[#86909c]">{{ m.desc }}</span>
                 </a-option>
               </a-select>
             </a-form-item>
@@ -284,31 +319,8 @@ const onRestoreDefaults = () => {
           >
         </a-space>
 
-        <!-- 測試結果完整 log（即時測當前配置；非已儲存）-->
-        <div
-          v-if="testResult"
-          class="mt-3 rounded-lg border p-2.5 font-mono text-[12px] leading-[1.6]"
-          :class="
-            testResult.ok
-              ? 'border-[#a3e8dd] bg-[#e8fffb] text-[#0f9b8e]'
-              : 'border-[#ffccc7] bg-[#fff1f0] text-[#cf1322]'
-          "
-        >
-          <div class="mb-1 font-bold">
-            {{ testResult.ok ? '✅ 連線成功' : '❌ 連線失敗' }}
-            <span v-if="testResult.latency_ms" class="font-normal">
-              · {{ testResult.latency_ms }}ms</span
-            >
-          </div>
-          <div>model：{{ testResult.model }}</div>
-          <div>base_url：{{ testResult.base_url }}</div>
-          <div v-if="testResult.sent">送出：{{ testResult.sent }}</div>
-          <div v-if="testResult.reply">回覆：{{ testResult.reply }}</div>
-          <div v-if="testResult.tokens">tokens：{{ testResult.tokens }}</div>
-          <div v-if="testResult.error" class="whitespace-pre-wrap">
-            錯誤：{{ testResult.error }}
-          </div>
-        </div>
+        <!-- 測試結果：終端風格 I/O log（xterm.js；即時測當前配置，非已儲存）-->
+        <Terminal v-if="testResult" ref="termRef" class="mt-3" />
       </a-form>
 
       <ul class="mb-0 mt-4 pl-[18px] text-[13px] leading-[1.7] text-[#4e5969]">

@@ -32,7 +32,7 @@ export function writeOverride(base_url: string, model: string, ov: ModelOverride
 /** 供應商 → model 列表：preset 併 localStorage 自訂值（去重），純函式回傳合併結果。 */
 export function mergeProviderModels(providers: Provider[]): Record<string, string[]> {
   const merged: Record<string, string[]> = {};
-  for (const p of providers) merged[p.id] = [...p.defaultModels];
+  for (const p of providers) merged[p.id] = p.defaultModels.map((m) => m.id);
   try {
     const raw = localStorage.getItem(PROVIDER_MODELS_KEY);
     if (raw) {

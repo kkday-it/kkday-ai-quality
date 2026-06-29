@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { getSettingsRaw, saveSettings, testQcDb } from '@/api';
+import { StateGuard, Terminal } from '@/components';
 import { Message } from '@arco-design/web-vue';
 import defaults from '@config/defaults.json';
-import { getSettingsRaw, saveSettings, testQcDb } from '@/api';
-import { StateGuard } from '@/components';
+import { nextTick, onMounted, ref, watch } from 'vue';
 
 // 🗄️ QC DB（PostgreSQL）連線配置 —— ConfigPanels 折疊面板之一。
 // 持久化沿用既有 settings 鏈（getSettingsRaw / saveSettings → 後端 user_settings）；
@@ -72,8 +72,15 @@ const onSave = async () => {
   }
 };
 
-// 即時測試：用「當前表單值」測連線（未改密碼則後端沿用既存明文），完整結果輸出按鈕下方 log
-const testResult = ref<Record<string, unknown> | null>(null);
+// 即時測試：用「當前表單值」測連線（未改密碼則後端沿用既存明文），結果以終端風格輸出按鈕下方
+/** 後端 /datasource/qc-db/test 回傳形狀（+前端補 target）。 */
+interface QcDbTestResult {
+  ok: boolean;
+  target?: string;
+  error?: string;
+}
+const testResult = ref<QcDbTestResult | null>(null);
+const termRef = ref<InstanceType<typeof Terminal>>();
 const onTest = async () => {
   testing.value = true;
   testResult.value = null;
@@ -92,6 +99,24 @@ const onTest = async () => {
     testing.value = false;
   }
 };
+
+// 測試結果 → 終端輸出（ANSI 上色）。await nextTick 等 v-if 掛載 + expose 就緒
+const ANSI = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  red: '\x1b[31m',
+  dim: '\x1b[90m',
+} as const;
+watch(testResult, async (r) => {
+  if (!r) return;
+  await nextTick();
+  const t = termRef.value;
+  if (!t) return;
+  t.clear();
+  t.writeln(r.ok ? `${ANSI.green}● 連線成功${ANSI.reset}` : `${ANSI.red}● 連線失敗${ANSI.reset}`);
+  if (r.target) t.writeln(`${ANSI.dim}# ${r.target}${ANSI.reset}`);
+  if (r.error) t.writeln(`${ANSI.red}✗ ${r.error}${ANSI.reset}`);
+});
 
 // 恢復預設：還原成 config/defaults.json 的 QC DB 預設（帳密留空；需按儲存才寫入後端）
 const onRestoreDefaults = () => {
@@ -172,22 +197,8 @@ const onRestoreDefaults = () => {
           <a-button @click="onRestoreDefaults">恢復預設</a-button>
         </a-space>
 
-        <!-- 測試結果完整 log（即時測當前配置；非已儲存）-->
-        <div
-          v-if="testResult"
-          class="mt-3 rounded-lg border p-2.5 font-mono text-[12px] leading-[1.6]"
-          :class="
-            testResult.ok
-              ? 'border-[#a3e8dd] bg-[#e8fffb] text-[#0f9b8e]'
-              : 'border-[#ffccc7] bg-[#fff1f0] text-[#cf1322]'
-          "
-        >
-          <div class="mb-1 font-bold">{{ testResult.ok ? '✅ 連線成功' : '❌ 連線失敗' }}</div>
-          <div v-if="testResult.target">目標：{{ testResult.target }}</div>
-          <div v-if="testResult.error" class="whitespace-pre-wrap">
-            錯誤：{{ testResult.error }}
-          </div>
-        </div>
+        <!-- 測試結果：終端風格 I/O log（xterm.js；即時測當前配置，非已儲存）-->
+        <Terminal v-if="testResult" ref="termRef" class="mt-3" height="6rem" />
       </a-form>
 
       <ul class="mb-0 mt-4 pl-[18px] text-[13px] leading-[1.7] text-[#4e5969]">

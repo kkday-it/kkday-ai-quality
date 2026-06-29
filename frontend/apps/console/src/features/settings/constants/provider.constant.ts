@@ -11,16 +11,22 @@ export const OVERRIDES_KEY = 'aipq_model_overrides';
 /** 各供應商自訂 model 列表 key（手動輸入累積） */
 export const PROVIDER_MODELS_KEY = 'aipq_provider_models';
 
+/** 下拉一個 model 選項：id + 質性描述（成本/用途 hint，內聚於各 model，不另立 modelMeta map）。 */
+export interface ModelOption {
+  id: string;
+  desc?: string;
+}
+
 export interface Provider {
   id: string;
   label: string;
   base_url: string;
   /** 一律留空、不寫死於原始碼（不入 git / 不進 bundle），由使用者於面板填入後存後端。 */
   api_token?: string;
-  /** 預設選中的 model（與 defaultModels 排序解耦；缺省則回退 defaultModels[0]）。 */
+  /** 預設選中的 model id（與 defaultModels 排序解耦；缺省則回退 defaultModels[0].id）。 */
   defaultModel?: string;
-  /** model 下拉清單；排序由強到弱（能力高者在前，含 modelMeta 價格 hint）。 */
-  defaultModels: string[];
+  /** model 下拉清單；{ id, desc } 物件、排序由強到弱（能力高者在前）。 */
+  defaultModels: ModelOption[];
   thinking?: string; // 'on' | 'off'
   reasoning_effort?: string;
 }
@@ -42,9 +48,6 @@ export const PROVIDERS = defaults.llm.providers as Provider[];
 /** Reasoning effort 對齊 OpenAI 官方支援值；資料源＝config/defaults.json。 */
 export const REASONING: string[] = defaults.llm.reasoning;
 
-/** model id → 質性評價（成本/用途）；API 無此資訊，由 config/defaults.json 維護。 */
-export const MODEL_META: Record<string, string> = defaults.llm.modelMeta;
-
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = defaults.llm.modelMinVersion;
 
@@ -56,7 +59,7 @@ const openai = PROVIDERS.find((p) => p.id === 'openai');
  * 注意：這是「前端開頁顯示值」，非後端 _DEFAULT（後端 thinking/effort 用 'default' 表示「不送、用 API 預設」）。
  */
 export const DEFAULT_LLM_FORM = {
-  model: openai?.defaultModel ?? openai?.defaultModels[0] ?? 'gpt-5.4-mini',
+  model: openai?.defaultModel ?? openai?.defaultModels[0]?.id ?? 'gpt-5.4-mini',
   base_url: '',
   temperature: 0 as number,
   thinking: openai?.thinking ?? 'off',
