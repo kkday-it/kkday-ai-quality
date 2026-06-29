@@ -1,5 +1,20 @@
 # kkday-ai-product-quality（AI 法官）專案規則
 
+## 開發核心原則（最高優先 · 動手前必過）
+
+**1. 優先用既有輪子，不造第二套。** 寫任何方法 / 元件 / 邏輯前，先搜 codebase 既有 + 已裝套件（Arco / VueUse / lodash-es / ECharts）。既有方案 ~80% 符合 → 擴充它，不平行新寫。細則見下方「工具函式優先序」「復用優先」+ 全域 `rules/reuse-and-decoupling.md`。
+
+**2. 開發前先盤點現成方案，禁閉門造車。** 動手第一步是「這個需求有沒有現成的？」——查順序：codebase 既有 → 專案已裝套件 → 框架 / 語言原生 API → 才考慮新寫 / 新依賴。新增依賴前一句話說明「為何既有不夠」。
+
+**3. 結構清晰，按職責拆分，單檔不過載。** 不把多種邏輯堆一個檔：
+- **公共純函式** → `utils/`（無副作用、可測）｜**響應式邏輯** → `composables/`（hook）｜**共享狀態** → `store`（Pinia）
+- **可複用 UI** → `components/`（元件薄，只管渲染 + 互動，業務邏輯下沉 composable）
+- **公共配置 / 常數** → `constants/` 或前後端共用 `config/defaults.json`（單一真相源，禁前後端各寫一份）｜**型別** → `packages/types`
+- **大檔拆子檔**：一個 `.vue` / `.ts` 只擔一個職責；script 邏輯偏多 → 抽 composable / util；函式 > 50 行或元件塞多職責 → 拆分（呼應 `rules/reuse-and-decoupling.md`）
+- **資料夾有 barrel `index.ts`**：對外從資料夾根 import，內部 cross-import 用相對路徑
+
+> 三原則衝突時以「簡單優先 + 不過早抽象」收斂：相同邏輯出現第 3 次才抽（Rule of Three），勿為假設性未來預先抽象。
+
 ## 技術棧鐵律（強制，禁止偏離）
 
 前端一律使用以下既有輪子，**禁止**自行引入功能重疊的第三方套件：
