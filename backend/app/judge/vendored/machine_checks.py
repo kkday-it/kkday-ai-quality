@@ -117,34 +117,66 @@ def check_field(field: str, text: str, lang: str = "", ground_truth: str = "") -
     findings: list[dict] = []
     text = (text or "").strip()
     if not text:
-        findings.append({"rule": "empty_output", "severity": "critical", "field": field, "evidence": ""})
+        findings.append(
+            {"rule": "empty_output", "severity": "critical", "field": field, "evidence": ""}
+        )
         return findings
 
     fb = forbidden_term_hits(text, ground_truth)
     if fb:
-        findings.append({"rule": "forbidden_terms", "severity": "high", "field": field,
-                         "hits": fb[:8], "evidence": "、".join(fb[:8])})
+        findings.append(
+            {
+                "rule": "forbidden_terms",
+                "severity": "high",
+                "field": field,
+                "hits": fb[:8],
+                "evidence": "、".join(fb[:8]),
+            }
+        )
     emo = emotional_term_hits(text)
     if emo:
-        findings.append({"rule": "emotional_terms", "severity": "low", "field": field,
-                         "hits": emo[:8], "evidence": "、".join(emo[:8])})
+        findings.append(
+            {
+                "rule": "emotional_terms",
+                "severity": "low",
+                "field": field,
+                "hits": emo[:8],
+                "evidence": "、".join(emo[:8]),
+            }
+        )
 
     if field in ("prod_name", "product_name"):
         sev = name_length_severity(text, lang)
         if sev:
             measure, threshold = measure_name_length(text, lang)
-            findings.append({"rule": f"product_name_length_{sev}",
-                             "severity": "medium" if sev == "severe" else "low",
-                             "field": field, "evidence": f"長度 {measure:g}/{threshold:g}"})
+            findings.append(
+                {
+                    "rule": f"product_name_length_{sev}",
+                    "severity": "medium" if sev == "severe" else "low",
+                    "field": field,
+                    "evidence": f"長度 {measure:g}/{threshold:g}",
+                }
+            )
         pb = promo_bracket(text)
         if pb:
             label, leading = pb
-            findings.append({"rule": "product_name_promo_bracket",
-                             "severity": "medium" if leading else "low",
-                             "field": field, "evidence": label + ("（佔據前段）" if leading else "")})
+            findings.append(
+                {
+                    "rule": "product_name_promo_bracket",
+                    "severity": "medium" if leading else "low",
+                    "field": field,
+                    "evidence": label + ("（佔據前段）" if leading else ""),
+                }
+            )
 
     if field in ("description", "prod_summary", "prod_desc") and not has_section_structure(text):
-        findings.append({"rule": "description_markdown_structure", "severity": "medium",
-                         "field": field, "evidence": text[:120]})
+        findings.append(
+            {
+                "rule": "description_markdown_structure",
+                "severity": "medium",
+                "field": field,
+                "evidence": text[:120],
+            }
+        )
 
     return findings

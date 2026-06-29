@@ -200,7 +200,17 @@ def list_batches() -> list[dict]:
 def export_inbound_csv(batch_id: str) -> bytes:
     """把某批次明細匯出為 CSV bytes（utf-8-sig，Excel 友善）。"""
     items = list_inbound(batch_id=batch_id)
-    cols = ["item_id", "source", "batch_id", "prod_oid", "pkg_oid", "rating", "comment", "status", "created_at"]
+    cols = [
+        "item_id",
+        "source",
+        "batch_id",
+        "prod_oid",
+        "pkg_oid",
+        "rating",
+        "comment",
+        "status",
+        "created_at",
+    ]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(cols)
@@ -353,9 +363,7 @@ def get_user_by_id(user_id: str) -> dict | None:
 def load_user_settings(user_id: str) -> dict | None:
     """讀某 user 的設定（完整 dict，含明文 token）；尚未存過則回 None（由上層套 _DEFAULT）。"""
     with _conn() as c:
-        row = c.execute(
-            "SELECT data FROM user_settings WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        row = c.execute("SELECT data FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
     if not row or not row["data"]:
         return None
     try:
@@ -372,4 +380,3 @@ def save_user_settings(user_id: str, data: dict) -> None:
             "INSERT OR REPLACE INTO user_settings (user_id, data, updated_at) VALUES (?, ?, ?)",
             (user_id, json.dumps(data, ensure_ascii=False), updated_at),
         )
-

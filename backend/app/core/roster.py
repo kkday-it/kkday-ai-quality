@@ -26,7 +26,9 @@ from pathlib import Path
 from app.core.db import DB_PATH, _conn, init_db
 
 _SQL_FILE = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
-_DEFAULT_CSV = Path(__file__).resolve().parents[2] / "fixtures" / "intake" / "postsale_intake_sample.csv"
+_DEFAULT_CSV = (
+    Path(__file__).resolve().parents[2] / "fixtures" / "intake" / "postsale_intake_sample.csv"
+)
 
 # schema.py Dimension（judgments.dimension 實際值）→ 質檢彙總欄位前綴
 DIM_CODE: dict[str, str] = {
@@ -100,6 +102,7 @@ def init_schema() -> None:
 
 # ─────────────────────────── 來源層（CSV 灌數）───────────────────────────
 
+
 def load_intake(csv_path: str | Path, channel: str = "postsale", batch_id: str = "") -> dict:
     """從售後進線 CSV 拆灌 inquiries + orders + suppliers + products(name/bd_tag)。
 
@@ -142,11 +145,20 @@ def load_intake(csv_path: str | Path, channel: str = "postsale", batch_id: str =
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    r.get("session_oid", ""), channel, order_oid, prod_oid, supplier_oid,
-                    r.get("zendesk_ticket_id", ""), r.get("session_create_date", ""),
-                    r.get("sessionable_type", ""), r.get("sessionable_id", ""),
-                    r.get("session_direction", ""), r.get("msg_handler", ""),
-                    r.get("aggregated_messages", ""), batch_id, now,
+                    r.get("session_oid", ""),
+                    channel,
+                    order_oid,
+                    prod_oid,
+                    supplier_oid,
+                    r.get("zendesk_ticket_id", ""),
+                    r.get("session_create_date", ""),
+                    r.get("sessionable_type", ""),
+                    r.get("sessionable_id", ""),
+                    r.get("session_direction", ""),
+                    r.get("msg_handler", ""),
+                    r.get("aggregated_messages", ""),
+                    batch_id,
+                    now,
                 ),
             )
 
@@ -212,10 +224,10 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
     """
     rows = list(csv.DictReader(Path(csv_path).open(encoding="utf-8-sig")))
     now = _now()
-    products: dict[str, dict] = {}   # prod_oid → 內容列（取有 prod_name 的）
+    products: dict[str, dict] = {}  # prod_oid → 內容列（取有 prod_name 的）
     orders: dict[str, dict] = {}
     suppliers: set[str] = set()
-    packages: dict[str, dict] = {}   # pkg_oid → 方案 dict（含 prod_oid）
+    packages: dict[str, dict] = {}  # pkg_oid → 方案 dict（含 prod_oid）
 
     with _conn() as c:
         for r in rows:
@@ -254,11 +266,22 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    r.get("session_oid", ""), channel, order_oid, prod_oid, pkg_oid, supplier_oid,
-                    r.get("master_lang", ""), r.get("zendesk_ticket_id", ""),
-                    r.get("session_create_date", ""), r.get("sessionable_type", ""),
-                    r.get("sessionable_id", ""), r.get("session_direction", ""),
-                    r.get("msg_handler", ""), r.get("aggregated_messages", ""), batch_id, now,
+                    r.get("session_oid", ""),
+                    channel,
+                    order_oid,
+                    prod_oid,
+                    pkg_oid,
+                    supplier_oid,
+                    r.get("master_lang", ""),
+                    r.get("zendesk_ticket_id", ""),
+                    r.get("session_create_date", ""),
+                    r.get("sessionable_type", ""),
+                    r.get("sessionable_id", ""),
+                    r.get("session_direction", ""),
+                    r.get("msg_handler", ""),
+                    r.get("aggregated_messages", ""),
+                    batch_id,
+                    now,
                 ),
             )
 
@@ -279,10 +302,18 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
                     updated_at=excluded.updated_at
                 """,
                 (
-                    prod_oid, r.get("master_lang", ""), r.get("prod_name", ""),
-                    r.get("prod_summary", ""), r.get("prod_feature", ""), r.get("prod_desc", ""),
-                    r.get("prod_schedule", ""), r.get("prod_notice", ""), r.get("prod_fee", ""),
-                    r.get("prod_meetup", ""), r.get("prod_exchange", ""), now,
+                    prod_oid,
+                    r.get("master_lang", ""),
+                    r.get("prod_name", ""),
+                    r.get("prod_summary", ""),
+                    r.get("prod_feature", ""),
+                    r.get("prod_desc", ""),
+                    r.get("prod_schedule", ""),
+                    r.get("prod_notice", ""),
+                    r.get("prod_fee", ""),
+                    r.get("prod_meetup", ""),
+                    r.get("prod_exchange", ""),
+                    now,
                 ),
             )
         for order_oid, o in orders.items():
@@ -291,7 +322,10 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
                 (order_oid, o["order_mid"], o["prod_oid"], now),
             )
         for supplier_oid in suppliers:
-            c.execute("INSERT OR IGNORE INTO suppliers (supplier_oid, updated_at) VALUES (?,?)", (supplier_oid, now))
+            c.execute(
+                "INSERT OR IGNORE INTO suppliers (supplier_oid, updated_at) VALUES (?,?)",
+                (supplier_oid, now),
+            )
         for pid, pk in packages.items():
             c.execute(
                 """
@@ -301,9 +335,16 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
                 ) VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    pid, pk.get("_prod_oid", ""), pk.get("pkg_name") or "", pk.get("pkg_desc") or "",
-                    pk.get("pkg_schedule") or "", pk.get("pkg_fee") or "", pk.get("pkg_meetup") or "",
-                    pk.get("pkg_refund") or "", pk.get("pkg_order_process") or "", now,
+                    pid,
+                    pk.get("_prod_oid", ""),
+                    pk.get("pkg_name") or "",
+                    pk.get("pkg_desc") or "",
+                    pk.get("pkg_schedule") or "",
+                    pk.get("pkg_fee") or "",
+                    pk.get("pkg_meetup") or "",
+                    pk.get("pkg_refund") or "",
+                    pk.get("pkg_order_process") or "",
+                    now,
                 ),
             )
 
@@ -317,6 +358,7 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
 
 
 # ─────────────────────────── 質檢彙總（讀 judgments）───────────────────────────
+
 
 def _aggregate(judgments: list[dict]) -> dict:
     """一組 judgment → 彙總欄位（整體 + 8 面向）。"""
@@ -399,20 +441,36 @@ def rebuild_prod_quality() -> int:
                 "SELECT prod_oid, SUM(order_profit) AS s FROM orders WHERE prod_oid != '' GROUP BY prod_oid"
             ).fetchall()
         }
-        pname = {r["prod_oid"]: dict(r) for r in c.execute(
-            "SELECT prod_oid, prod_name, bd_tag_note FROM products").fetchall()}
+        pname = {
+            r["prod_oid"]: dict(r)
+            for r in c.execute("SELECT prod_oid, prod_name, bd_tag_note FROM products").fetchall()
+        }
 
         by_prod: dict[str, list[dict]] = {}
         for f in c.execute("SELECT * FROM judgments").fetchall():
             by_prod.setdefault(f["prod_oid"] or "", []).append(dict(f))
 
         all_prods = set(meta) | {k for k in by_prod if k} | set(pname)
-        cols = [
-            "prod_oid", "prod_name", "bd_tag_note", "supplier_oid",
-            "inquiry_count", "order_count", "order_profit_sum",
-            "judgments_total", "content_issue_n", "content_issue_pct",
-            "contract_breach_n", "top_dimension", "max_confidence", "overall_status",
-        ] + _dim_cols() + ["last_judged_at"]
+        cols = (
+            [
+                "prod_oid",
+                "prod_name",
+                "bd_tag_note",
+                "supplier_oid",
+                "inquiry_count",
+                "order_count",
+                "order_profit_sum",
+                "judgments_total",
+                "content_issue_n",
+                "content_issue_pct",
+                "contract_breach_n",
+                "top_dimension",
+                "max_confidence",
+                "overall_status",
+            ]
+            + _dim_cols()
+            + ["last_judged_at"]
+        )
         ph = ",".join("?" * len(cols))
 
         for prod_oid in sorted(all_prods):
@@ -439,20 +497,38 @@ def rebuild_pkg_quality() -> int:
     """從 judgments（去重 pkg_oid）+ packages/products 重建 pkg_quality。"""
     with _conn() as c:
         c.execute("DELETE FROM pkg_quality")
-        pkg_prod = {r["pkg_oid"]: r["prod_oid"] for r in c.execute(
-            "SELECT pkg_oid, prod_oid FROM packages").fetchall()}
-        pname = {r["prod_oid"]: r["prod_name"] for r in c.execute(
-            "SELECT prod_oid, prod_name FROM products").fetchall()}
+        pkg_prod = {
+            r["pkg_oid"]: r["prod_oid"]
+            for r in c.execute("SELECT pkg_oid, prod_oid FROM packages").fetchall()
+        }
+        pname = {
+            r["prod_oid"]: r["prod_name"]
+            for r in c.execute("SELECT prod_oid, prod_name FROM products").fetchall()
+        }
 
         by_pkg: dict[str, list[dict]] = {}
-        for f in c.execute("SELECT * FROM judgments WHERE pkg_oid != '' AND pkg_oid IS NOT NULL").fetchall():
+        for f in c.execute(
+            "SELECT * FROM judgments WHERE pkg_oid != '' AND pkg_oid IS NOT NULL"
+        ).fetchall():
             by_pkg.setdefault(f["pkg_oid"], []).append(dict(f))
 
-        cols = [
-            "pkg_oid", "prod_oid", "prod_name",
-            "inquiry_count", "judgments_total", "content_issue_n", "content_issue_pct",
-            "contract_breach_n", "top_dimension", "max_confidence", "overall_status",
-        ] + _dim_cols() + ["last_judged_at"]
+        cols = (
+            [
+                "pkg_oid",
+                "prod_oid",
+                "prod_name",
+                "inquiry_count",
+                "judgments_total",
+                "content_issue_n",
+                "content_issue_pct",
+                "contract_breach_n",
+                "top_dimension",
+                "max_confidence",
+                "overall_status",
+            ]
+            + _dim_cols()
+            + ["last_judged_at"]
+        )
         ph = ",".join("?" * len(cols))
 
         for pkg_oid in sorted(by_pkg):
@@ -530,11 +606,20 @@ def upsert_product_content_rows(rows: list[dict]) -> dict:
                     prod_purchase=excluded.prod_purchase, updated_at=excluded.updated_at
                 """,
                 (
-                    prod_oid, r.get("prod_mid", ""), r.get("master_lang", ""),
-                    r.get("prod_name", ""), r.get("prod_summary", ""), r.get("prod_feature", ""),
-                    r.get("prod_desc", ""), r.get("prod_schedules", ""), r.get("prod_notice", ""),
-                    r.get("prod_fee", ""), r.get("prod_meetup", ""), r.get("prod_redeem", ""),
-                    r.get("prod_purchase", ""), now,
+                    prod_oid,
+                    r.get("prod_mid", ""),
+                    r.get("master_lang", ""),
+                    r.get("prod_name", ""),
+                    r.get("prod_summary", ""),
+                    r.get("prod_feature", ""),
+                    r.get("prod_desc", ""),
+                    r.get("prod_schedules", ""),
+                    r.get("prod_notice", ""),
+                    r.get("prod_fee", ""),
+                    r.get("prod_meetup", ""),
+                    r.get("prod_redeem", ""),
+                    r.get("prod_purchase", ""),
+                    now,
                 ),
             )
         for pkg_oid, r in pkgs.items():
@@ -542,8 +627,12 @@ def upsert_product_content_rows(rows: list[dict]) -> dict:
                 "INSERT OR REPLACE INTO packages (pkg_oid, prod_oid, pkg_name, pkg_desc, pkg_schedules, updated_at) "
                 "VALUES (?,?,?,?,?,?)",
                 (
-                    pkg_oid, (r.get("prod_oid") or "").strip(), r.get("pkg_name", ""),
-                    r.get("pkg_desc", ""), r.get("pkg_schedules", ""), now,
+                    pkg_oid,
+                    (r.get("prod_oid") or "").strip(),
+                    r.get("pkg_name", ""),
+                    r.get("pkg_desc", ""),
+                    r.get("pkg_schedules", ""),
+                    now,
                 ),
             )
     return {"products": len(prods), "packages": len(pkgs)}

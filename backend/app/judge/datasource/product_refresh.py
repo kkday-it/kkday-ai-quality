@@ -98,9 +98,9 @@ def refresh_for_tickets(source_tickets: str = "fixture", source_content: str = "
 
     判決前的「保新鮮」前置步驟：跑完後 product.fetch_product(source='db') 讀到的即當下最新。
     """
-    from app.judge.ingest.presale_postsale import fetch_presale_postsale
+    from app.judge.ingest.conversations import fetch_conversations
 
-    tickets = fetch_presale_postsale(source=source_tickets)
+    tickets = fetch_conversations(source=source_tickets)
     oids = collect_prod_oids_from_tickets(tickets)
     return refresh_product_content(oids, source=source_content)
 
@@ -123,8 +123,11 @@ def _from_fixture(oids: list[int]) -> list[dict]:
         return []
     data = json.loads(fp.read_text(encoding="utf-8"))
     want = set(oids)
-    return [r for r in data.get("rows", []) if str(r.get("prod_oid", "")).strip().isdigit()
-            and int(r["prod_oid"]) in want]
+    return [
+        r
+        for r in data.get("rows", [])
+        if str(r.get("prod_oid", "")).strip().isdigit() and int(r["prod_oid"]) in want
+    ]
 
 
 def _from_live(oids: list[int]) -> list[dict]:
@@ -149,14 +152,14 @@ if __name__ == "__main__":
 
     src = sys.argv[1] if len(sys.argv) > 1 else "fixture"  # fixture | live
 
-    # step1：優先從本地 inquiries 取當批 prod_oid；DB 空則退回 presale 進線 fixture
+    # step1：優先從本地 inquiries 取當批 prod_oid；DB 空則退回 conversations 進線 fixture
     oids = collect_prod_oids_from_db()
     origin = "inquiries 表"
     if not oids:
-        from app.judge.ingest.presale_postsale import fetch_presale_postsale
+        from app.judge.ingest.conversations import fetch_conversations
 
-        oids = collect_prod_oids_from_tickets(fetch_presale_postsale(source="fixture"))
-        origin = "presale_postsale fixture"
+        oids = collect_prod_oids_from_tickets(fetch_conversations(source="fixture"))
+        origin = "conversations fixture"
     clean = _sanitize_oids(oids)
     sample = clean[:8] + (["…"] if len(clean) > 8 else [])
 
@@ -164,8 +167,11 @@ if __name__ == "__main__":
     if clean:
         sql = build_product_content_sql(clean)
         where_line = next(
-            (ln.strip() for ln in sql.splitlines()
-             if not ln.strip().startswith("--") and "prod_oid IN (" in ln),
+            (
+                ln.strip()
+                for ln in sql.splitlines()
+                if not ln.strip().startswith("--") and "prod_oid IN (" in ln
+            ),
             "",
         )
         preview = where_line if len(where_line) <= 90 else where_line[:90] + " …)"

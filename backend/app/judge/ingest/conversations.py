@@ -1,7 +1,7 @@
-"""售前售後進線 adapter：fetch_presale_postsale → NormalizedTicket[]。
+"""售前售後進線 adapter：fetch_conversations → NormalizedTicket[]。
 
 第一階段主力管道（取代評論為首發）。
-- fixture（MVP）：讀 fixtures/presale_postsale.json，零網路/零 BQ 權限，含客服對話 ground truth
+- fixture（MVP）：讀 fixtures/conversations.json，零網路/零 BQ 權限，含客服對話 ground truth
 - live（production）：BigQuery 售後聚合 SQL（dw_kkdb.message+chatbot）/ 售前 freshdesk_tickets，待 BQ 權限
 
 售後 session_oid / 售前 freshdesk ticket id 為冪等鍵；cs_conversation 末筆 agent ＝客服政策原文（L3/L4 ground truth）。
@@ -23,9 +23,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def fetch_presale_postsale(source: str = "fixture", since: str = "", until: str = "") -> list[NormalizedTicket]:
+def fetch_conversations(
+    source: str = "fixture", since: str = "", until: str = ""
+) -> list[NormalizedTicket]:
     """拉售前售後進線 → NormalizedTicket[]。source=fixture（MVP）| live（BQ，待權限）。"""
-    if source == "live":
+if source == "live":
         return _from_live(since, until)
     if source == "db":
         return _from_db()
@@ -67,7 +69,11 @@ def _from_db() -> list[NormalizedTicket]:
     out: list[NormalizedTicket] = []
     for r in rows:
         cs, comment = _parse_conversation(r["aggregated_messages"])
-        src = r["sessionable_type"] if r["sessionable_type"] in ("order_message", "chatbot") else "order_message"
+        src = (
+            r["sessionable_type"]
+            if r["sessionable_type"] in ("order_message", "chatbot")
+            else "order_message"
+        )
         out.append(
             NormalizedTicket(
                 ticket_id=str(r["session_oid"]),
@@ -86,13 +92,16 @@ def _from_db() -> list[NormalizedTicket]:
 
 
 def _from_fixture() -> list[NormalizedTicket]:
-    fp = FIXTURES / "presale_postsale.json"
+    fp = FIXTURES / "conversations.json"
     if not fp.exists():
         return []
     data = json.loads(fp.read_text(encoding="utf-8"))
     out: list[NormalizedTicket] = []
     for t in data.get("tickets", []):
-        cs = [CSTurn(role=c.get("role", ""), content=c.get("content", "")) for c in t.get("cs_conversation", [])]
+        cs = [
+            CSTurn(role=c.get("role", ""), content=c.get("content", ""))
+            for c in t.get("cs_conversation", [])
+        ]
         out.append(
             NormalizedTicket(
                 ticket_id=t["ticket_id"],

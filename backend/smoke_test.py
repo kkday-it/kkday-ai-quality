@@ -22,11 +22,16 @@ def main() -> int:
         fails.append("health")
 
     # 2. 單個錄入
-    if c.post("/api/inbound", json={"prod_oid": "150665", "comment": "smoke 單個", "rating": 1}).status_code != 200:
+    if (
+        c.post(
+            "/api/inbound", json={"prod_oid": "150665", "comment": "smoke 單個", "rating": 1}
+        ).status_code
+        != 200
+    ):
         fails.append("inbound(single)")
 
     # 3. CSV 批量錄入
-    csv = "prod_oid,rating,comment\n150665,1,smoke CSV 纜車\n".encode("utf-8")
+    csv = "prod_oid,rating,comment\n150665,1,smoke CSV 纜車\n".encode()
     r = c.post(
         "/api/inbound/upload",
         files={"file": ("smoke.csv", csv, "text/csv")},
@@ -49,7 +54,9 @@ def main() -> int:
     if fails:
         print("❌ smoke test 失敗：" + ", ".join(fails))
         return 1
-    print("✅ smoke test 通過：health · inbound(單個/CSV) · diagnose(6筆,纜車=content_unclear) · findings")
+    print(
+        "✅ smoke test 通過：health · inbound(單個/CSV) · diagnose(6筆,纜車=content_unclear) · findings"
+    )
     return 0
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from app.core.db import _conn, init_db, insert_finding
 from app.core.roster import rebuild_pkg_quality, rebuild_prod_quality
 from app.judge import pipeline
-from app.judge.ingest import presale_postsale
+from app.judge.ingest import conversations
 from app.judge.llm import client
 
 
@@ -22,7 +22,7 @@ def _log(msg: str) -> None:
 
 def main() -> None:
     init_db()
-    tickets = presale_postsale.fetch_presale_postsale(source="db")
+    tickets = conversations.fetch_conversations(source="db")
     mode = "stub（啟發式·無 key）" if client.is_stub() else "LLM 真判"
     _log(f"開始判決 {len(tickets)} 筆進線（{mode}）…")
 

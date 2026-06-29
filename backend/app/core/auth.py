@@ -1,13 +1,13 @@
 """帳號認證：bcrypt 密碼雜湊 + JWT 簽發/驗證 + FastAPI 認證依賴。
 
-JWT secret 由環境變數 AIPQ_JWT_SECRET 提供；未設時用開發預設值並記警告（正式環境務必設定）。
+JWT secret 由環境變數 AIPQ_JWT_SECRET 提供（經 config.env 集中讀取）；未設時用開發預設值
+並記警告（正式環境務必設定）。
 直接使用 bcrypt 套件（非 passlib）——passlib 1.7.4 與 bcrypt 5.x 不相容。
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core import db
+from app.core.config import env
 
 _log = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ _BCRYPT_MAX_BYTES = 72  # bcrypt 演算法上限，超過會拋 ValueError，故
 
 
 def _secret() -> str:
-    s = os.environ.get("AIPQ_JWT_SECRET")
+    s = env.aipq_jwt_secret
     if not s:
         _log.warning("AIPQ_JWT_SECRET 未設定，使用開發預設 secret；正式環境務必設定環境變數。")
         return _DEV_SECRET

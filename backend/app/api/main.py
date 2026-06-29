@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.core import auth, db
+# config 先載入：import 時即讀 backend/.env 並建 env 單例（機密集中管理）。
+from app.core import auth, config, db  # noqa: F401  (config import 觸發 .env 載入)
 from app.judge import pipeline
 from app.judge.datasource import reviews
 from app.judge.ingest import entry
@@ -31,7 +33,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-db.init_db()  # 啟動即建表（冪等）
+db.init_db()
+
+# ── 新攝取架構（PostgreSQL）端點：掛載於 /api/v1 ──
+# 舊 sqlite 端點（帳號 / 錄入 / 判決）留於下方，第一階段並存，第三階段汰換。
+from app.api.routers import v1_router  # noqa: E402
+
+app.include_router(v1_router)  # 啟動即建表（冪等）
 
 
 @app.get("/health")
@@ -52,7 +60,11 @@ class LoginIn(BaseModel):
 
 def _public_user(user: dict) -> dict:
     """去除 password_hash，只回傳可公開欄位。"""
-    return {"user_id": user["user_id"], "email": user["email"], "created_at": user.get("created_at")}
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "created_at": user.get("created_at"),
+    }
 
 
 @app.post("/api/auth/register")
@@ -64,7 +76,7 @@ def register(body: RegisterIn) -> dict:
     try:
         user = db.create_user(str(uuid.uuid4()), email, auth.hash_password(body.password))
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="此 email 已註冊")
+        raise HTTPException(status_code=409, detail="此 email 已註冊") from None
     return {"token": auth.create_access_token(user["user_id"]), "user": _public_user(user)}
 
 
@@ -111,7 +123,7 @@ class SingleEntryIn(BaseModel):
 
 # 來源標記 → 顯示名（用於批次自動命名「售前售後進線 2026062301」）
 SOURCE_LABELS: dict[str, str] = {
-    "presale_postsale": "售前售後進線",
+    "conversations": "售前售後進線",
     "review": "商品評論",
     "ticket": "工單",
     "manual": "其他",
@@ -126,7 +138,7 @@ async def upload_inbound(
 ) -> dict:
     """CSV/Excel 批量錄入 → 建批次（自動命名）→ 解析存 SQLite（冪等去重）。
 
-    source：資料來源標記（presale_postsale 售前售後進線 / review 評論…）。
+    source：資料來源標記（conversations 售前售後進線 / review 評論…）。
     每次上傳產生一筆 upload_batch，明細 inbound_items 以 batch_id 關聯。
     """
     content = await file.read()
@@ -208,6 +220,8 @@ def diagnose(body: DiagnoseIn, user: dict = Depends(load_user_context)) -> dict:
     return {
         "prod_oid": body.prod_oid,
         "count": len(findings),
+        "failed_count": len(tickets)
+        - len(findings),  # 單筆判決失敗被略過的筆數（非 0 → 有靜默失敗，查 log）
         "stub_mode": llm_client.is_stub(),
         "findings": [f.model_dump() for f in findings],
     }
@@ -217,22 +231,22 @@ class IntakeIn(BaseModel):
     source: str = "fixture"  # fixture(MVP) | live(BigQuery，待權限)
 
 
-@app.post("/api/diagnose/presale-postsale")
-def diagnose_presale_postsale(body: IntakeIn, user: dict = Depends(load_user_context)) -> dict:
+@app.post("/api/diagnose/conversations")
+def diagnose_conversations(body: IntakeIn, user: dict = Depends(load_user_context)) -> dict:
     """售前售後進線判定鏈路（第一階段主力管道）。
 
     adapter（售前 freshdesk + 售後 order_message/chatbot）→ NormalizedTicket
     → classify→adequacy→arbiter→diagnose → TicketFinding（含客服對話 ground truth）。
     評論/工單 API 列後續迭代。
     """
-    from app.judge.ingest import presale_postsale
+    from app.judge.ingest import conversations
 
     _activate_settings(user["user_id"])  # judge 路徑用登入者的 key/model
-    tickets = presale_postsale.fetch_presale_postsale(source=body.source)
+    tickets = conversations.fetch_conversations(source=body.source)
     findings = pipeline.diagnose_many(tickets, prod_source=body.source)
     db.insert_findings_batch(findings)
     return {
-        "channel": "presale_postsale",
+        "channel": "conversations",
         "count": len(findings),
         "stub_mode": llm_client.is_stub(),
         "findings": [f.model_dump() for f in findings],
@@ -248,6 +262,14 @@ class SettingsIn(BaseModel):
     thinking: str | None = None
     reasoning_effort: str | None = None
     provider_models: dict | None = None  # 各供應商自訂 model 清單（per-user）
+    stage_overrides: dict | None = None  # 各判決階段 LLM 覆寫（稀疏；後端 sanitize）
+    # ── 資料來源：QC DB（PostgreSQL）連線配置（qc_db_password 機密，遮罩同 api_token）──
+    qc_db_host: str | None = None
+    qc_db_port: int | None = None
+    qc_db_name: str | None = None
+    qc_db_schema: str | None = None
+    qc_db_user: str | None = None
+    qc_db_password: str | None = None
 
 
 @app.get("/api/settings")
@@ -267,7 +289,9 @@ def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -
     from app.core import settings as app_settings
 
     data = app_settings.save_settings(user["user_id"], body.model_dump(exclude_none=True))
-    app_settings.set_current(app_settings.load_settings(user["user_id"]))  # 反映新 token，stub_mode 才正確
+    app_settings.set_current(
+        app_settings.load_settings(user["user_id"])
+    )  # 反映新 token，stub_mode 才正確
     data["stub_mode"] = llm_client.is_stub()
     return data
 
@@ -284,6 +308,39 @@ def get_settings_raw(user: dict = Depends(load_user_context)) -> dict:
     data = app_settings.raw(user["user_id"])
     data["stub_mode"] = llm_client.is_stub()
     return data
+
+
+@app.post("/api/settings/test-llm")
+def test_llm(user: dict = Depends(load_user_context)) -> dict:
+    """測試 LLM 連線：以當前 user 已儲存的設定送一個極短 prompt，回終端機顯示用的 I/O。"""
+    _activate_settings(user["user_id"])  # 載入該 user 的 token/model 到 contextvar 供 ping 讀取
+    return llm_client.ping()
+
+
+def _model_meets_min(model_id: str, min_version: str) -> bool:
+    """gpt-N.M 版本 ≥ min_version 才保留；非 gpt-* model（gemini/bytedance 等）不受版本限制。"""
+    import re
+
+    m = re.match(r"^gpt-(\d+)(?:\.(\d+))?", model_id)
+    if not m:
+        return True
+    cur = (int(m.group(1)), int(m.group(2) or 0))
+    mj, mn = (min_version.split(".") + ["0"])[:2]
+    return cur >= (int(mj), int(mn))
+
+
+@app.get("/api/settings/models")
+def list_models(user: dict = Depends(load_user_context)) -> dict:
+    """動態列出當前 user 配置可取得的 model id（過濾 ≥ 門檻版本）；無 token 回空清單。
+
+    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/defaults.json modelMeta 提供（API 無此資訊）。
+    """
+    from app.core import settings as app_settings
+
+    _activate_settings(user["user_id"])
+    ids = llm_client.list_models()
+    minv = app_settings.LLM_MODEL_MIN_VERSION
+    return {"models": [m for m in ids if _model_meets_min(m, minv)]}
 
 
 @app.get("/api/findings")
@@ -303,7 +360,8 @@ def get_products() -> list[dict]:
 
 
 class StatusIn(BaseModel):
-    status: str  # confirmed | dismissed | fixed
+    # 人工只可改這三態；new / data_missing 由系統設定。非法值 Pydantic 自動回 422。
+    status: Literal["confirmed", "dismissed", "fixed"]
 
 
 @app.get("/api/findings/aggregate")
@@ -323,3 +381,62 @@ def patch_finding_status(finding_id: str, body: StatusIn) -> dict:
 # ── 預留路由 ───────────────────────────────────────────────────────
 # L0 自動拉：fetch_product(live, api-b2c) · M3：/findings/export(xlsx)
 # P2 多管道：order/工單 adapter + 聯合判定
+
+
+# ── 資料來源：QC DB（PostgreSQL）連線測試 ─────────────────────────────
+class QcDbTestIn(BaseModel):
+    """測試連線入參（皆選填）；空/遮罩 password 沿用後端既存明文值。"""
+
+    qc_db_host: str | None = None
+    qc_db_port: int | None = None
+    qc_db_name: str | None = None
+    qc_db_schema: str | None = None
+    qc_db_user: str | None = None
+    qc_db_password: str | None = None
+
+
+def _try_qc_db_connect(cfg: dict) -> dict:
+    """以 cfg 連 QC DB（5s timeout），回 {ok, error?}。不回傳含密碼的連線字串。"""
+    host = cfg.get("qc_db_host") or ""
+    if not host:
+        return {"ok": False, "error": "未設定 host"}
+    name = cfg.get("qc_db_name") or ""
+    if not name:
+        # 防呆：libpq 在 dbname 空時會預設用 username 當 database，產生誤導性 "database <user> does not exist"
+        return {"ok": False, "error": "未設定 database name"}
+    try:
+        import psycopg2  # 延遲匯入：未裝時不阻斷面板儲存
+    except ImportError:
+        return {
+            "ok": False,
+            "error": "後端未安裝 psycopg2，無法測試連線（pip install psycopg2-binary）",
+        }
+    from app.core.settings import QC_DB_DEFAULTS  # port fallback 取共用 config/defaults.json
+
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=cfg.get("qc_db_port") or QC_DB_DEFAULTS["port"],
+            dbname=name,
+            user=cfg.get("qc_db_user") or "",
+            password=cfg.get("qc_db_password") or "",
+            connect_timeout=5,
+        )
+        conn.close()
+        return {"ok": True}
+    except Exception as e:  # 只回錯誤首行（避免洩漏連線細節 / 密碼）
+        return {"ok": False, "error": str(e).splitlines()[0][:200]}
+
+
+@app.post("/api/datasource/qc-db/test")
+def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dict:
+    """測試當前 user 的 QC DB 連線：以後端既存設定為底，前端傳入值覆蓋（遮罩/空 password 不覆蓋）。"""
+    from app.core import settings as app_settings
+
+    cfg = app_settings.load_settings(user["user_id"])
+    ov = body.model_dump(exclude_none=True)
+    pw = ov.pop("qc_db_password", None)
+    cfg.update(ov)
+    if pw and "***" not in pw and "…" not in pw:
+        cfg["qc_db_password"] = pw
+    return _try_qc_db_connect(cfg)

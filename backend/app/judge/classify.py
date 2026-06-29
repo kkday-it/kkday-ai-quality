@@ -10,13 +10,28 @@ from app.judge.llm import client
 
 # 強服務負面詞（→ non_content / escalate_ops）
 SERVICE_KW = [
-    "催", "遲到", "羞辱", "公審", "素質", "沒下車", "沒導覽", "不專業",
-    "斥責", "煩死", "趕人", "催促", "態度",
+    "催",
+    "遲到",
+    "羞辱",
+    "公審",
+    "素質",
+    "沒下車",
+    "沒導覽",
+    "不專業",
+    "斥責",
+    "煩死",
+    "趕人",
+    "催促",
+    "態度",
 ]
 
 # 內容問題規則（關鍵字 → dimension, suspected_field）
 CONTENT_RULES: list[tuple[list[str], str, str]] = [
-    (["纜車", "贈送", "商標", "logo", "不實", "騙", "舊資料", "標題", "招徠"], "承諾與SLA", "prod_name"),
+    (
+        ["纜車", "贈送", "商標", "logo", "不實", "騙", "舊資料", "標題", "招徠"],
+        "承諾與SLA",
+        "prod_name",
+    ),
     (["憑證", "標示", "兌換", "換票", "使用方法"], "使用兌換", "pkg_desc"),
     (["費用", "價格", "退費", "加購", "收費"], "費用資訊", "prod_summary"),
     (["倉促", "趕", "小時", "結束", "提早", "停留", "時間"], "行程流程", "prod_schedules"),
@@ -62,4 +77,4 @@ def _real(ticket: NormalizedTicket) -> dict:
         "只看客訴不看商品原文。輸出 JSON：dimension, suspected_field, tentative_verdict, "
         "problem_summary, confidence, is_primary。"
     )
-    return client.chat_json(system, ticket.comment)
+    return client.chat_json(system, ticket.comment, stage="classify")

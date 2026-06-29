@@ -8,7 +8,9 @@ from __future__ import annotations
 from app.judge.llm import client
 
 
-def check(field_text: str, dimension: str, concern: str, field: str = "none", ground_truth: str = "") -> dict:
+def check(
+    field_text: str, dimension: str, concern: str, field: str = "none", ground_truth: str = ""
+) -> dict:
     if client.is_stub():
         return _stub(field_text, concern)
     return _real(field_text, dimension, concern, field, ground_truth)
@@ -21,11 +23,17 @@ def _stub(field_text: str, concern: str) -> dict:
     claim = any(k in field_text for k in ["贈送", "含", "提供", "免費"])
     deny = any(k in concern for k in ["沒有", "沒贈送", "關閉", "取消", "不實", "舊資料"])
     if claim and deny:
-        return {"status": "unclear", "evidence": field_text[:80], "reason": "stub：賣點與客訴實況不符"}
+        return {
+            "status": "unclear",
+            "evidence": field_text[:80],
+            "reason": "stub：賣點與客訴實況不符",
+        }
     return {"status": "unclear", "evidence": field_text[:80], "reason": "stub：保守判 unclear"}
 
 
-def _real(field_text: str, dimension: str, concern: str, field: str = "none", ground_truth: str = "") -> dict:
+def _real(
+    field_text: str, dimension: str, concern: str, field: str = "none", ground_truth: str = ""
+) -> dict:
     """注入法典/沿用深度 prompt 作判準，但輸出仍守 adequacy status 契約（不破壞 arbiter）。"""
     from app.judge import codex
 
@@ -47,4 +55,4 @@ def _real(field_text: str, dimension: str, concern: str, field: str = "none", gr
         f"欄位原文：\n{field_text or '（未取得原文）'}\n\n"
         f"客服對話(ground truth，正確答案來源)：\n{ground_truth or '（無）'}"
     )
-    return client.chat_json(system, user)
+    return client.chat_json(system, user, stage="adequacy")

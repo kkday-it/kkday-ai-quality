@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -37,11 +37,11 @@ LogicalField = Literal[
 # verdict 五分類 —「是不是真內容問題」的判準（L3 靈魂）
 Verdict = Literal[
     "real_config_issue",  # 設定寫錯/矛盾 → 進 PM 清單（規則已定義、供應商沒寫對）
-    "content_missing",    # 該講沒講 → 進 PM 清單（規則未定義、回饋修法）
-    "content_unclear",    # 模糊易誤解 → 進 PM 清單（規則未定義、回饋修法）
-    "contract_breach",    # 內容合規但承諾履約不符 → 計點違規（ERC）+ 要求供應商改善
-    "customer_misread",   # 其實寫清楚了 → 不進清單（UX 洞察）
-    "escalate_ops",       # 服務/出貨等非內容 → 不進清單（感知通報 + 協作）
+    "content_missing",  # 該講沒講 → 進 PM 清單（規則未定義、回饋修法）
+    "content_unclear",  # 模糊易誤解 → 進 PM 清單（規則未定義、回饋修法）
+    "contract_breach",  # 內容合規但承諾履約不符 → 計點違規（ERC）+ 要求供應商改善
+    "customer_misread",  # 其實寫清楚了 → 不進清單（UX 洞察）
+    "escalate_ops",  # 服務/出貨等非內容 → 不進清單（感知通報 + 協作）
 ]
 
 # 進 PM 修改清單的 verdict（純內容問題）
@@ -75,10 +75,10 @@ class NormalizedTicket(BaseModel):
     source: Literal["review", "ticket", "order_message", "chatbot", "manual"]
     prod_oid: str = ""
     pkg_oid: str = ""
-    order_oid: str = ""       # 訂單編號（進線可定位具體訂單）
-    supplier_oid: str = ""    # 供應商編號（order_message 進線可定位）
+    order_oid: str = ""  # 訂單編號（進線可定位具體訂單）
+    supplier_oid: str = ""  # 供應商編號（order_message 進線可定位）
     lang: str = "zh-tw"
-    rating: Optional[int] = None  # 評論星等（嚴重度訊號）
+    rating: int | None = None  # 評論星等（嚴重度訊號）
     comment: str = ""  # 客訴/差評自由文字 → L2 主輸入
     cs_conversation: list[CSTurn] = Field(default_factory=list)  # ground truth
     created_at: str = ""
@@ -112,40 +112,42 @@ class TicketFinding(BaseModel):
     problem_summary: str = ""
     # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
     suspected_field: str = "none"
-    evidence_quote: str = ""       # 害客戶誤解的商品原文段
-    ground_truth_quote: str = ""   # 客服對話擷取的正確答案（零幻覺）
+    evidence_quote: str = ""  # 害客戶誤解的商品原文段
+    ground_truth_quote: str = ""  # 客服對話擷取的正確答案（零幻覺）
     verdict: Verdict
     confidence: float = 0.0
-    adequacy_check: Optional[AdequacyResult] = None
+    adequacy_check: AdequacyResult | None = None
     # L4 行動
     recommended_action: RecommendedAction
     action_detail: str = ""
     writer_handoff: bool = False  # 防幻覺：content_missing 一律 false
     # 簿記
     is_primary: bool = False
-    hit_rule_id: str = ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
+    hit_rule_id: str = (
+        ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
+    )
     status: Literal["new", "confirmed", "dismissed", "fixed", "data_missing"] = "new"
     created_at: str = ""
     # 感知層來源（管道 A 平台主動 / B 客人進線 / C 供應商申訴）
     source_channel: str = ""  # A_platform | B_customer | C_supplier | unknown
-    source_system: str = ""   # 商品評論 / FreshDesk工單 / 訂單訊息 / Feedback / Mixpanel / NPS
+    source_system: str = ""  # 商品評論 / FreshDesk工單 / 訂單訊息 / Feedback / Mixpanel / NPS
     # 執行層對應（誰處理 · 在哪改）
-    owner_role: str = ""      # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
-    exec_platform: str = ""   # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
-    order_oid: str = ""       # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
-    supplier_oid: str = ""    # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
+    owner_role: str = ""  # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
+    exec_platform: str = ""  # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
+    order_oid: str = ""  # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
+    supplier_oid: str = ""  # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
 
 
 class InboundItem(BaseModel):
     """待判決標的（人工錄入：CSV/Excel 批量 或 單個新增）。存本地 SQLite，供 L2–L4 判決。"""
 
     item_id: str = ""  # 冪等鍵（source + prod_oid + comment hash）
-    source: str = "manual"  # 來源標記（review/ticket/presale_postsale/manual…，種類會擴張故用 str）
+    source: str = "manual"  # 來源標記（review/ticket/conversations/manual…，種類會擴張故用 str）
     batch_id: str = ""  # 所屬上傳批次（upload_batches.batch_id）
     source_channel: str = ""  # 感知層管道：A_platform | B_customer | C_supplier | unknown
     prod_oid: str = ""
     pkg_oid: str = ""
-    rating: Optional[int] = None  # 評分/星等（嚴重度訊號）
+    rating: int | None = None  # 評分/星等（嚴重度訊號）
     comment: str = ""  # 客訴/差評文字（判決主輸入）
     raw: dict = Field(default_factory=dict)  # 原始列（audit）
     status: Literal["pending", "diagnosed", "failed"] = "pending"

@@ -41,7 +41,11 @@ def reconcile(
         return "content_unclear", 0.85
     if st == "adequate":
         # 內容看似清楚，但有確定性瑕疵（禁詞/促銷標籤/結構缺失）→ 非純誤解
-        if rules & {"forbidden_terms", "product_name_promo_bracket", "description_markdown_structure"}:
+        if rules & {
+            "forbidden_terms",
+            "product_name_promo_bracket",
+            "description_markdown_structure",
+        }:
             return "content_unclear", 0.7
         return "customer_misread", 0.8  # 內容其實清楚 → 降級
     return "content_unclear", 0.6

@@ -18,9 +18,9 @@ LOGICAL_FIELDS = [
     "prod_feature",
     "prod_schedules",
     "prod_notice",
-    "prod_fee",       # 費用資訊 PMDL_INC_NINC
-    "prod_meetup",    # 集合資訊 PMDL_VENUE_LOCATION
-    "prod_redeem",    # 使用兌換 PMDL_EXCHANGE_LOCATION
+    "prod_fee",  # 費用資訊 PMDL_INC_NINC
+    "prod_meetup",  # 集合資訊 PMDL_VENUE_LOCATION
+    "prod_redeem",  # 使用兌換 PMDL_EXCHANGE_LOCATION
     "prod_purchase",  # 購買須知 PMDL_PURCHASE_SUMMARY
     "pkg_desc",
     "pkg_schedules",
@@ -57,8 +57,15 @@ def _from_db(prod_id: str) -> dict:
     fields = {
         k: (p[k] or "")
         for k in (
-            "prod_name", "prod_summary", "prod_feature", "prod_schedules", "prod_notice",
-            "prod_fee", "prod_meetup", "prod_redeem", "prod_purchase",
+            "prod_name",
+            "prod_summary",
+            "prod_feature",
+            "prod_schedules",
+            "prod_notice",
+            "prod_fee",
+            "prod_meetup",
+            "prod_redeem",
+            "prod_purchase",
         )
     }
     if pk:
@@ -90,14 +97,14 @@ def extract_fields(prod_id: str, product_json: dict) -> ProductConfig:
 
 def _from_live(prod_id: str) -> dict:
     """production：api-b2c CDN（正規憑證；header/token 由環境變數注入，不寫死、不用 verify=False）。"""
-    import os
-
     import httpx
+
+    from app.core.config import env
 
     base = "https://api-b2c.kkday.com/api/v2/cdn/product"
     headers = {
-        "b2c-token1": os.environ.get("KKDAY_B2C_TOKEN1", ""),
-        "x-auth-token": os.environ.get("KKDAY_X_AUTH_TOKEN", ""),
+        "b2c-token1": env.kkday_b2c_token1,
+        "x-auth-token": env.kkday_x_auth_token,
         "lang": "zh-tw",
         "locale": "tw",
         "currency": "TWD",

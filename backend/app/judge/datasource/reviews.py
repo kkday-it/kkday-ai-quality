@@ -20,7 +20,7 @@ def _now() -> str:
 
 
 def _sid(prod_id: str, body: str) -> str:
-    h = hashlib.sha1(f"{prod_id}|{body}".encode("utf-8")).hexdigest()[:12]
+    h = hashlib.sha1(f"{prod_id}|{body}".encode()).hexdigest()[:12]
     return f"review-{prod_id}-{h}"
 
 

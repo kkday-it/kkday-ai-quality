@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 
 from app.core.schema import NormalizedTicket, TicketFinding
 from app.judge import adequacy as L3
-from app.judge import arbiter
+from app.judge import arbiter, codex
 from app.judge import classify as L2
-from app.judge import codex
 from app.judge import diagnose as L4
 from app.judge.datasource import product as ds_product
 from app.judge.vendored import machine_checks as mc
@@ -30,19 +30,35 @@ _SOURCE_MAP: dict[str, tuple[str, str]] = {
 }
 
 _VALID_DIMS = {
-    "商品定位", "行程流程", "費用資訊", "集合資訊",
-    "使用兌換", "成團條件", "限制與風險", "承諾與SLA", "non_content",
+    "商品定位",
+    "行程流程",
+    "費用資訊",
+    "集合資訊",
+    "使用兌換",
+    "成團條件",
+    "限制與風險",
+    "承諾與SLA",
+    "non_content",
 }
 # adequacy 查詢用的 logical field（對齊 datasource.product.LOGICAL_FIELDS）；codex 細欄名依 dimension 回退到這些
 _LOGICAL = {
-    "prod_name", "prod_summary", "prod_feature", "prod_schedules", "prod_notice",
-    "prod_fee", "prod_meetup", "prod_redeem", "prod_purchase", "pkg_desc", "pkg_schedules",
+    "prod_name",
+    "prod_summary",
+    "prod_feature",
+    "prod_schedules",
+    "prod_notice",
+    "prod_fee",
+    "prod_meetup",
+    "prod_redeem",
+    "prod_purchase",
+    "pkg_desc",
+    "pkg_schedules",
 }
 _DIM_FIELD: dict[str, str] = {
     "商品定位": "prod_name",
     "行程流程": "prod_schedules",
-    "費用資訊": "prod_summary",
-    "集合資訊": "prod_summary",
+    "費用資訊": "prod_fee",
+    "集合資訊": "prod_meetup",
     "使用兌換": "pkg_desc",
     "成團條件": "prod_notice",
     "限制與風險": "prod_notice",
@@ -102,10 +118,18 @@ def diagnose_ticket(ticket: NormalizedTicket, prod_source: str = "fixture") -> T
         rule_hits = codex.scan_misplacement(mkt_text)
         # 欄位原文為空 → 不呼叫 LLM（深度 prompt 可達 9k 字，空欄呼叫純浪費）；machine empty_output 已足夠定調
         if field_text.strip():
-            adeq = L3.check(field_text, dim, cls.get("problem_summary", ""), field=field, ground_truth=gt)
+            adeq = L3.check(
+                field_text, dim, cls.get("problem_summary", ""), field=field, ground_truth=gt
+            )
         else:
-            adeq = {"status": "field_empty", "evidence": "（該欄位未取得原文）", "reason": "欄位原文為空"}
-        evidence = _as_str(adeq.get("evidence", "")) or (machine[0].get("evidence", "") if machine else "")
+            adeq = {
+                "status": "field_empty",
+                "evidence": "（該欄位未取得原文）",
+                "reason": "欄位原文為空",
+            }
+        evidence = _as_str(adeq.get("evidence", "")) or (
+            machine[0].get("evidence", "") if machine else ""
+        )
         verdict, conf = arbiter.reconcile(cls, adeq, machine, rule_hits)
         # 法典溯源：錯位規則直接命中 → 該 rule_id；否則 content_missing 回填該面向空欄規則
         if rule_hits:
@@ -145,11 +169,16 @@ def diagnose_ticket(ticket: NormalizedTicket, prod_source: str = "fixture") -> T
     )
 
 
-def diagnose_many(tickets: list[NormalizedTicket], prod_source: str = "fixture") -> list[TicketFinding]:
+_log = logging.getLogger(__name__)
+
+
+def diagnose_many(
+    tickets: list[NormalizedTicket], prod_source: str = "fixture"
+) -> list[TicketFinding]:
     out: list[TicketFinding] = []
     for t in tickets:
         try:
             out.append(diagnose_ticket(t, prod_source=prod_source))
-        except Exception as e:  # noqa: BLE001 — LLM 輸出不可預測，單筆失敗不毀整批
-            print(f"⚠️ ticket {t.ticket_id} 判決失敗，略過：{e}")
+        except Exception:  # noqa: BLE001 — LLM 輸出不可預測，單筆失敗不毀整批；保留 stack trace 供 monitoring
+            _log.error("ticket %s 判決失敗，略過", t.ticket_id, exc_info=True)
     return out

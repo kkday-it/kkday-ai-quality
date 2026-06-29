@@ -78,13 +78,15 @@ def scan_misplacement(text: str) -> list[dict]:
         fired = [k for k in kws if k.lower() in low]
         if fired:
             r = get_rule(rid) or {}
-            hits.append({
-                "rule_id": rid,
-                "verdict_hint": r.get("verdict_hint", "real_config_issue"),
-                "flag_message": r.get("flag_message", ""),
-                "severity": r.get("severity", "P2"),
-                "keywords": fired,
-            })
+            hits.append(
+                {
+                    "rule_id": rid,
+                    "verdict_hint": r.get("verdict_hint", "real_config_issue"),
+                    "flag_message": r.get("flag_message", ""),
+                    "severity": r.get("severity", "P2"),
+                    "keywords": fired,
+                }
+            )
     return hits
 
 
@@ -123,7 +125,9 @@ def get_field(dimension: str, field: str) -> dict | None:
     """依 面向 + 欄位名 取單欄法典（面向正規化比對；field 支援前綴比對，如『集合地點』）。"""
     nd = _norm_dim(dimension)
     for f in all_fields():
-        if _norm_dim(f["dimension"]) == nd and (f["field"] == field or f["field"].startswith(field)):
+        if _norm_dim(f["dimension"]) == nd and (
+            f["field"] == field or f["field"].startswith(field)
+        ):
             return f
     return None
 
@@ -138,43 +142,43 @@ def build_field_prompt(fd: dict) -> str:
     模板吸收 ProductContentAIChecker G1/GEN-1 的深度結構（角色→唯一判準→好壞範例→
     輸出 schema→防過擬鐵則）+ L2-L4 SD 的雙意見/防幻覺仲裁原則。
     """
-    return f"""# AI 法官 · 欄位判決 Prompt — {fd['dimension']} / {fd['field']}
+    return f"""# AI 法官 · 欄位判決 Prompt — {fd["dimension"]} / {fd["field"]}
 
 > 自動生成自內容治理法典（field_codex.json）。判準 SSOT = Google Sheets 法典。
 > 角色：旅遊電商內容稽核員，**只依本欄位法典判決**，不得以法典未列出的理由扣分（裁判是法典執行器）。
 > 只看本欄位原文 + 客服對話(ground truth)，**不採信客訴語氣**。
 
 ## 0. 判決目標（治理原則 · Why）
-{fd['principle']}
+{fd["principle"]}
 
 ## 1. 法典條文（Canon · 唯一判準）
-{fd['canon']}
+{fd["canon"]}
 
 ## 2. 允許 ✅ / 禁止 ❌
 **✅ 允許**
-{_bullets(fd['allow'])}
+{_bullets(fd["allow"])}
 
 **❌ 禁止**
-{_bullets(fd['deny'])}
+{_bullets(fd["deny"])}
 
 ## 3. 好範例（應判 Pass）
-{_bullets(fd['good_examples'])}
+{_bullets(fd["good_examples"])}
 
 ## 4. 壞範例（Red Flag · 應判 Flag）
-{_bullets(fd['bad_examples'])}
+{_bullets(fd["bad_examples"])}
 
 ## 5. 可機器檢查線索
-{_bullets(fd['machine_rule']) if isinstance(fd['machine_rule'], list) else fd['machine_rule']}
+{_bullets(fd["machine_rule"]) if isinstance(fd["machine_rule"], list) else fd["machine_rule"]}
 
 ## 6. 判決輸出（嚴格 JSON，response_format=json_object）
 {{
-  "dimension": "{fd['dimension']}",
-  "field": "{fd['field']}",
+  "dimension": "{fd["dimension"]}",
+  "field": "{fd["field"]}",
   "violation": true/false,
   "verdict": "real_config_issue | content_missing | content_unclear | contract_breach | customer_misread | escalate_ops",
   "evidence_quote": "命中問題的欄位原文片段；無則空字串",
   "ground_truth_quote": "客服對話中的標準答案/政策原文；無則空字串",
-  "reason": "對照 canon 的違規理由（典型違規原因：{fd['violation_reason']}）",
+  "reason": "對照 canon 的違規理由（典型違規原因：{fd["violation_reason"]}）",
   "confidence": 0.0,
   "flag_message": "若 violation=true 的一句話標記訊息"
 }}
