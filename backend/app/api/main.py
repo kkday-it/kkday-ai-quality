@@ -258,7 +258,7 @@ class SettingsIn(BaseModel):
     provider: str | None = None
     model: str | None = None
     base_url: str | None = None
-    api_token: str | None = None
+    provider_tokens: dict | None = None  # { provider_id: token } per-provider；空/遮罩值後端不覆蓋
     temperature: float | None = None
     thinking: str | None = None
     reasoning_effort: str | None = None
@@ -318,15 +318,18 @@ def test_llm(body: SettingsIn, user: dict = Depends(load_user_context)) -> dict:
     """
     from app.core import settings as app_settings
 
-    saved = app_settings.load_settings(user["user_id"])  # 含明文 token
+    saved = app_settings.load_settings(user["user_id"])  # 含明文 provider_tokens
     patch = body.model_dump(exclude_none=True)
-    tok = patch.get("api_token")
-    if not tok or "***" in str(tok) or "…" in str(tok):
-        patch.pop("api_token", None)  # 空/遮罩 → 沿用已儲存 token
+    # provider_tokens 逐 key 合併（空/遮罩 → 沿用已儲存該 provider token，免重輸）；其餘欄位 body 覆蓋
+    ptokens = dict(saved.get("provider_tokens") or {})
+    for pid, tok in (patch.pop("provider_tokens", None) or {}).items():
+        if tok and "***" not in str(tok) and "…" not in str(tok):
+            ptokens[pid] = tok
     merged = {**saved, **patch}
+    base_url = (merged.get("base_url") or "").strip()
     cfg = {
-        "token": merged.get("api_token") or config.env.openai_api_key,
-        "base_url": (merged.get("base_url") or "").strip(),
+        "token": ptokens.get(app_settings.provider_id_for(base_url)) or config.env.openai_api_key,
+        "base_url": base_url,
         "model": merged.get("model") or config.env.ai_judge_model,
         "temperature": merged.get("temperature"),
         "reasoning_effort": merged.get("reasoning_effort") or "default",
@@ -350,7 +353,7 @@ def _model_meets_min(model_id: str, min_version: str) -> bool:
 def list_models(user: dict = Depends(load_user_context)) -> dict:
     """動態列出當前 user 配置可取得的 model id（過濾 ≥ 門檻版本）；無 token 回空清單。
 
-    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/defaults.json modelMeta 提供（API 無此資訊）。
+    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/defaults.json defaultModels[].desc 提供（API 無此資訊）。
     """
     from app.core import settings as app_settings
 

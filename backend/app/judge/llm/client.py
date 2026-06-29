@@ -17,10 +17,15 @@ _log = logging.getLogger(__name__)
 
 
 def _resolve() -> dict:
-    """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。"""
+    """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。
+
+    token 取「當前 provider（由 base_url 反推）對應的 provider_tokens 條目」，fallback env；
+    確保 token 永遠對齊當前 base_url 的 provider，不會用到別家 provider 的 key。
+    """
     cfg = _settings.current()
-    token = cfg.get("api_token") or env.openai_api_key
     base_url = (cfg.get("base_url") or "").strip()
+    provider = _settings.provider_id_for(base_url)
+    token = (cfg.get("provider_tokens") or {}).get(provider) or env.openai_api_key
     model = cfg.get("model") or env.ai_judge_model
     return {
         "token": token,
@@ -34,7 +39,7 @@ def _resolve() -> dict:
 def list_models() -> list[str]:
     """回傳當前 provider（由 base_url 判定）的本地預設模型清單；不再打 /v1/models。
 
-    清單 SSOT＝`config/defaults.json` providers[].defaultModels（前後端共用、按能力排序、含 modelMeta 價格 hint）；
+    清單 SSOT＝`config/defaults.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
     新增模型只改該檔一處。改本地預設原因：/v1/models 會倒出帳號全模型（embedding / 語音 / 影像 /
     legacy davinci-babbage-ada / ft-kkday 舊 fine-tune），下拉可能誤選 whisper 當判決模型。
     base_url 空 → 預設 openai；非 OpenAI 依關鍵字判 gemini / bytedance。
@@ -53,7 +58,7 @@ def list_models() -> list[str]:
             return []  # 自訂 base_url 無對應 provider → 回空，前端顯示「請手動輸入 model」（勿誤導回 OpenAI 清單）
     if prov is None:  # base_url 空 → 預設 openai
         prov = next((p for p in providers if p.get("id") == "openai"), None)
-    return list(prov.get("defaultModels", [])) if prov else []
+    return [m["id"] for m in prov.get("defaultModels", [])] if prov else []
 
 
 def has_key() -> bool:
@@ -117,7 +122,7 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
             "model": cfg["model"],
             "base_url": base,
             "sent": prompt,
-            "error": "未設定 api_token（stub 模式，無法真打 API）；請先儲存含 token 的配置",
+            "error": "當前 provider 未設定 token（stub 模式，無法真打 API）；請先填入並儲存該 provider 的 token",
         }
 
     from openai import OpenAI
