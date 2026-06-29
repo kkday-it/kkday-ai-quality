@@ -11,16 +11,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.schema import CSTurn, NormalizedTicket
+from app.core.utils import now_iso as _now
 
 FIXTURES = Path(__file__).resolve().parents[3] / "fixtures"
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def fetch_conversations(

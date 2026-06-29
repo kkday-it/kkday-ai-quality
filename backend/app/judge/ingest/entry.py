@@ -8,9 +8,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-from datetime import datetime, timezone
 
 from app.core.schema import InboundItem
+from app.core.utils import now_iso as _now
 
 # 欄位別名映射（容錯各種 CSV/Excel 表頭）
 FIELD_ALIASES: dict[str, list[str]] = {
@@ -40,10 +40,6 @@ FIELD_ALIASES: dict[str, list[str]] = {
 def _make_id(source: str, prod_oid: str, comment: str) -> str:
     h = hashlib.sha1(f"{source}|{prod_oid}|{comment}".encode()).hexdigest()[:16]
     return f"{source}-{h}"
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def _pick(row: dict, key: str) -> str:

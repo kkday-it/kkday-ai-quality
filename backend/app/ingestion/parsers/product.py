@@ -8,8 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.ingestion.base import ParsedItem
-
-from app.ingestion.parsers._common import clean, collect_metadata, new_id  # noqa: F401
+from app.ingestion.parsers._common import clean, collect_metadata
 
 _PROD_FIELDS = (
     "prod_name",

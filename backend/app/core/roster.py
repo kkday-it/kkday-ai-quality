@@ -20,11 +20,11 @@ from __future__ import annotations
 import csv
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.db import DB_PATH, _conn, init_db
 from app.core.schema import ACTIONABLE_VERDICTS
+from app.core.utils import now_iso as _now
 
 _SQL_FILE = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
 _DEFAULT_CSV = (
@@ -53,10 +53,6 @@ _VERDICT_SEVERITY: dict[str, int] = {
     "escalate_ops": 1,
 }
 _ACTIONABLE = ACTIONABLE_VERDICTS  # 單一真相源＝schema.ACTIONABLE_VERDICTS（勿在此另寫一份）
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def _to_float(s: str) -> float:

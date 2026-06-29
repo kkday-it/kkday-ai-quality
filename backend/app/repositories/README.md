@@ -7,7 +7,7 @@
 
 - 主力資料層仍走 `app/core/db.py`（SQLite）+ `app/core/roster.py`（灌數/彙總）。
 - 接線前置：① 建 `app/models.py`（ORM：Product/Package/Signal/Interaction…）② 決定 SQLite→PostgreSQL 遷移時程。
-- 配套：`app/ingestion/`（connector/parser，base.py 已補可 import）+ `app/schemas/sources/`。
+- 配套：`app/ingestion/`（connector/parser，base.py 已補可 import）。
 
 > 為何留著不刪：新攝取架構的完整 scaffold（parser/connector 已寫完），刪掉成本高於標記隔離。
 > 接線計畫對齊「6 源來源匯總架構」（見 docs/PLAN-分類判決-GPT校準.md Gate -1）。
