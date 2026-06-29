@@ -1,0 +1,11 @@
+# Prettier 只負責前端 TS/Vue/CSS/JS；以下不格式化
+**/node_modules
+**/dist
+**/*.min.*
+pnpm-lock.yaml
+# 後端 Python 交給 ruff format
+backend/
+# 文件 / 設定維持手寫格式（避免打亂中文表格與 SSOT）
+docs/
+**/*.md
+config/

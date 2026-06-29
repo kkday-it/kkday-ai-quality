@@ -11,9 +11,9 @@ if [ ! -d .venv ]; then
   python3 -m venv .venv
 fi
 
-# 2. 依賴（冪等，已裝則快）
+# 2. 依賴（冪等，已裝則快）；含 [dev]＝ruff（格式化/lint）+ pytest，避免「py 不會格式化」
 echo "📦 安裝依賴..."
-.venv/bin/pip install -q -e .
+.venv/bin/pip install -q -e ".[dev]"
 
 # 3. test 模式 or 啟動
 if [ "${1:-}" = "test" ]; then

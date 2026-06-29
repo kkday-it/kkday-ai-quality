@@ -9,6 +9,8 @@ dist/
 findings/
 .venv/
 backend/data/
+# 根層 /data：原始進線資料匯出（CSV，含個資/大檔，禁止 commit）
+/data/
 __pycache__/
 *.pyc
 
