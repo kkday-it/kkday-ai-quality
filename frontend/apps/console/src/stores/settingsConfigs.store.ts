@@ -5,12 +5,12 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getSettingsRaw, saveSettings } from '@/api';
-import type { LLMConfig, QcConfig, SettingsBundle } from '@/features/settings/types';
+import type { LlmConfig, QcConfig, SettingsBundle } from '@/features/settings/types';
 
 export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
-  const llmConfigs = ref<LLMConfig[]>([]);
+  const llmConfigs = ref<LlmConfig[]>([]);
   const qcConfigs = ref<QcConfig[]>([]);
-  const activeLLMId = ref<string | null>(null);
+  const activeLlmId = ref<string | null>(null);
   const activeQcId = ref<string | null>(null);
   /** per-provider 明文 token（本 session 已知）；key＝provider id。 */
   const providerTokens = ref<Record<string, string>>({});
@@ -24,7 +24,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   function syncFrom(bundle: SettingsBundle): void {
     llmConfigs.value = bundle.llm_configs ?? [];
     qcConfigs.value = bundle.qc_configs ?? [];
-    activeLLMId.value = bundle.active_llm_config_id ?? null;
+    activeLlmId.value = bundle.active_llm_config_id ?? null;
     activeQcId.value = bundle.active_qc_config_id ?? null;
     stubMode.value = !!bundle.stub_mode;
   }
@@ -57,8 +57,8 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
 
   // ── LLM ──
   /** 新增/更新一套 LLM config（依 id upsert）；tokenPatch＝{providerId: 明文token}（dirty 才帶）。 */
-  async function saveLLMConfig(
-    cfg: LLMConfig,
+  async function saveLlmConfig(
+    cfg: LlmConfig,
     tokenPatch?: Record<string, string>
   ): Promise<void> {
     const list = [...llmConfigs.value];
@@ -66,16 +66,16 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     if (idx >= 0) list[idx] = cfg;
     else list.push(cfg);
     const patch: Record<string, unknown> = { llm_configs: list };
-    if (!activeLLMId.value) patch.active_llm_config_id = cfg.id; // 首套自動設為啟用
+    if (!activeLlmId.value) patch.active_llm_config_id = cfg.id; // 首套自動設為啟用
     if (tokenPatch) patch.provider_tokens = tokenPatch;
     await persist(patch, tokenPatch ? { providerTokens: tokenPatch } : undefined);
   }
 
-  async function deleteLLMConfig(id: string): Promise<void> {
+  async function deleteLlmConfig(id: string): Promise<void> {
     await persist({ llm_configs: llmConfigs.value.filter((c) => c.id !== id) });
   }
 
-  async function setActiveLLM(id: string): Promise<void> {
+  async function setActiveLlm(id: string): Promise<void> {
     await persist({ active_llm_config_id: id });
   }
 
@@ -103,7 +103,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   return {
     llmConfigs,
     qcConfigs,
-    activeLLMId,
+    activeLlmId,
     activeQcId,
     providerTokens,
     qcPasswords,
@@ -111,9 +111,9 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     loading,
     loaded,
     loadAll,
-    saveLLMConfig,
-    deleteLLMConfig,
-    setActiveLLM,
+    saveLlmConfig,
+    deleteLlmConfig,
+    setActiveLlm,
     saveQcConfig,
     deleteQcConfig,
     setActiveQc,

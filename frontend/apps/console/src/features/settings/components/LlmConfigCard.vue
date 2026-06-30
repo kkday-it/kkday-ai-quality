@@ -1,31 +1,42 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue';
-import type { LLMConfig } from '../types';
+import LlmConfigEditor from './LlmConfigEditor.vue';
+import type { LlmConfig } from '../types';
 
 // 單一 LLM config 卡片：以手風琴面板（a-collapse-item）呈現。
 // header＝label（點擊可 inline 改名）+ 狀態徽章；extra＝啟用開關 / 編輯 / 刪除；body＝provider / model / base_url。
 // itemKey：對應 AccordionGroup 的 active-key（Arco 由 a-collapse-item 的 vnode key 解析），須與面板 default-active 一致。
-const props = defineProps<{ config: LLMConfig; active: boolean; itemKey: string }>();
+// editing 非 null 時＝本卡片進入編輯態：面板保留，於摘要行下方就地展開 LlmConfigEditor（不替換整張卡片）。
+const props = defineProps<{
+  config: LlmConfig;
+  active: boolean;
+  itemKey: string;
+  editing?: LlmConfig | null;
+  providerTokens?: Record<string, string>;
+}>();
 const emit = defineEmits<{
   (e: 'edit'): void;
   (e: 'delete'): void;
   (e: 'activate'): void;
   (e: 'rename', label: string): void;
+  (e: 'save', payload: { config: LlmConfig; tokenPatch?: Record<string, string> }): void;
+  (e: 'cancel'): void;
 }>();
 
 // inline 改名：點名稱 → 切 input，enter/blur 提交（非空且有變更才 emit），esc 取消。
-const editing = ref(false);
+// 命名為 renaming 以免與「編輯態」prop `editing` 衝突（後者控制配置編輯器的就地展開）。
+const renaming = ref(false);
 const draft = ref('');
 const inputRef = ref<{ focus?: () => void } | null>(null);
 const startEdit = async () => {
   draft.value = props.config.label;
-  editing.value = true;
+  renaming.value = true;
   await nextTick();
   inputRef.value?.focus?.();
 };
 const commit = () => {
-  if (!editing.value) return;
-  editing.value = false;
+  if (!renaming.value) return;
+  renaming.value = false;
   const v = draft.value.trim();
   if (v && v !== props.config.label) emit('rename', v);
 };
@@ -37,7 +48,7 @@ const commit = () => {
     <!-- header 整列點擊會切換面板，故 label/輸入框 click 需 .stop 才能改名而不誤觸折疊 -->
     <template #header>
       <a-input
-        v-if="editing"
+        v-if="renaming"
         ref="inputRef"
         v-model="draft"
         size="mini"
@@ -45,7 +56,7 @@ const commit = () => {
         @click.stop
         @blur="commit"
         @keyup.enter="commit"
-        @keyup.esc="editing = false"
+        @keyup.esc="renaming = false"
       />
       <span
         v-else
@@ -72,17 +83,26 @@ const commit = () => {
           :title="active ? '當前啟用中' : '開啟以設為啟用'"
           @change="$emit('activate')"
         />
-        <a-button size="mini" @click="$emit('edit')">編輯</a-button>
+        <!-- 編輯態下隱藏「編輯」鈕（避免與下方就地展開的編輯器重複），編輯器自帶取消 -->
+        <a-button v-if="!editing" size="mini" @click="$emit('edit')">編輯</a-button>
         <a-popconfirm content="確定刪除此配置？" type="warning" @ok="$emit('delete')">
           <a-button size="mini" status="danger">刪除</a-button>
         </a-popconfirm>
       </a-space>
     </template>
 
-    <!-- body：展開後顯示連線細節 -->
+    <!-- body：展開後顯示連線細節；進入編輯態時於其下方就地展開編輯器（面板不被替換） -->
     <div class="text-xs text-[#86909c]">
       {{ config.provider }} · <span class="font-mono">{{ config.model }}</span>
       <span v-if="config.base_url"> · {{ config.base_url }}</span>
     </div>
+    <LlmConfigEditor
+      v-if="editing"
+      class="mt-3"
+      :model-value="editing"
+      :provider-tokens="providerTokens ?? {}"
+      @save="(payload) => $emit('save', payload)"
+      @cancel="$emit('cancel')"
+    />
   </a-collapse-item>
 </template>

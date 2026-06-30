@@ -6,19 +6,20 @@ import { testLlm } from '@/api';
 import { Terminal } from '@/components';
 import { MODEL_MIN_VERSION, PROVIDERS, REASONING } from '../constants';
 import { configStamp, deriveProviderId, modelMeetsMin } from '../utils';
-import type { LLMConfig } from '../types';
+import type { LlmConfig } from '../types';
 
 // 單套 LLM config 編輯器（modal 內容）：props 注入 config + 已知 token map，emit save 由父元件持久化。
 // 從舊 Settings.vue 重構：保留 provider 切換 / model 動態清單 / 即時測試（Terminal）；
 // 移除單一配置時代的 localStorage 快取與 per-model 旋鈕記憶（多 config 下「config 本身即真相源」）。
 const props = defineProps<{
   /** 編輯中的 config（新建時由父元件帶 id + 預設值）。 */
-  modelValue: LLMConfig;
+  modelValue: LlmConfig;
   /** 各 provider 明文 token（本 session 已知）；切換 provider 時還原該 provider token。 */
   providerTokens: Record<string, string>;
 }>();
 const emit = defineEmits<{
-  (e: 'save', payload: { config: LLMConfig; tokenPatch?: Record<string, string> }): void;
+  (e: 'save', payload: { config: LlmConfig; tokenPatch?: Record<string, string> }): void;
+  (e: 'cancel'): void;
 }>();
 
 const form = ref({
@@ -64,8 +65,8 @@ const selectProvider = (id: unknown) => {
   if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
 };
 
-/** 組出當前表單的 LLMConfig（保留 id）。 */
-const buildConfig = (): LLMConfig => ({
+/** 組出當前表單的 LlmConfig（保留 id）。 */
+const buildConfig = (): LlmConfig => ({
   id: props.modelValue.id,
   label: form.value.label.trim() || `LLM ${configStamp()}`,
   provider: selectedProvider.value,
@@ -241,6 +242,7 @@ watch(testResult, async (r) => {
     <a-space align="center" :size="8">
       <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
       <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
+      <a-button @click="emit('cancel')">取消</a-button>
       <span class="text-xs text-[#86909c]">測試＝即時測當前表單（不寫入）；儲存＝寫入此套配置</span>
     </a-space>
 

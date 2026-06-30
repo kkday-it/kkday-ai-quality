@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { LLMConnectionsPanel, QcConnectionsPanel } from '@/features/settings/pages';
+import { LlmConnectionsPanel, QcConnectionsPanel } from '@/features/settings/pages';
 
 // ⚙️ 設定抽屜＝「公共配置」：右滑疊加，兩分頁直接是基礎連線層 —— 🤖 LLM 模型 ｜ 🗄️ QC DB 接口。
 // 各 tab 自帶多套 config 管理 + 卡片內啟用切換（不再獨立「啟用」分頁）。
@@ -56,7 +56,7 @@ onMounted(async () => {
     unmount-on-close
   >
     <a-tabs v-model:active-key="tab">
-      <a-tab-pane key="llm" title="🤖 LLM 模型"><LLMConnectionsPanel /></a-tab-pane>
+      <a-tab-pane key="llm" title="🤖 LLM 模型"><LlmConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="qc" title="🗄️ QC DB 接口"><QcConnectionsPanel /></a-tab-pane>
     </a-tabs>
   </a-drawer>
