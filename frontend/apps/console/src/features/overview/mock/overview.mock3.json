@@ -1,0 +1,100 @@
+{
+  "meta": {
+    "title": "AI 質檢總體概覽",
+    "subtitle": "三業務目標 · 26H2",
+    "period": "2026 H1（示意資料）",
+    "note": "本頁為 mock 驅動的 demo，數據為示意值；接後端後改讀 /api/overview（形狀不變）。",
+    "loopCaption": "⑤ 供給內容改善後，售後進線下降並回饋源頭 ①，閉環持續收斂。"
+  },
+  "loop": [
+    { "name": "① 進線・反饋來源", "sub": "售前後進訊 · Feedback · 工單 · 評論" },
+    { "name": "② AI 法官診斷", "sub": "客訴根因歸因 · 被動轉主動洞察" },
+    { "name": "③ 可執行 Action", "sub": "洞察 → 改善項 · 規則更新" },
+    { "name": "④ AI 審品・內容撰寫", "sub": "前審 / 後審 / 必填驗證 + 供應商補內容" },
+    { "name": "⑤ 供給內容質量 ↑", "sub": "高風險前置攔截 · 合規率提升" }
+  ],
+  "engines": [
+    { "id": "ai_review", "name": "AI 質檢審品", "tagline": "必填驗證 ＋ AI 前審 ＋ AI 後審", "pLevel": "P0", "status": "進行中 → H2 放量", "statusColor": "arcoblue", "goal": "三項審核規範完全落地，高風險踩線可前置攔截與校正。", "metrics": [{ "label": "質檢達標率", "value": 71.3, "unit": "%" }, { "label": "違規校正率", "value": 68.5, "unit": "%" }, { "label": "審品人效", "value": 42, "unit": "件/人日" }], "spark": [58, 60, 63, 66, 69, 71.3], "route": null, "cta": "H2 放量上線" },
+    { "id": "ai_writing", "name": "AI 商品內容撰寫", "tagline": "供應商端 AI 補齊內容", "pLevel": "P1", "status": "進行中", "statusColor": "green", "goal": "供應商用 AI 快速補齊內容，覆蓋發酵加速。", "metrics": [{ "label": "內容覆蓋率", "value": 38, "unit": "%" }, { "label": "工具使用率", "value": 52, "unit": "%" }], "spark": [12, 19, 25, 30, 34, 38], "route": null, "cta": "基準建置中" },
+    { "id": "ai_judge", "name": "AI 法官診斷", "tagline": "進訊 ＋ Feedback ＋ 工單 ＋ 評論 多源歸因", "pLevel": "P1", "status": "Up-coming", "statusColor": "orange", "goal": "建置 dashboard，被動客訴轉主動洞察，產出可執行 action。", "metrics": [{ "label": "售後進線內容類占比", "value": 14.95, "unit": "%" }, { "label": "歸因樣本", "value": 52, "unit": "筆" }], "spark": [17.2, 16.5, 16.1, 15.4, 15.1, 14.95], "route": "/judge/attribution", "cta": "查看歸因總覽" }
+  ],
+  "crossTrend": {
+    "title": "跨目標落後指標趨勢",
+    "unit": "%",
+    "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"],
+    "series": [
+      { "name": "內容類進線占比", "data": [17.2, 16.5, 16.1, 15.4, 15.1, 14.95] },
+      { "name": "售後總進線率", "data": [22.1, 21.4, 20.8, 20.1, 19.6, 19.0] },
+      { "name": "CVR", "data": [1.2, 1.28, 1.35, 1.44, 1.52, 1.6] }
+    ]
+  },
+  "goals": {
+    "content": {
+      "label": "內容質量 & 閉環引擎",
+      "northStar": [
+        { "key": "intake_content_ratio", "label": "售後進線・內容類占比", "value": 14.95, "unit": "%", "target": 10, "targetText": "目標 <10%", "delta": -2.25, "deltaDir": "down", "deltaGood": true, "tone": "core", "hint": "核心落後指標：內容問題造成的售後進線比例，越低越好。", "spark": [17.2, 16.5, 16.1, 15.4, 15.1, 14.95] },
+        { "key": "qc_pass_rate", "label": "質檢達標率", "value": 71.3, "unit": "%", "target": null, "targetText": "↑13%（vs 基準）", "delta": 13, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "前審＋後審通過率；H2 放量後持續拉升。", "spark": [58, 60, 63, 66, 69, 71.3] },
+        { "key": "correction_rate", "label": "違規內容校正率", "value": 68.5, "unit": "%", "target": 85, "targetText": "目標 85%", "delta": 6.2, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "踩線內容被前置攔截並完成校正的比例。", "spark": [55, 58, 60, 63, 66, 68.5] },
+        { "key": "review_efficiency", "label": "審品人效", "value": 42, "unit": "件/人日", "target": null, "targetText": "↑18%（vs 基準）", "delta": 18, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "AI 前審分流後，單一審品人員日均處理案件量。", "spark": [30, 33, 36, 38, 40, 42] }
+      ],
+      "charts": {
+        "laggingTrend": { "title": "落後指標趨勢・售後進線內容類占比", "unit": "%", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "target": 10, "series": [{ "name": "內容類進線占比", "data": [17.2, 16.5, 16.1, 15.4, 15.1, 14.95] }] },
+        "leadingTrend": { "title": "領先指標趨勢・質檢達標 / 校正 / 覆蓋", "unit": "%", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "series": [{ "name": "質檢達標率", "data": [58, 60, 63, 66, 69, 71.3] }, { "name": "違規校正率", "data": [55, 58, 60, 63, 66, 68.5] }, { "name": "內容覆蓋率", "data": [12, 19, 25, 30, 34, 38] }] },
+        "reviewFunnel": { "title": "審品攔截漏斗", "unit": "%", "stages": [{ "name": "進件（必填驗證）", "value": 100 }, { "name": "必填通過", "value": 88 }, { "name": "AI 前審通過", "value": 72 }, { "name": "AI 後審標記", "value": 61 }, { "name": "人工複核確認", "value": 54 }] },
+        "categoryCoverage": [
+          { "prod": "Tour", "pLevel": "P0", "tier2": 1, "tier3": 13, "color": "#165dff" },
+          { "prod": "Exp", "pLevel": "P0", "tier2": 3, "tier3": 20, "color": "#00b42a" },
+          { "prod": "Tix", "pLevel": "P1", "tier2": 10, "tier3": 0, "color": "#ff7d00" },
+          { "prod": "Charter", "pLevel": "P2", "tier2": 1, "tier3": 3, "color": "#86909c" }
+        ]
+      },
+      "sources": [
+        { "metric": "售後進線率（內容類）", "kind": "落後指標", "dapTable": "dw_kkdb.message", "dashboard": "Looker Studio", "url": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D" },
+        { "metric": "質檢達標率 / 合規率", "kind": "領先指標", "dapTable": "dw_kkdb_product.review_rule", "dashboard": "Google Sheet", "url": "https://docs.google.com/spreadsheets/d/1yoaIOXEeG2CVd_eVxGzGdduzZbD2BdCcUUevc7OXrRI/edit?gid=2112171808" },
+        { "metric": "審品人效", "kind": "領先指標", "dapTable": "review_rule · review_case · review_case_rule", "dashboard": "Google Sheet", "url": "https://docs.google.com/spreadsheets/d/10CThd0G6EWb1QfEiV7WRhsSgjPuOOi1e0fue74hv18M/edit?gid=1007006872" }
+      ]
+    },
+    "presale": {
+      "label": "售前體驗（轉化）",
+      "northStar": [
+        { "key": "cvr", "label": "CVR（轉化率）", "value": 1.6, "unit": "%", "target": 1.8, "targetText": "目標 1.8%（基準 1.2%）", "delta": 0.4, "deltaDir": "up", "deltaGood": true, "tone": "core", "hint": "核心落後指標：售前轉化率，總指標目標 1.2% → 1.8%。資料於 Tableau / Mixpanel。", "spark": [1.2, 1.28, 1.35, 1.44, 1.52, 1.6] },
+        { "key": "presale_intake", "label": "售前進訊量", "value": 8200, "unit": "件/月", "target": null, "targetText": "AI 為主、真人為輔", "delta": -6, "deltaDir": "down", "deltaGood": true, "tone": "lead", "hint": "售前諮詢進線量；互動中即時解惑回收不安訊號。", "spark": [9600, 9300, 9000, 8700, 8450, 8200] },
+        { "key": "presale_health", "label": "售前資訊健康度", "value": 0, "unit": "", "target": null, "targetText": "Q3 建可追蹤指標", "delta": 0, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "用戶 feedback 定位售前資訊不安點（Mixpanel，指標建置中）。", "spark": [0, 0, 0, 0, 0, 0] },
+        { "key": "compare_usage", "label": "方案比較器使用率", "value": 24, "unit": "%", "target": null, "targetText": "AI 解析 + 比較器", "delta": 6, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "進入商品/方案比較器的用戶占比；消除「該選哪個」。", "spark": [10, 13, 16, 19, 22, 24] }
+      ],
+      "charts": {
+        "cvrGauge": { "title": "CVR 達成率", "unit": "%", "value": 1.6, "max": 2, "target": 1.8, "baseline": 1.2 },
+        "cvrByCat": { "title": "各產品線 CVR", "unit": "%", "target": 1.8, "items": [{ "name": "Tix", "value": 2.3, "color": "#165dff" }, { "name": "Exp", "value": 1.9, "color": "#00b42a" }, { "name": "Tour", "value": 1.7, "color": "#ff7d00" }, { "name": "Charter", "value": 1.1, "color": "#86909c" }] },
+        "cvrTrend": { "title": "CVR 趨勢", "unit": "%", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "target": 1.8, "series": [{ "name": "CVR", "data": [1.2, 1.28, 1.35, 1.44, 1.52, 1.6] }] },
+        "presaleIntakeTrend": { "title": "售前進訊量趨勢", "unit": "件", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "series": [{ "name": "售前進訊", "data": [9600, 9300, 9000, 8700, 8450, 8200] }] },
+        "conversionFunnel": { "title": "售前轉化漏斗", "unit": "%", "stages": [{ "name": "曝光", "value": 100 }, { "name": "商品頁瀏覽", "value": 46 }, { "name": "方案比較／加購", "value": 18 }, { "name": "結帳", "value": 4.2 }, { "name": "完成下單（CVR）", "value": 1.6 }] }
+      },
+      "sources": [
+        { "metric": "CVR", "kind": "落後指標", "dapTable": "tableau · mixpanel", "dashboard": "Tableau / Mixpanel", "url": "https://tableau.kkday.com/#/views/ByJean-TourExperienceCharterAirportCharterMetric/QTDAchievementRate" },
+        { "metric": "售前資訊健康度（feedback）", "kind": "領先指標", "dapTable": "mixpanel", "dashboard": "Mixpanel", "url": "https://mixpanel.com/s/3kF1vU" },
+        { "metric": "售前進訊", "kind": "領先指標", "dapTable": "dw_third_party.freshdesk_tickets · dw_kkdb_analytics.feedback_app", "dashboard": "Looker Studio", "url": "https://datastudio.google.com/u/0/reporting/8b3cae8a-043f-42ad-a5f1-45c913287c60/page/azXzC" }
+      ]
+    },
+    "postsale": {
+      "label": "售後體驗（履約）",
+      "northStar": [
+        { "key": "postsale_intake", "label": "售後進線率", "value": 19.0, "unit": "%", "target": 12, "targetText": "地點類 14%↓", "delta": -3.1, "deltaDir": "down", "deltaGood": true, "tone": "core", "hint": "核心落後指標：售後進線率，越低越好。確認焦慮類合計約 57%。", "spark": [22.1, 21.4, 20.8, 20.1, 19.6, 19.0] },
+        { "key": "review_satisfaction", "label": "評論滿意度", "value": 0, "unit": "", "target": null, "targetText": "Q3 建可追蹤指標", "delta": 0, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "真實旅客評論摘要 / Profile Filter（Tableau）。", "spark": [0, 0, 0, 0, 0, 0] },
+        { "key": "fulfillment_rate", "label": "履約達成率（供應商）", "value": 92.8, "unit": "%", "target": 95, "targetText": "目標 95%", "delta": 4.3, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "供應商履約節點達成；售後透明揭露、售前包裝。", "spark": [88.5, 89.2, 90.1, 91.4, 92.0, 92.8] },
+        { "key": "review_rate", "label": "評論填寫率", "value": 31, "unit": "%", "target": null, "targetText": "好評回收成售前彈藥", "delta": 4, "deltaDir": "up", "deltaGood": true, "tone": "lead", "hint": "真實旅客評論填寫率；雙重身分回收成售前信任訊號。", "spark": [22, 24, 26, 28, 30, 31] }
+      ],
+      "charts": {
+        "laggingTrend": { "title": "落後指標趨勢・售後進線率", "unit": "%", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "target": 12, "series": [{ "name": "售後進線率", "data": [22.1, 21.4, 20.8, 20.1, 19.6, 19.0] }] },
+        "fulfillmentNodes": { "title": "履約節點達成率", "unit": "%", "items": [{ "name": "訂單確認", "value": 96, "color": "#165dff" }, { "name": "成團通知", "value": 93, "color": "#00b42a" }, { "name": "集合資訊", "value": 90, "color": "#ff7d00" }, { "name": "出行完成", "value": 94, "color": "#722ed1" }] },
+        "intakeBreakdown": { "title": "售後進線結構分布", "unit": "%", "items": [{ "name": "訂單確認焦慮類", "value": 38, "color": "#f53f3f" }, { "name": "集合／接駁地點類", "value": 14, "color": "#ff7d00" }, { "name": "成團／出行類", "value": 13, "color": "#00b42a" }, { "name": "內容類", "value": 14.95, "color": "#165dff" }, { "name": "退改／退款類", "value": 11, "color": "#722ed1" }, { "name": "其他", "value": 9.05, "color": "#86909c" }] },
+        "fulfillmentTrend": { "title": "履約達成率趨勢（供應商）", "unit": "%", "months": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月"], "target": 95, "series": [{ "name": "履約達成率", "data": [88.5, 89.2, 90.1, 91.4, 92.0, 92.8] }] }
+      },
+      "sources": [
+        { "metric": "售後進線率", "kind": "落後指標", "dapTable": "dw_kkdb.message", "dashboard": "Looker Studio", "url": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D" },
+        { "metric": "評論滿意度", "kind": "領先指標", "dapTable": "dw_kkdb.product_recommand · review_external_summary_lst", "dashboard": "Tableau", "url": "https://tableau.kkday.com/authoring/rd_kiki-reviewanalyse/sheet0#1" },
+        { "metric": "履約達成率（供應商）", "kind": "領先指標", "dapTable": "—", "dashboard": "Tableau", "url": "https://tableau.kkday.com/#/views/byMaggieHsu-Level/Level" },
+        { "metric": "售後資訊健康度（feedback）", "kind": "領先指標", "dapTable": "mixpanel", "dashboard": "Mixpanel", "url": "https://mixpanel.com/s/4r4qU2" }
+      ]
+    }
+  }
+}
