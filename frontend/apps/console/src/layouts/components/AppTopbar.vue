@@ -2,7 +2,8 @@
 import type { AuthUser } from '@/api';
 import { ref } from 'vue';
 
-// 頂部菜單欄：品牌 + 功能模組下拉 + 設定 / 帳號入口。設定/帳號點擊冒泡 open-settings 給殼層開抽屜。
+// 頂部菜單欄：品牌 + 功能模組下拉 + 設定 / 帳號入口。
+// ⚙️ 設定＝公共配置抽屜（LLM/QC）→ open-settings；email chip＝帳號抽屜 → open-account。各自獨立抽屜。
 // 功能模組（下拉選擇，默認第一個；目前僅 AI 法官）
 const MODULES = [{ value: 'ai-judge', label: '⚖️ AI 法官' }];
 const activeModule = ref(MODULES[0].value);
@@ -12,7 +13,7 @@ const NAV_LINK =
   'cursor-pointer select-none rounded-md px-3 py-1 text-sm text-[#4e5969] hover:bg-[#e8f3ff] hover:text-[#165dff]';
 
 defineProps<{ user: AuthUser | null }>();
-defineEmits<{ (e: 'open-settings', tab: 'account' | 'config'): void }>();
+defineEmits<{ (e: 'open-settings'): void; (e: 'open-account'): void }>();
 </script>
 
 <template>
@@ -22,11 +23,9 @@ defineEmits<{ (e: 'open-settings', tab: 'account' | 'config'): void }>();
     <a-select v-model="activeModule" class="w-[150px] font-semibold" :bordered="false">
       <a-option v-for="m in MODULES" :key="m.value" :value="m.value">{{ m.label }}</a-option>
     </a-select>
-    <a :class="NAV_LINK" @click="$emit('open-settings', 'config')">⚙️ 設定</a>
+    <a :class="NAV_LINK" @click="$emit('open-settings')">⚙️ 設定</a>
     <span class="ml-auto flex items-center gap-2">
-      <a v-if="user" :class="NAV_LINK" @click="$emit('open-settings', 'account')"
-        >👤 {{ user.email }}</a
-      >
+      <a v-if="user" :class="NAV_LINK" @click="$emit('open-account')">👤 {{ user.email }}</a>
     </span>
   </div>
 </template>

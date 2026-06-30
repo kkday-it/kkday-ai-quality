@@ -1,10 +1,24 @@
 {
   "_comment": "跨語言共用的「非機密」預設值單一真相源。Python 後端與 TS 前端皆讀此檔。機密（api_token / 密碼 / JWT secret）走 backend/.env，勿放這裡。",
+  "_qc_db_comment": "QC DB 連線預設。port/schema 為跨環境共用；環境（SIT/Stage）各自帶 host + bootstrap database（測試連線/列舉 database 用的起手庫）。實際抽取的 database 由前端多選，存 user_settings.qc_db_names。",
   "qc_db": {
-    "host": "postgresql-qc.sit.kkday.com",
     "port": 5432,
-    "name": "qc207_kkdb_product",
-    "schema": "public"
+    "schema": "public",
+    "defaultEnv": "sit",
+    "environments": [
+      {
+        "id": "sit",
+        "label": "SIT",
+        "host": "postgresql-qc.sit.kkday.com",
+        "name": "qc201_kkdb_product"
+      },
+      {
+        "id": "stage",
+        "label": "Stage",
+        "host": "postgresql-qc.stage.kkday.com",
+        "name": "kkdb_product"
+      }
+    ]
   },
   "llm": {
     "reasoning": [

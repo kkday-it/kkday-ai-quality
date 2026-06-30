@@ -1,18 +1,25 @@
-"""LLM 模型配置持久化（per-user，存 DB user_settings 表）。
+"""設定持久化（per-user，存 DB user_settings 表）——多套 config + 啟用切換模型。
 
-前端「設定」面板管理：provider / model / base_url / provider_tokens（per-provider 機密）/
-temperature / thinking / reasoning_effort / provider_models（各供應商自訂 model 清單）。
-provider_tokens 以 base_url 反推的 provider id 為 key（openai/gemini/bytedance），各 provider 各自一把 token；
-絕不明文回前端（masked() 逐 key 遮罩）；raw() 供「眼睛顯示全文」。空/遮罩值 save 不覆蓋該 provider 既有 token。
+結構（user_settings.data JSON）：
+- LLM：`llm_configs[]`（每套 {id,label,provider,base_url,model,temperature,thinking,reasoning_effort}）
+  + `active_llm_config_id`；token 不入 config，存跨 config 共用的 `provider_tokens`（per-provider 機密）；
+  `provider_models`（各供應商自訂 model 清單）。
+- QC DB：`qc_configs[]`（每套 {id,label,env,host,port,user,names[],schemas[]}）+ `active_qc_config_id`；
+  password 不入 config，存 `qc_passwords`（per-config 機密，key=config_id）。
+- `taxonomy_overrides`（規整 L1/L2/L3，不變）。
 
-每個 user 一份設定。judge 路徑（llm client）不傳 user_id，而是透過 contextvar `current()`
-取「當前 request 端點注入的 user 設定」——避免污染 pipeline/classify/adequacy 的函式簽名。
+機密絕不明文回前端：masked() 逐 key 遮罩 provider_tokens / qc_passwords；raw() 供「眼睛顯示全文」與編輯回填。
+空/遮罩值 save 不覆蓋既有機密。舊單一 active flat 格式由 load_settings 偵測並自動遷移 + 持久化（穩定 uuid）。
+
+judge 路徑（llm client）不傳 user_id，而是透過 contextvar `current()` 取「端點注入的 effective 設定」
+（effective_llm_dict 由 active LLM config + provider_tokens 組出）——故 client.py 零改動。
 """
 
 from __future__ import annotations
 
 import contextvars
 import json
+import uuid
 from pathlib import Path
 
 from app.core import db
@@ -28,9 +35,18 @@ LLM_MODEL_MIN_VERSION: str = _SHARED["llm"].get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
 LLM_PROVIDERS: list = _SHARED["llm"].get("providers", [])
 
-# 單值機密欄位：回前端一律遮罩，空/遮罩值 save 不覆蓋既有（避免遮罩值回寫清空真值）。
-# provider_tokens 為 per-provider 機密 map，遮罩/合併邏輯另行特殊處理（非單值，不入此元組）。
-_SECRET_KEYS = ("qc_db_password",)
+def qc_db_env_name(env_id: str | None) -> str:
+    """回某 QC DB 環境（sit/stage）的 bootstrap database 名（測試連線/列舉 database 的起手庫）。
+
+    未知 env_id 回退 defaultEnv 的；環境表為空回空字串。供 main.py 測試連線決定 bootstrap dbname。
+    """
+    envs = QC_DB_DEFAULTS.get("environments", [])
+    target = env_id or QC_DB_DEFAULTS.get("defaultEnv")
+    hit = next((e for e in envs if e.get("id") == target), None)
+    if not hit and envs:
+        dflt = QC_DB_DEFAULTS.get("defaultEnv")
+        hit = next((e for e in envs if e.get("id") == dflt), envs[0])
+    return str(hit.get("name", "")) if hit else ""
 
 
 def provider_id_for(base_url: str) -> str:
@@ -56,104 +72,288 @@ def _mask_secret(tok: str) -> str:
     return (tok[:7] + "…" + tok[-4:]) if len(tok) > 12 else ("***" if tok else "")
 
 
-_DEFAULT: dict = {
-    "provider": "openai",  # openai | gemini | azure | custom
-    "model": "gpt-5.4-mini",  # 對齊 config/defaults.json defaultModels（gpt-5-mini 不在清單且被 modelMinVersion 過濾→靜默打不通）
+def _is_masked(v: object) -> bool:
+    """是否為遮罩值（含 *** 或 …）；用於 save 時判斷「不覆蓋既有機密」。"""
+    s = str(v or "")
+    return "***" in s or "…" in s
+
+
+def _ensure_id(cfg: dict) -> dict:
+    """補 uuid id（前端新建留空時）；回新 dict，不就地改入參。"""
+    if cfg.get("id"):
+        return dict(cfg)
+    return {**cfg, "id": str(uuid.uuid4())}
+
+
+# 單套 LLM config 的非機密預設：新建 config 的底，effective_llm_dict 在 active 失效時亦回退至此。
+_DEFAULT_LLM: dict = {
+    "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "provider_tokens": {},  # { provider_id: token } per-provider 機密；key 由 provider_id_for(base_url) 決定
+    "model": "gpt-5.4-mini",  # 對齊 config/defaults.json defaultModels
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
-    "provider_models": {},  # 各供應商自訂 model 清單（per-user 累積）
-    # ── 資料來源：QC DB（PostgreSQL）連線配置（前端「資料來源配置」面板管理）──
-    # host/name 留空＝要求顯式設定才連線（前端表單以 config/defaults.json 預填）；
-    # schema 預設取共用檔，與前端一致。
-    "qc_db_host": "",
-    "qc_db_port": None,  # 空＝連線時回退 QC_DB_DEFAULTS["port"]（_try_qc_db_connect）
-    "qc_db_name": "",
-    "qc_db_schema": QC_DB_DEFAULTS["schema"],
-    "qc_db_user": "",
-    "qc_db_password": "",  # 機密：比照 api_token 遮罩、不入 git
 }
 
-# 當前 request 生效的 user 設定（端點 Depends 注入）；judge 路徑經 current() 讀取
+# 多 config 結構的 key 模板（值僅作型別樣板；實際以 _blank_settings() 產深複本）。
+# llm_configs[]：每套 {id,label, + _DEFAULT_LLM 欄位}；token 不入 config，存共用 provider_tokens。
+# qc_configs[]：每套 {id,label,env,host,port,user,names[],schemas[]}；password 不入 config，存 qc_passwords[id]。
+_NEW_DEFAULT: dict = {
+    "llm_configs": [],
+    "active_llm_config_id": None,
+    "provider_tokens": {},  # { provider_id: token } 跨 config 共用（per-provider 機密）
+    "provider_models": {},  # { provider_id: [model_id...] } 各供應商自訂 model 清單
+    "qc_configs": [],
+    "active_qc_config_id": None,
+    "qc_passwords": {},  # { config_id: password } per-config 機密
+    "taxonomy_overrides": {},  # 規整 L1/L2/L3 sparse map（不變）
+}
+
+# 舊 flat 格式的指紋 key：load 時偵測到即觸發 _migrate_legacy。
+_LEGACY_KEYS = frozenset(
+    {"provider", "model", "base_url", "api_token", "qc_db_env", "qc_db_host", "qc_db_name"}
+)
+
+# 當前 request 生效的 user 設定（端點 handler 注入）；judge 路徑經 current() 讀取。
+# 注入值為 effective_llm_dict() 組出的 flat dict（保留 client._resolve 所讀的 key）。
 _current: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "current_settings", default=None
 )
 
 
-def load_settings(user_id: str) -> dict:
-    """讀某 user 完整設定（含明文 token）；未存過回 _DEFAULT 複本。
+def _blank_settings() -> dict:
+    """全新空白設定（深複本，避免共用 mutable 預設）。"""
+    return {
+        "llm_configs": [],
+        "active_llm_config_id": None,
+        "provider_tokens": {},
+        "provider_models": {},
+        "qc_configs": [],
+        "active_qc_config_id": None,
+        "qc_passwords": {},
+        "taxonomy_overrides": {},
+    }
 
-    向後相容：舊版單一 `api_token` 自動歸入 `provider_tokens[該 base_url 對應 provider]`
-    （記憶體層遷移，不破壞性；下次 save 時舊欄位自然從 DB 淘汰）。
+
+def _is_legacy_format(data: dict) -> bool:
+    """偵測舊單一 active 配置 flat 格式（有任一 legacy 指紋 key）。"""
+    return bool(_LEGACY_KEYS & set(data.keys()))
+
+
+def _migrate_legacy(data: dict) -> dict:
+    """舊 flat dict → 新多 config 結構：LLM/QC 各轉成第一套並設為 active，機密歸入對應 map。
+
+    沿用既有 legacy 規則：api_token→provider_tokens、qc_db_name→names、qc_db_schema→schemas。
+    """
+    new = _blank_settings()
+
+    # provider_tokens：保留既有 + 舊單值 api_token 歸入（不覆蓋既有）
+    ptokens = dict(data.get("provider_tokens") or {})
+    legacy_token = data.get("api_token")
+    if legacy_token:
+        ptokens.setdefault(provider_id_for(data.get("base_url", "")), legacy_token)
+    new["provider_tokens"] = ptokens
+    new["provider_models"] = dict(data.get("provider_models") or {})
+
+    # LLM：舊單一 active config → llm_configs[0]
+    llm_id = str(uuid.uuid4())
+    new["llm_configs"] = [
+        {
+            "id": llm_id,
+            "label": "預設配置（自動遷移）",
+            "provider": data.get("provider", _DEFAULT_LLM["provider"]),
+            "base_url": data.get("base_url", ""),
+            "model": data.get("model", _DEFAULT_LLM["model"]),
+            "temperature": data.get("temperature"),
+            "thinking": data.get("thinking", "default"),
+            "reasoning_effort": data.get("reasoning_effort", "default"),
+        }
+    ]
+    new["active_llm_config_id"] = llm_id
+
+    # QC：names/schemas 由舊單值或陣列遷移
+    names = list(data.get("qc_db_names") or [])
+    if not names and data.get("qc_db_name"):
+        names = [data["qc_db_name"]]
+    schemas = list(data.get("qc_db_schemas") or [])
+    if not schemas and data.get("qc_db_schema"):
+        schemas = [data["qc_db_schema"]]
+    if not schemas:
+        schemas = [QC_DB_DEFAULTS["schema"]]
+    # 僅當舊資料有 QC 連線痕跡才建 config（host / names / user 任一）
+    if data.get("qc_db_host") or names or data.get("qc_db_user"):
+        qc_id = str(uuid.uuid4())
+        new["qc_configs"] = [
+            {
+                "id": qc_id,
+                "label": "預設連線（自動遷移）",
+                "env": data.get("qc_db_env", QC_DB_DEFAULTS.get("defaultEnv", "sit")),
+                "host": data.get("qc_db_host", ""),
+                "port": data.get("qc_db_port"),
+                "user": data.get("qc_db_user", ""),
+                "names": names,
+                "schemas": schemas,
+            }
+        ]
+        new["active_qc_config_id"] = qc_id if names else None
+        old_pw = data.get("qc_db_password", "")
+        if old_pw:
+            new["qc_passwords"] = {qc_id: old_pw}
+
+    new["taxonomy_overrides"] = data.get("taxonomy_overrides") or {}
+    return new
+
+
+def load_settings(user_id: str) -> dict:
+    """讀某 user 完整設定（含明文機密）；未存過回空白結構複本。
+
+    舊 flat 格式偵測到即遷移成多 config 結構並「立即持久化」一次——穩定各 config 的 uuid，
+    避免每次 load 重產 id 導致 active_id / qc_passwords key 失效。
     """
     data = db.load_user_settings(user_id)
-    cur = {**_DEFAULT, **data} if data else dict(_DEFAULT)
-    cur["provider_tokens"] = dict(cur.get("provider_tokens") or {})  # 複本，避免改到 _DEFAULT
-    legacy = (data or {}).get("api_token")
-    if legacy:
-        cur["provider_tokens"].setdefault(provider_id_for(cur.get("base_url", "")), legacy)
-    cur.pop("api_token", None)  # 統一為 provider_tokens 單一真相源
+    if not data:
+        return _blank_settings()
+    if _is_legacy_format(data):
+        migrated = _migrate_legacy(data)
+        db.save_user_settings(user_id, migrated)  # 持久化一次，使 uuid 穩定
+        return migrated
+    # 補缺 key + 深複本（避免改到 _NEW_DEFAULT 內的 mutable）
+    cur = {**_NEW_DEFAULT, **data}
+    cur["provider_tokens"] = dict(cur.get("provider_tokens") or {})
+    cur["provider_models"] = dict(cur.get("provider_models") or {})
+    cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
+    cur["llm_configs"] = [dict(c) for c in (cur.get("llm_configs") or [])]
+    cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
+    cur["taxonomy_overrides"] = dict(cur.get("taxonomy_overrides") or {})
     return cur
 
 
-def _active_token(cur: dict) -> str:
-    """當前 provider（由 base_url 反推）的 token；無則空字串。"""
-    return (cur.get("provider_tokens") or {}).get(provider_id_for(cur.get("base_url", "")), "")
+def effective_llm_dict(s: dict) -> dict:
+    """由 active LLM config + 共用 provider_tokens 組出 judge 路徑所需的 flat dict（set_current 入參）。
+
+    active_id 失效 → 回退 llm_configs[0] → 再無則 _DEFAULT_LLM（stub）。
+    保留 client._resolve() 所讀 key（provider/base_url/model/temperature/reasoning_effort/provider_tokens），
+    故 judge 路徑（app/judge/llm/client.py）零改動。
+    """
+    configs = s.get("llm_configs") or []
+    active_id = s.get("active_llm_config_id")
+    cfg = next((c for c in configs if c.get("id") == active_id), None)
+    if cfg is None and configs:
+        cfg = configs[0]
+    cfg = cfg or {}
+    return {
+        "provider": cfg.get("provider", _DEFAULT_LLM["provider"]),
+        "base_url": cfg.get("base_url", _DEFAULT_LLM["base_url"]),
+        "model": cfg.get("model", _DEFAULT_LLM["model"]),
+        "temperature": cfg.get("temperature"),
+        "thinking": cfg.get("thinking", "default"),
+        "reasoning_effort": cfg.get("reasoning_effort", "default"),
+        "provider_tokens": dict(s.get("provider_tokens") or {}),
+        "provider_models": dict(s.get("provider_models") or {}),
+        "taxonomy_overrides": s.get("taxonomy_overrides") or {},
+    }
+
+
+def _sanitize(cur: dict) -> None:
+    """就地修正一致性：dangling active_id 回退首項/None；清除孤立 qc_passwords（config 已不存在）。"""
+    llm_ids = {c.get("id") for c in cur.get("llm_configs") or []}
+    if cur.get("active_llm_config_id") not in llm_ids:
+        cur["active_llm_config_id"] = cur["llm_configs"][0]["id"] if cur.get("llm_configs") else None
+    qc_ids = {c.get("id") for c in cur.get("qc_configs") or []}
+    if cur.get("active_qc_config_id") not in qc_ids:
+        cur["active_qc_config_id"] = cur["qc_configs"][0]["id"] if cur.get("qc_configs") else None
+    cur["qc_passwords"] = {
+        cid: pw for cid, pw in (cur.get("qc_passwords") or {}).items() if cid in qc_ids
+    }
 
 
 def save_settings(user_id: str, patch: dict) -> dict:
-    """合併寫入某 user。空/遮罩值不覆蓋既有機密（單值欄位 + provider_tokens 逐 key），回 masked()。"""
+    """部分/整包合併寫入某 user。機密（provider_tokens / qc_config.password）空或遮罩值不覆蓋既有。
+
+    qc_configs 內每套可帶 transient `password` 欄位：save 時抽出存入 qc_passwords[config_id]，
+    config 本體不落機密。回 masked()。
+    """
     cur = load_settings(user_id)
-    for k, v in patch.items():
-        if k not in _DEFAULT:
-            continue
-        if k == "provider_tokens":
-            # 逐 provider 合併：空/遮罩 token 不覆蓋該 provider 既有真值
-            merged = dict(cur.get("provider_tokens") or {})
-            for pid, tok in (v or {}).items():
-                if not tok or "***" in str(tok) or "…" in str(tok):
-                    continue
-                merged[pid] = tok
-            cur[k] = merged
-            continue
-        if k in _SECRET_KEYS and (not v or "***" in str(v) or "…" in str(v)):
-            continue
-        cur[k] = v
+
+    # ── LLM ──
+    if "llm_configs" in patch:
+        cur["llm_configs"] = [_ensure_id(c) for c in (patch["llm_configs"] or [])]
+    if "active_llm_config_id" in patch:
+        cur["active_llm_config_id"] = patch["active_llm_config_id"]
+    if "provider_tokens" in patch:
+        merged = dict(cur.get("provider_tokens") or {})
+        for pid, tok in (patch["provider_tokens"] or {}).items():
+            if tok and not _is_masked(tok):
+                merged[pid] = tok  # 空/遮罩不覆蓋該 provider 既有真值
+        cur["provider_tokens"] = merged
+    if "provider_models" in patch:
+        cur["provider_models"] = dict(patch.get("provider_models") or {})
+
+    # ── QC DB ──（password 隨各 config 帶入，抽出存 qc_passwords）
+    if "qc_configs" in patch:
+        new_configs: list[dict] = []
+        pw_updates: dict[str, str] = {}
+        for c in patch["qc_configs"] or []:
+            c = _ensure_id(c)
+            pw = c.pop("password", None)  # 機密不存進 config 本體
+            if pw and not _is_masked(pw):
+                pw_updates[c["id"]] = pw
+            new_configs.append(c)
+        cur["qc_configs"] = new_configs
+        merged_pw = dict(cur.get("qc_passwords") or {})
+        merged_pw.update(pw_updates)  # 空/遮罩者已在上面過濾，不覆蓋既有
+        cur["qc_passwords"] = merged_pw
+    if "active_qc_config_id" in patch:
+        cur["active_qc_config_id"] = patch["active_qc_config_id"]
+
+    if "taxonomy_overrides" in patch:
+        cur["taxonomy_overrides"] = patch.get("taxonomy_overrides") or {}
+
+    _sanitize(cur)
     db.save_user_settings(user_id, cur)
     return masked(user_id)
 
 
+def _has_active_token(s: dict) -> bool:
+    """active LLM config 的 provider 是否已有 token。"""
+    eff = effective_llm_dict(s)
+    provider = provider_id_for(eff.get("base_url", ""))
+    return bool((s.get("provider_tokens") or {}).get(provider))
+
+
+def _has_active_qc_password(s: dict) -> bool:
+    """active QC config 是否已有 password。"""
+    aid = s.get("active_qc_config_id")
+    return bool(aid and (s.get("qc_passwords") or {}).get(aid))
+
+
 def masked(user_id: str) -> dict:
-    """回傳給前端：機密遮罩（provider_tokens 逐 key + qc_db_password），附 has_token（當前 provider）/ has_qc_db_password。"""
+    """回傳給前端：機密 map（provider_tokens / qc_passwords）逐 key 遮罩，附 has_token / has_qc_db_password。"""
     cur = load_settings(user_id)
-    # has_* 旗標需在遮罩前由真值計算；has_token 依「當前 provider」是否有 token
-    cur["has_token"] = bool(_active_token(cur))
-    cur["has_qc_db_password"] = bool(cur.get("qc_db_password"))
-    cur["provider_tokens"] = {pid: _mask_secret(tok) for pid, tok in (cur["provider_tokens"]).items()}
-    for sk in _SECRET_KEYS:
-        cur[sk] = _mask_secret(cur.get(sk, "") or "")
+    cur["has_token"] = _has_active_token(cur)
+    cur["has_qc_db_password"] = _has_active_qc_password(cur)
+    cur["provider_tokens"] = {p: _mask_secret(t) for p, t in (cur.get("provider_tokens") or {}).items()}
+    cur["qc_passwords"] = {c: _mask_secret(p) for c, p in (cur.get("qc_passwords") or {}).items()}
     return cur
 
 
 def raw(user_id: str) -> dict:
-    """完整未遮罩配置（含明文 provider_tokens / qc_db_password）——供設定面板「眼睛顯示全文」。
+    """完整未遮罩配置（含明文 provider_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
 
     ⚠️ 明文回傳機密欄位：僅應在受信任的本地 / 內網環境暴露此端點。
     """
     cur = load_settings(user_id)
-    cur["has_token"] = bool(_active_token(cur))
-    cur["has_qc_db_password"] = bool(cur.get("qc_db_password"))
+    cur["has_token"] = _has_active_token(cur)
+    cur["has_qc_db_password"] = _has_active_qc_password(cur)
     return cur
 
 
 def set_current(settings: dict) -> None:
-    """端點注入當前 request 的 user 設定，供 judge 路徑（llm client）讀取。"""
+    """端點注入當前 request 的 effective 設定（effective_llm_dict 產），供 judge 路徑讀取。"""
     _current.set(settings)
 
 
 def current() -> dict:
-    """judge 路徑取當前生效設定；未注入時回 _DEFAULT 複本（→ stub 模式）。"""
+    """judge 路徑取當前生效設定；未注入時回 stub 預設（_DEFAULT_LLM + 空 provider_tokens）。"""
     s = _current.get()
-    return s if s is not None else dict(_DEFAULT)
+    return s if s is not None else effective_llm_dict(_blank_settings())

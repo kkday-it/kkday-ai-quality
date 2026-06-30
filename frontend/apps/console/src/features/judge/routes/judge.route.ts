@@ -5,6 +5,7 @@ import Analytics from '../pages/Analytics.vue';
 import AttributionPanel from '../pages/AttributionPanel.vue';
 import DataUpload from '../pages/DataUpload.vue';
 import ProductDetail from '../pages/ProductDetail.vue';
+import RulesConfig from '../pages/RulesConfig.vue';
 
 export const judgeRoutes: RouteRecordRaw = {
   path: '/judge',
@@ -15,6 +16,7 @@ export const judgeRoutes: RouteRecordRaw = {
     { path: 'attribution', component: AttributionPanel, meta: { text: '歸因總覽' } }, // 判定層脊椎·多維展示
     { path: 'analytics', component: Analytics, meta: { text: 'RD／品控 分析' } }, // 出口 B
     { path: 'product', component: ProductDetail, meta: { text: 'PM／AM 單品' } }, // 出口 A
+    { path: 'rules', component: RulesConfig, meta: { text: '規則' } }, // AI 法官判決邏輯配置（歸因/預判/判決），原設定抽屜的「規則」tab 移此
   ],
 };
 

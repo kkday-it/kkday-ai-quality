@@ -1,27 +1,30 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores';
 import { JUDGE_TABS } from '@/features/judge/routes';
-import { AppTopbar, FeatureTabs, SettingsDrawer } from './components';
+import { AppTopbar, FeatureTabs, SettingsDrawer, AccountDrawer } from './components';
 
-// 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 設定抽屜。
+// 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 兩個獨立抽屜（公共設定 / 帳號）。
 // 公開頁（登入/註冊）全屏直通，不套殼層。
-type SettingsTab = 'account' | 'config';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 
 const isPublic = computed(() => route.meta.public === true);
 
+// ⚙️ 設定＝公共配置抽屜（LLM/QC）；👤 帳號＝獨立抽屜。各自開關互不干擾。
 const settingsVisible = ref(false);
-const settingsTab = ref<SettingsTab>('config');
-const openSettings = (tab: SettingsTab) => {
-  settingsTab.value = tab;
-  settingsVisible.value = true;
-};
+const accountVisible = ref(false);
+const openSettings = () => (settingsVisible.value = true);
+const openAccount = () => (accountVisible.value = true);
 
-onMounted(() => auth.fetchMe()); // 以既有 token 拉當前 user（顯示 email）
+onMounted(async () => {
+  auth.fetchMe(); // 以既有 token 拉當前 user（顯示 email）
+  await router.isReady();
+  if (route.query.settings === 'account') accountVisible.value = true; // 舊 ?settings=account 深連結 → 帳號抽屜
+});
 </script>
 
 <template>
@@ -29,7 +32,7 @@ onMounted(() => auth.fetchMe()); // 以既有 token 拉當前 user（顯示 emai
   <a-layout v-else class="flex h-screen flex-col overflow-hidden">
     <!-- 頂部菜單欄：固定不隨內容滾動 -->
     <div class="z-10 flex-none">
-      <AppTopbar :user="auth.user" @open-settings="openSettings" />
+      <AppTopbar :user="auth.user" @open-settings="openSettings" @open-account="openAccount" />
       <FeatureTabs :tabs="JUDGE_TABS" />
       <!--
         頁面級工具列插槽：頁面以 <Teleport to="#page-toolbar"> 把自己的全局工具列（如歸因總覽的
@@ -44,6 +47,7 @@ onMounted(() => auth.fetchMe()); // 以既有 token 拉當前 user（顯示 emai
       <router-view />
     </div>
 
-    <SettingsDrawer v-model:visible="settingsVisible" v-model:tab="settingsTab" />
+    <SettingsDrawer v-model:visible="settingsVisible" />
+    <AccountDrawer v-model:visible="accountVisible" />
   </a-layout>
 </template>

@@ -1,15 +1,8 @@
 // LLM 供應商定義與設定面板常數。
 // 供應商目錄 / reasoning 選項的「資料」來自 repo 根 config/defaults.json（跨語言共用單一真相源）；
-// 本檔僅保留型別、localStorage key 與前端衍生預設，不再寫死 base_url / model 清單。
+// 本檔僅保留型別與前端衍生預設，不再寫死 base_url / model 清單。
 
 import defaults from '@config/defaults.json';
-
-/** 開頁快取 key（排除 api_token） */
-export const CACHE_KEY = 'aipq_settings_cache';
-/** 每個 base_url::model 的旋鈕記憶 key */
-export const OVERRIDES_KEY = 'aipq_model_overrides';
-/** 各供應商自訂 model 列表 key（手動輸入累積） */
-export const PROVIDER_MODELS_KEY = 'aipq_provider_models';
 
 /** 下拉一個 model 選項：id + 質性描述（成本/用途 hint，內聚於各 model，不另立 modelMeta map）。 */
 export interface ModelOption {
@@ -31,12 +24,6 @@ export interface Provider {
   reasoning_effort?: string;
 }
 
-/** 單一 model 的旋鈕覆寫記憶。 */
-export interface ModelOverride {
-  thinking: string;
-  reasoning_effort: string;
-  temperature: number | null;
-}
 
 /**
  * 供應商定義：選供應商一次帶入 base_url 與該供應商的 model 清單。
