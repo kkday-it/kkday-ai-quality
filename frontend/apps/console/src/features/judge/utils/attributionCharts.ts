@@ -20,13 +20,6 @@ export interface PolarityItem {
   n: number;
 }
 
-/** 判決(verdict)分布項。 */
-export interface VerdictItem {
-  verdict: string;
-  label: string;
-  n: number;
-}
-
 /** 星等分布項（1~5）。 */
 export interface ScoreItem {
   score: number;
@@ -55,7 +48,6 @@ export interface AttributionOverview {
   attributed: number;
   by_polarity: PolarityItem[];
   by_l1: CountItem[];
-  by_verdict: VerdictItem[];
   by_tier: TierCounts;
   by_score: ScoreItem[];
   trend: TrendPayload;

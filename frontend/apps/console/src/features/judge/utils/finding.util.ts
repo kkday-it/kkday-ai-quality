@@ -11,7 +11,6 @@ export const flatFinding = (r: any) => ({
   finding_id: r.finding_id,
   prod_oid: r.prod_oid,
   dimension: r.dimension,
-  verdict: r.verdict,
   confidence: r.confidence,
   status: r.status,
 });

@@ -1,24 +1,18 @@
 <script setup lang="ts">
-/** L3 判準節點表單：編 label/meaning/rule/verdict + 厚判準（canon + 5 個字串清單）。 */
+/** L3 判準節點表單：編 label/meaning/rule + 厚判準（canon + 5 個字串清單）。 */
 import { computed } from 'vue';
-import { useVerdictOptions } from '../composables';
-
-// verdict 下拉選項：config 驅動（verdicts.json SSOT），不再前端硬編
-const { verdictOptions } = useVerdictOptions();
 
 interface L3Node {
   code: string;
   label: string;
   meaning?: string;
   rule?: string;
-  verdict?: string;
   canon?: string;
   allow?: string[];
   forbid?: string[];
   positive_cases?: string[];
   negative_cases?: string[];
   machine_clues?: string[];
-  verdict_rules?: string[];
   [k: string]: unknown;
 }
 
@@ -31,7 +25,6 @@ const LIST_FIELDS: { key: keyof L3Node; label: string }[] = [
   { key: 'positive_cases', label: '好範例 positive_cases' },
   { key: 'negative_cases', label: '壞範例 negative_cases' },
   { key: 'machine_clues', label: '機器線索 machine_clues' },
-  { key: 'verdict_rules', label: '判決鐵則 verdict_rules' },
 ];
 
 /** 改某欄位 → emit 整個節點（淺拷貝，父層持有深層 model）。 */
@@ -76,16 +69,9 @@ const canon = computed({
         @update:model-value="patch('meaning', $event)"
       />
     </a-form-item>
-    <div class="flex gap-3">
-      <a-form-item label="判決結果 verdict" class="flex-1">
-        <a-select :model-value="node.verdict" @update:model-value="patch('verdict', $event)">
-          <a-option v-for="v in verdictOptions" :key="v.value" :value="v.value">{{ v.label }}</a-option>
-        </a-select>
-      </a-form-item>
-      <a-form-item label="規則編號 rule ID" class="w-32">
-        <a-input :model-value="node.rule ?? ''" @update:model-value="patch('rule', $event)" />
-      </a-form-item>
-    </div>
+    <a-form-item label="規則編號 rule ID" class="w-32">
+      <a-input :model-value="node.rule ?? ''" @update:model-value="patch('rule', $event)" />
+    </a-form-item>
     <a-form-item label="法典條文 canon">
       <a-textarea v-model="canon" :auto-size="{ minRows: 2 }" />
     </a-form-item>

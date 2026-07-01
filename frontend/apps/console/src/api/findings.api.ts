@@ -1,13 +1,10 @@
 // Findings 領域 API：查詢、狀態更新、判決鏈路。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
-export const getFindings = (
-  params: { prodOid?: string; dimension?: string; verdict?: string } = {},
-) => {
+export const getFindings = (params: { prodOid?: string; dimension?: string } = {}) => {
   const q = new URLSearchParams();
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.dimension) q.set('dimension', params.dimension);
-  if (params.verdict) q.set('verdict', params.verdict);
   const s = q.toString();
   return j(`${BASE}/findings${s ? `?${s}` : ''}`);
 };

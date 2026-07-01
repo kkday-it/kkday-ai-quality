@@ -4,7 +4,6 @@ import { BASE, getToken, j } from './http.api';
 /** 統一問題列表（intake + 歸因 join）。judged=true 僅已歸因。 */
 export const getProblems = (params: {
   source?: string;
-  verdict?: string;
   judged?: boolean;
   polarity?: string;
   limit?: number;
@@ -12,7 +11,6 @@ export const getProblems = (params: {
 } = {}) => {
   const q = new URLSearchParams();
   if (params.source) q.set('source', params.source);
-  if (params.verdict) q.set('verdict', params.verdict);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity) q.set('polarity', params.polarity);
   q.set('limit', String(params.limit ?? 2000));
@@ -20,7 +18,7 @@ export const getProblems = (params: {
   return j(`${BASE}/problems?${q.toString()}`);
 };
 
-/** 問題即時匯總（來源 / verdict / 域 / 信心分層 分佈）。 */
+/** 問題即時匯總（來源 / 域 / 信心分層 分佈）。 */
 export const getProblemsSummary = () => j(`${BASE}/problems/summary`);
 
 /** 導出 CSV（POST·item_ids 放 body 避免 URL 過長 431）→ 回 Blob 供前端下載。 */

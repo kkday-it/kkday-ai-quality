@@ -22,23 +22,6 @@ export type LogicalField =
   | 'pkg_schedules'
   | 'none';
 
-export const VERDICTS = [
-  'real_config_issue',
-  'content_missing',
-  'content_unclear',
-  'contract_breach', // 內容合規但承諾履約不符 → 計點違規（ERC）；對齊後端 schema.py
-  'customer_misread',
-  'escalate_ops',
-] as const;
-export type Verdict = (typeof VERDICTS)[number];
-
-// 進 PM 修改清單的 verdict（純內容問題）
-export const ACTIONABLE_VERDICTS: Verdict[] = [
-  'real_config_issue',
-  'content_missing',
-  'content_unclear',
-];
-
 export type RecommendedAction =
   | 'rewrite_field'
   | 'fix_contradiction'
@@ -66,7 +49,6 @@ export interface TicketFinding {
   suspected_field: LogicalField;
   evidence_quote: string;
   ground_truth_quote: string;
-  verdict: Verdict;
   confidence: number;
   adequacy_check?: AdequacyResult;
   recommended_action: RecommendedAction;

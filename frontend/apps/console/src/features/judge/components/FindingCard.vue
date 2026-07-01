@@ -3,8 +3,6 @@ import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { patchStatus } from '@/api';
 import {
-  VERDICT_LABEL as VLABEL,
-  VERDICT_COLOR as VCOLOR,
   FIELD_LABEL as FLABEL,
   ACTION_LABEL as ALABEL,
   CHANNEL_LABEL as CHANNEL,
@@ -70,7 +68,6 @@ const setStatus = async (s: string) => {
 
     <a-space wrap class="mb-1 mt-2">
       <a-tag color="arcoblue">{{ f.dimension }}</a-tag>
-      <a-tag :color="VCOLOR[f.verdict]">{{ VLABEL[f.verdict] || f.verdict }}</a-tag>
       <a-tag v-if="f.suspected_field && f.suspected_field !== 'none'" color="purple">{{
         FLABEL[f.suspected_field] || f.suspected_field
       }}</a-tag>
@@ -106,16 +103,7 @@ const setStatus = async (s: string) => {
     </div>
 
     <div class="mt-2.5 flex flex-wrap items-center gap-2">
-      <span v-if="f.verdict === 'contract_breach'" class="text-xs text-[#fb923c]"
-        >⚠ 內容合規但承諾履約不符 → 計點違規 + 要求供應商改善（ERC）</span
-      >
-      <span v-else-if="f.verdict === 'customer_misread'" class="text-xs text-[#86909c]"
-        >內容其實清楚 → 不需修改（呈現/UX 議題）</span
-      >
-      <span v-else-if="f.verdict === 'escalate_ops'" class="text-xs text-[#86909c]"
-        >非內容問題 → 轉其他單位</span
-      >
-      <template v-else-if="f.writer_handoff">
+      <template v-if="f.writer_handoff">
         <a-button size="mini" type="primary"
           >✎ 用 writer 重生{{ FLABEL[f.suspected_field] }}</a-button
         >

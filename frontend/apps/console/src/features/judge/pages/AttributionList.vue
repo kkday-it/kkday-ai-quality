@@ -11,11 +11,9 @@ import { CardSection, StateGuard } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
-import verdictsCfg from '@config/ai_judge/verdicts.json';
 import { computed, onMounted, ref } from 'vue';
 import { SOURCES } from '../constants';
 
-const vdLabel = Object.fromEntries(verdictsCfg.items.map((v: any) => [v.code, v.label_zh]));
 /** 信心分層 code → 繁中 label（純顯示；未知 code 回退原值）。 */
 const tierLabel: Record<string, string> = {
   auto_accept: '自動採信',
@@ -281,7 +279,6 @@ const COLS = [
   { title: '訂單', dataIndex: 'order_mid' },
   { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
   { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
-  { title: '判決', dataIndex: 'verdict', slotName: 'vd' },
   { title: '信心', dataIndex: 'confidence' },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
 ];
@@ -415,11 +412,6 @@ const COLS = [
               </div>
             </div>
             <span v-else class="text-gray-300">—</span>
-          </template>
-          <template #vd="{ record }">
-            <a-tag v-if="record.verdict" size="small">{{
-              vdLabel[record.verdict] || record.verdict
-            }}</a-tag>
           </template>
           <template #tier="{ record }">
             <span v-if="record.confidence_tier">{{
