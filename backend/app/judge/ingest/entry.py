@@ -14,10 +14,17 @@ from app.core.utils import now_iso as _now
 
 # 欄位別名映射（容錯各種 CSV/Excel 表頭）
 FIELD_ALIASES: dict[str, list[str]] = {
-    "prod_oid": ["prod_oid", "prodid", "product_id", "商品id", "商品編號", "商品oid"],
+    # product_id/prod_mid 為工單/埋點商品欄；rec 無獨立 prod 別名（用 prod_oid 本名）
+    "prod_oid": ["prod_oid", "prodid", "product_id", "prod_mid", "商品id", "商品編號", "商品oid"],
     "pkg_oid": ["pkg_oid", "pkgid", "方案id", "方案oid"],
-    "rating": ["rating", "score", "評分", "星等", "分數"],
+    # rec_scores=商品評論星等；st_survey_rating=工單滿意度評分
+    "rating": ["rating", "score", "rec_scores", "st_survey_rating", "評分", "星等", "分數"],
     "comment": [
+        # 商品評論：rec_desc 為評論本文（rec_title 標題保留於 raw，不覆蓋本文）
+        "rec_desc",
+        # 工單：description 為內文本體（優先於短標題 subject）
+        "description",
+        "subject",
         "comment",
         "body",
         "content",
@@ -113,3 +120,85 @@ def single_entry(
         status="pending",
         created_at=_now(),
     )
+
+
+# ── 多工作表 / config 驅動上傳（5 源自動辨識路徑；與上方 review 別名路徑並存）──────────
+
+
+def read_sheets(content: bytes, filename: str) -> list[dict]:
+    """讀 CSV/Excel → 工作表清單。CSV 視為單表（sheet_name=檔名）；xlsx 遍歷所有分頁。
+
+    供上傳「乾跑校驗」與「確認匯入」共用：先取每表 headers 做來源辨識，再逐列正規化。
+
+    Args:
+        content: 檔案 bytes。
+        filename: 原始檔名（決定 CSV/Excel 與單表命名）。
+
+    Returns:
+        [{sheet_name, headers: list[str], rows: list[dict]}]；空表略過。
+
+    Raises:
+        ValueError: 副檔名非 .csv/.xlsx/.xls。
+    """
+    name = (filename or "").lower()
+    if name.endswith(".csv"):
+        text = content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        headers = [h for h in (reader.fieldnames or []) if h is not None]
+        rows = [dict(r) for r in reader if any((v or "").strip() for v in r.values())]
+        stem = filename.rsplit("/", 1)[-1].rsplit(".", 1)[0] or "sheet"
+        return [{"sheet_name": stem, "headers": headers, "rows": rows}]
+    if name.endswith((".xlsx", ".xls")):
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        out: list[dict] = []
+        for ws in wb.worksheets:
+            raw_rows = list(ws.iter_rows(values_only=True))
+            if not raw_rows:
+                continue
+            headers = [str(h).strip() if h is not None else "" for h in raw_rows[0]]
+            rows = []
+            for r in raw_rows[1:]:
+                row = {headers[i]: (r[i] if i < len(r) else "") for i in range(len(headers))}
+                if any(v not in (None, "") for v in row.values()):
+                    rows.append(row)
+            out.append({"sheet_name": ws.title, "headers": [h for h in headers if h], "rows": rows})
+        return out
+    raise ValueError("只支援 .csv / .xlsx / .xls")
+
+
+def item_from_canonical(canon: dict, raw: dict) -> InboundItem:
+    """source_mapping.normalize_row 的 canonical 輸出 → InboundItem（冪等 by source_record_id）。
+
+    item_id 以 source + source_record_id 生成（同筆重上傳覆蓋）；無 source_record_id 時退回內容雜湊。
+    raw 保留原始整列（Phase C 升 canonical 欄前，特殊欄續存於此）。
+
+    Args:
+        canon: normalize_row 產出（含 source / content / score / prod_oid …）。
+        raw: 原始一列（保留全欄）。
+
+    Returns:
+        InboundItem。
+    """
+    source = canon.get("source", "manual")
+    srid = str(canon.get("source_record_id") or "").strip()
+    content = str(canon.get("content") or "").strip()
+    item_id = f"{source}-{_dedup_hash(srid or content)}" if (srid or content) else _make_id(source, "", "")
+    return InboundItem(
+        item_id=item_id,
+        source=source,
+        prod_oid=str(canon.get("prod_oid") or ""),
+        pkg_oid=str(canon.get("pkg_oid") or ""),
+        rating=_parse_rating(str(canon.get("score") or "")),
+        comment=content,
+        raw={str(k): v for k, v in raw.items()},
+        status="pending",
+        created_at=_now(),
+        occurred_at=str(canon.get("occurred_at") or ""),  # 原始事件時間（排序用）
+    )
+
+
+def _dedup_hash(s: str) -> str:
+    """16 碼短雜湊（item_id 去重用）。"""
+    return hashlib.sha1(s.encode()).hexdigest()[:16]

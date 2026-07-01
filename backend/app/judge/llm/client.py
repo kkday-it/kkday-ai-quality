@@ -9,11 +9,56 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from collections.abc import Callable
+from contextvars import ContextVar
 
 from app.core import settings as _settings
 from app.core.config import env
 
 _log = logging.getLogger(__name__)
+
+# token 用量回報槽（ContextVar）：批量判決設定 sink，chat_json 每次呼叫把 usage 回報以累計花費。
+# 用 ContextVar 是因 prejudge_batch 以 copy_context 派工，worker 自動繼承 _run 設的 sink。
+# sink 簽名：(model:str, prompt_tokens:int, completion_tokens:int) → None（須自行 thread-safe）。
+_usage_sink: ContextVar[Callable[[str, int, int], None] | None] = ContextVar(
+    "llm_usage_sink", default=None
+)
+
+
+def set_usage_sink(cb: Callable[[str, int, int], None] | None) -> None:
+    """設定當前 context 的 token 用量回報 sink（批量判決用；None＝不回報）。"""
+    _usage_sink.set(cb)
+
+
+# 共用 OpenAI client 快取（按 token+base_url）：避免每次呼叫新建 connection pool；
+# OpenAI SDK client thread-safe，可跨 ThreadPool worker 共用。高併發批量必要的效能優化。
+_CLIENT_CACHE: dict[tuple[str, str], object] = {}
+_CLIENT_LOCK = threading.Lock()
+
+
+def _get_client(token: str, base_url: str):
+    """取（或建並快取）OpenAI client；附 max_retries（429/5xx 指數退避）+ timeout。
+
+    Args:
+        token: API key。
+        base_url: 自訂 endpoint（空＝OpenAI 官方）。
+
+    Returns:
+        OpenAI client 實例（同 token+base_url 重用，連線池共享）。
+    """
+    from openai import OpenAI
+
+    key = (token or "", base_url or "")
+    with _CLIENT_LOCK:
+        cli = _CLIENT_CACHE.get(key)
+        if cli is None:
+            kwargs: dict = {"api_key": token, "max_retries": 5, "timeout": float(env.llm_timeout)}
+            if base_url:
+                kwargs["base_url"] = base_url
+            cli = OpenAI(**kwargs)
+            _CLIENT_CACHE[key] = cli
+        return cli
 
 
 def _resolve() -> dict:
@@ -39,7 +84,7 @@ def _resolve() -> dict:
 def list_models() -> list[str]:
     """回傳當前 provider（由 base_url 判定）的本地預設模型清單；不再打 /v1/models。
 
-    清單 SSOT＝`config/defaults.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
+    清單 SSOT＝`config/global/default_llm.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
     新增模型只改該檔一處。改本地預設原因：/v1/models 會倒出帳號全模型（embedding / 語音 / 影像 /
     legacy davinci-babbage-ada / ft-kkday 舊 fine-tune），下拉可能誤選 whisper 當判決模型。
     base_url 空 → 預設 openai；非 OpenAI 依關鍵字判 gemini / bytedance。
@@ -72,14 +117,8 @@ def is_stub() -> bool:
 def chat_json(system: str, user: str, stage: str = "default") -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
     stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。"""
-    from openai import OpenAI
-
     cfg = _resolve()
-    client = (
-        OpenAI(api_key=cfg["token"], base_url=cfg["base_url"])
-        if cfg["base_url"]
-        else OpenAI(api_key=cfg["token"])
-    )
+    client = _get_client(cfg["token"], cfg["base_url"])  # 共用快取 client（含 retry/timeout）
     kwargs: dict = {
         "model": cfg["model"],
         "messages": [
@@ -95,6 +134,18 @@ def chat_json(system: str, user: str, stage: str = "default") -> dict:
     if eff and eff != "default":
         kwargs["reasoning_effort"] = eff
     resp = client.chat.completions.create(**kwargs)
+    # token 用量回報（供批量累計花費；失敗不影響判決）
+    sink = _usage_sink.get()
+    usage = getattr(resp, "usage", None)
+    if sink and usage:
+        try:
+            sink(
+                cfg["model"],
+                int(getattr(usage, "prompt_tokens", 0) or 0),
+                int(getattr(usage, "completion_tokens", 0) or 0),
+            )
+        except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
+            _log.debug("usage sink 回報失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"
     try:
         return json.loads(raw)

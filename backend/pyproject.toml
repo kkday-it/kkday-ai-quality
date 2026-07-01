@@ -15,12 +15,26 @@ dependencies = [
     "python-multipart>=0.0.9",
     "bcrypt>=4.0.0",
     "pyjwt>=2.9.0",
+    "sqlalchemy>=2.0.0",       # 資料層 dialect 抽象（SQLite dev + PostgreSQL prod）
+    "alembic>=1.13.0",         # schema 版本遷移
+    "psycopg2-binary>=2.9.0",  # PostgreSQL driver（app 操作庫 + QC DB 連線測試共用）
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
+]
+# 信心度準確度「深度版」選用依賴（輕量版不需要）：
+#   - 線上格式/編碼校驗：現以 pydantic + 白名單（arbiter/prejudge）等效 Guardrails ValidChoices（零額外 LLM）。
+#     深度版改掛 guardrails-ai（on_fail=reask 自動修正重判 1 次）。注意：新版 ValidChoices 在 guardrails hub，
+#     需 `guardrails hub install hub://guardrails/valid_choices`（額外 hub 設定）。
+#   - 離線信心度校準：現以純 Python Platt（judge/calibration.fit_platt）擬合，免裝。深度版可改用 cleanlab
+#     （find_label_issues 挖混淆/標註錯誤 + ECE 質量報告）。
+# 啟用：pip install -e ".[accuracy]"
+accuracy = [
+    "guardrails-ai>=0.5.0",
+    "cleanlab>=2.6.0",
 ]
 
 # ── 格式化 / Lint（ruff，需 pip install -e ".[dev]"）──

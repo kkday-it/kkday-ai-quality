@@ -24,16 +24,16 @@ from pathlib import Path
 
 from app.core import db
 
-# 跨語言共用的「非機密」預設值單一真相源（與前端 @config/defaults.json 同一檔）。
-# parents[3]：settings.py = backend/app/core/settings.py → repo 根。
-_DEFAULTS_PATH = Path(__file__).resolve().parents[3] / "config" / "defaults.json"
-_SHARED: dict = json.loads(_DEFAULTS_PATH.read_text(encoding="utf-8"))
-# QC DB 連線預設（host/port/name/schema）；main.py 連線測試的 port fallback 亦取此。
-QC_DB_DEFAULTS: dict = _SHARED["qc_db"]
+# 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
+# parents[3]：settings.py = backend/app/core/settings.py → repo 根。後續新增全局配置於此目錄各建一 JSON。
+_GLOBAL_DIR = Path(__file__).resolve().parents[3] / "config" / "global"
+# QC DB 連線預設（port/schema/defaultEnv/environments）；main.py 連線測試的 port fallback 亦取此。
+QC_DB_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_qc.json").read_text(encoding="utf-8"))
+_LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_llm.json").read_text(encoding="utf-8"))
 # LLM model 下拉的最低版本門檻（僅 gpt-* 受限）；/api/settings/models 動態清單過濾用。
-LLM_MODEL_MIN_VERSION: str = _SHARED["llm"].get("modelMinVersion", "5.4")
+LLM_MODEL_MIN_VERSION: str = _LLM_DEFAULTS.get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
-LLM_PROVIDERS: list = _SHARED["llm"].get("providers", [])
+LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
 
 def qc_db_env_name(env_id: str | None) -> str:
     """回某 QC DB 環境（sit/stage）的 bootstrap database 名（測試連線/列舉 database 的起手庫）。
@@ -89,7 +89,7 @@ def _ensure_id(cfg: dict) -> dict:
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": "gpt-5.4-mini",  # 對齊 config/defaults.json defaultModels
+    "model": "gpt-5-nano",  # 對齊 config/global/default_llm.json defaultModel（最省；準確度需驗，見 memory）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
@@ -107,6 +107,8 @@ _NEW_DEFAULT: dict = {
     "active_qc_config_id": None,
     "qc_passwords": {},  # { config_id: password } per-config 機密
     "taxonomy_overrides": {},  # 規整 L1/L2/L3 sparse map（不變）
+    "overview_boards": [],  # 概覽自訂組合看板 [{id,label,chartIds[]}]（非機密）
+    "active_overview_board_id": None,
 }
 
 # 舊 flat 格式的指紋 key：load 時偵測到即觸發 _migrate_legacy。
@@ -132,6 +134,8 @@ def _blank_settings() -> dict:
         "active_qc_config_id": None,
         "qc_passwords": {},
         "taxonomy_overrides": {},
+        "overview_boards": [],
+        "active_overview_board_id": None,
     }
 
 
@@ -225,19 +229,21 @@ def load_settings(user_id: str) -> dict:
     cur["llm_configs"] = [dict(c) for c in (cur.get("llm_configs") or [])]
     cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
     cur["taxonomy_overrides"] = dict(cur.get("taxonomy_overrides") or {})
+    cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
     return cur
 
 
-def effective_llm_dict(s: dict) -> dict:
-    """由 active LLM config + 共用 provider_tokens 組出 judge 路徑所需的 flat dict（set_current 入參）。
+def effective_llm_dict(s: dict, config_id: str | None = None) -> dict:
+    """由指定（或 active）LLM config + 共用 provider_tokens 組出 judge 路徑 flat dict（set_current 入參）。
 
-    active_id 失效 → 回退 llm_configs[0] → 再無則 _DEFAULT_LLM（stub）。
+    config_id 指定某套（初判歸因可選模型推理用）；缺省＝active_llm_config_id。
+    指定/active 失效 → 回退 llm_configs[0] → 再無則 _DEFAULT_LLM（stub）。
     保留 client._resolve() 所讀 key（provider/base_url/model/temperature/reasoning_effort/provider_tokens），
     故 judge 路徑（app/judge/llm/client.py）零改動。
     """
     configs = s.get("llm_configs") or []
-    active_id = s.get("active_llm_config_id")
-    cfg = next((c for c in configs if c.get("id") == active_id), None)
+    want_id = config_id or s.get("active_llm_config_id")
+    cfg = next((c for c in configs if c.get("id") == want_id), None)
     if cfg is None and configs:
         cfg = configs[0]
     cfg = cfg or {}
@@ -265,6 +271,11 @@ def _sanitize(cur: dict) -> None:
     cur["qc_passwords"] = {
         cid: pw for cid, pw in (cur.get("qc_passwords") or {}).items() if cid in qc_ids
     }
+    board_ids = {b.get("id") for b in cur.get("overview_boards") or []}
+    if cur.get("active_overview_board_id") not in board_ids:
+        cur["active_overview_board_id"] = (
+            cur["overview_boards"][0]["id"] if cur.get("overview_boards") else None
+        )
 
 
 def save_settings(user_id: str, patch: dict) -> dict:
@@ -308,6 +319,12 @@ def save_settings(user_id: str, patch: dict) -> dict:
 
     if "taxonomy_overrides" in patch:
         cur["taxonomy_overrides"] = patch.get("taxonomy_overrides") or {}
+
+    # ── 概覽自訂看板（非機密，整包替換 + 補 id）──
+    if "overview_boards" in patch:
+        cur["overview_boards"] = [_ensure_id(b) for b in (patch["overview_boards"] or [])]
+    if "active_overview_board_id" in patch:
+        cur["active_overview_board_id"] = patch["active_overview_board_id"]
 
     _sanitize(cur)
     db.save_user_settings(user_id, cur)
