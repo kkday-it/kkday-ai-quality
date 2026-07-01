@@ -485,15 +485,30 @@ def get_problems_summary() -> dict:
 
 
 @app.get("/api/problems/attribution_overview")
-def get_attribution_overview(source: str | None = None) -> dict:
-    """歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/判決/信心分層/星等 分布 + 月趨勢。"""
-    return db.attribution_overview(source=source)
+def get_attribution_overview(
+    source: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    granularity: str = "month",
+) -> dict:
+    """歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
+
+    可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）。
+    """
+    return db.attribution_overview(
+        source=source, date_from=date_from, date_to=date_to, granularity=granularity
+    )
 
 
 @app.get("/api/problems/attribution_breakdown")
-def get_attribution_breakdown(l1: str, source: str | None = None) -> dict:
-    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）。"""
-    return db.attribution_breakdown(source=source, l1=l1)
+def get_attribution_breakdown(
+    l1: str,
+    source: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間。"""
+    return db.attribution_breakdown(source=source, l1=l1, date_from=date_from, date_to=date_to)
 
 
 class StatusIn(BaseModel):

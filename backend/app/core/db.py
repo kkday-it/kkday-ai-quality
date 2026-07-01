@@ -815,8 +815,13 @@ def calibration_training_data(model: str | None = None) -> list[tuple[float, int
 # ── 歸因縱覽聚合（縱覽頁專用；problems_summary 的進階版，多 polarity/L1-code/星等/月趨勢）────
 
 
-def attribution_overview(source: str | None = None) -> dict:
-    """歸因縱覽聚合：一次取齊 KPI + 各維度分布 + 月趨勢（避免前端全量 fetch 再算）。
+def attribution_overview(
+    source: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    granularity: str = "month",
+) -> dict:
+    """歸因縱覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
     比 problems_summary 多：傾向(polarity)分布、L1 七域分布、星等分布、月度時序（已判/負向）。
     域軸用 data.l1_domain_code（7-code 機器值），非 problems_summary 的 root_cause_domain 圈號。
@@ -826,6 +831,9 @@ def attribution_overview(source: str | None = None) -> dict:
 
     Args:
         source: 來源 code 過濾（None＝全部來源）。
+        date_from: 起日 'YYYY-MM-DD'（含）；比對 occurred_at 前 10 字，None＝不限。
+        date_to: 迄日 'YYYY-MM-DD'（含）；None＝不限。
+        granularity: 趨勢粒度 year|month|day（預設 month；對應 substr 取 4/7/10 字）。
 
     Returns:
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
@@ -840,9 +848,19 @@ def attribution_overview(source: str | None = None) -> dict:
     l1l = sa_cast(jg.c.data, JSONB)["l1_label"].astext
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
 
+    # 趨勢粒度 → occurred_at 前綴長度（年 YYYY / 月 YYYY-MM / 日 YYYY-MM-DD）
+    _GRAN_LEN = {"year": 4, "month": 7, "day": 10}
+    glen = _GRAN_LEN.get(granularity, 7)
+
     def _src(stmt):
-        """套用 source 過濾（None＝不限）。"""
-        return stmt.where(ii.c.source == source) if source else stmt
+        """套用 source + 日期區間過濾（None＝不限）；日期比對 occurred_at 前 10 字（含端點）。"""
+        if source:
+            stmt = stmt.where(ii.c.source == source)
+        if date_from:
+            stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)
+        if date_to:
+            stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) <= date_to)
+        return stmt
 
     with T.get_engine().connect() as c:
         total_intake = c.execute(_src(select(cnt).select_from(ii))).scalar() or 0
@@ -910,8 +928,8 @@ def attribution_overview(source: str | None = None) -> dict:
                 by_tier["jury"] += 1
             else:
                 by_tier["needs_review"] += 1
-        # 月趨勢：YYYY-MM（occurred_at 前 7 字）→ 已判數 / 負向數
-        ym = func.substr(ii.c.occurred_at, 1, 7).label("ym")
+        # 趨勢：occurred_at 前 glen 字（依 granularity）→ 已判數 / 負向數
+        ym = func.substr(ii.c.occurred_at, 1, glen).label("ym")
         trend_rows = (
             c.execute(
                 _src(
@@ -961,7 +979,12 @@ def attribution_overview(source: str | None = None) -> dict:
     }
 
 
-def attribution_breakdown(source: str | None, l1: str) -> dict:
+def attribution_breakdown(
+    source: str | None,
+    l1: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
     """某 L1 歸因域下的 L2 / L3 細項分布（縱覽下鑽·懶載）。
 
     L2/L3 取自 judgments.data JSON（l2_code/l2_label/l3_code/l3_label），限定該 L1 域；
@@ -991,6 +1014,10 @@ def attribution_breakdown(source: str | None, l1: str) -> dict:
         )
         if source:
             stmt = stmt.where(ii.c.source == source)
+        if date_from:
+            stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)
+        if date_to:
+            stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) <= date_to)
         return stmt.group_by(code_col, label_col).order_by(cnt.desc())
 
     with T.get_engine().connect() as c:
