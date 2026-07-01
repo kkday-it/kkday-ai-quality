@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from app.ingestion.base import ParsedItem
-
 from app.ingestion.parsers._common import clean, new_id, to_float
 
 

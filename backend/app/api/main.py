@@ -452,7 +452,7 @@ def get_problems(
     judged: bool | None = None,
     polarity: str | None = None,
     scores: str | None = None,
-    category_groups: str | None = None,
+    product_verticals: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     limit: int = 100,
@@ -461,7 +461,7 @@ def get_problems(
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
-    星等 scores / 商品分類分組 category_groups 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    星等 scores / 商品垂直分類 product_verticals 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     排序：評論時間 occurred_at DESC（新在前）+ item_id tiebreaker（穩定·跨頁不變）。
     """
@@ -470,7 +470,7 @@ def get_problems(
         judged=judged,
         polarity=polarity,
         score=_csv_ints(scores),
-        category_group=_csv_strs(category_groups),
+        product_vertical=_csv_strs(product_verticals),
         date_from=date_from,
         date_to=date_to,
         limit=limit,
@@ -486,7 +486,7 @@ class ExportProblemsIn(BaseModel):
     judged: bool | None = None
     item_ids: list[str] | None = None
     scores: list[int] | None = None
-    category_groups: list[str] | None = None
+    product_verticals: list[str] | None = None
     date_from: str | None = None
     date_to: str | None = None
 
@@ -496,7 +496,7 @@ def export_problems(body: ExportProblemsIn) -> Response:
     """導出統一問題列表 CSV（全量·不受分頁限制；欄位齊全）。
 
     item_ids 給定→只導那些（複選/分頁選取，可上千）；否則導符合 source/polarity/judged
-    + 星等 / 商品分類分組 / 日期區間 篩選（與列表頁一致，避免導出與畫面不同步）全部。
+    + 星等 / 商品垂直分類 / 日期區間 篩選（與列表頁一致，避免導出與畫面不同步）全部。
     """
     csv_bytes = db.export_problems_csv(
         source=body.source,
@@ -504,7 +504,7 @@ def export_problems(body: ExportProblemsIn) -> Response:
         judged=body.judged,
         item_ids=body.item_ids,
         score=body.scores,
-        category_group=body.category_groups,
+        product_vertical=body.product_verticals,
         date_from=body.date_from,
         date_to=body.date_to,
     )

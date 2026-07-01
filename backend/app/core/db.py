@@ -26,6 +26,9 @@ from sqlalchemy.exc import IntegrityError
 from app.core import source_registry
 from app.core import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR  # config/ai_judge 目錄（統一定位）
+from app.core.paths import (
+    GLOBAL_DIR as _GLOBAL_DIR,  # config/global 目錄（product_vertical 等全域配置）
+)
 from app.core.schema import InboundItem, TicketFinding
 
 
@@ -378,15 +381,17 @@ def save_user_settings(user_id: str, data: dict) -> None:
 # ── 判決規則版本（config/ai_judge/ 的 7 rule + schema；append-only 快照）────────
 # 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 # _AI_JUDGE_DIR 由 app.core.paths 統一提供（見檔頭 import）。
-# 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格。
-# 註：商品分類分組（category_groups）已解耦為純 config/global/product_vertical.json（app/core/category_groups.py
-# 直讀），不再入版本化 RULE_CODES。
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema")
+# 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格 + product_vertical。
+# 商品垂直分類（product_vertical：Tour/Exp/Charter/Tix→CATEGORY 代碼）為可編輯版本化規則，
+# 復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認），非歸因分類。
+RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "product_vertical")
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→schema.json，C-N→rule_C-N.json）。"""
-    return _AI_JUDGE_DIR / ("schema.json" if code == "schema" else f"rule_{code}.json")
+    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，C-N→rule_C-N.json）。"""
+    if code == "product_vertical":  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
+        return _GLOBAL_DIR / "product_vertical.json"
+    return _AI_JUDGE_DIR / ("rule.schema.json" if code == "schema" else f"rule_{code}.json")
 
 
 def default_rule_content(code: str) -> dict:
@@ -489,9 +494,9 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復所有歸因分類（C-N，排除 schema / product_vertical）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    schema 屬結構規格、非歸因分類，不在此批次。
+    schema 屬結構規格、product_vertical 屬商品垂直分類，皆非歸因分類，不在此批次。
     缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
@@ -500,7 +505,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     done: list[dict] = []
     skipped: list[str] = []
     for code in RULE_CODES:
-        if code == "schema":
+        if code in ("schema", "product_vertical"):
             continue
         try:
             done.append(reset_rule_default(code, author=author))
@@ -675,7 +680,7 @@ def list_problems(
     limit: int = 100,
     offset: int = 0,
     score: list[int] | None = None,
-    category_group: str | list[str] | None = None,
+    product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: str = "occurred_at",
@@ -692,7 +697,7 @@ def list_problems(
         polarity: 傾向過濾（judgments.data.polarity）。
         limit/offset: 分頁。
         score: 星等過濾（IN 清單；僅 source_registry 命中的表可用，intake_items 路徑忽略）。
-        category_group: 商品分類分組名（單一或清單；經 category_groups.codes_for_group 展開）。
+        product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
 
@@ -702,7 +707,7 @@ def list_problems(
     spec = source_registry.spec_for(source)
     if spec is not None:
         return _list_problems_spec(
-            spec, judged, polarity, limit, offset, score, category_group, date_from, date_to, date_field
+            spec, judged, polarity, limit, offset, score, product_vertical, date_from, date_to, date_field
         )
 
     ii, jg = T.intake_items, T.judgments
@@ -746,14 +751,14 @@ def _list_problems_spec(
     limit: int,
     offset: int,
     score: list[int] | None,
-    category_group: str | list[str] | None,
+    product_vertical: str | list[str] | None,
     date_from: str | None,
     date_to: str | None,
     date_field: str,
 ) -> dict:
     """list_problems 的已拆表來源分支（product_reviews 等）：直接查該專表 LEFT JOIN judgments。
 
-    表本身即單一來源，無需 WHERE source= 過濾；score/category_group/日期區間為此分支專屬篩選
+    表本身即單一來源，無需 WHERE source= 過濾；score/product_vertical/日期區間為此分支專屬篩選
     （intake_items 通用路徑無對應語意欄，故不共用此函式）。
     """
     tbl = spec.table
@@ -776,14 +781,14 @@ def _list_problems_spec(
         sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
     if score and spec.score_col:
         sel = sel.where(tbl.c[spec.score_col].in_(score))
-    if category_group and spec.category_col:
-        # category_groups 已解耦為純 config loader（不再 import db）；此處局部 import 僅避免頂層冗餘依賴。
-        from app.core import category_groups as _category_groups
+    if product_vertical and spec.category_col:
+        # 局部 import：product_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
+        from app.core import product_vertical as _product_vertical
 
-        groups = [category_group] if isinstance(category_group, str) else list(category_group)
+        groups = [product_vertical] if isinstance(product_vertical, str) else list(product_vertical)
         codes: list[str] = []
         for g in groups:
-            codes.extend(_category_groups.codes_for_group(g))
+            codes.extend(_product_vertical.codes_for_group(g))
         if codes:
             sel = sel.where(tbl.c[spec.category_col].in_(codes))
     date_col = tbl.c[date_field] if date_field in tbl.c else tbl.c[spec.date_col]
@@ -880,14 +885,14 @@ def export_problems_csv(
     judged: bool | None = None,
     item_ids: list[str] | None = None,
     score: list[int] | None = None,
-    category_group: str | list[str] | None = None,
+    product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為 CSV（全量·不受分頁限制；全繁中、無 L3 code）。
 
     item_ids 給定時只導那些（前端複選/分頁選取）；否則導符合 source/polarity/judged
-    + 星等 score / 商品分類分組 category_group / 日期區間的全部——與列表頁篩選一致，
+    + 星等 score / 商品垂直分類 product_vertical / 日期區間的全部——與列表頁篩選一致，
     避免「畫面已篩、導出卻是全量」的不同步。傾向/判決/分層輸出繁中 label（DB 仍存 code）。
     """
     data = list_problems(
@@ -895,7 +900,7 @@ def export_problems_csv(
         polarity=polarity,
         judged=judged,
         score=score,
-        category_group=category_group,
+        product_vertical=product_vertical,
         date_from=date_from,
         date_to=date_to,
         limit=10_000_000,

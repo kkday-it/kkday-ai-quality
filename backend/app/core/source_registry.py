@@ -24,7 +24,7 @@ class SourceSpec:
     table: Table
     natural_key: str  # 自然鍵欄名（upsert 衝突目標）
     score_col: str | None = None  # 星等/評分欄名（list_problems score 篩選用）
-    category_col: str | None = None  # 商品分類欄名（category_group 篩選用）
+    category_col: str | None = None  # 商品分類欄名（product_vertical 篩選用）
     date_col: str = "occurred_at"  # 預設日期篩選欄（date_field='occurred_at' 對應）
 
 
