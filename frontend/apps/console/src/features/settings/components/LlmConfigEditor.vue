@@ -184,53 +184,53 @@ watch(testResult, async (r) => {
       </template>
     </a-form-item>
 
+    <a-form-item label="Model">
+      <a-select
+        v-model="form.model"
+        allow-create
+        allow-clear
+        placeholder="從預設清單選（也可手動輸入臨時 model）"
+      >
+        <a-option v-for="m in modelOptions" :key="m.id" :value="m.id" :label="m.id">
+          <span>{{ m.id }}</span>
+          <span v-if="m.desc" class="ml-2 text-xs text-[#86909c]">{{ m.desc }}</span>
+        </a-option>
+      </a-select>
+    </a-form-item>
+
+    <a-form-item label="Base URL">
+      <a-input v-model="form.base_url" placeholder="空＝OpenAI 預設端點" allow-clear />
+    </a-form-item>
+
     <a-row :gutter="12">
-      <a-col :span="12">
-        <a-form-item label="Model">
-          <a-select
-            v-model="form.model"
-            allow-create
-            allow-clear
-            placeholder="從預設清單選（也可手動輸入臨時 model）"
-          >
-            <a-option v-for="m in modelOptions" :key="m.id" :value="m.id" :label="m.id">
-              <span>{{ m.id }}</span>
-              <span v-if="m.desc" class="ml-2 text-xs text-[#86909c]">{{ m.desc }}</span>
-            </a-option>
-          </a-select>
+      <a-col :span="16">
+        <a-form-item label="Temperature">
+          <a-space>
+            <a-switch v-model="useTemp" />
+            <span class="text-xs text-[#86909c]">{{
+              useTemp ? '自訂' : 'API 預設（gpt-5 系列鎖定）'
+            }}</span>
+            <a-slider
+              v-if="useTemp"
+              v-model="form.temperature"
+              :min="0"
+              :max="2"
+              :step="0.1"
+              class="w-[180px]"
+            />
+            <span v-if="useTemp">{{ form.temperature ?? 0 }}</span>
+          </a-space>
         </a-form-item>
       </a-col>
-      <a-col :span="12">
-        <a-form-item label="Base URL">
-          <a-input v-model="form.base_url" placeholder="空＝OpenAI 預設端點" allow-clear />
+      <a-col :span="8">
+        <a-form-item label="思考模式 Thinking">
+          <a-space>
+            <a-switch v-model="form.thinking" checked-value="on" unchecked-value="off" />
+            <span class="text-xs text-[#86909c]">{{ form.thinking === 'on' ? '開啟' : '關閉' }}</span>
+          </a-space>
         </a-form-item>
       </a-col>
     </a-row>
-
-    <a-form-item label="Temperature">
-      <a-space>
-        <a-switch v-model="useTemp" />
-        <span class="text-xs text-[#86909c]">{{
-          useTemp ? '自訂' : 'API 預設（gpt-5 系列鎖定）'
-        }}</span>
-        <a-slider
-          v-if="useTemp"
-          v-model="form.temperature"
-          :min="0"
-          :max="2"
-          :step="0.1"
-          class="w-[220px]"
-        />
-        <span v-if="useTemp">{{ form.temperature ?? 0 }}</span>
-      </a-space>
-    </a-form-item>
-
-    <a-form-item label="思考模式 Thinking">
-      <a-radio-group v-model="form.thinking" type="button" size="small">
-        <a-radio value="off">關閉</a-radio>
-        <a-radio value="on">開啟</a-radio>
-      </a-radio-group>
-    </a-form-item>
 
     <a-form-item label="Reasoning effort">
       <a-radio-group v-model="form.reasoning_effort" type="button" size="small">
