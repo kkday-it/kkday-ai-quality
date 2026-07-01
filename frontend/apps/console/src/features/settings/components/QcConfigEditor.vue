@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import defaults from '@config/defaults.json';
+import qcDefaults from '@config/global/default_qc.json';
 import { testQcDb } from '@/api';
 import type { QcDbTestResult } from '@/api';
 import { Terminal } from '@/components';
@@ -10,7 +10,7 @@ import type { QcConfig } from '../types';
 
 // 單套 QC DB config 編輯器（modal 內容）：props 注入 config + 已知 password，emit save 由父元件持久化。
 // 從舊 DatasourceSettings.vue 重構：保留 SIT/Stage 環境切換、漸進式揭露 db/schema 多選、即時測試（Terminal）。
-const QC = defaults.qc_db;
+const QC = qcDefaults;
 const ENVS = QC.environments;
 const DEFAULT_ENV = QC.defaultEnv;
 const envOf = (id: string) =>
@@ -24,6 +24,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'save', payload: { config: QcConfig; password?: string }): void;
+  (e: 'cancel'): void;
 }>();
 
 const form = ref({
@@ -238,6 +239,7 @@ watch(testResult, async (r) => {
       <a-button type="primary" :loading="saving" :disabled="!form.names.length" @click="onSave">
         儲存
       </a-button>
+      <a-button @click="emit('cancel')">取消</a-button>
       <span class="text-xs text-[#86909c]">測試＝即時測當前表單（不寫入）；儲存＝寫入此套連線</span>
     </a-space>
 

@@ -4,5 +4,7 @@ export * from './auth.api';
 export * from './findings.api';
 export * from './products.api';
 export * from './inbound.api';
+export * from './judgment.api';
 export * from './settings.api';
 export * from './datasource.api';
+export * from './config.api';

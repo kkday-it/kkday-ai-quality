@@ -2,8 +2,8 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores';
-import { JUDGE_TABS } from '@/features/judge/routes';
 import { AppTopbar, FeatureTabs, SettingsDrawer, AccountDrawer } from './components';
+import { MODULES, moduleByPath } from './modules';
 
 // 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 兩個獨立抽屜（公共設定 / 帳號）。
 // 公開頁（登入/註冊）全屏直通，不套殼層。
@@ -13,6 +13,13 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const isPublic = computed(() => route.meta.public === true);
+
+// 當前模組依路由前綴反查（單頁模組 tabs 為空 → 隱藏 tab 列）；切換模組導向其首頁。
+const activeModule = computed(() => moduleByPath(route.path));
+const switchModule = (value: string) => {
+  const target = MODULES.find((m) => m.value === value);
+  if (target && target.value !== activeModule.value.value) router.push(target.home);
+};
 
 // ⚙️ 設定＝公共配置抽屜（LLM/QC）；👤 帳號＝獨立抽屜。各自開關互不干擾。
 const settingsVisible = ref(false);
@@ -32,8 +39,14 @@ onMounted(async () => {
   <a-layout v-else class="flex h-screen flex-col overflow-hidden">
     <!-- 頂部菜單欄：固定不隨內容滾動 -->
     <div class="z-10 flex-none">
-      <AppTopbar :user="auth.user" @open-settings="openSettings" @open-account="openAccount" />
-      <FeatureTabs :tabs="JUDGE_TABS" />
+      <AppTopbar
+        :user="auth.user"
+        :active-module="activeModule.value"
+        @open-settings="openSettings"
+        @open-account="openAccount"
+        @switch-module="switchModule"
+      />
+      <FeatureTabs v-if="activeModule.tabs.length" :tabs="activeModule.tabs" />
       <!--
         頁面級工具列插槽：頁面以 <Teleport to="#page-toolbar"> 把自己的全局工具列（如歸因總覽的
         篩選列）送進這條固定 header，使其恆常可見且絕不與內容區的 ECharts canvas 重疊。

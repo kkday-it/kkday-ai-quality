@@ -1,17 +1,41 @@
-// 資料進線領域 API：上傳、批次管理、明細、匯出。
+// 資料進線領域 API：乾跑校驗、確認上傳、批次管理、明細、匯出。
 import { BASE, j } from './http.api';
 
+/** /validate 回傳的每工作表校驗結果。 */
+export interface SheetValidation {
+  sheet_name: string;
+  detected_source: string | null;
+  label: string;
+  status: 'ok' | 'fail' | 'unknown';
+  missing_headers: string[];
+  row_count: number;
+  reason: string;
+}
+
 /**
- * 批量上傳資料檔（CSV/Excel）→ 後端解析錄入。
- * @param file 使用者選的檔案
- * @param source 來源標記（如 conversations 售前售後進線 / review 評論）
- * @returns 後端回傳 { inserted, total, source, preview }
+ * 乾跑校驗（不落庫）：上傳檔案 → 逐工作表自動辨識來源 + 必備表頭校驗。
+ * @param file 使用者選的檔案（CSV 單表 / xlsx 多分頁）
+ * @returns { filename, sheets: SheetValidation[] }
  */
-export const uploadInbound = (file: File, source = 'csv') => {
+export const validateInbound = (file: File): Promise<{ filename: string; sheets: SheetValidation[] }> => {
   const fd = new FormData();
   fd.append('file', file);
-  fd.append('source', source);
-  // FormData 不可手動設 Content-Type，瀏覽器自動帶 multipart boundary
+  return j(`${BASE}/inbound/validate`, { method: 'POST', body: fd });
+};
+
+/**
+ * 確認匯入：只匯入用戶勾選且校驗通過的工作表。
+ * @param file 同一份檔案（需重送供後端再解析）
+ * @param selections 勾選清單 [{ sheet_name, source }]
+ * @returns { results: [{ sheet_name, source, label, batch_id, inserted, total } | { error }] }
+ */
+export const uploadInbound = (
+  file: File,
+  selections: { sheet_name: string; source: string }[],
+) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('selections', JSON.stringify(selections));
   return j(`${BASE}/inbound/upload`, { method: 'POST', body: fd });
 };
 
