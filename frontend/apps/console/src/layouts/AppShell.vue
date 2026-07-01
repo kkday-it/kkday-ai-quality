@@ -50,9 +50,14 @@ onMounted(async () => {
       <!--
         頁面級工具列插槽：頁面以 <Teleport to="#page-toolbar"> 把自己的全局工具列（如歸因總覽的
         篩選列）送進這條固定 header，使其恆常可見且絕不與內容區的 ECharts canvas 重疊。
-        無頁面注入時為空 div（0 高），不影響其餘 tab。
+        橫帶樣式（bg / border / px-5 對齊 topbar 與內容區、py 呼吸）集中於此 host，
+        頁面 Teleport 內只放 flex 內容不再各自補 padding（避免各頁對齊值 drift）。
+        empty:hidden：無頁面注入時 display:none 收合為 0 高，維持「不影響其餘 tab」契約。
       -->
-      <div id="page-toolbar"></div>
+      <div
+        id="page-toolbar"
+        class="flex items-center border-b border-[#f0f0f0] bg-white px-5 py-2 empty:hidden"
+      ></div>
     </div>
 
     <!-- 內容區：內部滾動 -->
