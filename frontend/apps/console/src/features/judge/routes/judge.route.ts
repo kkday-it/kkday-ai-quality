@@ -13,7 +13,7 @@ export const judgeRoutes: RouteRecordRaw = {
   component: JudgeLayout,
   redirect: '/judge/rules',
   children: [
-    { path: 'rules', component: RuleManager, meta: { text: '判決規則' } }, // config/ai_judge 7 域判決規則：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
+    { path: 'rules', component: RuleManager, meta: { text: '規則配置' } }, // config/ai_judge 7 域判決規則 + 商品分類分組：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
     { path: 'upload', component: DataUpload, meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
     { path: 'list', component: AttributionList, meta: { text: '歸因列表' } }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
     { path: 'attribution', component: AttributionOverview, meta: { text: '歸因縱覽' } }, // 歸因列表的聚合儀表板：KPI + 漏斗 + L1~L3 + 趨勢

@@ -15,15 +15,16 @@ import {
   type RuleVersionMeta,
 } from '@/api/judgeRules.api';
 
-/** 子規則顯示名（C-1..C-7 + schema）。 */
+/** 子規則顯示名（評論導向 6 域 C-1..C-6 + schema + 商品分類分組）。 */
 export const RULE_LABELS: Record<string, string> = {
   schema: '結構規格', // 結構定義置首：先看整體規格，再編各域規則
   'C-1': '商品內容',
-  'C-2': '供應商履約',
-  'C-3': '訂單交易',
-  'C-4': '平台系統',
+  'C-2': '商品品質',
+  'C-3': '供應商履約',
+  'C-4': '使用體驗',
   'C-5': '客服營運',
   'C-6': '客人理解',
+  category_groups: '商品分類分組', // 非歸因分類：Tour/Exp/Charter/Tix 等商品分類分組，供歸因列表篩選用
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {

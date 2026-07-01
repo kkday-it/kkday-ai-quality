@@ -7,14 +7,7 @@ import {
   type AttributionBreakdown,
   type CountItem,
 } from '../utils';
-
-/** 信心分層 code → 繁中（純顯示；未知 code 回退原值）。 */
-const TIER_LABEL: Record<string, string> = {
-  auto_accept: '自動採信',
-  jury: 'jury 覆核',
-  needs_review: '待人工',
-  hold: 'HOLD',
-};
+import { TIER_LABELS } from '../constants';
 
 /** 傾向語義色（對齊 AttributionList 的 POLARITY_COLOR 語義）。 */
 const POL_COLOR: Record<string, string> = {
@@ -210,7 +203,7 @@ export function useAttributionDashboard(
       title: '信心分層',
       unit: '筆',
       items: TIERS.map((t) => ({
-        name: TIER_LABEL[t.key] || t.key,
+        name: TIER_LABELS[t.key] || t.key,
         value: data.value?.by_tier[t.key] ?? 0,
         color: t.color,
       })),

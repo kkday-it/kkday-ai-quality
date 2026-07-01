@@ -6,7 +6,7 @@ import { create } from 'jsondiffpatch';
 import { format } from 'jsondiffpatch/formatters/html';
 import 'jsondiffpatch/formatters/styles/html.css';
 import { getRuleVersion } from '@/api/judgeRules.api';
-import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { RULE_LABELS, useJudgeRulesStore } from '@/stores/judgeRules.store';
 
 const visible = defineModel<boolean>('visible', { default: false });
 const store = useJudgeRulesStore();
@@ -25,6 +25,8 @@ const loading = ref(false);
 const contentCache = new Map<number, Record<string, unknown>>();
 
 const versions = computed(() => store.history.map((h) => h.version));
+/** 彈窗標題：動態帶當前規則顯示名（「規則配置」為 RuleManager tab 新名，非固定字串）。 */
+const modalTitle = computed(() => `${RULE_LABELS[store.activeCode] ?? store.activeCode} — 歷史版本`);
 
 watch(visible, async (v) => {
   if (!v) return;
@@ -81,7 +83,7 @@ const columns = [
 </script>
 
 <template>
-  <a-modal v-model:visible="visible" title="判決規則 — 歷史版本" :width="900" :footer="false">
+  <a-modal v-model:visible="visible" :title="modalTitle" :width="900" :footer="false">
     <!-- 對比兩版 -->
     <div class="mb-3 flex items-center gap-2">
       <span class="text-xs text-[var(--color-text-3)]">對比</span>

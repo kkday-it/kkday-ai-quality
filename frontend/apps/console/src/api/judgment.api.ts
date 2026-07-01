@@ -1,18 +1,33 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
 import { BASE, getToken, j } from './http.api';
 
-/** 統一問題列表（intake + 歸因 join）。judged=true 僅已歸因。 */
-export const getProblems = (params: {
+/** 統一問題列表查詢參數（source/judged/polarity 既有；scores/categoryGroups/日期區間為新增篩選）。 */
+export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
   polarity?: string;
+  /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
+  scores?: number[];
+  /** 商品分類分組名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
+  categoryGroups?: string[];
+  /** 日期區間起（含，'YYYY-MM-DD'）。 */
+  dateFrom?: string;
+  /** 日期區間迄（含，'YYYY-MM-DD'）。 */
+  dateTo?: string;
   limit?: number;
   offset?: number;
-} = {}) => {
+}
+
+/** 統一問題列表（intake + 歸因 join）。judged=true 僅已歸因。 */
+export const getProblems = (params: GetProblemsParams = {}) => {
   const q = new URLSearchParams();
   if (params.source) q.set('source', params.source);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity) q.set('polarity', params.polarity);
+  if (params.scores?.length) q.set('scores', params.scores.join(','));
+  if (params.categoryGroups?.length) q.set('category_groups', params.categoryGroups.join(','));
+  if (params.dateFrom) q.set('date_from', params.dateFrom);
+  if (params.dateTo) q.set('date_to', params.dateTo);
   q.set('limit', String(params.limit ?? 2000));
   q.set('offset', String(params.offset ?? 0));
   return j(`${BASE}/problems?${q.toString()}`);
@@ -27,6 +42,14 @@ export const exportProblems = async (p: {
   polarity?: string;
   judged?: boolean;
   item_ids?: string[];
+  /** 星等篩選（多選，IN 語意）。 */
+  scores?: number[];
+  /** 商品分類分組名（多選；後端展開為 CATEGORY 代碼清單）。 */
+  category_groups?: string[];
+  /** 日期區間起（含，'YYYY-MM-DD'）。 */
+  date_from?: string;
+  /** 日期區間迄（含，'YYYY-MM-DD'）。 */
+  date_to?: string;
 }): Promise<Blob> => {
   const token = getToken();
   const res = await fetch(`${BASE}/problems/export`, {
@@ -96,3 +119,16 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   if (opts.dateTo) q.set('date_to', opts.dateTo);
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
+
+/** 商品分類分組解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。 */
+export interface CategoryGroupsResolved {
+  groups: Record<string, string[]>;
+}
+
+/**
+ * 取已解析的商品分類分組（供篩選下拉；選項顯示分組名、送出亦送分組名，CATEGORY 代碼清單由後端展開）。
+ * 對應 `judge_rule_versions` 版本化的 `category_groups` config（規則配置 tab 可編輯）。
+ * @returns {groups:{分組名:[CATEGORY代碼,...]}}
+ */
+export const getCategoryGroupsResolved = (): Promise<CategoryGroupsResolved> =>
+  j(`${BASE}/judge-rules/category-groups/resolved`);
