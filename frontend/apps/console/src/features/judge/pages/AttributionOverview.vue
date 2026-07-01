@@ -63,6 +63,7 @@ const {
   onL1Click,
   reload,
   polarityDonut,
+  contentRatioDonut,
   scoreBar,
   funnel,
   l1Bar,
@@ -104,14 +105,19 @@ const {
         </div>
       </CardSection>
 
-      <!-- 傾向占比（結構）＋ 問題量趨勢（時序）左右並置，作為健康度首屏總覽 -->
+      <!-- 商品內容佔比（優先關注）＋ 傾向占比 ＋ 問題量趨勢 三欄並置 -->
       <a-row :gutter="[16, 16]" align="stretch">
-        <a-col :span="12">
+        <a-col :span="8">
+          <CardSection title="商品內容佔比" hint="商品內容問題佔全部歸因域比重 · 優先關注">
+            <v-chart :option="contentRatioDonut" class="h-[320px]" autoresize />
+          </CardSection>
+        </a-col>
+        <a-col :span="8">
           <CardSection title="傾向分布" hint="正向 / 負向 / 中性 / 數據不足 占比">
             <v-chart :option="polarityDonut" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
           <CardSection title="問題量趨勢（月）" hint="依評論時間聚合 · 已判 vs 負向問題量">
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>

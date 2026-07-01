@@ -31,6 +31,9 @@ const TIERS = [
   { key: 'needs_review', color: '#f53f3f' },
 ] as const;
 
+/** 商品內容 L1 域 code（config/ai_judge/domains.json items[].code，圈號① 商品內容）——優先關注佔比用。 */
+const CONTENT_DOMAIN_CODE = 'content';
+
 /**
  * 歸因縱覽儀表板的資料與圖表邏輯（縱覽 / 商品評論 / 售前售後進線 三檢視共用）。
  *
@@ -129,6 +132,24 @@ export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefi
     }),
   );
 
+  /**
+   * 商品內容佔比（優先關注指標）：L1 域 content 佔全部歸因域比重，2 片甜甜圈（商品內容 vs 其他域）。
+   * 純由 by_l1 前端計算；各檢視（來源）各自呈現該來源下商品內容問題的佔比。
+   */
+  const contentRatioDonut = computed(() => {
+    const items = data.value?.by_l1 ?? [];
+    const total = items.reduce((sum, it) => sum + it.n, 0);
+    const content = items.find((it) => it.code === CONTENT_DOMAIN_CODE)?.n ?? 0;
+    return buildDonutOption({
+      title: '商品內容佔比',
+      unit: '筆',
+      items: [
+        { name: '商品內容', value: content, color: '#165dff' },
+        { name: '其他歸因域', value: Math.max(total - content, 0), color: '#e5e6eb' },
+      ],
+    });
+  });
+
   /** 星等分布（僅商品評論類來源有 score 資料；低星紅、中性灰、高星綠）。 */
   const scoreBar = computed(() =>
     buildBarOption({
@@ -196,6 +217,7 @@ export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefi
     reload,
     // 圖表 option
     polarityDonut,
+    contentRatioDonut,
     scoreBar,
     funnel,
     l1Bar,
