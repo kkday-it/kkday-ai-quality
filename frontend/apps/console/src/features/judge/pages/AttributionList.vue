@@ -288,45 +288,48 @@ const COLS = [
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <CardSection
-      title="初判歸因"
-      hint="選來源+模型 → 勾選列/分頁選取/全部未判 → 進行初判歸因（正向不分類，只有負向歸 L1→L3）"
-    >
-      <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <div class="mb-1 text-xs text-gray-500">來源</div>
-          <a-select
-            v-model="source"
-            style="width: 150px"
-            :options="SOURCE_OPTS"
-            @change="onFilterChange"
-          />
-        </div>
-        <a-button type="primary" :loading="running" @click="runSelected">
-          進行初判歸因（已選 {{ runCount }}）
-        </a-button>
-        <a-button :loading="running" @click="runAll">全部未判（{{ unjudged }}）</a-button>
-        <a-button @click="exportCsv">
-          <template #icon><icon-download /></template>
-          導出 CSV（{{ runCount ? `已選 ${runCount}` : '全部篩選' }}）
-        </a-button>
+  <!-- 初判歸因控制列送進固定工具列橫帶（tab 下方），與歸因縱覽一致、恆常可見 -->
+  <Teleport to="#page-toolbar">
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-500">來源</span>
+      <a-select
+        v-model="source"
+        size="small"
+        style="width: 150px"
+        :options="SOURCE_OPTS"
+        @change="onFilterChange"
+      />
+      <a-button type="primary" size="small" :loading="running" @click="runSelected">
+        進行初判歸因（已選 {{ runCount }}）
+      </a-button>
+      <a-button size="small" :loading="running" @click="runAll">
+        全部未判（{{ unjudged }}）
+      </a-button>
+      <a-button size="small" @click="exportCsv">
+        <template #icon><icon-download /></template>
+        導出 CSV（{{ runCount ? `已選 ${runCount}` : '全部篩選' }}）
+      </a-button>
+    </div>
+  </Teleport>
+
+  <div class="flex h-full flex-col gap-4">
+    <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
+    <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
+      <a-progress
+        :percent="progressPct / 100"
+        :status="progressPct >= 100 ? 'success' : 'normal'"
+      />
+      <div class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500">
+        <span>已處理 {{ progress.processed }} / {{ progress.total }} 筆…</span>
+        <span v-if="costText">花費 {{ costText }}</span>
       </div>
-      <div v-if="running" class="mt-3">
-        <a-progress
-          :percent="progressPct / 100"
-          :status="progressPct >= 100 ? 'success' : 'normal'"
-        />
-        <div class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500">
-          <span>已處理 {{ progress.processed }} / {{ progress.total }} 筆…</span>
-          <span v-if="costText">花費 {{ costText }}</span>
-        </div>
-      </div>
-    </CardSection>
+    </div>
 
     <CardSection
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
       hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
+      class="flex min-h-0 flex-1 flex-col"
+      :body-style="{ flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }"
     >
       <div class="mb-2 flex flex-wrap items-center gap-3">
         <a-checkbox v-model="onlyProblem" @change="onFilterChange">僅看問題（負向）</a-checkbox>
@@ -374,9 +377,10 @@ const COLS = [
             showJumper: true,
           }"
           :row-selection="{ type: 'checkbox', selectedRowKeys: selectedKeys, showCheckedAll: true }"
+          class="min-h-0 flex-1"
           size="small"
           row-key="item_id"
-          :scroll="{ y: 560 }"
+          :scroll="{ y: '100%' }"
           @page-change="
             (p: number) => {
               page = p;
