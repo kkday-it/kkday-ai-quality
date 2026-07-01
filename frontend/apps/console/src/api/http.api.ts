@@ -2,7 +2,7 @@
 export const BASE = '/api';
 
 // JWT 真相源：localStorage（auth store 與 http 層共用同一 key）
-const TOKEN_KEY = 'aipq_token';
+const TOKEN_KEY = 'aiq_token';
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string): void => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);

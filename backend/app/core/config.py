@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     # ── 認證 ──
-    aipq_jwt_secret: str | None = None
+    aiq_jwt_secret: str | None = None
     jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"

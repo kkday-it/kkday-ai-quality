@@ -1,6 +1,6 @@
 """帳號認證：bcrypt 密碼雜湊 + JWT 簽發/驗證 + FastAPI 認證依賴。
 
-JWT secret 由環境變數 AIPQ_JWT_SECRET 提供（經 config.env 集中讀取）；未設時用開發預設值
+JWT secret 由環境變數 AIQ_JWT_SECRET 提供（經 config.env 集中讀取）；未設時用開發預設值
 並記警告（正式環境務必設定）。
 直接使用 bcrypt 套件（非 passlib）——passlib 1.7.4 與 bcrypt 5.x 不相容。
 """
@@ -22,14 +22,14 @@ _log = logging.getLogger(__name__)
 
 _JWT_ALGORITHM = "HS256"
 _TOKEN_TTL = timedelta(days=env.jwt_ttl_days)  # env JWT_TTL_DAYS（prod 可縮短）
-_DEV_SECRET = "dev-insecure-secret-change-me"  # 僅開發 fallback，正式須設 AIPQ_JWT_SECRET
+_DEV_SECRET = "dev-insecure-secret-change-me"  # 僅開發 fallback，正式須設 AIQ_JWT_SECRET
 _BCRYPT_MAX_BYTES = 72  # bcrypt 演算法上限，超過會拋 ValueError，故先截斷
 
 
 def _secret() -> str:
-    s = env.aipq_jwt_secret
+    s = env.aiq_jwt_secret
     if not s:
-        _log.warning("AIPQ_JWT_SECRET 未設定，使用開發預設 secret；正式環境務必設定環境變數。")
+        _log.warning("AIQ_JWT_SECRET 未設定，使用開發預設 secret；正式環境務必設定環境變數。")
         return _DEV_SECRET
     return s
 
