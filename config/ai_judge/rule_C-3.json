@@ -5,6 +5,7 @@
     "about": "供應商履約（評論導向收斂，AI 起草待人審）（變深度收斂+label精簡）",
     "domain": "supplier",
     "label": "供應商履約",
+    "recommended_action": "penalize_breach",
     "domain_count": 1,
     "l3_total": 7,
     "thick_fields_status": "ai_drafted_pending_review"

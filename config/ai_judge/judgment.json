@@ -1,5 +1,5 @@
 {
-  "_comment": "判決顯示與信心閾值——前後端共用非機密 SSOT（前端 @config/global/judgment.json、後端 settings.py 同讀）。信心閾值曾內嵌 db.py（舊 confidence.json 移除為簡化），此處重新外部化，理由：QC 校準後需免改碼調 auto_accept/jury 分層。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
+  "_comment": "判決顯示與信心閾值——判決領域 SSOT（前端 @config/ai_judge/judgment.json、後端 prejudge.py / db.py 同讀）。信心閾值/prejudge 旋鈕/傾向・分層 label 集中此檔；QC 校準後需免改碼調 auto_accept/jury 分層。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
   "confidence_tiers": {
     "auto_accept": 0.8,
     "jury_low": 0.5,

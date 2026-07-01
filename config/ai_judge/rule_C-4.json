@@ -5,6 +5,7 @@
     "about": "使用兌換體驗（評論導向收斂，AI 起草待人審）（變深度收斂+label精簡）",
     "domain": "redemption",
     "label": "使用兌換體驗",
+    "recommended_action": "escalate_ops",
     "domain_count": 1,
     "l3_total": 4,
     "thick_fields_status": "ai_drafted_pending_review"

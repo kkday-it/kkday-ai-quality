@@ -1,4 +1,5 @@
 {
+  "_comment": "商品分類分組（product vertical：Tour/Exp/Charter/Tix → CATEGORY_xxx 代碼）SSOT——前後端共用非機密商品維度資料，非判決規則。後端 app/core/category_groups.py 直讀（已從 ai_judge 規則版本化解耦）；供歸因列表商品分類篩選展開代碼。編輯後 reload() 即時生效。",
   "groups": {
     "Tour": [
       "CATEGORY_019",

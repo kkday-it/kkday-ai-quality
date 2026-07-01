@@ -29,13 +29,8 @@
     "sourceMapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["label", "required_headers", "field_map"],
+      "required": ["required_headers", "field_map"],
       "properties": {
-        "label": {
-          "type": "string",
-          "minLength": 1,
-          "description": "來源中文顯示名（上傳 UI / 列表 來源欄）。"
-        },
         "required_headers": {
           "type": "array",
           "minItems": 1,

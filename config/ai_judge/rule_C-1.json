@@ -4,6 +4,7 @@
     "version": "1.0",
     "domain": "content",
     "label": "商品內容",
+    "recommended_action": "clarify_wording",
     "code": "C-1",
     "l2_count": 8,
     "l3_total": 60,

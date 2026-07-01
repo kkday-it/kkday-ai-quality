@@ -5,6 +5,7 @@
     "about": "訂單售後客服（評論導向收斂，AI 起草待人審）（變深度收斂+label精簡）",
     "domain": "service",
     "label": "訂單售後客服",
+    "recommended_action": "escalate_ops",
     "domain_count": 1,
     "l3_total": 8,
     "thick_fields_status": "ai_drafted_pending_review"

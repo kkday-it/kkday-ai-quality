@@ -5,6 +5,7 @@
     "about": "客人理解期待（評論導向收斂，AI 起草待人審）（變深度收斂+label精簡）",
     "domain": "customer",
     "label": "客人理解期待",
+    "recommended_action": "escalate_ux",
     "domain_count": 1,
     "l3_total": 6,
     "thick_fields_status": "ai_drafted_pending_review"

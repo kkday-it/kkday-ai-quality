@@ -1,5 +1,5 @@
 {
-  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/default_llm.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / user_settings，勿放這裡。defaultModels[]＝{ id, desc, input, output }；desc 為下拉 hint，input/output＝美元/1M tokens 單價（判決花費估算 SSOT，後端 pricing.py 讀此；未列 input/output 者回退 price_default，Batch −50%）。價格隨官方調整請手動更新此檔（即時生效，reload() 清快取）。Gemini / ByteDance 為對比用，僅列預設模型。",
+  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/llm_model.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / user_settings，勿放這裡。defaultModels[]＝{ id, desc, input, output }；desc 為下拉 hint，input/output＝美元/1M tokens 單價（判決花費估算 SSOT，後端 pricing.py 讀此；未列 input/output 者回退 price_default，Batch −50%）。價格隨官方調整請手動更新此檔（即時生效，reload() 清快取）。",
   "reasoning": [
     "none",
     "low",
@@ -17,6 +17,7 @@
     {
       "id": "openai",
       "label": "GPT (OpenAI)",
+      "short_label": "OpenAI",
       "base_url": "https://api.openai.com/v1",
       "defaultModel": "gpt-5-nano",
       "defaultModels": [
@@ -75,66 +76,86 @@
     {
       "id": "gemini",
       "label": "Gemini (Google)",
+      "short_label": "Gemini",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
       "url_hint": "generativelanguage",
       "defaultModel": "gemini-3.5-flash",
       "defaultModels": [
         {
           "id": "gemini-3.1-pro-preview",
-          "desc": "旗艦 · 最強推理"
+          "desc": "旗艦 · 最強推理 · $2/$12",
+          "input": 2.0,
+          "output": 12.0
         },
         {
           "id": "gemini-2.5-pro",
-          "desc": "上代旗艦 · 強"
+          "desc": "上代旗艦 · 強 · $1.25/$10",
+          "input": 1.25,
+          "output": 10.0
         },
         {
           "id": "gemini-3.5-flash",
-          "desc": "新世代 flash · 均衡（預設）"
+          "desc": "新世代 flash · 均衡（預設）· $1.50/$9",
+          "input": 1.5,
+          "output": 9.0
         },
         {
           "id": "gemini-2.5-flash",
-          "desc": "均衡 · 通用"
+          "desc": "均衡 · 通用 · $0.30/$2.50",
+          "input": 0.3,
+          "output": 2.5
         },
         {
           "id": "gemini-3.1-flash-lite",
-          "desc": "輕量 · 省"
+          "desc": "輕量 · 省 · $0.25/$1.50",
+          "input": 0.25,
+          "output": 1.5
         },
         {
           "id": "gemini-2.5-flash-lite",
-          "desc": "極省 · 高量"
+          "desc": "極省 · 高量 · $0.10/$0.40",
+          "input": 0.1,
+          "output": 0.4
         }
       ]
     },
     {
       "id": "bytedance",
       "label": "ByteDance(字節)",
+      "short_label": "ByteDance",
       "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
       "url_hint": "bytepluses",
       "defaultModel": "seed-2-0-lite-260228",
       "defaultModels": [
         {
           "id": "seed-2-0-lite-260428",
-          "desc": "Seed 2.0 lite · 新版"
+          "desc": "Seed 2.0 lite · 新版 · $0.25/$2",
+          "input": 0.25,
+          "output": 2.0
         },
         {
           "id": "seed-2-0-lite-260228",
-          "desc": "Seed 2.0 lite · 預設"
+          "desc": "Seed 2.0 lite · 預設 · $0.25/$2",
+          "input": 0.25,
+          "output": 2.0
         },
         {
           "id": "seed-2-0-code-preview-260328",
-          "desc": "Seed 2.0 · 程式碼"
+          "desc": "Seed 2.0 · 程式碼（官方未公布單價，成本估算回退預設）"
         },
         {
           "id": "seed-1-6-250915",
-          "desc": "Seed 1.6 · 標準"
+          "desc": "Seed 1.6 · 標準 · $0.25/$2",
+          "input": 0.25,
+          "output": 2.0
         },
         {
           "id": "seed-1-6-flash-250715",
-          "desc": "Seed 1.6 flash · 省"
+          "desc": "Seed 1.6 flash · 省（官方未公布單價，成本估算回退預設）"
         },
         {
           "id": "gpt-oss-120b-250805",
-          "desc": "開源 120B · 偏慢"
+          "desc": "開源 120B · 偏慢（官方未公布單價，成本估算回退預設）"
         }
       ]
     }
