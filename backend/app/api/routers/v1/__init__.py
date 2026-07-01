@@ -7,6 +7,7 @@ from fastapi import APIRouter
 
 from app.api.routers.v1 import (
     export,
+    judgment,
 )
 
 # TODO(in-progress)：ingest / interactions / products / signals 模組檔尚未建立，
@@ -19,5 +20,6 @@ router = APIRouter(prefix="/api/v1")
 # router.include_router(products.router)
 # router.include_router(signals.router)
 router.include_router(export.router)
+router.include_router(judgment.router)
 
 __all__ = ["router"]
