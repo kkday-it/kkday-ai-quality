@@ -2,6 +2,7 @@ packages:
   - 'apps/*'
   - 'packages/*'
 allowBuilds:
-  core-js: set this to true or false
+  # core-js 的 postinstall 僅印贊助橫幅、無實際建置需求 → 設 false 拒絕執行即可解除 ERR_PNPM_IGNORED_BUILDS
+  core-js: false
   esbuild: true
   vue-demi: true
