@@ -10,9 +10,9 @@ export interface ScoreFilterDef {
   options: number[];
 }
 
-/** 商品分類分組篩選（多選；選項來自 config/global/product_vertical.json 動態解析）。 */
-export interface CategoryGroupFilterDef {
-  type: 'categoryGroup';
+/** 商品垂直分類篩選（多選；選項來自 rule_code=product_vertical 的 active 版本動態解析）。 */
+export interface ProductVerticalFilterDef {
+  type: 'productVertical';
 }
 
 /** 日期區間篩選（對應後端某個時間欄位，如評論時間或出發日）。 */
@@ -33,7 +33,7 @@ export interface PolarityFilterDef {
 export type SourceFilterDef =
   | PolarityFilterDef
   | ScoreFilterDef
-  | CategoryGroupFilterDef
+  | ProductVerticalFilterDef
   | DateRangeFilterDef;
 
 /** 展開行明細單一欄位定義（key 對應 `_enrich_problem` 回傳欄位；缺值防禦式顯示「—」）。 */
@@ -102,7 +102,7 @@ const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
 const PRODUCT_REVIEWS_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'score', options: [1, 2, 3, 4, 5] },
-  { type: 'categoryGroup' },
+  { type: 'productVertical' },
   { type: 'dateRange', field: 'occurred_at', label: '評論時間' },
 ];
 

@@ -1,15 +1,15 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
 import { BASE, getToken, j } from './http.api';
 
-/** 統一問題列表查詢參數（source/judged/polarity 既有；scores/categoryGroups/日期區間為新增篩選）。 */
+/** 統一問題列表查詢參數（source/judged/polarity 既有；scores/productVerticals/日期區間為新增篩選）。 */
 export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
   polarity?: string;
   /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
   scores?: number[];
-  /** 商品分類分組名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
-  categoryGroups?: string[];
+  /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
+  productVerticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
   dateFrom?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
@@ -25,7 +25,7 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity) q.set('polarity', params.polarity);
   if (params.scores?.length) q.set('scores', params.scores.join(','));
-  if (params.categoryGroups?.length) q.set('category_groups', params.categoryGroups.join(','));
+  if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
   q.set('limit', String(params.limit ?? 2000));
@@ -44,8 +44,8 @@ export const exportProblems = async (p: {
   item_ids?: string[];
   /** 星等篩選（多選，IN 語意）。 */
   scores?: number[];
-  /** 商品分類分組名（多選；後端展開為 CATEGORY 代碼清單）。 */
-  category_groups?: string[];
+  /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單）。 */
+  product_verticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
   date_from?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
@@ -120,15 +120,15 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
 
-/** 商品分類分組解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。 */
-export interface CategoryGroupsResolved {
+/** 商品垂直分類解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。 */
+export interface ProductVerticalResolved {
   groups: Record<string, string[]>;
 }
 
 /**
- * 取已解析的商品分類分組（供篩選下拉；選項顯示分組名、送出亦送分組名，CATEGORY 代碼清單由後端展開）。
- * 資料源＝config/global/product_vertical.json（純 config，唯讀）；後端 category_groups loader 解析。
+ * 取已解析的商品垂直分類（供篩選下拉；選項顯示分組名、送出亦送分組名，CATEGORY 代碼清單由後端展開）。
+ * 資料源＝rule_code=product_vertical 的 active 版本（judge_rule_versions，可編輯版本化）；後端 product_vertical loader 解析。
  * @returns {groups:{分組名:[CATEGORY代碼,...]}}
  */
-export const getCategoryGroupsResolved = (): Promise<CategoryGroupsResolved> =>
-  j(`${BASE}/judge-rules/category-groups/resolved`);
+export const getProductVerticalResolved = (): Promise<ProductVerticalResolved> =>
+  j(`${BASE}/judge-rules/product-vertical/resolved`);

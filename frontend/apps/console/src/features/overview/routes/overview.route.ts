@@ -1,15 +1,15 @@
 // 📊 質檢概覽模組路由：總覽 + 三業務目標（共用 DashboardView，config 驅動）+ 自訂組合。
 // 父路由無 component（僅分組 + 重導）；子路由於殼層 <router-view> 渲染，tab 由 children meta.text 衍生。
+// 各頁 lazy import：DashboardView 分出獨立 chunk（含 echarts），進入概覽才載入。
 import type { RouteRecordRaw } from 'vue-router';
-import DashboardView from '../pages/DashboardView.vue';
 
 export const overviewRoutes: RouteRecordRaw = {
   path: '/overview',
   redirect: '/overview/content',
   children: [
-    { path: 'content', component: DashboardView, meta: { text: '內容質量 & 閉環引擎' } },
-    { path: 'presale', component: DashboardView, meta: { text: '售前轉化' } },
-    { path: 'postsale', component: DashboardView, meta: { text: '售後履約' } },
+    { path: 'content', component: () => import('../pages/DashboardView.vue'), meta: { text: '內容質量 & 閉環引擎' } },
+    { path: 'presale', component: () => import('../pages/DashboardView.vue'), meta: { text: '售前轉化' } },
+    { path: 'postsale', component: () => import('../pages/DashboardView.vue'), meta: { text: '售後履約' } },
   ],
 };
 

@@ -14,8 +14,11 @@ import RuleHistoryModal from '../components/RuleHistoryModal.vue';
 
 const store = useJudgeRulesStore();
 // 歸因分類（C-N，schema 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不再讀前端靜態表。
+// product_vertical（商品垂直分類）非歸因判準，已移至「配置」抽屜維護，故此處一律排除、不在規則管理顯示。
 const domainCodes = computed(() =>
-  store.metas.filter((m) => m.rule_code !== 'schema').map((m) => m.rule_code),
+  store.metas
+    .filter((m) => m.rule_code !== 'schema' && m.rule_code !== 'product_vertical')
+    .map((m) => m.rule_code),
 );
 const mode = ref<'panel' | 'json'>('panel');
 const historyOpen = ref(false);
@@ -165,7 +168,7 @@ function doResetAll() {
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
-          <!-- schema 一律 JSON 模式；C-N 依 mode -->
+          <!-- schema 一律 JSON；C-N 歸因分類依 mode 走 RuleTreePanel / JsonEditor -->
           <RuleTreePanel
             v-if="mode === 'panel' && !isSchema && store.edited"
             :key="editorKey"

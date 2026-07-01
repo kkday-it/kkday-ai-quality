@@ -32,8 +32,8 @@ const {
   polarityFilter,
   onlyProblem,
   scoreFilter,
-  categoryGroupFilter,
-  categoryGroupOpts,
+  productVerticalFilter,
+  productVerticalOpts,
   dateRange,
   onFilterChange,
   llmConfigId,
@@ -165,16 +165,16 @@ onMounted(init);
             :options="f.options.map((s) => ({ value: s, label: `${s} 星` }))"
             @change="onFilterChange"
           />
-          <!-- 商品分類分組篩選（多選；選項來自 config 動態解析）-->
+          <!-- 商品垂直分類篩選（多選；選項來自 config 動態解析）-->
           <a-select
-            v-else-if="f.type === 'categoryGroup'"
-            v-model="categoryGroupFilter"
+            v-else-if="f.type === 'productVertical'"
+            v-model="productVerticalFilter"
             multiple
             size="small"
             style="min-width: 180px"
-            placeholder="商品分類分組"
+            placeholder="商品垂直分類"
             :max-tag-count="2"
-            :options="categoryGroupOpts.map((g) => ({ value: g, label: g }))"
+            :options="productVerticalOpts.map((g) => ({ value: g, label: g }))"
             @change="onFilterChange"
           />
           <!-- 日期區間篩選 -->

@@ -1,24 +1,18 @@
 // ⚖️ AI 法官模組路由子樹：/judge 為頂級節點，三個視圖為其子路由。
+// 各頁 lazy import（route-level code splitting）：進入該視圖才載入其 chunk，縮小主 bundle。
 import type { RouteRecordRaw } from 'vue-router';
-import JudgeLayout from '../JudgeLayout.vue';
-import Analytics from '../pages/Analytics.vue';
-import AttributionList from '../pages/AttributionList.vue';
-import AttributionOverview from '../pages/AttributionOverview.vue';
-import DataUpload from '../pages/DataUpload.vue';
-import ProductDetail from '../pages/ProductDetail.vue';
-import RuleManager from '../pages/RuleManager.vue';
 
 export const judgeRoutes: RouteRecordRaw = {
   path: '/judge',
-  component: JudgeLayout,
+  component: () => import('../JudgeLayout.vue'),
   redirect: '/judge/rules',
   children: [
-    { path: 'rules', component: RuleManager, meta: { text: '規則配置' } }, // config/ai_judge 7 域判決規則 + 商品分類分組：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
-    { path: 'upload', component: DataUpload, meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
-    { path: 'list', component: AttributionList, meta: { text: '歸因列表' } }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
-    { path: 'attribution', component: AttributionOverview, meta: { text: '歸因縱覽' } }, // 歸因列表的聚合儀表板：KPI + 漏斗 + L1~L3 + 趨勢
-    { path: 'analytics', component: Analytics, meta: { text: 'RD／品控 分析' } }, // 出口 B
-    { path: 'product', component: ProductDetail, meta: { text: 'PM／AM 單品' } }, // 出口 A
+    { path: 'rules', component: () => import('../pages/RuleManager.vue'), meta: { text: '規則配置' } }, // config/ai_judge 判決規則 + 商品垂直分類：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
+    { path: 'upload', component: () => import('../pages/DataUpload.vue'), meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
+    { path: 'list', component: () => import('../pages/AttributionList.vue'), meta: { text: '歸因列表' } }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
+    { path: 'attribution', component: () => import('../pages/AttributionOverview.vue'), meta: { text: '歸因縱覽' } }, // 歸因列表的聚合儀表板：KPI + 漏斗 + L1~L3 + 趨勢
+    { path: 'analytics', component: () => import('../pages/Analytics.vue'), meta: { text: 'RD／品控 分析' } }, // 出口 B
+    { path: 'product', component: () => import('../pages/ProductDetail.vue'), meta: { text: 'PM／AM 單品' } }, // 出口 A
   ],
 };
 

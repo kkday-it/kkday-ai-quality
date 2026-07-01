@@ -15,6 +15,19 @@ export default defineConfig({
       '@config': configDir,
     },
   },
+  build: {
+    // echarts / arco / vue 全家桶拆獨立 vendor chunk：縮小主 chunk、利於瀏覽器快取（vendor 不常變）
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ['echarts', 'vue-echarts'],
+          arco: ['@arco-design/web-vue'],
+          vue: ['vue', 'vue-router', 'pinia'],
+        },
+      },
+    },
+  },
   server: {
     // 可 env 覆蓋（VITE_DEV_PORT），預設 5273；對齊後端 CORS_ALLOW_ORIGINS 預設
     port: Number(process.env.VITE_DEV_PORT) || 5273,

@@ -3,7 +3,7 @@
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import {
   exportProblems,
-  getCategoryGroupsResolved,
+  getProductVerticalResolved,
   getPrejudgeStatus,
   getProblems,
   getSettings,
@@ -49,21 +49,21 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const polarityFilter = ref('');
   const onlyProblem = ref(false);
   const scoreFilter = ref<number[]>([]);
-  const categoryGroupFilter = ref<string[]>([]);
+  const productVerticalFilter = ref<string[]>([]);
   const dateRange = ref<string[]>([]);
   /** 生效的 polarity 篩選（送後端）。 */
   const effPolarity = computed(() =>
     onlyProblem.value ? 'negative' : polarityFilter.value || undefined,
   );
 
-  // ── 商品分類分組選項（來自 config，動態解析）──
-  const categoryGroupOpts = ref<string[]>([]);
-  const loadCategoryGroups = async () => {
+  // ── 商品垂直分類選項（來自 config，動態解析）──
+  const productVerticalOpts = ref<string[]>([]);
+  const loadProductVerticals = async () => {
     try {
-      const r = await getCategoryGroupsResolved();
-      categoryGroupOpts.value = Object.keys(r.groups || {});
+      const r = await getProductVerticalResolved();
+      productVerticalOpts.value = Object.keys(r.groups || {});
     } catch {
-      categoryGroupOpts.value = [];
+      productVerticalOpts.value = [];
     }
   };
 
@@ -103,7 +103,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        categoryGroups: categoryGroupFilter.value.length ? categoryGroupFilter.value : undefined,
+        productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
         limit: pageSize.value,
@@ -144,7 +144,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         onlyProblem.value = false;
       }
       if (!filterTypes.has('score')) scoreFilter.value = [];
-      if (!filterTypes.has('categoryGroup')) categoryGroupFilter.value = [];
+      if (!filterTypes.has('productVertical')) productVerticalFilter.value = [];
       if (!filterTypes.has('dateRange')) dateRange.value = [];
       onFilterChange();
     },
@@ -152,7 +152,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   const init = () => {
     loadConfigs();
-    loadCategoryGroups();
+    loadProductVerticals();
     loadPage();
     loadUnjudged();
   };
@@ -186,7 +186,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        categoryGroups: categoryGroupFilter.value.length ? categoryGroupFilter.value : undefined,
+        productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
         limit: (hi - lo + 1) * ps,
@@ -287,7 +287,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        category_groups: categoryGroupFilter.value.length ? categoryGroupFilter.value : undefined,
+        product_verticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
         date_from: dateRange.value?.[0] || undefined,
         date_to: dateRange.value?.[1] || undefined,
         item_ids: selectedKeys.value.length ? selectedKeys.value : undefined,
@@ -310,8 +310,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     polarityFilter,
     onlyProblem,
     scoreFilter,
-    categoryGroupFilter,
-    categoryGroupOpts,
+    productVerticalFilter,
+    productVerticalOpts,
     dateRange,
     onFilterChange,
     // 模型
