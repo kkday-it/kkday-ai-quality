@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, reactive } from 'vue';
 import { countBy, maxBy } from 'lodash-es';
 import { getFindings } from '@/api';
-import { StateGuard } from '@/components';
+import { StateGuard, TableLayout } from '@/components';
 import { FindingCard, KpiCard } from '../components';
 import { DIMS, STATUS_OPTS } from '../constants';
 import { flatFinding as flat } from '../utils';
@@ -121,8 +121,8 @@ const drawerTitle = computed(() => {
     :empty="!all.length"
     empty-text="尚無判決資料，請至「PM／AM 單品」拉評論判決"
   >
-    <div>
-      <a-row :gutter="14" class="mb-4">
+    <div class="flex h-full flex-col">
+      <a-row :gutter="14" class="mb-4 shrink-0">
         <a-col :span="12"
           ><KpiCard
             label="本期 Findings"
@@ -139,18 +139,7 @@ const drawerTitle = computed(() => {
         /></a-col>
       </a-row>
 
-      <a-card
-        title="問題明細"
-        class="flex max-h-[calc(100vh-140px)] flex-col"
-        :header-style="{ height: 'auto', paddingTop: '20px', paddingBottom: '20px' }"
-        :body-style="{
-          flex: '1',
-          minHeight: '0',
-          display: 'flex',
-          flexDirection: 'column',
-          paddingTop: '12px',
-        }"
-      >
+      <TableLayout title="問題明細">
         <template #extra>
           <a-space wrap>
             <a-select
@@ -222,23 +211,25 @@ const drawerTitle = computed(() => {
           />
           <FindingCard v-for="f in paged" :key="f.finding_id" :f="f" />
         </div>
-        <div
-          v-if="filtered.length"
-          class="mt-1 flex flex-none justify-end border-t border-[#f0f0f0] pt-3"
-        >
-          <a-pagination
-            v-model:current="page"
-            :total="filtered.length"
-            :page-size="pageSize"
-            :page-size-options="[10, 20, 50, 100]"
-            size="small"
-            show-total
-            show-jumper
-            show-page-size
-            @page-size-change="onPageSizeChange"
-          />
-        </div>
-      </a-card>
+        <template #footer>
+          <div
+            v-if="filtered.length"
+            class="flex justify-end border-t border-[#f0f0f0] pt-3"
+          >
+            <a-pagination
+              v-model:current="page"
+              :total="filtered.length"
+              :page-size="pageSize"
+              :page-size-options="[10, 20, 50, 100]"
+              size="small"
+              show-total
+              show-jumper
+              show-page-size
+              @page-size-change="onPageSizeChange"
+            />
+          </div>
+        </template>
+      </TableLayout>
 
       <a-drawer v-model:visible="drawerVisible" :width="760" :title="drawerTitle" unmount-on-close>
         <div class="mb-3 text-xs text-[#86909c]">共 {{ drawerList.length }} 筆</div>
