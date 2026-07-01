@@ -10,6 +10,7 @@
 | `./scripts/test.sh` | 後端 smoke test（零 key stub） | `cd backend && ./run.sh test` |
 | `./scripts/lint.sh` | Lint 前後端（ruff + eslint） | `cd backend && .venv/bin/ruff check .` ＋ `cd frontend && pnpm lint` |
 | `./scripts/format.sh` | 格式化前後端（Prettier + ruff format，鏈式/長行自動換行） | `cd frontend && pnpm format` ＋ `cd backend && .venv/bin/ruff format .` |
+| `./scripts/prejudge_reviews.sh` | 批量預判歸因（product_reviews → L3 + 信心度，config/ai_judge 驅動） | `cd backend && .venv/bin/python prejudge_reviews.py` |
 
 ## 統一格式化 / Lint 規則（ready-made，零調校）
 
