@@ -42,12 +42,14 @@ def _pr_row(**overrides) -> dict:
     return base
 
 
-def _seed_category_groups(monkeypatch) -> None:
-    """注入 category_groups loader 快取供 category_group 篩選測試（已解耦為 config loader，不再走 DB）。"""
-    from app.core import category_groups
-
+def _seed_product_vertical(monkeypatch) -> None:
+    """注入 db.get_rule_active('product_vertical') 供 product_vertical 篩選測試（版本化規則 loader）。"""
     monkeypatch.setattr(
-        category_groups, "_groups", {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}
+        db,
+        "get_rule_active",
+        lambda code: {"groups": {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}}
+        if code == "product_vertical"
+        else None,
     )
 
 
@@ -92,9 +94,9 @@ def test_list_problems_source_registry_score_filter(temp_db) -> None:
     assert result["rows"][0]["item_id"] == "product_reviews-R1"
 
 
-def test_list_problems_source_registry_category_group_filter(temp_db, monkeypatch) -> None:
-    """source='product_reviews' + category_group='Tour'：依 category_groups 分組展開代碼篩選。"""
-    _seed_category_groups(monkeypatch)
+def test_list_problems_source_registry_product_vertical_filter(temp_db, monkeypatch) -> None:
+    """source='product_reviews' + product_vertical='Tour'：依 product_vertical 分組展開代碼篩選。"""
+    _seed_product_vertical(monkeypatch)
     db.insert_product_reviews_batch(
         [
             _pr_row(
@@ -109,7 +111,7 @@ def test_list_problems_source_registry_category_group_filter(temp_db, monkeypatc
             ),
         ]
     )
-    result = db.list_problems(source="product_reviews", category_group="Tour")
+    result = db.list_problems(source="product_reviews", product_vertical="Tour")
     assert result["total"] == 1
     assert result["rows"][0]["item_id"] == "product_reviews-R1"
 
