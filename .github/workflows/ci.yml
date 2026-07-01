@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: kkdb_ai_quality_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # conftest 走 TEST_DATABASE_URL；init_db() 以 metadata 建表（不依賴 alembic）
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres@localhost:5432/kkdb_ai_quality_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安裝依賴（pyproject SSOT）
+        run: pip install -e "./backend[dev]"
+      - name: Ruff lint
+        run: cd backend && ruff check app
+      - name: Pytest
+        run: cd backend && pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: 安裝依賴
+        run: cd frontend && pnpm install --frozen-lockfile
+      - name: Typecheck + build（vue-tsc -b && vite build）
+        run: cd frontend && pnpm build
+      - name: ESLint
+        run: cd frontend && pnpm lint

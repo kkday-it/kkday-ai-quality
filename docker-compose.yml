@@ -1,0 +1,59 @@
+# 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。
+# 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
+#   AIQ_JWT_SECRET=... OPENAI_API_KEY=... docker compose up -d --build
+# restart: unless-stopped → 容器崩潰 / 主機重開機自動拉起（配合 host 的 docker daemon 開機自啟）。
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kkdb_ai_quality
+      # 示範用免密；生產請改 POSTGRES_PASSWORD（走 secret）並同步 backend DATABASE_URL
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality
+      # production 缺 JWT 秘鑰會拒啟動（config.py）；未注入即在此報錯，不帶病啟動
+      AIQ_JWT_SECRET: ${AIQ_JWT_SECRET:?須設定 AIQ_JWT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # 前端對外網域（逗號分隔多個）；預設對齊本 compose 的 frontend 埠
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8100"
+    healthcheck:
+      # 用內建 python 打 /health（image 無 curl）；start_period 留給 alembic upgrade + uvicorn 啟動
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8100/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:

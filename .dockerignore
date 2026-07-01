@@ -1,0 +1,16 @@
+# build context 為 repo 根（backend/frontend 兩個 Dockerfile 共用），排除體積大 / 機密 / 產物。
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.ruff_cache
+**/*.tsbuildinfo
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+backend/smoke_test.py
+frontend/apps/console/dist

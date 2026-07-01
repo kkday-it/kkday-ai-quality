@@ -7,6 +7,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # scripts/ 的上一層＝repo 根
 cd "$ROOT"
 
+# 前置自檢閘門：工具鏈 / 依賴 / .env / DB / migration，冪等修復；不過關即中止，不帶病啟動
+"$ROOT/scripts/doctor.sh" || { echo "❌ 環境自檢未通過，請依上方指令修復後重試"; exit 1; }
+
 # 後端背景啟動（run.sh 會自建 venv / 裝依賴 / 跑 uvicorn --reload）
 ( cd backend && ./run.sh ) &
 BACK_PID=$!
