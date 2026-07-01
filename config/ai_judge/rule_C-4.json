@@ -1,0 +1,1293 @@
+{
+  "$schema": "./schema.json",
+  "_meta": {
+    "version": "1.0",
+    "domain": "platform",
+    "label": "平台系統",
+    "code": "C-4",
+    "l2_count": 7,
+    "l3_total": 33,
+    "about": "問題分類規則樹 C-4 平台系統（單域；共用 schema.json）。",
+    "thick_fields_status": "②~⑦ AI 起草，待 PM 審核"
+  },
+  "tree": [
+    {
+      "code": "C-4",
+      "level": 1,
+      "domain": "platform",
+      "label": "平台系統",
+      "children": [
+        {
+          "code": "C-4-1",
+          "level": 2,
+          "label": "App bug",
+          "children": [
+            {
+              "code": "C-4-1-1",
+              "level": 3,
+              "label": "崩潰",
+              "meaning": "crash 致零轉換，RD 定位修復",
+              "rule": "S4-1",
+              "verdict": "escalate_ops",
+              "canon": "App 關鍵流程須穩定可用，不得因 crash 致流程中斷",
+              "allow": [
+                "App 在 iOS/Android 主流版本穩定運作無 crash",
+                "結帳/登入/搜尋等核心路徑可完整完成",
+                "crash 後 30 分鐘內有修復 hotfix 部署"
+              ],
+              "forbid": [
+                "結帳頁必現 crash 致零轉換",
+                "crash 無法自動回復，用戶必須強制關閉 App",
+                "同一 crash 超過 24h 無修復"
+              ],
+              "positive_cases": [
+                "App 偶爾記憶體警告但功能正常完成（非 crash）",
+                "單一機型舊版 OS 輕微閃退但主流設備正常",
+                "crash 已修復並上架新版本"
+              ],
+              "negative_cases": [
+                "結帳頁必現 crash 致零轉換，客訴量暴增",
+                "多張訂單截圖顯示 App 閃退於付款步驟",
+                "Crashlytics 顯示 crash rate > 1%"
+              ],
+              "machine_clues": [
+                "Crashlytics/Firebase crash log；Android vitals ANR/crash rate",
+                "客訴含「閃退」「當機」「App 掛掉」關鍵字"
+              ],
+              "verdict_rules": [
+                "需有 crash log 或多筆相同路徑客訴佐證，才判定成立",
+                "單次偶發且用戶可自行重試完成 → 降為 C-4-1-2 評估"
+              ]
+            },
+            {
+              "code": "C-4-1-2",
+              "level": 3,
+              "label": "無回應",
+              "meaning": "主執行緒阻塞≥5s 致流程中斷",
+              "rule": "S4-2",
+              "verdict": "escalate_ops",
+              "canon": "App 主執行緒操作須在 5 秒內回應，不得出現 ANR 或畫面凍結",
+              "allow": [
+                "所有按鈕/手勢在 5 秒內有可見回饋",
+                "網路等待期間有 loading spinner 且 UI 仍可互動",
+                "Android ANR rate < 0.5%"
+              ],
+              "forbid": [
+                "主執行緒阻塞 ≥5s 致 Android 系統 ANR 彈窗",
+                "結帳流程按下「確認」後畫面凍結無任何回饋",
+                "用戶無法取消卡頓中的操作"
+              ],
+              "positive_cases": [
+                "慢網環境下頁面載入慢但 UI 仍可點擊（屬網路問題）",
+                "圖片列表滾動輕微卡幀但不影響流程",
+                "偶發 1-2 秒延遲且用戶無感知"
+              ],
+              "negative_cases": [
+                "結帳頁按「送出」後凍結 10 秒以上，客訴多筆",
+                "Android 日誌顯示 ANR on main thread ≥5s",
+                "用戶描述「點了沒反應」且畫面無任何動態"
+              ],
+              "machine_clues": [
+                "Android vitals ANR rate；iOS watchdog log（MainThread timeout）",
+                "客訴含「點了沒反應」「畫面卡住」「凍結」關鍵字"
+              ],
+              "verdict_rules": [
+                "凍結時間 ≥5s 且無 loading 回饋 → 判成立",
+                "有 loading 動畫且最終完成 → 歸類 C-4-1-4 網路問題"
+              ]
+            },
+            {
+              "code": "C-4-1-3",
+              "level": 3,
+              "label": "介面顯示異常",
+              "meaning": "rendering 問題衝擊購買意願",
+              "rule": "S4-3",
+              "verdict": "escalate_ops",
+              "canon": "App UI 渲染須正確顯示，不得有破版/元件缺失/文字截斷等影響購買意願的 rendering 問題",
+              "allow": [
+                "商品圖、價格、CTA 按鈕在主流螢幕尺寸正確顯示",
+                "Dark mode 與 Light mode 均無破版",
+                "動態字體大小不破壞 layout"
+              ],
+              "forbid": [
+                "結帳 CTA 按鈕被截斷或不可點擊",
+                "商品價格/折扣標籤重疊遮蔽",
+                "半載入狀態長時間顯示空白欄位"
+              ],
+              "positive_cases": [
+                "少數超小螢幕（4 吋）輕微排版偏移但功能正常",
+                "UI 動畫效果在低端機稍有延遲但元件完整",
+                "Banner 圖片因網路慢未載但有佔位符"
+              ],
+              "negative_cases": [
+                "結帳頁「立即購買」按鈕被導覽列遮蔽無法點擊",
+                "商品金額顯示亂碼如 ₩₩NaN 或空白",
+                "截圖顯示整個內容區塊消失僅剩背景色"
+              ],
+              "machine_clues": [
+                "客訴截圖含破版/空白/遮蔽；錯誤監控 console error 含 render",
+                "客訴含「按不到」「看不到金額」「畫面空白」關鍵字"
+              ],
+              "verdict_rules": [
+                "須有截圖或可重現步驟佐證，純文字描述需多筆相同",
+                "特定機型/OS 可重現但主流設備正常 → 降 P3，標記機型資訊"
+              ]
+            },
+            {
+              "code": "C-4-1-4",
+              "level": 3,
+              "label": "網路請求失敗",
+              "meaning": "API timeout 致資料無法載入",
+              "rule": "S4-4",
+              "verdict": "escalate_ops",
+              "canon": "App API 請求須在合理時限內完成，timeout 應有明確錯誤提示而非無聲失敗",
+              "allow": [
+                "API 請求 p95 < 3s，timeout 後顯示可操作錯誤訊息",
+                "離線時有 offline 提示且可重試",
+                "401/403 自動 refresh token 或導登入"
+              ],
+              "forbid": [
+                "API timeout 後畫面空白無任何提示",
+                "結帳 API 失敗無錯誤訊息致用戶以為成功",
+                "無限 loading spinner 無 timeout 上限"
+              ],
+              "positive_cases": [
+                "慢速 4G 環境下載入慢但最終成功（屬效能非 bug）",
+                "一次性網路抖動後自動重試成功",
+                "API 錯誤有顯示「請稍後再試」並保留表單資料"
+              ],
+              "negative_cases": [
+                "結帳 API 504 timeout 後畫面白屏，用戶不知是否已付款",
+                "商品列表 API 失敗顯示空列表無任何錯誤訊息",
+                "多筆客訴顯示「頁面一直載入轉圈」超過 30 秒"
+              ],
+              "machine_clues": [
+                "APM/Datadog API p99 latency spike；HTTP 5xx error rate 上升",
+                "客訴含「一直轉圈」「頁面空白」「資料載不出來」關鍵字"
+              ],
+              "verdict_rules": [
+                "timeout 有明確錯誤訊息且用戶可重試 → 視為 UX 問題（P3）",
+                "timeout 無訊息或誤導用戶（以為成功）→ 判成立（P1）"
+              ]
+            },
+            {
+              "code": "C-4-1-5",
+              "level": 3,
+              "label": "OS 版本兼容",
+              "meaning": "舊 OS/系統升級致功能缺失(東南亞低端機佔比高)",
+              "rule": "S4-5",
+              "verdict": "escalate_ops",
+              "canon": "App 須支援目標市場主流 OS 版本，不因 OS 升級或舊版導致功能缺失",
+              "allow": [
+                "支援 iOS 15+ 與 Android 8+（涵蓋東南亞主流設備）",
+                "OS 大版本升級前完成兼容測試",
+                "舊 OS 降級支援方案或明確告知不支援"
+              ],
+              "forbid": [
+                "iOS/Android 最新版本升級後核心功能損壞",
+                "東南亞常見低端 Android 8/9 裝置無法結帳",
+                "兼容問題超過一週未修復"
+              ],
+              "positive_cases": [
+                "特定罕見 OS 版本（如 Android 7）不支援且已告知",
+                "Beta OS 版本有輕微 UI 問題但穩定版正常",
+                "低端機效能差但功能可完成"
+              ],
+              "negative_cases": [
+                "iOS 18 升級後 App 無法啟動，大量客訴湧入",
+                "Android 12 限制 background 致推播通知全數失效",
+                "東南亞主流 Android 9 裝置結帳頁 crash"
+              ],
+              "machine_clues": [
+                "App Store/Play Store 版本分布 crash rate 按 OS 分群異常",
+                "客訴含特定 OS 版本號或「升級後」「更新後」關鍵字"
+              ],
+              "verdict_rules": [
+                "須確認 OS 版本與問題相關性；主流 OS（市佔 > 5%）受影響才判成立",
+                "罕見舊版（< 1% 市佔）問題 → P3 backlog"
+              ]
+            },
+            {
+              "code": "C-4-1-6",
+              "level": 3,
+              "label": "第三方 SDK 兼容",
+              "meaning": "Google Pay/地圖/SDK 更新衝突，owner 屬依賴升級",
+              "rule": "S4-31",
+              "verdict": "escalate_ops",
+              "canon": "第三方 SDK 升級不得引入功能破壞，須有版本鎖定與兼容測試流程",
+              "allow": [
+                "SDK 升級前通過 staging 兼容測試",
+                "Google Pay/Maps SDK 版本鎖定，不自動 bump",
+                "SDK 衝突有明確 owner（依賴升級負責人）"
+              ],
+              "forbid": [
+                "Google Pay SDK 升級後付款流程中斷",
+                "地圖 SDK 更新致地圖頁 crash",
+                "SDK 衝突無法定位 owner 超過 48h"
+              ],
+              "positive_cases": [
+                "SDK 升級後 UI 微調但功能正常",
+                "測試環境有 SDK 版本衝突但 production 版本固定",
+                "SDK deprecated API 有移轉計畫但舊版仍可用"
+              ],
+              "negative_cases": [
+                "Google Pay SDK v23 升級後 payment sheet 無法彈出",
+                "Firebase SDK 更新與 crashlytics 版本衝突致 App 啟動 crash",
+                "地圖 SDK 授權憑證過期致整頁白屏"
+              ],
+              "machine_clues": [
+                "crash log 顯示 stack trace 指向 SDK package 內部",
+                "客訴含「Google Pay 無法使用」「地圖開不了」關鍵字"
+              ],
+              "verdict_rules": [
+                "crash/功能損壞 stack trace 指向 SDK → 判成立，escalate_ops 含版本資訊",
+                "SDK 版本相關需附 build.gradle/Podfile 版本號佐證"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-2",
+          "level": 2,
+          "label": "搜尋",
+          "children": [
+            {
+              "code": "C-4-2-1",
+              "level": 3,
+              "label": "零結果",
+              "meaning": "有明確意圖卻被擋，直接流失訂單",
+              "rule": "S4-6",
+              "verdict": "escalate_ops",
+              "canon": "有明確搜尋意圖時平台不得回傳零結果，須有容錯與引導機制",
+              "allow": [
+                "拼字錯誤有自動修正建議（Did you mean？）",
+                "零結果頁面提供相關商品推薦或擴大搜尋引導",
+                "熱門關鍵字有對應商品覆蓋"
+              ],
+              "forbid": [
+                "主流目的地/商品名稱搜尋回傳零結果無任何引導",
+                "零結果頁面完全空白無任何 CTA",
+                "正確輸入目的地仍顯示無商品（索引問題）"
+              ],
+              "positive_cases": [
+                "過於罕見的關鍵字無結果但提供推薦（合理）",
+                "搜尋特定商品 ID 無結果但該商品已下架",
+                "搜尋有結果但用戶認為太少（屬內容問題非平台 bug）"
+              ],
+              "negative_cases": [
+                "搜尋「東京迪士尼」回傳零結果但平台實有相關商品",
+                "搜尋熱門目的地顯示「找不到任何結果」且無引導",
+                "搜尋索引更新延遲致新上架商品一週內搜不到"
+              ],
+              "machine_clues": [
+                "搜尋 API zero-result rate 指標；Search query log 高頻零結果關鍵字",
+                "客訴含「搜不到」「找不到商品」關鍵字"
+              ],
+              "verdict_rules": [
+                "確認平台實有該商品且在架 → 判成立",
+                "商品確實不存在或已下架 → 非平台 bug，歸 C-1 內容問題"
+              ]
+            },
+            {
+              "code": "C-4-2-2",
+              "level": 3,
+              "label": "結果不相關",
+              "meaning": "排序/語意匹配失效",
+              "rule": "S4-7",
+              "verdict": "escalate_ops",
+              "canon": "搜尋結果排序須與查詢語意相關，不得大量出現明顯不相關商品",
+              "allow": [
+                "搜尋「台北故宮」返回台北相關體驗行程",
+                "語意近義詞（旅遊/旅行/tour）有對應結果",
+                "排序依相關度/評分/銷量綜合排列"
+              ],
+              "forbid": [
+                "搜尋「台北」首頁充斥東京商品",
+                "語意匹配失效致熱門詞彙無對應結果",
+                "促銷商品強插首位導致完全不相關"
+              ],
+              "positive_cases": [
+                "搜尋結果用戶認為排序不佳但商品確為相關（偏好問題）",
+                "搜尋結果覆蓋多目的地因用戶查詢模糊（如「亞洲旅遊」）",
+                "搜尋熱門節日有大量結果但排序有改善空間"
+              ],
+              "negative_cases": [
+                "搜尋「沖繩潛水」首頁全為台灣陸地行程，無任何潛水相關",
+                "搜尋引擎 embedding 模型更新後 relevance 大幅下降",
+                "A/B test 排序演算法 bug 致特定語言用戶看到全不相關"
+              ],
+              "machine_clues": [
+                "Search relevance score 指標下降；Click-through rate on search results 驟降",
+                "客訴含「搜不到想要的」「結果跑出一堆不相關」關鍵字"
+              ],
+              "verdict_rules": [
+                "需與搜尋日誌交叉比對確認相關性問題，單筆客訴主觀感受不判成立",
+                "多筆相同關鍵字客訴或 CTR 指標異常 → 判成立"
+              ]
+            },
+            {
+              "code": "C-4-2-3",
+              "level": 3,
+              "label": "篩選器組合無結果",
+              "meaning": "空集合無引導，誤以為商品不存在",
+              "rule": "S4-8",
+              "verdict": "escalate_ops",
+              "canon": "篩選器組合產生空集合時須有明確引導，不得讓用戶誤以為商品不存在",
+              "allow": [
+                "篩選條件過嚴時顯示「放寬條件」建議",
+                "零結果時保留篩選器讓用戶自行調整",
+                "部分篩選條件顯示當前可用數量"
+              ],
+              "forbid": [
+                "多條件組合產生空集合後頁面完全空白",
+                "無任何「清除篩選」或引導 CTA",
+                "篩選器組合計算錯誤致應有結果卻顯示零"
+              ],
+              "positive_cases": [
+                "日期+人數+地點三重篩選確實無符合商品（合理空集合）",
+                "篩選後顯示零結果但有「查看全部商品」按鈕引導",
+                "用戶使用極端篩選條件（1小時活動+80折扣+頂級評分）"
+              ],
+              "negative_cases": [
+                "常見篩選組合（地點+日期）顯示零結果但商品實際存在",
+                "篩選後空白頁面無任何說明或引導",
+                "日期篩選 bug 致所有日期查詢均返回空集合"
+              ],
+              "machine_clues": [
+                "篩選後 zero-result session 比例；用戶退出 session 於篩選後",
+                "客訴含「用篩選找不到」「過濾後沒東西」關鍵字"
+              ],
+              "verdict_rules": [
+                "確認後端資料實有對應商品但前端篩選邏輯排除 → 判成立（bug）",
+                "確係合理空集合但缺引導 → P3 UX 改善，非 bug"
+              ]
+            },
+            {
+              "code": "C-4-2-4",
+              "level": 3,
+              "label": "自動補全/建議缺失",
+              "meaning": "無容錯致拼字錯誤無法修正",
+              "rule": "S4-9",
+              "verdict": "escalate_ops",
+              "canon": "搜尋自動補全須提供容錯建議，協助用戶修正拼字錯誤",
+              "allow": [
+                "輸入前 3 字元顯示相關建議",
+                "拼字錯誤有「Did you mean X？」容錯提示",
+                "建議清單涵蓋多語言同義詞"
+              ],
+              "forbid": [
+                "自動補全完全消失（服務故障）",
+                "拼字錯誤無任何建議致搜尋直接零結果",
+                "建議列表顯示亂碼或 null"
+              ],
+              "positive_cases": [
+                "輸入速度過快補全延遲 200ms（可接受）",
+                "罕見關鍵字無補全建議（正常）",
+                "補全建議個數少但相關（品質可改善，非 bug）"
+              ],
+              "negative_cases": [
+                "搜尋欄輸入無任何建議出現且查詢直接零結果",
+                "常見目的地「Tokio」拼錯無容錯提示，直接顯示無結果",
+                "自動補全 API 500 error 致整個搜尋欄無反應"
+              ],
+              "machine_clues": [
+                "自動補全 API error rate；搜尋欄輸入後直接提交（跳過補全）比例上升",
+                "客訴含「輸入沒有建議」「搜尋框沒反應」關鍵字"
+              ],
+              "verdict_rules": [
+                "補全 API 故障（HTTP error）→ 判成立（P2）",
+                "補全品質差但有顯示 → P3 改善項，非 bug"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-3",
+          "level": 2,
+          "label": "購買流程",
+          "children": [
+            {
+              "code": "C-4-3-1",
+              "level": 3,
+              "label": "加入購物車失敗",
+              "meaning": "阻斷訂單產生",
+              "rule": "S4-10",
+              "verdict": "escalate_ops",
+              "canon": "加入購物車操作須可靠完成，不得因系統錯誤阻斷訂單產生",
+              "allow": [
+                "加入購物車在 2 秒內確認並更新計數",
+                "加入失敗時顯示明確錯誤訊息且可重試",
+                "購物車狀態跨裝置同步"
+              ],
+              "forbid": [
+                "點擊「加入購物車」無回應且無錯誤訊息",
+                "API 回傳成功但購物車計數不更新",
+                "重複加入同商品無任何提示"
+              ],
+              "positive_cases": [
+                "商品暫時缺貨無法加入但有告知（庫存問題非 bug）",
+                "加入購物車慢 3 秒但最終成功",
+                "購物車 icon 動畫未播放但資料正確加入"
+              ],
+              "negative_cases": [
+                "點擊「加入購物車」後轉圈超過 10 秒無結果，多筆客訴",
+                "購物車 API 500 error 致所有用戶無法加入商品",
+                "加入成功通知彈出但重整後購物車為空"
+              ],
+              "machine_clues": [
+                "加入購物車 API success rate；購物車 API p99 latency",
+                "客訴含「加入購物車失敗」「購物車加不進去」關鍵字"
+              ],
+              "verdict_rules": [
+                "API 成功率 < 95% → 判成立",
+                "商品庫存限制致無法加入（400 業務邏輯）→ 非 bug"
+              ]
+            },
+            {
+              "code": "C-4-3-2",
+              "level": 3,
+              "label": "結帳頁卡頓/錯誤",
+              "meaning": "最關鍵轉換節點，卡頓即放棄付款",
+              "rule": "S4-11",
+              "verdict": "escalate_ops",
+              "canon": "結帳頁為最關鍵轉換節點，須無卡頓且操作可靠，任何錯誤即判 P0/P1",
+              "allow": [
+                "結帳頁載入 < 2s，所有欄位可互動",
+                "金額計算即時正確顯示",
+                "付款方式清單完整，選擇無延遲"
+              ],
+              "forbid": [
+                "結帳頁載入超過 5s 或無限 spinner",
+                "結帳過程中頁面 crash 或強制導回首頁",
+                "金額顯示計算錯誤（多收/少收）"
+              ],
+              "positive_cases": [
+                "慢速網路下結帳頁載入 4s 但最終完成（邊界情況）",
+                "部分付款方式不可用但顯示原因（地區限制）",
+                "結帳頁 UI 不美觀但功能完整"
+              ],
+              "negative_cases": [
+                "結帳頁載入後所有按鈕點擊無反應，需強制重啟 App",
+                "金額欄顯示 NaN 或空白，用戶不知道要付多少",
+                "結帳 API 回傳錯誤但 UI 未提示，用戶重複提交"
+              ],
+              "machine_clues": [
+                "結帳頁轉換漏斗驟降；checkout API error rate 上升",
+                "客訴含「結帳頁卡住」「金額顯示不對」「付不了款」關鍵字"
+              ],
+              "verdict_rules": [
+                "結帳頁任何阻斷性錯誤直接判 P0/P1 escalate_ops",
+                "UI 美觀問題不阻斷結帳 → P3 backlog"
+              ]
+            },
+            {
+              "code": "C-4-3-3",
+              "level": 3,
+              "label": "訂單送出無回應",
+              "meaning": "已扣款無確認致重複付款焦慮",
+              "rule": "S4-12",
+              "verdict": "escalate_ops",
+              "canon": "訂單送出後須在 30 秒內提供明確確認，避免重複付款焦慮",
+              "allow": [
+                "送出後 5 秒內顯示訂單確認頁或 email",
+                "付款處理中有進度 spinner 且有取消選項",
+                "超時後顯示「請稍候，您的訂單仍在處理中」"
+              ],
+              "forbid": [
+                "送出後頁面空白或返回首頁，無確認訊息",
+                "已扣款但 App 無確認頁，用戶重複提交",
+                "訂單確認 email 超過 1 小時未到"
+              ],
+              "positive_cases": [
+                "訂單確認延遲 2 分鐘但最終收到（高峰期）",
+                "確認頁顯示慢但訂單已成立（可接受）",
+                "用戶未收 email 但 App 有確認頁（email 問題非訂單問題）"
+              ],
+              "negative_cases": [
+                "送出後 App 返回首頁，訂單頁查無記錄但已扣款",
+                "多筆客訴顯示重複訂單，均為「送出後無回應後重按」",
+                "訂單 API timeout 後無 fallback 確認機制"
+              ],
+              "machine_clues": [
+                "重複訂單率（同用戶同商品 15 分鐘內多筆）；訂單確認 API p99",
+                "客訴含「付了但沒有確認」「扣款了沒有訂單」關鍵字"
+              ],
+              "verdict_rules": [
+                "已扣款且無任何確認通知 → 直接 P0 escalate_ops",
+                "確認延遲但最終收到 → P2，需確認延遲原因"
+              ]
+            },
+            {
+              "code": "C-4-3-4",
+              "level": 3,
+              "label": "跨步驟狀態遺失",
+              "meaning": "重整致資料遺失，checkout 放棄第三大主因",
+              "rule": "S4-13",
+              "verdict": "escalate_ops",
+              "canon": "結帳多步驟間用戶填入資料須持久保存，重整或返回不得遺失",
+              "allow": [
+                "步驟間切換保留所有表單填入值",
+                "App 切到背景再回來資料不丟失",
+                "意外返回時提示「是否繼續未完成的訂單」"
+              ],
+              "forbid": [
+                "結帳第 2 步重整後回到第 1 步且資料全清",
+                "App 切換前後台後表單重置",
+                "無任何 session 狀態保存機制"
+              ],
+              "positive_cases": [
+                "用戶主動離開並確認放棄後資料清除（預期行為）",
+                "30 分鐘無操作 session 過期後資料清除（有提示）",
+                "跨裝置切換後需重新填寫（未實作同步功能）"
+              ],
+              "negative_cases": [
+                "結帳第 2 步骤按返回後所有資料遺失，需從頭填",
+                "手機來電後 App 資料全清，多筆相同客訴",
+                "支付頁面返回時購物車清空"
+              ],
+              "machine_clues": [
+                "結帳步驟回退率；用戶在步驟 2/3 放棄後重新從步驟 1 開始比例",
+                "客訴含「填到一半資料不見」「重新填一遍」關鍵字"
+              ],
+              "verdict_rules": [
+                "有明確步驟回退記錄且資料遺失 → 判成立",
+                "主動清除/超時清除有提示 → 非 bug"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-4",
+          "level": 2,
+          "label": "推播通知",
+          "children": [
+            {
+              "code": "C-4-4-1",
+              "level": 3,
+              "label": "未送達",
+              "meaning": "行前集合/憑證通知未到致行中投訴",
+              "rule": "S4-14",
+              "verdict": "escalate_ops",
+              "canon": "行前提醒/憑證等時效性推播須確保送達，未到致旅客行中投訴為 P1",
+              "allow": [
+                "推播在預定時間 ±5 分鐘內送達",
+                "推播失敗有 email 自動 fallback",
+                "送達率監控 > 95%"
+              ],
+              "forbid": [
+                "行前一天集合地點推播未送達",
+                "憑證/QR Code 推播未到致無法入場",
+                "送達率長期低於 90% 無告警"
+              ],
+              "positive_cases": [
+                "用戶手動關閉推播權限致未收到（用戶設定問題）",
+                "行銷推播（非時效性）延遲幾小時（可接受）",
+                "推播送達但用戶已查看 email 確認（不需推播）"
+              ],
+              "negative_cases": [
+                "出發日前一天行前通知 push 批次失敗，影響數百訂單",
+                "客訴顯示集合地點/時間推播完全未收到",
+                "FCM/APNs delivery log 顯示 delivery failure rate 急升"
+              ],
+              "machine_clues": [
+                "FCM/APNs 送達率監控；推播批次任務失敗 log",
+                "客訴含「沒收到提醒」「推播沒來」「通知沒到」關鍵字"
+              ],
+              "verdict_rules": [
+                "確認 FCM/APNs 有觸發但未送達 → 判成立",
+                "推播未觸發（scheduler 問題）→ 同樣判成立，歸 C-4-4-4"
+              ]
+            },
+            {
+              "code": "C-4-4-2",
+              "level": 3,
+              "label": "未顯示",
+              "meaning": "送達但未彈出(權限/勿擾/foreground)",
+              "rule": "S4-15",
+              "verdict": "escalate_ops",
+              "canon": "推播送達後須正常顯示通知，不因權限/勿擾/前景狀態致靜默消失",
+              "allow": [
+                "App 在背景時通知正常彈出通知列",
+                "前景時有 in-app 通知彈窗替代系統通知",
+                "勿擾模式外通知正常顯示"
+              ],
+              "forbid": [
+                "推播 server 有送達記錄但用戶通知列無任何顯示",
+                "App 前景時通知完全靜默無任何提示",
+                "通知 badge 數量不更新"
+              ],
+              "positive_cases": [
+                "用戶開啟勿擾模式致通知未顯示（用戶設定）",
+                "iOS 通知分群設定關閉致特定類型通知不顯示",
+                "App 剛安裝首次啟動前通知 token 未註冊"
+              ],
+              "negative_cases": [
+                "FCM 顯示 delivered 但 Android 機型通知列完全空白",
+                "iOS foreground 時通知完全靜默，無 in-app banner 替代",
+                "特定 Android 廠商（如小米）通知被系統級攔截"
+              ],
+              "machine_clues": [
+                "FCM message delivery vs user impression 落差監控",
+                "客訴含「通知送達但沒彈出」「通知欄沒顯示」關鍵字"
+              ],
+              "verdict_rules": [
+                "FCM delivered 但 impression = 0 → 判成立，需分廠商排查",
+                "用戶勿擾/通知關閉屬用戶設定 → 歸 C-4-4-3"
+              ]
+            },
+            {
+              "code": "C-4-4-3",
+              "level": 3,
+              "label": "用戶拒絕推播",
+              "meaning": "權限關閉致通知失效，需 email fallback",
+              "rule": "S4-16",
+              "verdict": "escalate_ops",
+              "canon": "用戶拒絕推播權限時 App 須有 email/SMS fallback，不得直接失去通知管道",
+              "allow": [
+                "首次使用時適當時機請求通知權限（非強制）",
+                "拒絕後有 email/SMS 備援通知",
+                "設定頁提供重新開啟通知引導"
+              ],
+              "forbid": [
+                "拒絕推播後行前通知完全無任何替代管道",
+                "強制要求推播權限才能使用 App",
+                "無法從 App 內引導用戶重新開啟通知"
+              ],
+              "positive_cases": [
+                "用戶拒絕通知後自行前往系統設定開啟（正常路徑）",
+                "email 備援通知送達（備援機制正常運作）",
+                "用戶確知不需要推播而主動拒絕"
+              ],
+              "negative_cases": [
+                "用戶拒絕通知後出發日前無任何 email/SMS 行前提醒",
+                "App 在權限請求彈窗被拒後不再提醒且無設定頁引導",
+                "大量旅客因拒絕通知而在行中投訴未收到集合提醒"
+              ],
+              "machine_clues": [
+                "通知權限拒絕率；email fallback 觸發率與送達率",
+                "客訴含「不知道集合時間」「沒有任何提醒」且確認通知權限關閉"
+              ],
+              "verdict_rules": [
+                "用戶拒絕推播且無 email/SMS fallback 觸發 → 判成立（系統設計缺陷）",
+                "有 fallback 且送達 → 非問題"
+              ]
+            },
+            {
+              "code": "C-4-4-4",
+              "level": 3,
+              "label": "推播延遲/節流",
+              "meaning": "高峰延遲致時效性通知失去價值",
+              "rule": "S4-17",
+              "verdict": "escalate_ops",
+              "canon": "時效性推播須在計畫時間 ±15 分鐘內送達，高峰節流不得影響旅遊關鍵通知",
+              "allow": [
+                "行銷推播允許 30 分鐘內延遲",
+                "時效性推播（行前/憑證）走高優先佇列",
+                "佇列壅塞時有告警通知 ops team"
+              ],
+              "forbid": [
+                "出發日行前提醒延遲超過 2 小時",
+                "推播佇列無優先級，行銷與時效性訊息同等待",
+                "高峰節流無監控且無 SLA"
+              ],
+              "positive_cases": [
+                "一般行銷推播高峰期延遲 1 小時（可接受）",
+                "推播在平峰期均正常，偶發高峰延遲已監控",
+                "延遲推播到達時仍在有效時間窗（非時效敏感）"
+              ],
+              "negative_cases": [
+                "出發前 2 小時應送的行前通知延遲 3 小時才到，已出發",
+                "推播佇列積壓 10 萬筆，時效性通知延誤數小時",
+                "高峰期（節假日）推播延遲每次大量客訴"
+              ],
+              "machine_clues": [
+                "推播排程時間 vs 實際送達時間落差監控；佇列積壓深度",
+                "客訴含「通知收到太晚」「提醒已過時了」關鍵字"
+              ],
+              "verdict_rules": [
+                "時效性通知延遲 > 30 分鐘 → 判成立",
+                "行銷推播延遲 < 2 小時 → P3，非緊急"
+              ]
+            },
+            {
+              "code": "C-4-4-5",
+              "level": 3,
+              "label": "推播內容亂碼/i18n",
+              "meaning": "多語言字串空值或 template 未替換({{product_name}}直出)",
+              "rule": "S4-32",
+              "verdict": "escalate_ops",
+              "canon": "推播通知內容須正確渲染多語言，template 變數須替換，不得顯示亂碼或 placeholder",
+              "allow": [
+                "所有 {{variable}} 均替換為實際值",
+                "多語言通知依用戶語系設定正確顯示",
+                "特殊字元（日文/韓文/阿拉伯文）正確編碼"
+              ],
+              "forbid": [
+                "推播顯示 {{product_name}}、{{order_id}} 等未替換字串",
+                "多語言訊息顯示空白或伺服器端語言（非用戶語系）",
+                "通知標題/內文含亂碼字元（如 ï¿½）"
+              ],
+              "positive_cases": [
+                "推播內容完整且多語言正確顯示",
+                "變數替換正確，用戶能清楚理解通知內容",
+                "emoji 在 push 標題正常顯示（非亂碼）"
+              ],
+              "negative_cases": [
+                "行前提醒推播顯示「您的 {{product_name}} 即將出發」",
+                "日文用戶收到英文推播（i18n locale 選取錯誤）",
+                "推播標題顯示亂碼方塊，客訴截圖可見"
+              ],
+              "machine_clues": [
+                "推播 template 渲染錯誤 log；i18n locale mapping 失敗 log",
+                "客訴含「通知文字怪怪的」「看不懂通知在說什麼」關鍵字；截圖含 {{}} 或亂碼"
+              ],
+              "verdict_rules": [
+                "截圖或日誌確認 template 未替換 → 直接判成立（P1）",
+                "i18n 語系錯誤影響整批用戶 → P1；單筆邊緣 → P2"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-5",
+          "level": 2,
+          "label": "帳號登入",
+          "children": [
+            {
+              "code": "C-4-5-1",
+              "level": 3,
+              "label": "密碼錯誤/遺忘",
+              "meaning": "封鎖購買路徑",
+              "rule": "S4-18",
+              "verdict": "escalate_ops",
+              "canon": "密碼重設流程須可靠，用戶能在 5 分鐘內完成重設並登入",
+              "allow": [
+                "忘記密碼 email 在 5 分鐘內到達",
+                "重設連結有效期 ≥ 24 小時",
+                "重設後舊密碼立即失效"
+              ],
+              "forbid": [
+                "忘記密碼 email 未到致帳號無法存取",
+                "密碼重設連結即時失效（點擊即 expired）",
+                "重設成功後仍無法用新密碼登入"
+              ],
+              "positive_cases": [
+                "用戶輸入錯誤密碼超過 5 次被鎖（安全機制正常）",
+                "密碼強度不符要求需重設（業務規則非 bug）",
+                "社群帳號登入用戶無傳統密碼（設計如此）"
+              ],
+              "negative_cases": [
+                "忘記密碼發送 email 成功但連結點擊後顯示已失效",
+                "多筆客訴顯示重設 email 一直未到（可能進垃圾信）",
+                "重設後登入仍顯示密碼錯誤（快取未清）"
+              ],
+              "machine_clues": [
+                "密碼重設 email 送達率；重設連結點擊成功率",
+                "客訴含「忘記密碼 email 沒收到」「重設連結失效」關鍵字"
+              ],
+              "verdict_rules": [
+                "重設流程完整無誤但用戶不記得新密碼 → 非 bug",
+                "流程任一步驟系統錯誤 → 判成立"
+              ]
+            },
+            {
+              "code": "C-4-5-2",
+              "level": 3,
+              "label": "帳號鎖定",
+              "meaning": "安全機制誤傷正常旅客",
+              "rule": "S4-19",
+              "verdict": "escalate_ops",
+              "canon": "帳號鎖定機制須精準，不得誤傷正常旅客，且有即時解鎖管道",
+              "allow": [
+                "異常登入（非常規地點/裝置）觸發保護性鎖定",
+                "鎖定後有 email 通知且提供解鎖步驟",
+                "客服可即時手動解鎖"
+              ],
+              "forbid": [
+                "正常操作被鎖定且無解鎖管道",
+                "鎖定無任何通知，用戶不知帳號已鎖",
+                "自動解鎖時限超過 24 小時"
+              ],
+              "positive_cases": [
+                "多次錯誤密碼後鎖定且 email 通知（安全機制正常）",
+                "用戶自行聯絡客服解鎖成功",
+                "旅行中換 IP 觸發保護但提供驗證解鎖"
+              ],
+              "negative_cases": [
+                "正常登入被誤判為異常，帳號鎖定無解鎖管道",
+                "大量旅客反映帳號無故被鎖，影響當日行程",
+                "安全規則誤觸發批次鎖定，客服電話爆量"
+              ],
+              "machine_clues": [
+                "帳號鎖定事件量；客服解鎖工單量異常上升",
+                "客訴含「帳號被鎖」「登不進去」「帳號被封」關鍵字"
+              ],
+              "verdict_rules": [
+                "有鎖定通知且解鎖流程正常 → 安全機制正常運作，非 bug",
+                "誤鎖正常用戶且解鎖管道失效 → 判成立（P1）"
+              ]
+            },
+            {
+              "code": "C-4-5-3",
+              "level": 3,
+              "label": "雙重驗證失敗",
+              "meaning": "OTP 未到/時間漂移致無法通過",
+              "rule": "S4-20",
+              "verdict": "escalate_ops",
+              "canon": "2FA/OTP 驗證須在 30 秒內到達且有效期合理，時間漂移須有 TOTP 容錯",
+              "allow": [
+                "SMS OTP 在 30 秒內送達",
+                "TOTP 有 ±30s 時間漂移容錯",
+                "OTP 失效後可立即重發"
+              ],
+              "forbid": [
+                "OTP SMS 超過 5 分鐘仍未到達",
+                "TOTP 時間漂移致驗證碼永遠無效",
+                "OTP 重發限制過嚴致用戶無法取得驗證碼"
+              ],
+              "positive_cases": [
+                "用戶自行輸入錯誤 OTP 碼（用戶操作問題）",
+                "OTP 正常送達但用戶不清楚在哪找（UX 引導問題）",
+                "換手機後 Authenticator 需重新設定（正常流程）"
+              ],
+              "negative_cases": [
+                "SMS OTP 批次失敗，整批用戶無法完成 2FA 驗證登入",
+                "伺服器 NTP 時間漂移致所有 TOTP 驗證碼失效",
+                "OTP 重發按鈕冷卻時間 10 分鐘，第一次未收到後鎖死"
+              ],
+              "machine_clues": [
+                "OTP 送達率；2FA 驗證失敗率異常上升",
+                "客訴含「驗證碼沒來」「OTP 無效」「兩步驗證通不過」關鍵字"
+              ],
+              "verdict_rules": [
+                "OTP 系統送達率 < 90% 或 TOTP 系統性失效 → 判成立",
+                "用戶輸入超時或輸錯碼 → 非 bug，UX 引導問題"
+              ]
+            },
+            {
+              "code": "C-4-5-4",
+              "level": 3,
+              "label": "第三方登入失敗",
+              "meaning": "callback/token 失效致無 fallback 鎖死",
+              "rule": "S4-21",
+              "verdict": "escalate_ops",
+              "canon": "第三方登入（Google/Facebook/Apple）OAuth callback 須可靠，失敗須有本機帳號 fallback",
+              "allow": [
+                "OAuth callback 在 5 秒內完成 token 交換",
+                "第三方登入失敗時提供 email 登入替代",
+                "OAuth token 過期自動 refresh"
+              ],
+              "forbid": [
+                "OAuth callback 失效致整個社群登入路徑鎖死",
+                "社群登入失敗後無任何 fallback 選項",
+                "OAuth token 過期後未 refresh 致用戶意外登出"
+              ],
+              "positive_cases": [
+                "用戶主動撤銷第三方 App 授權後需重新授權（正常）",
+                "第三方登入慢 3 秒但最終成功（可接受）",
+                "第三方服務維護時有告知並提供 email 登入引導"
+              ],
+              "negative_cases": [
+                "Facebook 登入 OAuth callback URL 配置錯誤致全面失效",
+                "Google Sign-in SDK 更新後 callback 格式不符致無法登入",
+                "Apple Sign-In token 驗證 bug 致蘋果用戶全數鎖死"
+              ],
+              "machine_clues": [
+                "OAuth callback success rate；第三方登入錯誤 log（invalid_grant/redirect_uri_mismatch）",
+                "客訴含「Google/Facebook 登入失敗」「用 Apple 登不進去」關鍵字"
+              ],
+              "verdict_rules": [
+                "OAuth error code 可程式偵測（invalid_grant/redirect_uri_mismatch）→ 判成立",
+                "第三方服務自身故障（有 status page）→ 歸 external dependency，降 P2"
+              ]
+            },
+            {
+              "code": "C-4-5-5",
+              "level": 3,
+              "label": "帳號遷移/合併失效",
+              "meaning": "亞萬綁定/FB 下架等帳號系統遷移致登入異常，owner=後台合併 script",
+              "rule": "S4-33",
+              "verdict": "escalate_ops",
+              "canon": "帳號遷移/合併腳本須原子性完成，不得有帳號資料遺失或登入路徑斷裂",
+              "allow": [
+                "遷移完成後兩種登入方式均可使用",
+                "遷移前有用戶通知且有回滾機制",
+                "遷移腳本執行有詳細 audit log"
+              ],
+              "forbid": [
+                "遷移後原登入方式失效且無替代路徑",
+                "FB 下架帳號遷移後用戶資料（訂單/優惠券）遺失",
+                "遷移腳本無冪等性，重跑致資料重複"
+              ],
+              "positive_cases": [
+                "遷移後需重新設定密碼（計畫內，有告知）",
+                "部分用戶自行完成帳號綁定（無需系統遷移）",
+                "遷移 24 小時後問題解決，客訴量歸零"
+              ],
+              "negative_cases": [
+                "亞萬帳號綁定遷移腳本執行後部分用戶訂單記錄消失",
+                "FB 下架後帳號合併失敗，數千用戶無法登入",
+                "遷移後亞萬積分未正確遷移，客訴量大"
+              ],
+              "machine_clues": [
+                "遷移腳本執行 error log；遷移後登入失敗率監控",
+                "客訴含「帳號合併後登不進去」「亞萬積分不見」「訂單記錄消失」關鍵字"
+              ],
+              "verdict_rules": [
+                "遷移腳本有 error log 且用戶資料受影響 → 判成立（P1）",
+                "用戶不知道需遷移而主動聯絡 → 溝通問題非 bug（P3）"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-6",
+          "level": 2,
+          "label": "表單UX",
+          "children": [
+            {
+              "code": "C-4-6-1",
+              "level": 3,
+              "label": "必填欄位漏填",
+              "meaning": "缺 inline 驗證，錯誤最後才呈現",
+              "rule": "S4-22",
+              "verdict": "escalate_ops",
+              "canon": "必填欄位須有 inline 即時驗證，不得等送出才集中顯示所有錯誤",
+              "allow": [
+                "欄位 blur 時即時顯示必填提示",
+                "送出前高亮所有未填欄位並 scroll to error",
+                "錯誤訊息明確指出哪個欄位需填"
+              ],
+              "forbid": [
+                "送出後才顯示錯誤，且無法定位到問題欄位",
+                "必填欄位無任何視覺標記（如 * 號）",
+                "錯誤訊息僅顯示「送出失敗」無欄位指引"
+              ],
+              "positive_cases": [
+                "表單有 * 標記且 blur 時即時驗證（正常）",
+                "送出前自動 scroll 到第一個錯誤欄位並高亮",
+                "可選欄位無驗證（符合設計）"
+              ],
+              "negative_cases": [
+                "結帳表單送出後顯示「請檢查您的資料」無具體指引",
+                "護照號碼必填但欄位無任何標示，送出後才報錯",
+                "錯誤後頁面跳回頂部且所填資料清空"
+              ],
+              "machine_clues": [
+                "表單送出失敗率；同一欄位多次觸發 validation error",
+                "客訴含「送出一直失敗」「不知道哪裡填錯」關鍵字"
+              ],
+              "verdict_rules": [
+                "缺 inline 驗證且錯誤訊息不具體 → P2 UX bug",
+                "有驗證但用戶不想填（非必填卻誤以為必填）→ P3 UX 說明問題"
+              ]
+            },
+            {
+              "code": "C-4-6-2",
+              "level": 3,
+              "label": "格式不符",
+              "meaning": "提示不明致反覆嘗試",
+              "rule": "S4-23",
+              "verdict": "escalate_ops",
+              "canon": "格式不符提示須具體說明正確格式，不得讓用戶無限反覆嘗試",
+              "allow": [
+                "錯誤訊息說明「請輸入 YYYY-MM-DD 格式」",
+                "電話欄位有地區碼選取且示例說明",
+                "格式錯誤後保留用戶輸入供修改"
+              ],
+              "forbid": [
+                "僅顯示「格式錯誤」無具體說明",
+                "格式錯誤後清空欄位強制重填",
+                "多語系環境格式要求不同但無說明"
+              ],
+              "positive_cases": [
+                "護照號碼格式說明清楚且範例顯示（正常）",
+                "電話格式驗證有詳細提示（XX-XXXX-XXXX）",
+                "日期選取用 date picker 避免格式問題"
+              ],
+              "negative_cases": [
+                "電話欄位僅顯示「格式不正確」無示例，客訴多筆反覆失敗",
+                "護照欄位格式因國籍不同但介面無任何說明",
+                "填寫後送出報格式錯誤且欄位值被清空"
+              ],
+              "machine_clues": [
+                "同一欄位 validation error 重複觸發次數 > 3 次",
+                "客訴含「不知道要怎麼填」「格式一直說錯」關鍵字"
+              ],
+              "verdict_rules": [
+                "格式錯誤訊息無具體說明且客訴多筆相同 → 判成立",
+                "格式說明清楚但用戶未閱讀 → 非 bug"
+              ]
+            },
+            {
+              "code": "C-4-6-3",
+              "level": 3,
+              "label": "條件約束違反",
+              "meaning": "超業務邊界後端才拒，前端應 disable",
+              "rule": "S4-24",
+              "verdict": "escalate_ops",
+              "canon": "超出業務邊界的選項（超量/超齡/超日期）須由前端 disable，不得等後端拒絕才通知",
+              "allow": [
+                "已售完場次 disable 並標示「已售完」",
+                "兒童票年齡超限時前端即時提示",
+                "截止日期後的日期 picker 自動 disable"
+              ],
+              "forbid": [
+                "可選超出庫存數量，送出後才報後端錯誤",
+                "截止後日期可選擇，付款後才告知無效",
+                "年齡限制只在後端驗證，前端無任何提示"
+              ],
+              "positive_cases": [
+                "前端 disable 已售完且提供候補通知選項（正常）",
+                "日期選取 picker disable 過去日期（正常）",
+                "庫存同步準確，disable 狀態與實際一致"
+              ],
+              "negative_cases": [
+                "可選任意人數並送出結帳，後端才回傳「超過最大人數 10 人」",
+                "已截止報名的活動日期可選並付款成功，需人工退款",
+                "兒童票年齡無前端限制，結帳後被拒"
+              ],
+              "machine_clues": [
+                "業務規則後端拒絕率（400 業務邏輯錯誤）；退款原因分類含「規則違反」",
+                "客訴含「付完才說不行」「後來說超過限制」關鍵字"
+              ],
+              "verdict_rules": [
+                "後端 400 業務拒絕但前端未防守 → 判成立（P1，影響轉換）",
+                "庫存即時性問題（前端 disable 但被搶空）→ P2，庫存同步問題"
+              ]
+            },
+            {
+              "code": "C-4-6-4",
+              "level": 3,
+              "label": "跨欄位邏輯衝突",
+              "meaning": "欄位互依衝突未即時提示",
+              "rule": "S4-25",
+              "verdict": "escalate_ops",
+              "canon": "跨欄位邏輯衝突（如出發日 > 回程日）須即時提示，不得等送出才告知",
+              "allow": [
+                "出發日選定後回程日 picker 自動限制最早日期",
+                "衝突即時高亮兩個相關欄位",
+                "衝突訊息說明「回程日必須晚於出發日」"
+              ],
+              "forbid": [
+                "出發日 > 回程日可送出，後端才報錯",
+                "年齡與票種衝突（兒童選成人票）無提示",
+                "衝突後清空欄位強制用戶重填"
+              ],
+              "positive_cases": [
+                "日期選取有即時衝突檢查且自動調整（正常）",
+                "複雜條件衝突說明清楚，用戶能自行修正",
+                "無衝突表單一次送出成功"
+              ],
+              "negative_cases": [
+                "去程日期選在回程日期之後，送出後才告知日期衝突",
+                "多人票不同年齡與票種衝突無提示，後端拒絕後用戶困惑",
+                "表單驗證在送出後才執行，用戶填寫過程毫無即時回饋"
+              ],
+              "machine_clues": [
+                "跨欄位 validation 觸發率；後端業務規則 400 錯誤頻率",
+                "客訴含「填完才說日期有問題」「不知道哪兩個欄位衝突」關鍵字"
+              ],
+              "verdict_rules": [
+                "可送出衝突資料且後端拒絕 → 判成立（前端防守缺失）",
+                "即時有提示但用戶忽略後送出 → P3 UX 強化"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "C-4-7",
+          "level": 2,
+          "label": "優惠券",
+          "children": [
+            {
+              "code": "C-4-7-1",
+              "level": 3,
+              "label": "已過期",
+              "meaning": "舊活動殘留宣傳，輸入才知過期",
+              "rule": "S4-26",
+              "verdict": "escalate_ops",
+              "canon": "過期優惠券須在截止後立即從使用管道移除，不得讓用戶輸入才知過期",
+              "allow": [
+                "優惠券列表有明確到期日標示",
+                "過期券自動移至「已失效」分類",
+                "輸入過期券即時提示「此優惠券已過期」"
+              ],
+              "forbid": [
+                "舊活動 email/廣告仍流通過期優惠碼",
+                "過期券在列表中仍顯示為可用狀態",
+                "輸入後長時間 loading 才告知過期"
+              ],
+              "positive_cases": [
+                "優惠券列表清楚標示「已過期」且不可點擊（正常）",
+                "用戶嘗試輸入過期碼即時回饋，並推薦當前活動券",
+                "活動結束後行銷通路同步下架相關宣傳"
+              ],
+              "negative_cases": [
+                "過期活動 EDM 仍在發送，優惠碼大量輸入報過期，客訴爆量",
+                "App 我的優惠券列表仍顯示已過期券為「可用」",
+                "社群媒體舊文章中的優惠碼持續被輸入，造成服務電話量上升"
+              ],
+              "machine_clues": [
+                "優惠券使用 API 過期錯誤率；客服「優惠碼無效」工單量",
+                "客訴含「優惠碼說過期了」「折扣碼不能用了」關鍵字"
+              ],
+              "verdict_rules": [
+                "確認優惠券確實已過期 → 非 bug（但行銷通路清理為 ops 問題）",
+                "過期券在 App 列表仍標為「可用」→ 判成立（資料狀態同步 bug）"
+              ]
+            },
+            {
+              "code": "C-4-7-2",
+              "level": 3,
+              "label": "不存在/輸入錯誤",
+              "meaning": "大小寫/空白致查無，錯誤訊息不分類",
+              "rule": "S4-27",
+              "verdict": "escalate_ops",
+              "canon": "優惠券查詢須大小寫不敏感、trim 空白，錯誤訊息須區分「不存在」vs「有但不適用」",
+              "allow": [
+                "輸入大小寫混合或前後空白自動 normalize",
+                "不存在顯示「找不到此優惠碼」",
+                "存在但不適用顯示具體不符合條件"
+              ],
+              "forbid": [
+                "大小寫敏感致「KKDAY10」與「kkday10」結果不同",
+                "所有錯誤統一回傳「優惠碼無效」無法區分原因",
+                "複製貼上帶入隱藏空白致查詢失敗"
+              ],
+              "positive_cases": [
+                "優惠碼查詢大小寫 normalize 且 trim 空白（正常）",
+                "錯誤訊息區分「碼不存在」vs「已過期」vs「不符條件」（正常）",
+                "用戶輸入正確且查詢成功"
+              ],
+              "negative_cases": [
+                "截圖顯示 copy-paste 優惠碼帶入前後空白，查詢失敗",
+                "同一優惠碼大寫可用小寫不可用，客訴多筆",
+                "所有錯誤均顯示「無效優惠碼」，用戶不知是打錯還是不適用"
+              ],
+              "machine_clues": [
+                "優惠碼錯誤類型分布；優惠碼 API 400 error 中 not_found vs rule_violation 比例",
+                "客訴含「優惠碼一直說無效」「明明是正確的碼」關鍵字"
+              ],
+              "verdict_rules": [
+                "確認大小寫/空白問題可重現 → 判成立（P2 bug）",
+                "用戶確實輸錯碼 → 非 bug，UX 引導問題"
+              ]
+            },
+            {
+              "code": "C-4-7-3",
+              "level": 3,
+              "label": "已達使用上限",
+              "meaning": "配額耗盡仍流通致大量無效輸入",
+              "rule": "S4-28",
+              "verdict": "escalate_ops",
+              "canon": "優惠券達使用上限後須即時停止接受輸入，不得仍在行銷通路流通",
+              "allow": [
+                "配額耗盡後即時停用，後續輸入即時回饋「已達使用上限」",
+                "活動後台有配額監控及接近上限告警",
+                "配額耗盡時 EDM/廣告同步停止發送"
+              ],
+              "forbid": [
+                "配額耗盡仍繼續接受輸入，大批用戶結帳時才失敗",
+                "無配額監控致超用後才發現",
+                "配額耗盡後行銷材料仍宣傳活動優惠碼"
+              ],
+              "positive_cases": [
+                "配額耗盡即時顯示「此活動已結束」（正常）",
+                "高人氣活動快速耗盡配額並有備用活動引導",
+                "配額監控告警 ops team 提前因應"
+              ],
+              "negative_cases": [
+                "限量 1000 張優惠碼配額耗盡但行銷 EDM 持續發送 3 天",
+                "配額系統計數 bug 致超發，影響活動成本核算",
+                "大量用戶在結帳最後一步被拒，投訴優惠碼無效"
+              ],
+              "machine_clues": [
+                "優惠碼使用量 vs 配額監控；配額超用告警",
+                "客訴含「說已達使用上限」「搶不到優惠碼」關鍵字"
+              ],
+              "verdict_rules": [
+                "配額確已耗盡且訊息清楚 → 正常業務，非 bug",
+                "配額計數 bug 或行銷通路未同步停止 → 判成立（ops 問題）"
+              ]
+            },
+            {
+              "code": "C-4-7-4",
+              "level": 3,
+              "label": "購物車條件不符",
+              "meaning": "hidden condition 最大摩擦源",
+              "rule": "S4-29",
+              "verdict": "escalate_ops",
+              "canon": "優惠券使用條件須在輸入前明確展示，不得等結帳才顯示隱藏限制",
+              "allow": [
+                "優惠碼詳情頁顯示全部使用條件",
+                "輸入時即時檢查並顯示具體不符合條件",
+                "條件摘要在購物車頁可展開查看"
+              ],
+              "forbid": [
+                "結帳最終步驟才告知「最低消費未達」",
+                "優惠碼適用商品/地區限制在輸入前完全不顯示",
+                "錯誤訊息未說明具體缺少條件（差多少才達門檻）"
+              ],
+              "positive_cases": [
+                "購物車頁清楚顯示優惠條件且用戶確認後繼續（正常）",
+                "條件不符即時提示「需再消費 NT$200 可使用此券」（正常）",
+                "使用條件詳細頁用戶在輸入前已查閱"
+              ],
+              "negative_cases": [
+                "優惠碼「僅限首次購買」但在輸入框輸入才被告知",
+                "「僅限東南亞行程」限制在 FAQ 末頁，結帳時才被拒",
+                "最低消費門檻需消費 NT$3000 但購物車僅顯示優惠碼輸入框"
+              ],
+              "machine_clues": [
+                "優惠碼使用失敗中「條件不符」比例；最後一步被拒率",
+                "客訴含「說有條件限制」「沒說只能用在特定商品」關鍵字"
+              ],
+              "verdict_rules": [
+                "條件限制在輸入前有明確展示但用戶未讀 → P3 UX",
+                "條件完全隱藏直到結帳失敗 → 判成立（P2 資訊透明問題）"
+              ]
+            },
+            {
+              "code": "C-4-7-5",
+              "level": 3,
+              "label": "不可疊加",
+              "meaning": "疊加規則未明示，最後才告知",
+              "rule": "S4-30",
+              "verdict": "escalate_ops",
+              "canon": "優惠券疊加規則須在輸入時即時說明，不得等選擇多券後才告知不可疊加",
+              "allow": [
+                "第一張券輸入成功後即顯示「此券不可與其他優惠疊加」",
+                "優惠碼詳情標示「可/不可疊加」",
+                "嘗試疊加時明確說明衝突券"
+              ],
+              "forbid": [
+                "兩張券均輸入成功後結帳才告知「僅可使用一張」",
+                "疊加規則僅在 T&C 長文末段，介面無任何提示",
+                "疊加失敗訊息「優惠碼衝突」未說明哪張可用哪張不可"
+              ],
+              "positive_cases": [
+                "輸入第一張券後立即提示不可疊加（用戶可決定是否繼續）",
+                "可疊加類型（折扣碼+回饋金）正常疊加使用（正常）",
+                "結帳頁清楚顯示已套用優惠及節省金額"
+              ],
+              "negative_cases": [
+                "活動券 + 會員券均成功加入購物車，付款時才說只能選一張",
+                "頁面優惠碼欄位允許輸入多組，但送出時隨機捨棄一張",
+                "疊加規則只在活動 FAQ 隱藏，客服工單大量「不知道不能疊」"
+              ],
+              "machine_clues": [
+                "結帳步驟優惠碼衝突錯誤率；多券輸入行為後放棄率",
+                "客訴含「說不能疊加」「兩個都輸了結果只用一個」關鍵字"
+              ],
+              "verdict_rules": [
+                "兩券均可輸入成功但結帳後被拒 → 判成立（P2，前端應即時消歧）",
+                "第一券輸入時即有提示不可疊加 → 正常，非 bug"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

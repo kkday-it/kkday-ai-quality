@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kkday.com/ai-product-quality/schema/rule.schema.json",
+  "$comment": "AI 法官問題分類規則樹標準 v1.0（JSON Schema draft 2020-12）。配對資料檔：data/rule.json。",
+  "title": "問題分類規則樹（rule.json）標準 v1.0",
+  "description": "AI 法官三層歸因分類樹的結構與規則唯一驗證標準。L1 歸因域 › L2 面向 › L3 細項；遞迴 children + 非補零 C-code（materialized path / SKOS notation）。每個 L3 葉節點扛完整判準（canon／正反例／鐵則）。欄位語義對齊 W3C SKOS（不引入 RDF）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tree"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "指向本 schema 的路徑（編輯器自動驗證用），如 \"./schema.json\"。"
+    },
+    "_meta": {
+      "$ref": "#/$defs/meta"
+    },
+    "tree": {
+      "title": "歸因域森林",
+      "description": "L1 歸因域節點清單（7 域：① content … ⑦ force_majeure）。",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/l1"
+      }
+    }
+  },
+  "$defs": {
+    "meta": {
+      "title": "產生資訊（_meta）",
+      "description": "標準版本與統計；純記錄，不參與判決。允許額外鍵（向前相容）。",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "本規則檔遵循的標準版本。",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "examples": [
+            "1.0"
+          ]
+        },
+        "about": {
+          "type": "string",
+          "description": "一句話說明本檔內容。"
+        },
+        "id_scheme": {
+          "type": "string",
+          "description": "C-code 編碼規則說明。"
+        },
+        "validate": {
+          "type": "string",
+          "description": "驗證指令備忘。"
+        },
+        "domain_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "L1 域數（應＝tree 長度）。"
+        },
+        "l3_total": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "L3 葉節點總數。"
+        },
+        "thick_fields_status": {
+          "type": "string",
+          "description": "厚判準欄位填充進度（M1/M3）。"
+        }
+      }
+    },
+    "verdict": {
+      "title": "verdict 判決八分類",
+      "description": "預設/典型 verdict（對齊 backend schema.py Verdict）；arbiter 的判決傾向起點，非鎖定。",
+      "type": "string",
+      "enum": [
+        "real_config_issue",
+        "content_missing",
+        "content_unclear",
+        "contract_breach",
+        "customer_misread",
+        "escalate_ops",
+        "force_majeure",
+        "pre_sale_inquiry"
+      ],
+      "examples": [
+        "content_unclear"
+      ]
+    },
+    "label": {
+      "title": "label 顯示名（SKOS prefLabel）",
+      "description": "節點顯示名，純展示、不當引用（識別用 code）。限定詞用 - 連字號隔離，禁全形（）／半形()（見 scripts/normalize_labels.py）。",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^（）()]+$",
+      "examples": [
+        "商品特色-Highlights"
+      ]
+    },
+    "strList": {
+      "title": "字串清單",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "l1": {
+      "title": "L1 歸因域節點",
+      "description": "branch；唯一帶 domain 英文機器值（橋接 domains.json / pyramid）。children 為 L2。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "level",
+        "domain",
+        "label",
+        "children"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^C-[1-9][0-9]*$",
+          "description": "L1 C-code（單段，非補零）。",
+          "examples": [
+            "C-1"
+          ]
+        },
+        "level": {
+          "const": 1,
+          "description": "層級＝1（域）。"
+        },
+        "domain": {
+          "type": "string",
+          "enum": [
+            "content",
+            "supplier",
+            "order",
+            "platform",
+            "cs",
+            "customer",
+            "force_majeure"
+          ],
+          "description": "歸因域英文機器值（後端判決鏈以此對齊 domains.json / pyramid）。"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/l2"
+          },
+          "description": "L2 面向節點清單。"
+        }
+      }
+    },
+    "l2": {
+      "title": "L2 面向節點",
+      "description": "branch；只有骨架。children 為 L3。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "level",
+        "label",
+        "children"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^C-[1-9][0-9]*-[1-9][0-9]*$",
+          "description": "L2 C-code（兩段，非補零）。",
+          "examples": [
+            "C-1-1"
+          ]
+        },
+        "level": {
+          "const": 2,
+          "description": "層級＝2（面向）。"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/l3"
+          },
+          "description": "L3 細項節點清單。"
+        }
+      }
+    },
+    "l3": {
+      "title": "L3 細項節點（葉）",
+      "description": "leaf；扛完整判準。分類元數據（meaning/rule/verdict）+ 判準本體（canon/允許禁止/正反例/機器規則/鐵則）。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "level",
+        "label",
+        "meaning",
+        "rule",
+        "verdict",
+        "canon",
+        "allow",
+        "forbid",
+        "positive_cases",
+        "negative_cases",
+        "machine_clues",
+        "verdict_rules"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^C-[1-9][0-9]*-[1-9][0-9]*-[1-9][0-9]*$",
+          "description": "L3 C-code（三段，非補零）。",
+          "examples": [
+            "C-1-1-4"
+          ]
+        },
+        "level": {
+          "const": 3,
+          "description": "層級＝3（細項，葉）。"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "meaning": {
+          "type": "string",
+          "description": "SKOS scopeNote：這細項對旅客的價值／為何重要（動機，非判準；已剝離跨域根因標註）。",
+          "examples": [
+            "快速掃描差異價值"
+          ]
+        },
+        "rule": {
+          "type": "string",
+          "description": "法典條文 ID（R*/E*/T*），溯源內容治理法典；可空。",
+          "examples": [
+            "R5"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "canon": {
+          "type": "string",
+          "description": "SKOS definition：唯一判準（§1 法典條文，arbiter L3 主依據）。空字串＝待 M1/M3 補。"
+        },
+        "allow": {
+          "$ref": "#/$defs/strList",
+          "description": "✅ 合規寫法（§2 正面邊界）。"
+        },
+        "forbid": {
+          "$ref": "#/$defs/strList",
+          "description": "❌ 違規寫法（§2 負面邊界）。"
+        },
+        "positive_cases": {
+          "$ref": "#/$defs/strList",
+          "description": "好範例（§3 應判 Pass，SKOS example）。"
+        },
+        "negative_cases": {
+          "$ref": "#/$defs/strList",
+          "description": "壞範例（§4 Red Flag，應判 Flag）。"
+        },
+        "machine_clues": {
+          "$ref": "#/$defs/strList",
+          "description": "可程式檢查訊號（§5，字典／格式比對）。"
+        },
+        "verdict_rules": {
+          "$ref": "#/$defs/strList",
+          "description": "判決鐵則（§7 防過擬／防幻覺消歧規則）。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/default_llm.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / user_settings，勿放這裡。defaultModels[]＝{ id, desc }；desc 為下拉 hint。OpenAI 價格＝input/output 美元/1M tokens（2026-06 第三方追蹤站約值，Batch −50%）。Gemini / ByteDance 為對比用，僅列預設模型。",
+  "reasoning": [
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+  ],
+  "modelMinVersion": "5",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "GPT (OpenAI)",
+      "base_url": "https://api.openai.com/v1",
+      "defaultModel": "gpt-5-nano",
+      "defaultModels": [
+        {
+          "id": "gpt-5-nano",
+          "desc": "最省 · 高量預判首選·caching+batch 近免費 · $0.05/$0.40"
+        },
+        {
+          "id": "gpt-5.4-nano",
+          "desc": "極省 · 分類/抽取/排序 · $0.20/$1.25"
+        },
+        {
+          "id": "gpt-5-mini",
+          "desc": "極省 · 初代·比 5.4-mini 省 3x · $0.25/$2.00"
+        },
+        {
+          "id": "o4-mini",
+          "desc": "省 · 輕量推理 · $0.55/$2.20"
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "desc": "省 · 高量性價比首選 · $0.75/$4.50"
+        },
+        {
+          "id": "o3",
+          "desc": "中 · 推理·步驟邏輯 · $2/$8"
+        },
+        {
+          "id": "gpt-5.4",
+          "desc": "中 · 標準均衡 · $2.50/$15"
+        },
+        {
+          "id": "gpt-5.5",
+          "desc": "高 · 最新旗艦 · $5/$30"
+        }
+      ],
+      "thinking": "off",
+      "reasoning_effort": "medium"
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini (Google)",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "defaultModel": "gemini-3.5-flash",
+      "defaultModels": [
+        { "id": "gemini-3.1-pro-preview", "desc": "旗艦 · 最強推理" },
+        { "id": "gemini-2.5-pro", "desc": "上代旗艦 · 強" },
+        { "id": "gemini-3.5-flash", "desc": "新世代 flash · 均衡（預設）" },
+        { "id": "gemini-2.5-flash", "desc": "均衡 · 通用" },
+        { "id": "gemini-3.1-flash-lite", "desc": "輕量 · 省" },
+        { "id": "gemini-2.5-flash-lite", "desc": "極省 · 高量" }
+      ]
+    },
+    {
+      "id": "bytedance",
+      "label": "ByteDance(字節)",
+      "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "defaultModel": "seed-2-0-lite-260228",
+      "defaultModels": [
+        { "id": "seed-2-0-lite-260428", "desc": "Seed 2.0 lite · 新版" },
+        { "id": "seed-2-0-lite-260228", "desc": "Seed 2.0 lite · 預設" },
+        { "id": "seed-2-0-code-preview-260328", "desc": "Seed 2.0 · 程式碼" },
+        { "id": "seed-1-6-250915", "desc": "Seed 1.6 · 標準" },
+        { "id": "seed-1-6-flash-250715", "desc": "Seed 1.6 flash · 省" },
+        { "id": "gpt-oss-120b-250805", "desc": "開源 120B · 偏慢" }
+      ]
+    }
+  ]
+}

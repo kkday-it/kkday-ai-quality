@@ -1,0 +1,106 @@
+{
+  "_meta": {
+    "about": "verdict 8（軸B 問題性質）。domain=收斂歸因域(escalate_ops 為動態 null，由候選集細分④>③)。tier/severity_rank/actionable/writer_handoff_allowed/is_problem 取自 pyramid.py + schema.py。 recommended_action 取自 pipeline._VERDICT_ACTION（後端去重的 SSOT 欄）。"
+  },
+  "items": [
+    {
+      "code": "real_config_issue",
+      "label_zh": "設定寫錯/矛盾",
+      "domain": "content",
+      "tier": 2,
+      "severity_rank": 5,
+      "actionable": true,
+      "writer_handoff_allowed": true,
+      "is_problem": true,
+      "recommended_action": "fix_contradiction"
+    },
+    {
+      "code": "content_missing",
+      "label_zh": "該講沒講",
+      "domain": "content",
+      "tier": 1,
+      "severity_rank": 4,
+      "actionable": true,
+      "writer_handoff_allowed": false,
+      "is_problem": true,
+      "recommended_action": "add_missing_info"
+    },
+    {
+      "code": "content_unclear",
+      "label_zh": "模糊易誤解",
+      "domain": "content",
+      "tier": 2,
+      "severity_rank": 3,
+      "actionable": true,
+      "writer_handoff_allowed": true,
+      "is_problem": true,
+      "recommended_action": "clarify_wording"
+    },
+    {
+      "code": "contract_breach",
+      "label_zh": "承諾履約不符",
+      "domain": "supplier",
+      "tier": 3,
+      "severity_rank": 6,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": true,
+      "recommended_action": "penalize_breach"
+    },
+    {
+      "code": "customer_misread",
+      "label_zh": "客人誤解",
+      "domain": "customer",
+      "tier": null,
+      "severity_rank": 2,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": true,
+      "recommended_action": "escalate_ux"
+    },
+    {
+      "code": "escalate_ops",
+      "label_zh": "服務/出貨/系統(非內容)",
+      "domain": null,
+      "tier": 3,
+      "severity_rank": 1,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": true,
+      "recommended_action": "escalate_ops"
+    },
+    {
+      "code": "force_majeure",
+      "label_zh": "不可抗力",
+      "domain": "force_majeure",
+      "tier": null,
+      "severity_rank": 0,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": true,
+      "recommended_action": "no_action"
+    },
+    {
+      "code": "pre_sale_inquiry",
+      "label_zh": "售前諮詢(非問題)",
+      "domain": "customer",
+      "tier": null,
+      "severity_rank": 0,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": false,
+      "recommended_action": "no_action"
+    },
+    {
+      "code": "non_issue",
+      "label_zh": "非問題(正向/中性)",
+      "domain": null,
+      "tier": null,
+      "severity_rank": 0,
+      "actionable": false,
+      "writer_handoff_allowed": false,
+      "is_problem": false,
+      "recommended_action": "no_action"
+    }
+  ]
+}

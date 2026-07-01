@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kkday.com/ai-product-quality/schema/source_mapping.schema.json",
+  "title": "反饋來源欄位映射標準 v1.0（source_mapping.json）",
+  "description": "5 反饋來源 → 統一問題列表欄位映射的結構驗證。配對資料檔：config/ai_judge/source_mapping.json。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sources"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "_meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "version": { "type": "string" },
+        "about": { "type": "string" },
+        "canonical_fields": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "description": "來源 code → 映射定義。key 即 canonical source 值（如 product_reviews）。",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/sourceMapping" }
+    }
+  },
+  "$defs": {
+    "sourceMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "required_headers", "field_map"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "來源中文顯示名（上傳 UI / 列表 來源欄）。"
+        },
+        "required_headers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "必備表頭：同時作為自動辨識指紋與上傳校驗（缺任一即不可上傳）。"
+        },
+        "field_map": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" },
+          "description": "原始欄名 → canonical 欄名。未列的原始欄一律落 source_metadata。"
+        },
+        "const_fields": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "常數補值（無對應原始欄時）。如 product_reviews channel=\"review\"。"
+        }
+      }
+    }
+  }
+}
