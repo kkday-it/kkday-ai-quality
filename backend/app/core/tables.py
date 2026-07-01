@@ -89,6 +89,43 @@ judgments = Table(
     Column("data", Text),
     Column("status", Text),
     Column("created_at", Text),
+    # 反饋來源標記（product_reviews 拆表後，判決結果須知道 item_id 屬哪個來源表才能正確 join 回原始列）
+    Column("source", Text),
+    Index("idx_judgments_source", "source"),
+)
+
+# product_reviews：從 intake_items 拆出的獨立實體表（5 反饋來源中唯一已拆分者；
+# 其餘 4 來源仍沿用 intake_items 通用表，見 source_registry.py 的選表邏輯）。
+# PK 刻意命名 xid（非 id/oid）：避開來源自身 rec_oid / order_oid 等欄位撞名造成混淆。
+product_reviews = Table(
+    "product_reviews",
+    metadata,
+    Column("xid", BigInteger, primary_key=True, autoincrement=True),
+    Column("source_record_id", Text, unique=True),  # 自然鍵：CSV 原始 rec_oid
+    Column("item_id", Text, unique=True),  # 決定性生成：f"product_reviews-{rec_oid}"
+    Column("member_uuid", Text),
+    Column("traveller_type", Text),
+    Column("lang", Text),
+    Column("occurred_at", Text),  # 評論時間（排序/分頁用）
+    Column("title", Text),
+    Column("content", Text),  # 判決主輸入
+    Column("score", Integer),
+    Column("prod_oid", Text),
+    Column("pkg_oid", Text),
+    Column("order_oid", Text),
+    Column("order_mid", Text),  # ⚠️ 會員 id（個資）
+    Column("supplier_oid", Text),
+    Column("product_category_main", Text),  # 商品分類主碼（如 CATEGORY_082）
+    Column("product_category_sub", JSONB),  # 子分類清單
+    Column("go_date", Text),  # 出發日
+    Column("prod_name_snapshot", JSONB),  # 多語商品名快照（展開行用）
+    Column("status", Text),
+    Column("created_at", Text),
+    Column("raw", Text),  # 兜底：field_map 未涵蓋的原始欄
+    Index("idx_product_reviews_score", "score"),
+    Index("idx_product_reviews_category_main", "product_category_main"),
+    Index("idx_product_reviews_occurred_at", "occurred_at"),
+    Index("idx_product_reviews_prod_oid", "prod_oid"),
 )
 
 batches = Table(

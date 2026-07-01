@@ -1,0 +1,2582 @@
+[
+ {
+  "description": "C-1-1-1 商品名稱",
+  "vars": {
+   "review": "富士山五合目・河口湖一日遊（東京出發）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-1 商品名稱",
+  "vars": {
+   "review": "清邁半日泰式料理體驗"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-1 商品名稱",
+  "vars": {
+   "review": "首爾市區夜景步行導覽"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-1 商品名稱",
+  "vars": {
+   "review": "京都嵐山竹林文化體驗一日遊"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-2 商品所在地",
+  "vars": {
+   "review": "日本／富士山／河口湖／忍野八海"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-2 商品所在地",
+  "vars": {
+   "review": "韓國／江原道"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-3 商品摘要",
+  "vars": {
+   "review": "從東京出發，一天內走訪富士山經典景點，適合首次造訪旅客"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-3 商品摘要",
+  "vars": {
+   "review": "適合親子與長輩的一日自然景觀行程"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-3 商品摘要",
+  "vars": {
+   "review": "包含交通與導覽的清邁半日料理體驗"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-4 商品特色",
+  "vars": {
+   "review": "中文導遊隨行"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-4 商品特色",
+  "vars": {
+   "review": "含河口湖遊船"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-4 商品特色",
+  "vars": {
+   "review": "適合親子與長輩"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-5 商品主圖",
+  "vars": {
+   "review": "富士山一日遊：五合目停留點拍攝的富士山"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-5 商品主圖",
+  "vars": {
+   "review": "富士山一日遊：河口湖岸邊常見視角"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-5 商品主圖",
+  "vars": {
+   "review": "沙漠體驗：旅客實際活動畫面"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-6 商品相簿",
+  "vars": {
+   "review": "導遊解說畫面"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-7 商品影片",
+  "vars": {
+   "review": "實際行程紀錄剪輯"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-7 商品影片",
+  "vars": {
+   "review": "導遊實拍介紹"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-8 商品說明-文字",
+  "vars": {
+   "review": "清楚描述行程包含哪些類型的景點與活動（不展開逐站流程）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-8 商品說明-文字",
+  "vars": {
+   "review": "說明體驗節奏與大致安排（如：上午自然景觀、下午文化體驗）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-8 商品說明-文字",
+  "vars": {
+   "review": "說明適合對象與不適合對象"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-9 商品說明-圖文模組",
+  "vars": {
+   "review": "圖文搭配說明行程大致結構（上午 / 下午 / 晚上）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-9"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-9 商品說明-圖文模組",
+  "vars": {
+   "review": "圖片對應實際會造訪的代表性景點或活動"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-9"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-10 方案名稱",
+  "vars": {
+   "review": "日間經典路線"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-10"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-10 方案名稱",
+  "vars": {
+   "review": "夜景攝影路線"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-10"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-11 方案描述",
+  "vars": {
+   "review": "本方案不含午餐"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-11 方案描述",
+  "vars": {
+   "review": "夜景時段出發，適合想拍攝夜景的旅客"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-11 方案描述",
+  "vars": {
+   "review": "適合親子同行的輕鬆路線"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-12 方案圖片",
+  "vars": {
+   "review": "夜景方案使用夜拍畫面"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-12"
+   }
+  ]
+ },
+ {
+  "description": "C-1-1-12 方案圖片",
+  "vars": {
+   "review": "攝影方案呈現拍攝場景"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-1-12"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-1 方案即行程線",
+  "vars": {
+   "review": "富士山日間經典路線 vs 夜景攝影路線 → 不同方案"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-1 方案即行程線",
+  "vars": {
+   "review": "相同路線，08:00 / 09:00 出發 → 同方案不同 spec"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-2 行程總時長",
+  "vars": {
+   "review": "全程約 9–10 小時"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-2 行程總時長",
+  "vars": {
+   "review": "8–9 小時（依交通）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-3 行程時間-出發/結束",
+  "vars": {
+   "review": "07:30 出發，約 17:30 返回"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-5 行程步驟",
+  "vars": {
+   "review": "09:30 抵達忍野八海（自由活動 60 分）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-6 停留時間-每站",
+  "vars": {
+   "review": "停留約 45–60 分鐘"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-7 交通方式-各段",
+  "vars": {
+   "review": "搭乘遊覽車前往河口湖"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-8 行程亮點-行程專屬",
+  "vars": {
+   "review": "「本方案包含河口湖纜車體驗」"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-9 行程圖文模組",
+  "vars": {
+   "review": "圖文與 Step-by-step 一致"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-9"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-10 行程地圖",
+  "vars": {
+   "review": "Google Map 串接所有站點"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-10"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-11 行程中注意事項",
+  "vars": {
+   "review": "部分路段需步行上坡"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-11 行程中注意事項",
+  "vars": {
+   "review": "午餐自理，請自備現金"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-2-11 行程中注意事項",
+  "vars": {
+   "review": "冬季可能因積雪調整停留時間"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-2-11"
+   }
+  ]
+ },
+ {
+  "description": "C-1-3-1 包含項目",
+  "vars": {
+   "review": "指定景點門票"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-3-2 不包含項目",
+  "vars": {
+   "review": "自由活動餐食"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-3-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-3-3 強制費用-現場支付",
+  "vars": {
+   "review": "現場需另付景區門票 ¥200"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-3-4 價格規則-兒童/嬰兒",
+  "vars": {
+   "review": "未滿 3 歲不佔位免費"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-3-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-1 集合地點",
+  "vars": {
+   "review": "JR 新宿站「南口」7-11 便利商店前"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-1 集合地點",
+  "vars": {
+   "review": "富士山五合目停車場（Google Maps 可搜尋）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-1 集合地點",
+  "vars": {
+   "review": "台北車站東三門「台鐵服務台前」"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-2 地圖定位",
+  "vars": {
+   "review": "Google Maps 連結可直接開啟導航"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-2 地圖定位",
+  "vars": {
+   "review": "Apple Maps 導航連結"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-2 地圖定位",
+  "vars": {
+   "review": "Pin 直接指向集合點"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-3 集合時間",
+  "vars": {
+   "review": "08:20 集合，08:30 出發"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-3 集合時間",
+  "vars": {
+   "review": "請於 07:50 前完成集合"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-4 集合方式",
+  "vars": {
+   "review": "向導遊報到後上車"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-4 集合方式",
+  "vars": {
+   "review": "至櫃檯出示訂單憑證後集合"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-4 集合方式",
+  "vars": {
+   "review": "集合後統一點名"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-5 集合識別方式",
+  "vars": {
+   "review": "導遊穿藍色背心、持 KKday 旗幟"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-5 集合識別方式",
+  "vars": {
+   "review": "車輛貼有行程名稱標示"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-5 集合識別方式",
+  "vars": {
+   "review": "出示訂單姓名與導遊核對"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-6 多集合點選擇",
+  "vars": {
+   "review": "A 點 07:30（新宿站）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-6 多集合點選擇",
+  "vars": {
+   "review": "B 點 08:00（池袋站）"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-6 多集合點選擇",
+  "vars": {
+   "review": "請於訂單中選擇集合點"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-7 遲到規範",
+  "vars": {
+   "review": "將等待最多 10 分鐘後出發"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-4-7 遲到規範",
+  "vars": {
+   "review": "逾時視同未到，行程將不再等待"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-4-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-1 如何使用",
+  "vars": {
+   "review": "集合後向導遊出示訂單畫面"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-1 如何使用",
+  "vars": {
+   "review": "導遊核對名單後即可上車"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-1 如何使用",
+  "vars": {
+   "review": "系統自動確認，無需額外操作"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-3 必要證件",
+  "vars": {
+   "review": "請攜帶有效護照"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-3 必要證件",
+  "vars": {
+   "review": "請出示身分證件"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-4 語系確認",
+  "vars": {
+   "review": "本方案安排中文或英文導遊，依實際成團情況調度"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-4 語系確認",
+  "vars": {
+   "review": "導遊將以英文為主要語言"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-5 旅客識別方式",
+  "vars": {
+   "review": "以訂單姓名與人數核對"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-5-5 旅客識別方式",
+  "vars": {
+   "review": "出示訂單 QR Code"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-5-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-1 保證成團",
+  "vars": {
+   "review": "即時確認，保證成團"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-1 保證成團",
+  "vars": {
+   "review": "下單即確認出發"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-2 最低成團人數",
+  "vars": {
+   "review": "最低 6 人成團"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-2 最低成團人數",
+  "vars": {
+   "review": "每車需滿 8 人"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-4 處理方式-未成團",
+  "vars": {
+   "review": "未成團將取消訂單"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-5 獨立成團",
+  "vars": {
+   "review": "本行程將與其他旅客併團"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-6-5 獨立成團",
+  "vars": {
+   "review": "為專屬行程，不併團"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-6-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-1 天候保險-揭露",
+  "vars": {
+   "review": "行程受天候影響可能取消"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-1 天候保險-揭露",
+  "vars": {
+   "review": "含基本旅遊保險"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-2 年齡限制",
+  "vars": {
+   "review": "限 6–65 歲"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-2 年齡限制",
+  "vars": {
+   "review": "12 歲以下需成人陪同"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-3 身心健康限制",
+  "vars": {
+   "review": "心臟病、高血壓不適合"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-3 身心健康限制",
+  "vars": {
+   "review": "不建議近期手術者"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-4 體能需求",
+  "vars": {
+   "review": "每日步行約 8–10 公里"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-4 體能需求",
+  "vars": {
+   "review": "需上下坡路段"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-5 孕婦限制",
+  "vars": {
+   "review": "不建議孕婦參加"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-6 參加條件限制",
+  "vars": {
+   "review": "身高需 140cm 以上"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-6 參加條件限制",
+  "vars": {
+   "review": "需持潛水證照"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-7 行為限制",
+  "vars": {
+   "review": "行程中不得飲酒"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-7"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-8 安全風險說明",
+  "vars": {
+   "review": "高山氣候變化大"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-8 安全風險說明",
+  "vars": {
+   "review": "海上活動有暈船風險"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-8"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-9 安全強制要求",
+  "vars": {
+   "review": "必須穿著救生衣"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-9"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-9 安全強制要求",
+  "vars": {
+   "review": "必須配戴安全帽"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-9"
+   }
+  ]
+ },
+ {
+  "description": "C-1-7-10 裝備與穿著要求",
+  "vars": {
+   "review": "請自備防滑鞋"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-7-10"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-1 履約可行性確認",
+  "vars": {
+   "review": "成團商品：人數達標即完成 FFC"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-1 履約可行性確認",
+  "vars": {
+   "review": "名額制活動：庫存鎖定即完成 FFC"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-1 履約可行性確認",
+  "vars": {
+   "review": "排車完成即標示可履約"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-1"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-2 訂單確認與出單 SLA",
+  "vars": {
+   "review": "FFC 後即時出單"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-2 訂單確認與出單 SLA",
+  "vars": {
+   "review": "顯示最晚確認時間"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-2"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-3 補救處理-未履約",
+  "vars": {
+   "review": "未成團自動全額退款"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-3 補救處理-未履約",
+  "vars": {
+   "review": "提供改期選項但可拒絕"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-3"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-4 取消與退款 SLA",
+  "vars": {
+   "review": "出發前 2 天可免費取消"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-4 取消與退款 SLA",
+  "vars": {
+   "review": "退款 7–14 工作天"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-4"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-5 異動與通知義務",
+  "vars": {
+   "review": "Email + App 通知"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-5 異動與通知義務",
+  "vars": {
+   "review": "清楚標示異動原因"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-5"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-6 風險處理-不可抗力/營運",
+  "vars": {
+   "review": "天候不佳提供改期或退款"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-6"
+   }
+  ]
+ },
+ {
+  "description": "C-1-8-6 風險處理-不可抗力/營運",
+  "vars": {
+   "review": "明確替代方案"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-1-8-6"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-1 訊號差-收不到",
+  "vars": {
+   "review": "上海市內網路就崩壞 B1直接沒訊號 還不是停車場是大型百貨 結帳還要跟當地人借網路才能開微信或支付寶"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-1 訊號差-收不到",
+  "vars": {
+   "review": "在新疆時常網路太慢或沒訊號，還要跟朋友借熱點，糟糕！時好時壞"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-1 訊號差-收不到",
+  "vars": {
+   "review": "訊號滿弱的，很容易沒訊號，時常在那轉啊轉阿!!"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-1 訊號差-收不到",
+  "vars": {
+   "review": "網路卡死沒有任何想法，演唱會現場有LG基地台，一樣網頁打不開，差點無法參加進場"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-2 網速慢-卡頓",
+  "vars": {
+   "review": "跑的超級慢，時常跑不動，看個影片跑半個世紀，然後訊號又不穩，買吃到飽根本吃不飽"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-2 網速慢-卡頓",
+  "vars": {
+   "review": "購買開通後網速超慢!只能傳line訊息，照片影片都打不開。行動支付也是有時能順利開、有時跑不動付不出錢"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-2 網速慢-卡頓",
+  "vars": {
+   "review": "網速未如理想比較慢,只有4G速度去唔到5G已經在深圳市內"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-3 完全斷線",
+  "vars": {
+   "review": "真的完全不能用，我又另外付費買其他eSIM"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-3 完全斷線",
+  "vars": {
+   "review": "使用到第二天，使用滴滴出行突然訊號消失，飛航、網路重啟都沒有回覆，出租車已快到了的情況下，手機緊急重新開機才恢復正常"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-3 完全斷線",
+  "vars": {
+   "review": "買7天，第二天開始斷連，出現有連線但沒有網際網路，很麻煩，手機一直刪除設定再重新登錄密碼，wifi機一直優化一直重新開機"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-2-1-3 完全斷線",
+  "vars": {
+   "review": "上次買5張卡，自己去韓國非常順暢好用，這次幫家人買2張，去韓國當地，1張卡可正常使用，另一張卡怎麼試都無法上網，只好趕快再重新買一張新的，這才讓家人在韓國可以順利使用網路"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-1-3"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "點心難吃，酸菜魚魚片像塑膠，芒果布甸難吃，清菜一般"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "東涌店坐位寬敞舒適，但食物未如理想，片皮鴨冇味，點心真心差"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "食品都是一般平價食物，味道不佳，熱食微溫，比多年前品質失色太多"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "員工不足...食物最差是燒肉，超鹹，冰燒三層肉也是非常鹹"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "食物選擇少得可憐，甜品就比較多少少，但都只是幾個蛋糕，唔怪得之只是得幾台客"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "食物選擇不多 味道很一般 冷盤蝦 提供不足夠 未見有補充 熱盤 咖哩魚旦豬皮蘿蔔 煮得過耐太淋"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-1 口味-新鮮度",
+  "vars": {
+   "review": "員工不足的問題導致醬料不能即時補充，蒸腸粉上菜時不提供甜豉油，食物枱的豉油瓶又是空的"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-2 環境-衛生",
+  "vars": {
+   "review": "座位比較擠迫，食物質素一般，味道尚可"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-2 環境-衛生",
+  "vars": {
+   "review": "座位方面又好細，好逼"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-2-2 環境-衛生",
+  "vars": {
+   "review": "午餐環境非常糟糕，餐點上面都是蒼蠅，食物很像學校營養午餐會出現的菜色"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-2-3 車輛設備",
+  "vars": {
+   "review": "付了SUV車輛的價錢，用意是要坐舒服一點，但車行卻派了一般轎車，請平台確實監督當地車行派車，不要讓消費者當冤大頭"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-3"
+   }
+  ]
+ },
+ {
+  "description": "C-2-4-1 未提供-漏發",
+  "vars": {
+   "review": "方案上是有一日券，但當天車上的人員沒有給我，我反應後客服強調有發放，並且回覆已經隔天了，附圖是我自己購買的發票，A4那麼大一張我怎麼可能漏掉，操作疏失承認很難嗎"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-2-4-2 價值不符",
+  "vars": {
+   "review": "全用在門票下、全部沒折扣的情況下，快省不了多少。餐食的部分，連接能查的部分並不多，價值也不高。像BLUE SEAL 冰淇淋也只能換一球、價值400yen。好像還不是每間店都能用。其他店家也還得專門去查找、確實影響行程順序安排"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-2-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-1 態度差-不專業",
+  "vars": {
+   "review": "導遊不夠專業，態度唔友善，講解時表現煩燥。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-1 態度差-不專業",
+  "vars": {
+   "review": "職員唔識都唔會揾同事處理，見咁嘅接待，我最好走人囉。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-1 態度差-不專業",
+  "vars": {
+   "review": "司機見狀後沒有任何表示和道歉，態度十分冷淡敷衍，司機相當沒有禮貌"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-1 態度差-不專業",
+  "vars": {
+   "review": "雄獅導遊很不專業，完全不介紹背景或者緣由，只會說什麼時候集合什麼時候下車"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-1 態度差-不專業",
+  "vars": {
+   "review": "帶隊也不會押尾，還我差點在纜車處找不到下山的地方"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-2 溝通不良",
+  "vars": {
+   "review": "Grace中文實在是太差了，她拿著手機照著唸稿，但是聽不懂我聽得很痛苦啊"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-1-2 溝通不良",
+  "vars": {
+   "review": "我們聽不懂日文也不必一直講日文了吧，講英文或者用翻譯給我們看不困難吧，彷彿不會講日文就必須接受你們的冷落態度"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-1 行車安全",
+  "vars": {
+   "review": "司機邊開車邊聽著藍芽耳機，在高速公路上打了右轉燈，超車完卻沒有打回來，一直閃，我覺得太反常就開口請司機把右轉燈關掉，沿途中車子很飆，不清楚是司機視野不好還是沉醉在耳機的音樂裡，在高速公路上被按了兩次喇叭，我當時很怕回不了家，我是不會再用KKDAY訂台灣機場的接送了，根本是在賭命"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "抵達台灣時，司機沒有照預定時間出現，打司機手機沒接，打到租賃公司才幫忙聯絡上"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "飛行機が遅れた影響か、ボードを持った迎えの人が見つかりませんでした。サポートにはすぐに繋がり、その後無事にドライバーと合流できたので、送迎自体は問題なく快適でした。合流するまでに30分以上タイムロスが発生した"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "抵達台灣時，司機沒有照預定時間出現，打司機手機沒接，打到租賃公司才幫忙聯絡"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "司機跑錯旅館，晚到近二十分鐘"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "下訂單時已備注改15:00接機，也詢問過客服，該旅行社還是未更改…導致我們多支付司機超時費"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "司機態度良好，無奈公司安排過於緊湊導致在機場等了約25分鐘"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-2-2 接送遲到",
+  "vars": {
+   "review": "配合九州產交，會停靠多點接人，耗時"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-3-3 帶團節奏",
+  "vars": {
+   "review": "去了很多點但行程很趕，導遊只做了最基本的行程處理及很簡單的介紹"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-3-3 帶團節奏",
+  "vars": {
+   "review": "整體不推薦，像搭公車繞一圈，少了一點溫度，很可惜"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-3-3 帶團節奏",
+  "vars": {
+   "review": "路程遙遠，行程緊湊，唯高千穗峽谷停留時間太短，體驗划船行程後，僅剩20分鐘集合"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-3-3 帶團節奏",
+  "vars": {
+   "review": "京都出發時為了等一團5人組，浪費了15分鐘"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-3-3 帶團節奏",
+  "vars": {
+   "review": "領隊花花沒介紹景點，也不會處理問題，讓座最後排的客人非常不舒服"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-3"
+   }
+  ]
+ },
+ {
+  "description": "C-3-4 成團履約",
+  "vars": {
+   "review": "原本預約的行程居然是朋友主動詢問才得知沒有成團，就這方面覺得主辦單位也太消極"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-4"
+   }
+  ]
+ },
+ {
+  "description": "C-3-4 成團履約",
+  "vars": {
+   "review": "前一天email通知正常出行，之後補一個英文說取消天空之鏡…司機已經來了，只能按公司指示的行程走沒有天空之鏡的路線"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-4"
+   }
+  ]
+ },
+ {
+  "description": "C-3-4 成團履約",
+  "vars": {
+   "review": "本來期待午餐的高千穗牛，結果被更改訂單，到現場用餐才知道因為有大團體，所以可能因此改變我們的餐點，且看餐廳menu價格有落差"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-4"
+   }
+  ]
+ },
+ {
+  "description": "C-3-4 成團履約",
+  "vars": {
+   "review": "送機遇到颱風，旅行社直接說不搭就是全損，這我還是第一次遇到"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-4"
+   }
+  ]
+ },
+ {
+  "description": "C-3-5 衛生設備",
+  "vars": {
+   "review": "司機邊開車邊聽著藍芽耳機……在高速公路上被按了兩次喇叭，我當時很怕回不了家"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-5"
+   }
+  ]
+ },
+ {
+  "description": "C-3-5 衛生設備",
+  "vars": {
+   "review": "我還未完全坐好，司機便隨意立即關門，讓同行家人背部撞傷……車上安全帶沒有完善配備，只有一條殘舊的腰部安全帶"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-3-5"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "餐廳QR code網速慢到掃不出來，演唱會驗票等得有夠尷尬。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "QRコードがうまく読み取れず、時間がかかりました。画面が暗かったようです。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "購入直後、QRコードを読んでもエラーになり、サポートに連絡したところ比較的早く連絡がもらえました…4回目で読み込みに成功しました。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "瑪利歐園區根本不用預訂，周遊券到底要怎麼使用都不行！店家都說不能使用QR Code！"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "報到當日查看App上的憑證，QR code 突然消失；取代的是長達4頁PDF檔。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-1 憑證核銷",
+  "vars": {
+   "review": "QR code去到氹仔店用不了，等了兩個多小時仍處理不了…傳來新的QR code說所有分店都可以用，去了海立方店店員表示不能用此卷，要回去氹仔店用。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-4-2 啟用設定",
+  "vars": {
+   "review": "網卡裝進手機後，會收到簡訊，需上網站實名登記之後才能使用！！"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-4-2 啟用設定",
+  "vars": {
+   "review": "已經按照網頁指示事先做好安裝，但一直找不到如何登記實名制，到了機場果然沒有訊號，好險提領行李旁邊就是AIS櫃檯，服務人員很有耐心地幫忙完成後續步驟才順利連上網路。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-4-2 啟用設定",
+  "vars": {
+   "review": "esimをインストールし、香港到着後に使用開始しましたが、インターネットに接続できませんでした…手動でAPN設定が必要であることが判明し、ようやく接続できました。手動APN設定が必要などとはどこにも記載されておらず、肝を冷やしました。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-4-2 啟用設定",
+  "vars": {
+   "review": "設定は係の人がやってくれるのかと思っていたのですが、手続き終了後、SIMカードを渡されておしまい。自分で設定しました。せめて日本語での設定方法のマニュアルをいっしょに渡してくれたら。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-4-3 效期時機",
+  "vars": {
+   "review": "一直認為e-sim是安裝完會在未啓動狀態。此產品安裝完同時即連線使用。買的是五天期結果五天前先行安裝…到真的落地要使用時剛好到期。全部打水漂…雷區真的要小心謹慎。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-3"
+   }
+  ]
+ },
+ {
+  "description": "C-4-3 效期時機",
+  "vars": {
+   "review": "六月4號領的SIM卡到期日是六月18日讓人很傻眼，之前領到的都半年以上，而且這張還是十天份的，無奈本次旅行只規劃3天，浪費了七日的流量，好誇張。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-3"
+   }
+  ]
+ },
+ {
+  "description": "C-4-3 效期時機",
+  "vars": {
+   "review": "高鐵的時間為三天，沒想到飯店住宿只有一日，我也沒注意到憑證的內容…希望下次可以提醒一下高鐵時間跟飯店住宿時間是否吻合。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-3"
+   }
+  ]
+ },
+ {
+  "description": "C-4-4 取票入場",
+  "vars": {
+   "review": "購買兌換處列出2個地點，我們選了其中一個結果去到購票處不是這個兌換處。完全給錯指示已錯過時間已無法登船！也無法退票！這經驗實在太差！"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-4-4 取票入場",
+  "vars": {
+   "review": "現在很多通路有不用換票的，不建議買要換票的，因為當你發現你進不去時，你已經浪費時間排隊，過了安檢，然後出去換票後要重新排隊過安檢，會氣死，你們寄憑證的地方應該把「要換實體票」字眼加大加粗特別拉出來，而不是埋在一堆注意事項裡面"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-4-4 取票入場",
+  "vars": {
+   "review": "以為買張飛有個QR code去到博物館就可以暢通無阻，但係好可惜就係冇留意到個注意事項，原來通行證係要去指定嘅地方換取，我仲去咗博物館排咗一輪隊，去到check證嘅時候先發現入唔到去。"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-4-4"
+   }
+  ]
+ },
+ {
+  "description": "C-5-1-1 改期沒落實",
+  "vars": {
+   "review": "下訂單時已備注改15:00接機，也詢問過客服，該旅行社還是未更改，客服聯絡也拒絕更改，這是旅行社問題卻要我們承當，導致我們多支付司機超時費"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-1-1 改期沒落實",
+  "vars": {
+   "review": "開通前3天想要變更訂單，無法變更訂單內容"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-1-1 改期沒落實",
+  "vars": {
+   "review": "由於當時已是凌晨12點，長途飛行後大家都相當疲憊，在完全沒有接機資訊的情況下，只能自行查詢電話聯繫客服。聯繫後對方又重新詢問班機、姓名及訂單編號等資訊，讓人不禁懷疑內部是否根本沒有完成資訊交接"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-1-1 改期沒落實",
+  "vars": {
+   "review": "後台一直出現狀況，憑證三天兩頭更新司機訊息就算了...系統到底怎麼了"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-1-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-1-2 政策不清",
+  "vars": {
+   "review": "非限定入場的票券，也就是現場也沒有入場人數和時間限定，平台卻規定只有重病和去世才能取消，非常不友善，旅途中受傷沒辦法去玩水，不能退票只能作廢"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-1-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-1 拒絕退款",
+  "vars": {
+   "review": "結帳後後一次跳出共4張，與客服反應查詢後告知訂單沒問題，訂單不可取消及退款。若是個人下單錯誤，兌換券在首次付款就會跳出，也不會有機會點入待付款連結的機會"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-1 拒絕退款",
+  "vars": {
+   "review": "根本不能用，到現場工作人員說不行用，還得現場多花一次錢。請客服退費還要我交出工作人員當場的說法，就用說的是要怎麼交？"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-1 拒絕退款",
+  "vars": {
+   "review": "原來是三星手機根本不能用...死不退款"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-1 拒絕退款",
+  "vars": {
+   "review": "買了不能退款，沒有支援eSIM的人不要買，浪費錢"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-2 退款延宕",
+  "vars": {
+   "review": "一次買了2張不知是iPhone 14&16的差別，總之14的連不了還需要在有網路的情況下連線客服,花了2個小時最終還是以退費收場"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-2-2 退款延宕",
+  "vars": {
+   "review": "首次評論，獨旅關係只需一張1日券及一張2日券總數共2張。系統問題Line Pay第一次顯示付款不成功，隔10分點入訂單待付款連結再次嘗試付款，結帳後後一次跳出共4張(1日券及2日券各2張)，與客服反應查詢後告知訂單沒問題"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-2-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "未能提供數據支援，客服又沒有回覆！大家小心！"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "有一點要說一下，是日家人生日，在訂餐時有備注「請提供一件有生日快樂字牌的小蛋糕🧁」，到最後卻沒有回覆可不可以、也沒有給予"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "查詢酒店可又沒有回覆"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "買了三張，只能用一張能使用，線上詢問回覆也超級慢，我總不能一直在Wi-Fi的地方等你回覆吧，只能先另外做買做使用，也無法取消，真是個不好的購買經驗"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "後面兩天的兩張直接無法連上網路，使用當地公用Wi-Fi跟客服聯繫沒人可以處理，等待多時，直接果斷買了其他家的SiM卡"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "絕對不要買KKDAY的網路，飛機落地後才開啟網路，為了一直沒網路搞超久，線上客服根本沒辦法解決，轉真人跟你說要30-120分鐘，完全沒下文"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-1 已讀不回",
+  "vars": {
+   "review": "請客服退費還要我交出工作人員當場的說法，就用說的是要怎麼交？要找真人客服人員還要等30-120分鐘，誰有時間一直線上等？"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-2 AI鬼打牆",
+  "vars": {
+   "review": "爛透了，一個掃了就沒辦法成功，然後一直鬼檔牆的叫我截圖，既然沒有掃成功，刪掉後卻不能用了，就沒有成功沒有成功！處理辦法就是自己自認倒霉重買一個"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-2 AI鬼打牆",
+  "vars": {
+   "review": "這次去日本，買了2張sim卡，結果到日本才發現根本不能使用，客服扯東扯西搞了一個小時還是處理不好"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-2 AI鬼打牆",
+  "vars": {
+   "review": "故障排除等很久，克服無法即時回應，且提供的內容也沒有幫助，甚至要求刪除工作VPN認為是影響原因"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-3-2 AI鬼打牆",
+  "vars": {
+   "review": "對司機沒意見。但KKday很垃圾，松山機場接送，有加價請KKday舉牌。錢扣了，但沒人在現場舉牌。司機說KKday常常這樣。而且客服電話都是直接導向車行，沒有KKday自己的平台聯繫方式。天知道email往來要多久！"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-3-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-4-1 態度推諉",
+  "vars": {
+   "review": "發現枱面嘅飲品被清走、清水都冇咗...我到前台與職員溝通，佢答我只係做前台工作，職員唔識都唔會揾同事處理，見咁嘅接待，我最好走人囉"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-4-1 態度推諉",
+  "vars": {
+   "review": "方案上是有一日券，但當天車上的人員沒有給我，我反應後客服強調有發放，並且回覆已經隔天了，附圖是我自己購買的發票，A4那麼大一張我怎麼可能漏掉，操作疏失承認很難嗎"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-4-1 態度推諉",
+  "vars": {
+   "review": "隔天（6月9日）早上7點14分向對方確認接送的車輛資訊時，對方告知到機場要加價30萬越盾。詢問為何昨日明確告訴下車地點時，沒告知要加價乙事，對方承認昨日漏看訊"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-5-4-2 程序繁瑣",
+  "vars": {
+   "review": "請客服退費還要我交出工作人員當場的說法，就用說的是要怎麼交？要找真人客服人員還要等30-120分鐘，誰有時間一直線上等？"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-5-4-2 程序繁瑣",
+  "vars": {
+   "review": "甚至用app反應，還會要求要照片還是什麼可佐證的資料"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-5-4-2"
+   }
+  ]
+ },
+ {
+  "description": "C-6-1 期待落差",
+  "vars": {
+   "review": "至って普通。すごく良いわけでもないし、期待しすぎないほうが満足できる"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-6-1 期待落差",
+  "vars": {
+   "review": "本場のタイ料理を期待したが、スパイシーでなく海外客向けにアレンジし過ぎで更に美味しくない"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-6-1 期待落差",
+  "vars": {
+   "review": "一直想去歷山酒店看看它的宮廷式裝修，所以今次去試下它的下午茶，滿以為可以在優悠的環境下，享受一下美食。不過，環境並不如預期，幾張枱設於通道間，我和太太對座位的佈局都不欣賞。食物方面也是平凡之極"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-6-1 期待落差",
+  "vars": {
+   "review": "景點不如預期，尤其部落探訪走了一個多小時沒什麼東西可看"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-1"
+   }
+  ]
+ },
+ {
+  "description": "C-6-2 看錯方案",
+  "vars": {
+   "review": "由於這家eSIM卡 與其他之前使用的eSIM 設置方式不同，所以剛開始 以為壞了 無法使用"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-2"
+   }
+  ]
+ },
+ {
+  "description": "C-6-3 未讀須知",
+  "vars": {
+   "review": "以為就咁買張飛有個QR code去到博物館就可以暢通無阻，但係好可惜就係冇留意到個注意事項，原來通行證係要去指定嘅地方換取"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-3"
+   }
+  ]
+ },
+ {
+  "description": "C-6-3 未讀須知",
+  "vars": {
+   "review": "出發前先掃QR 設定，到名古屋後一直沒訊號，弄了很久還以為完了，到後坐火車去市區的時候才想起來要開漫遊"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-3"
+   }
+  ]
+ },
+ {
+  "description": "C-6-4-1 天災天氣",
+  "vars": {
+   "review": "主要問題是該死的天氣。前天一整天都下大雨，當天見出陽光，就覺得可以一試...結果中途下雨，落站後才查到纜車停運"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-4-1"
+   }
+  ]
+ },
+ {
+  "description": "C-6-4-1 天災天氣",
+  "vars": {
+   "review": "天氣太炎熱加上香草園也不是合適的季節實際參觀有點不如預期，一整天的行程的確有點失望"
+  },
+  "assert": [
+   {
+    "type": "equals",
+    "value": "C-6-4-1"
+   }
+  ]
+ }
+]

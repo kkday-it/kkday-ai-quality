@@ -43,7 +43,7 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     else:
         item_ids = []
 
-    job_id = prejudge_batch.start_job(item_ids, eff, model)
+    job_id = prejudge_batch.start_job(item_ids, eff, model, source=body.source)
     return {"job_id": job_id, "total": len(item_ids), "model": model}
 
 

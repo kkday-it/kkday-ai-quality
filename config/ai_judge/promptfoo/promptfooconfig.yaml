@@ -1,0 +1,18 @@
+# 商品評論 L1~L3 歸因分類回歸測試（promptfoo）。
+# 每條 = 某 L3 的真實 positive_case 評論 → 期望判到該 L3 code（exact match）。
+# 目的：改動 rule 判準 / prompt 後，一鍵回歸偵測界線漂移（哪些 L3 命中率掉了）。
+#
+# 跑法：
+#   1. python scripts/gen_promptfoo_tests.py          # 由 rule 檔重生 tests.json
+#   2. cd config/ai_judge/promptfoo
+#   3. npx promptfoo@latest eval                       # 需 node；透過 provider.py 呼叫真引擎
+#   4. npx promptfoo@latest view                       # 看命中率報表
+# 需一組真 token 的 user（provider.py 自動取第一個有 token 者，或設 PROMPTFOO_USER_ID）。
+# ⚠️ 會對每條 positive_case 打一次真 LLM（數量 = positive_cases 總數）；有 token 成本，非 CI 免費。
+description: 商品評論 L1~L3 歸因回歸（positive_cases 逐條驗 L3 命中）
+providers:
+  - id: file://provider.py
+    label: prejudge-engine
+prompts:
+  - '{{review}}'
+tests: file://tests.json

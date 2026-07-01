@@ -12,7 +12,7 @@
   "tier_labels": {
     "auto_accept": "自動採信",
     "jury": "評審覆核",
-    "needs_review": "待人工審核",
+    "needs_review": "人工覆核",
     "hold": "暫緩保留"
   },
   "polarity_labels": {

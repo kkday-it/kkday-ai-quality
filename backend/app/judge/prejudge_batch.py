@@ -81,19 +81,19 @@ def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
         snap["ok" if ok else "failed"] += 1
 
 
-def _work_one(job_id: str, item: dict, model: str) -> None:
+def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。"""
     with _sem:
         try:
             f = prejudge.to_finding(_normalize_raw(item), model=model)
-            db.insert_finding(f)
+            db.insert_finding(f, source or item.get("source") or "")
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
             _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item.get("item_id"))
             _bump(job_id, ok=False)
 
 
-def _run(job_id: str, item_ids: list[str], eff: dict, model: str) -> None:
+def _run(job_id: str, item_ids: list[str], eff: dict, model: str, source: str | None = None) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → ThreadPool 併發 → 標記結束。"""
     # 在背景 thread 的 context 內 set 好兩個 contextvar，稍後每筆任務 copy_context 快照即帶上。
     app_settings.set_current(eff)
@@ -112,9 +112,9 @@ def _run(job_id: str, item_ids: list[str], eff: dict, model: str) -> None:
         with ThreadPoolExecutor(max_workers=env.prejudge_max_workers) as ex:
             for start in range(0, len(item_ids), _FETCH_CHUNK):
                 chunk = item_ids[start : start + _FETCH_CHUNK]
-                for item in db.get_inbound_by_ids(chunk):
+                for item in db.get_items_by_ids(chunk, source):
                     ctx = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
-                    ex.submit(ctx.run, _work_one, job_id, item, model)
+                    ex.submit(ctx.run, _work_one, job_id, item, model, source)
             # with 區塊結束 → shutdown(wait=True) 等所有 worker 完成
         _set_status(job_id, "done")
     except Exception:  # noqa: BLE001  整批級失敗（如 DB 連線斷）→ 標 error 供前端停輪詢
@@ -131,13 +131,15 @@ def _set_status(job_id: str, status: str) -> None:
             _jobs[job_id]["status"] = status
 
 
-def start_job(item_ids: list[str], eff: dict, model: str) -> str:
+def start_job(item_ids: list[str], eff: dict, model: str, source: str | None = None) -> str:
     """註冊並背景啟動一個初判歸因批量任務；立即回 job_id（不阻塞請求）。
 
     Args:
         item_ids: 判決標的 item_id 清單（端點已解析：顯式選取 / scope=all 未判集合）。
         eff: effective LLM dict（settings.effective_llm_dict 產；含 model/token/reasoning）。
         model: 主判決模型名（Stage2/2b；stub 模式引擎自走啟發式）。
+        source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
+            None＝沿用 intake_items 舊行為）。
 
     Returns:
         job_id（前端據此輪詢 get_job）。
@@ -146,7 +148,10 @@ def start_job(item_ids: list[str], eff: dict, model: str) -> str:
     with _jobs_lock:
         _jobs[job_id] = _new_snapshot(len(item_ids), model)
     threading.Thread(
-        target=_run, args=(job_id, item_ids, eff, model), name=f"prejudge-{job_id}", daemon=True
+        target=_run,
+        args=(job_id, item_ids, eff, model, source),
+        name=f"prejudge-{job_id}",
+        daemon=True,
     ).start()
     return job_id
 

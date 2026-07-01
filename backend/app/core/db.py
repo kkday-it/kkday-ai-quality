@@ -20,8 +20,10 @@ from sqlalchemy import func, select
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as _pg_insert
 from sqlalchemy.exc import IntegrityError
 
+from app.core import source_registry
 from app.core import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR  # config/ai_judge 目錄（統一定位）
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR  # config/global 目錄（統一定位）
@@ -161,8 +163,14 @@ def export_inbound_csv(batch_id: str) -> bytes:
 # ── 判決結果（judgments）─────────────────────────────────────────────────
 
 
-def insert_finding(f: TicketFinding) -> None:
-    """寫入判決結果（冪等：finding_id 重複則覆蓋）。"""
+def insert_finding(f: TicketFinding, source: str) -> None:
+    """寫入判決結果（冪等：finding_id 重複則覆蓋）。
+
+    Args:
+        f: 判決結果。
+        source: 標的所屬反饋來源 code（必填——product_reviews 拆表後，下游查詢
+            需靠此欄判斷 item_id 該去哪張表 join，不可再由 judgments 缺欄猜測）。
+    """
     values = {
         "finding_id": f.finding_id,
         "item_id": f.ticket_id,
@@ -179,14 +187,16 @@ def insert_finding(f: TicketFinding) -> None:
         "data": f.model_dump_json(),
         "status": f.status,
         "created_at": f.created_at,
+        "source": source,
     }
     with T.get_engine().begin() as c:
         c.execute(T.upsert(T.judgments, values, ["finding_id"]))
 
 
-def insert_findings_batch(items: list[TicketFinding]) -> int:
+def insert_findings_batch(items: list[TicketFinding], source: str) -> int:
+    """批量寫入判決結果（同 source；見 insert_finding）。"""
     for it in items:
-        insert_finding(it)
+        insert_finding(it, source)
     return len(items)
 
 
@@ -255,6 +265,59 @@ def get_inbound_by_ids(item_ids: list[str]) -> list[dict]:
         return [dict(r) for r in c.execute(stmt).mappings()]
 
 
+def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
+    """依 item_id 清單取錄入標的，依 source_registry 選表（product_reviews 走專表，否則 fallback intake_items）。
+
+    get_inbound_by_ids 的擴充版：新增 source 參數以支援已拆表來源；未拆表 / None 來源
+    行為與 get_inbound_by_ids 完全一致（兩函式並存，prejudge_batch 改呼叫本函式）。
+
+    Args:
+        ids: item_id 清單。
+        source: 來源 code（None 或未註冊來源 → fallback intake_items 邏輯）。
+
+    Returns:
+        錄入標的 dict 清單；空清單回 []。
+    """
+    if not ids:
+        return []
+    spec = source_registry.spec_for(source)
+    if spec is None:
+        return get_inbound_by_ids(ids)
+    stmt = select(spec.table).where(spec.table.c.item_id.in_(ids))
+    with T.get_engine().connect() as c:
+        return [dict(r) for r in c.execute(stmt).mappings()]
+
+
+# ── product_reviews 專表（拆自 intake_items；見 tables.py 註解）───────────────
+
+
+def insert_product_reviews_batch(rows: list[dict]) -> int:
+    """批量 upsert product_reviews 列（衝突鍵 source_record_id，覆蓋業務欄位、保留 xid）。
+
+    PG ON CONFLICT DO UPDATE 只更新 set_ 列出的欄位，xid 不在其中故自動保留原值
+    （同一 source_record_id 重複匯入＝更新內容、非新增列）。
+
+    Args:
+        rows: product_reviews_ingest.row_to_product_review 產出的欄位 dict 清單。
+
+    Returns:
+        處理筆數（含新增與覆蓋）；空清單回 0。
+    """
+    if not rows:
+        return 0
+    pr = T.product_reviews
+    business_cols = [c.name for c in pr.columns if c.name not in ("xid", "source_record_id")]
+    with T.get_engine().begin() as c:
+        for row in rows:
+            if not row.get("source_record_id"):
+                continue  # 無自然鍵者跳過（防禦：避免髒資料以 NULL 衝突鍵批量覆蓋彼此）
+            stmt = _pg_insert(pr).values(**row)
+            update = {k: stmt.excluded[k] for k in business_cols if k in row}
+            stmt = stmt.on_conflict_do_update(index_elements=["source_record_id"], set_=update)
+            c.execute(stmt)
+    return len(rows)
+
+
 # ── 帳號系統（users）+ per-user 設定（user_settings）─────────────────────
 
 
@@ -317,11 +380,12 @@ def save_user_settings(user_id: str, data: dict) -> None:
 # 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 # _AI_JUDGE_DIR 由 app.core.paths 統一提供（見檔頭 import）。
 # 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema")
+# + category_groups（商品分類分組 Tour/Exp/Charter/Tix，非歸因分類，但復用同一版本化機制）
+RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "category_groups")
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→schema.json，C-N→rule_C-N.json）。"""
+    """rule_code → 對應默認檔（schema→schema.json，C-N→rule_C-N.json，category_groups→rule_category_groups.json）。"""
     return _AI_JUDGE_DIR / ("schema.json" if code == "schema" else f"rule_{code}.json")
 
 
@@ -414,10 +478,10 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復所有歸因分類（C-N，排除 schema / category_groups）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    schema 屬結構規格非歸因分類，不在此批次。缺默認檔的 code 跳過不中斷
-    （如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
+    schema 屬結構規格、category_groups 屬商品分類分組，皆非歸因分類，不在此批次。
+    缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
         {reset: [{rule_code, version}, ...], skipped: [code, ...]}（依 RULE_CODES 順序）。
@@ -425,7 +489,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     done: list[dict] = []
     skipped: list[str] = []
     for code in RULE_CODES:
-        if code == "schema":
+        if code in ("schema", "category_groups"):
             continue
         try:
             done.append(reset_rule_default(code, author=author))
@@ -481,78 +545,116 @@ def _extract_prod_name(raw: dict) -> str:
     return ""
 
 
-def _enrich_problem(row: dict) -> dict:
+def _enrich_problem(row: dict, source: str | None = None) -> dict:
     """intake×judgment join 列 → 統一問題列表記錄（公共欄 + 反饋管道 + 歸因）。
 
-    公共欄（occurred_at/title/channel/lang/order_oid/supplier_oid）由 raw 經 source_mapping 即時還原，
-    免欄位 migration；歸因欄（confidence/domain/l3…）取自 judgments + 其 data JSON。
+    source 命中 source_registry（如 product_reviews）時，row 為該專表欄位（已展開，
+    免 source_mapping 還原）；否則 row 為 intake_items 通用欄（raw JSON 經 source_mapping
+    即時還原公共欄）。歸因欄（confidence/domain/l3…）兩種形態皆取自 judgments + 其 data JSON，
+    邏輯不變。
 
     Args:
-        row: outerjoin 後的 mapping（intake 全欄 + jg_* 標籤欄）。
+        row: outerjoin 後的 mapping（intake_items 或 product_reviews 全欄 + jg_* 標籤欄）。
+        source: 來源 code（None 時退回 row.get("source")，相容 intake_items 路徑既有呼叫）。
 
     Returns:
         統一記錄 dict（含 source_label / canonical 公共欄 / 歸因欄）。
     """
-    from app.core import source_mapping as _srcmap
+    from app.core import sources as _sources
 
-    raw: dict = {}
-    if row.get("raw"):
-        try:
-            raw = json.loads(row["raw"])
-        except (ValueError, TypeError):
-            raw = {}
-    source = row.get("source") or ""
-    canon = _srcmap.normalize_row(source, raw) if source in _srcmap.sources() else {}
     finding: dict = {}
     if row.get("jg_data"):
         try:
             finding = json.loads(row["jg_data"])
         except (ValueError, TypeError):
             finding = {}
-    return {
-        "item_id": row.get("item_id"),
-        "source": source,
-        "source_label": _srcmap.source_label(source),
-        "prod_oid": row.get("prod_oid") or "",
-        "prod_name": _extract_prod_name(raw),
-        "pkg_oid": row.get("pkg_oid") or "",
-        "content": row.get("comment") or canon.get("content") or "",
-        "score": row.get("rating"),
-        "status": row.get("status"),
-        "created_at": row.get("created_at"),
-        # 原始關聯欄（raw；訂單/出發日/商品 一併展示導出）
-        "order_oid": raw.get("order_oid") or canon.get("order_oid"),
-        "order_mid": raw.get("order_mid"),
-        "go_date": raw.get("lst_dt_go"),
-        # 公共欄（raw 還原）
-        "occurred_at": canon.get("occurred_at"),
-        "title": canon.get("title"),
-        "channel": canon.get("channel"),
-        "lang": canon.get("lang"),
-        "supplier_oid": canon.get("supplier_oid"),
-        # 歸因（judgments；未判決則 None）
-        "judged": bool(row.get("jg_finding_id")),
-        "confidence": row.get("jg_confidence"),
-        "raw_confidence": row.get("jg_raw_confidence"),
-        "needs_review": bool(row.get("jg_needs_review")),
-        # L1→L3 歸因（取自 judgments.data；歸因列表/概覽展示用）
-        "polarity": finding.get("polarity"),
-        "l1_domain": finding.get("l1_domain_code"),
-        "l1_label": finding.get("l1_label"),
-        "l2_code": finding.get("l2_code"),
-        "l2_label": finding.get("l2_label"),
-        "l3_code": finding.get("l3_code"),
-        "l3_label": finding.get("l3_label"),
-        "l3_candidates": finding.get("l3_candidates") or [],  # top-3 符合度（透明檢視）
-        "confidence_tier": finding.get("confidence_tier"),
-        "recommended_action": finding.get("recommended_action"),
-        "root_cause_domain": finding.get("root_cause_domain"),
-        "sub_cause": finding.get("sub_cause"),
-        "dimension": row.get("jg_dimension"),
-        "problem_summary": finding.get("problem_summary"),
-        "evidence_quote": finding.get("evidence_quote"),
-        "reason": finding.get("reason"),
-    }
+
+    spec = source_registry.spec_for(source)
+    if spec is not None:
+        # 已拆表來源（product_reviews）：欄位已展開，無需 raw 還原
+        base = {
+            "item_id": row.get("item_id"),
+            "source": source,
+            "source_label": _sources.label_for(source),
+            "prod_oid": row.get("prod_oid") or "",
+            # _extract_prod_name 期待「原始列」形態（含 order_snap_json key）；
+            # product_reviews 專表已展開為 prod_name_snapshot 欄，包一層 key 沿用同一解析邏輯。
+            "prod_name": _extract_prod_name({"order_snap_json": row.get("prod_name_snapshot")}),
+            "pkg_oid": row.get("pkg_oid") or "",
+            "content": row.get("content") or "",
+            "score": row.get("score"),
+            "status": row.get("status"),
+            "created_at": row.get("created_at"),
+            "order_oid": row.get("order_oid"),
+            "order_mid": row.get("order_mid"),
+            "go_date": row.get("go_date"),
+            "occurred_at": row.get("occurred_at"),
+            "title": row.get("title"),
+            "channel": "review",
+            "lang": row.get("lang"),
+            "supplier_oid": row.get("supplier_oid"),
+        }
+    else:
+        from app.core import source_mapping as _srcmap
+
+        raw: dict = {}
+        if row.get("raw"):
+            try:
+                raw = json.loads(row["raw"])
+            except (ValueError, TypeError):
+                raw = {}
+        src = source or row.get("source") or ""
+        canon = _srcmap.normalize_row(src, raw) if src in _srcmap.sources() else {}
+        base = {
+            "item_id": row.get("item_id"),
+            "source": src,
+            "source_label": _sources.label_for(src),
+            "prod_oid": row.get("prod_oid") or "",
+            "prod_name": _extract_prod_name(raw),
+            "pkg_oid": row.get("pkg_oid") or "",
+            "content": row.get("comment") or canon.get("content") or "",
+            "score": row.get("rating"),
+            "status": row.get("status"),
+            "created_at": row.get("created_at"),
+            # 原始關聯欄（raw；訂單/出發日/商品 一併展示導出）
+            "order_oid": raw.get("order_oid") or canon.get("order_oid"),
+            "order_mid": raw.get("order_mid"),
+            "go_date": raw.get("lst_dt_go"),
+            # 公共欄（raw 還原）
+            "occurred_at": canon.get("occurred_at"),
+            "title": canon.get("title"),
+            "channel": canon.get("channel"),
+            "lang": canon.get("lang"),
+            "supplier_oid": canon.get("supplier_oid"),
+        }
+
+    base.update(
+        {
+            # 歸因（judgments；未判決則 None）
+            "judged": bool(row.get("jg_finding_id")),
+            "confidence": row.get("jg_confidence"),
+            "raw_confidence": row.get("jg_raw_confidence"),
+            "needs_review": bool(row.get("jg_needs_review")),
+            # L1→L3 歸因（取自 judgments.data；歸因列表/概覽展示用）
+            "polarity": finding.get("polarity"),
+            "l1_domain": finding.get("l1_domain_code"),
+            "l1_label": finding.get("l1_label"),
+            "l2_code": finding.get("l2_code"),
+            "l2_label": finding.get("l2_label"),
+            "l3_code": finding.get("l3_code"),
+            "l3_label": finding.get("l3_label"),
+            "l3_candidates": finding.get("l3_candidates") or [],  # top-3 符合度（透明檢視）
+            "confidence_tier": finding.get("confidence_tier"),
+            "recommended_action": finding.get("recommended_action"),
+            "root_cause_domain": finding.get("root_cause_domain"),
+            "sub_cause": finding.get("sub_cause"),
+            "dimension": row.get("jg_dimension"),
+            "problem_summary": finding.get("problem_summary"),
+            "evidence_quote": finding.get("evidence_quote"),
+            "reason": finding.get("reason"),
+        }
+    )
+    return base
 
 
 def list_problems(
@@ -561,17 +663,37 @@ def list_problems(
     polarity: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    score: list[int] | None = None,
+    category_group: str | list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: str = "occurred_at",
 ) -> dict:
-    """統一問題列表（intake LEFT JOIN judgments），分頁。回 {rows, total}。
+    """統一問題列表（intake/專表 LEFT JOIN judgments），分頁。回 {rows, total}。
+
+    source 命中 source_registry（如 product_reviews）時直接查該專表（表本身已是單一來源，
+    免 WHERE source= 過濾）；未命中則沿用 intake_items 舊邏輯。**不做跨表 UNION**——
+    這是本次刻意的範圍限制（source=None 時只回 intake_items 全來源，不含已拆表來源）。
 
     Args:
         source: 來源 code 過濾（product_reviews…）。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
+        polarity: 傾向過濾（judgments.data.polarity）。
         limit/offset: 分頁。
+        score: 星等過濾（IN 清單；僅 source_registry 命中的表可用，intake_items 路徑忽略）。
+        category_group: 商品分類分組名（單一或清單；經 category_groups.codes_for_group 展開）。
+        date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
+        date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
 
     Returns:
         {"rows": [統一記錄], "total": 符合篩選總數}。
     """
+    spec = source_registry.spec_for(source)
+    if spec is not None:
+        return _list_problems_spec(
+            spec, judged, polarity, limit, offset, score, category_group, date_from, date_to, date_field
+        )
+
     ii, jg = T.intake_items, T.judgments
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
     sel = select(
@@ -602,7 +724,71 @@ def list_problems(
     )
     with T.get_engine().connect() as c:
         total = c.execute(count_stmt).scalar() or 0
-        rows = [_enrich_problem(dict(r)) for r in c.execute(page).mappings()]
+        rows = [_enrich_problem(dict(r), source) for r in c.execute(page).mappings()]
+    return {"rows": rows, "total": total}
+
+
+def _list_problems_spec(
+    spec: source_registry.SourceSpec,
+    judged: bool | None,
+    polarity: str | None,
+    limit: int,
+    offset: int,
+    score: list[int] | None,
+    category_group: str | list[str] | None,
+    date_from: str | None,
+    date_to: str | None,
+    date_field: str,
+) -> dict:
+    """list_problems 的已拆表來源分支（product_reviews 等）：直接查該專表 LEFT JOIN judgments。
+
+    表本身即單一來源，無需 WHERE source= 過濾；score/category_group/日期區間為此分支專屬篩選
+    （intake_items 通用路徑無對應語意欄，故不共用此函式）。
+    """
+    tbl = spec.table
+    jg = T.judgments
+    j = tbl.outerjoin(jg, tbl.c.item_id == jg.c.item_id)
+    sel = select(
+        tbl,
+        jg.c.finding_id.label("jg_finding_id"),
+        jg.c.dimension.label("jg_dimension"),
+        jg.c.confidence.label("jg_confidence"),
+        jg.c.raw_confidence.label("jg_raw_confidence"),
+        jg.c.needs_review.label("jg_needs_review"),
+        jg.c.data.label("jg_data"),
+    ).select_from(j)
+    if judged is True:
+        sel = sel.where(jg.c.finding_id.isnot(None))
+    elif judged is False:
+        sel = sel.where(jg.c.finding_id.is_(None))
+    if polarity:
+        sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
+    if score and spec.score_col:
+        sel = sel.where(tbl.c[spec.score_col].in_(score))
+    if category_group and spec.category_col:
+        # 延遲匯入：category_groups.py import db（單向），db.py 頂層 import 會造成循環。
+        from app.core import category_groups as _category_groups
+
+        groups = [category_group] if isinstance(category_group, str) else list(category_group)
+        codes: list[str] = []
+        for g in groups:
+            codes.extend(_category_groups.codes_for_group(g))
+        if codes:
+            sel = sel.where(tbl.c[spec.category_col].in_(codes))
+    date_col = tbl.c[date_field] if date_field in tbl.c else tbl.c[spec.date_col]
+    if date_from:
+        sel = sel.where(func.substr(date_col, 1, 10) >= date_from)
+    if date_to:
+        sel = sel.where(func.substr(date_col, 1, 10) <= date_to)
+    count_stmt = select(func.count()).select_from(sel.subquery())
+    page = (
+        sel.order_by(tbl.c.occurred_at.desc().nullslast(), tbl.c.item_id.asc())
+        .limit(limit)
+        .offset(offset)
+    )
+    with T.get_engine().connect() as c:
+        total = c.execute(count_stmt).scalar() or 0
+        rows = [_enrich_problem(dict(r), spec.source) for r in c.execute(page).mappings()]
     return {"rows": rows, "total": total}
 
 
@@ -682,13 +868,27 @@ def export_problems_csv(
     polarity: str | None = None,
     judged: bool | None = None,
     item_ids: list[str] | None = None,
+    score: list[int] | None = None,
+    category_group: str | list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為 CSV（全量·不受分頁限制；全繁中、無 L3 code）。
 
-    item_ids 給定時只導那些（前端複選/分頁選取）；否則導符合 source/polarity/judged 的全部。
-    傾向/判決/分層輸出繁中 label（DB 仍存 code，見 _export_cell）。
+    item_ids 給定時只導那些（前端複選/分頁選取）；否則導符合 source/polarity/judged
+    + 星等 score / 商品分類分組 category_group / 日期區間的全部——與列表頁篩選一致，
+    避免「畫面已篩、導出卻是全量」的不同步。傾向/判決/分層輸出繁中 label（DB 仍存 code）。
     """
-    data = list_problems(source=source, polarity=polarity, judged=judged, limit=10_000_000)
+    data = list_problems(
+        source=source,
+        polarity=polarity,
+        judged=judged,
+        score=score,
+        category_group=category_group,
+        date_from=date_from,
+        date_to=date_to,
+        limit=10_000_000,
+    )
     rows = data["rows"]
     if item_ids:
         idset = set(item_ids)
@@ -785,14 +985,23 @@ def unjudged_item_ids(source: str | None = None) -> list[str]:
     """取未歸因（judgments 無對應 finding）的 item_id 清單（初判歸因 scope=all 標的）。
 
     只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake（~8 萬列）做 source_mapping
-    還原的無謂開銷；供 prejudge_batch 批量派工前一次解析標的集合。
+    還原的無謂開銷；供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry
+    （product_reviews）時改查該專表，否則 fallback intake_items 舊邏輯。
 
     Args:
-        source: 來源 code 過濾（None＝全部來源）。
+        source: 來源 code 過濾（None＝全部來源；未拆表來源沿用 intake_items）。
 
     Returns:
         未判 item_id 清單（順序不保證，批量判決不依賴順序）。
     """
+    spec = source_registry.spec_for(source)
+    if spec is not None:
+        tbl = T.judgments
+        j = spec.table.outerjoin(tbl, spec.table.c.item_id == tbl.c.item_id)
+        stmt = select(spec.table.c.item_id).select_from(j).where(tbl.c.finding_id.is_(None))
+        with T.get_engine().connect() as c:
+            return [r[0] for r in c.execute(stmt)]
+
     ii, jg = T.intake_items, T.judgments
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
     stmt = select(ii.c.item_id).select_from(j).where(jg.c.finding_id.is_(None))
@@ -851,6 +1060,11 @@ def attribution_overview(
     星等取 intake_items.rating；月份用 occurred_at 前 7 字（YYYY-MM；occurred_at 為 Text，
     免 timezone/格式 cast，最穩）。信心分層走 Python 即時聚合（資料量小，沿用 problems_summary）。
 
+    source 命中 source_registry（product_reviews）時改查該專表（表本身即單一來源，
+    不需 WHERE source= 過濾；星等改讀 spec.score_col 而非 intake_items.rating）；
+    未命中則行為與改動前完全一致——此函式邏輯複雜，優先保證正確性，僅做選表 + 加 filter
+    的最小必要調整（見計畫說明）。
+
     Args:
         source: 來源 code 過濾（None＝全部來源）。
         date_from: 起日 'YYYY-MM-DD'（含）；比對 occurred_at 前 10 字，None＝不限。
@@ -861,7 +1075,10 @@ def attribution_overview(
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
         attributed＝已判且 data.l1_domain_code 非空（即負向，走過 L1→L3 歸因）。
     """
-    ii, jg = T.intake_items, T.judgments
+    spec = source_registry.spec_for(source)
+    ii = spec.table if spec is not None else T.intake_items
+    score_col = ii.c[spec.score_col] if (spec is not None and spec.score_col) else ii.c.rating
+    jg = T.judgments
     cnt = func.count().label("n")
     tiers = _CONFIDENCE_TIERS
     # judgments.data JSON 內的歸因欄（JSONB 抽出，供 GROUP BY / FILTER）
@@ -875,8 +1092,11 @@ def attribution_overview(
     glen = _GRAN_LEN.get(granularity, 7)
 
     def _src(stmt):
-        """套用 source + 日期區間過濾（None＝不限）；日期比對 occurred_at 前 10 字（含端點）。"""
-        if source:
+        """套用 source + 日期區間過濾（None＝不限）；日期比對 occurred_at 前 10 字（含端點）。
+
+        spec 命中時該表本身已是單一來源，不再套 WHERE source=（intake_items 才需要此過濾）。
+        """
+        if source and spec is None:
             stmt = stmt.where(ii.c.source == source)
         if date_from:
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)
@@ -924,15 +1144,15 @@ def attribution_overview(
             .mappings()
             .all()
         )
-        # 星等：全量 intake（不限已判），呈現整體品質健康
+        # 星等：全量 intake（不限已判），呈現整體品質健康（score_col 依 spec 動態決定，見上方）
         by_score_raw = (
             c.execute(
                 _src(
-                    select(ii.c.rating.label("score"), cnt)
+                    select(score_col.label("score"), cnt)
                     .select_from(ii)
-                    .where(ii.c.rating.isnot(None))
-                    .group_by(ii.c.rating)
-                    .order_by(ii.c.rating.asc())
+                    .where(score_col.isnot(None))
+                    .group_by(score_col)
+                    .order_by(score_col.asc())
                 )
             )
             .mappings()
@@ -1012,6 +1232,9 @@ def attribution_breakdown(
     L2/L3 取自 judgments.data JSON（l2_code/l2_label/l3_code/l3_label），限定該 L1 域；
     GROUP BY code（carry label），依筆數降序。空 code 自然排除（非負向無此欄）。
 
+    source 命中 source_registry（product_reviews）時改查該專表（單一來源，免 WHERE source=）；
+    未命中則沿用 intake_items 舊邏輯（最小必要調整，同 attribution_overview 說明）。
+
     Args:
         source: 來源 code 過濾（None＝全部）。
         l1: L1 歸因域 code（如 'supplier'）。
@@ -1019,7 +1242,9 @@ def attribution_breakdown(
     Returns:
         {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n}]。
     """
-    ii, jg = T.intake_items, T.judgments
+    spec = source_registry.spec_for(source)
+    ii = spec.table if spec is not None else T.intake_items
+    jg = T.judgments
     cnt = func.count().label("n")
     d = sa_cast(jg.c.data, JSONB)
     l1c, l1l = d["l1_domain_code"].astext, d["l1_label"].astext
@@ -1034,7 +1259,7 @@ def attribution_breakdown(
             .select_from(j)
             .where(l1c == l1, code_col.isnot(None), code_col != "")
         )
-        if source:
+        if source and spec is None:
             stmt = stmt.where(ii.c.source == source)
         if date_from:
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)

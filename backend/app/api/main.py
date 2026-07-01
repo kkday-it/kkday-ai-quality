@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from app.core import auth, config, db  # noqa: F401  (config import 觸發 .env 載入)
 from app.core import source_mapping as srcmap
 from app.judge.ingest import entry
+from app.judge.ingest import product_reviews as product_reviews_ingest
 from app.judge.llm import client as llm_client
 
 app = FastAPI(title="kkday-ai-quality", version="0.0.1")
@@ -198,10 +199,12 @@ async def upload_inbound(
     file: UploadFile = File(...),
     selections: str = Form(...),
 ) -> dict:
-    """確認匯入：只匯入用戶勾選且校驗通過的工作表 → 正規化 → intake_items（冪等）。
+    """確認匯入：只匯入用戶勾選且校驗通過的工作表 → 正規化 → intake_items / product_reviews（冪等）。
 
     selections：JSON 字串 `[{"sheet_name","source"}]`（來自 /validate 後用戶勾選）。
     每張工作表建一個批次（label 取來源中文名）；逐列經 source_mapping 正規化落庫。
+    product_reviews 已拆為獨立實體表，走專屬 ingestor + insert_product_reviews_batch；
+    其餘 4 來源沿用 intake_items 通用路徑（entry.item_from_canonical + insert_inbound_batch）。
     """
     content = await file.read()
     try:
@@ -223,8 +226,24 @@ async def upload_inbound(
                 {"sheet_name": s.sheet_name, "source": s.source, "error": f"缺必備欄：{'、'.join(missing)}"}
             )
             continue
-        items = [entry.item_from_canonical(srcmap.normalize_row(s.source, row), row) for row in sh["rows"]]
         label = srcmap.source_label(s.source)
+        if s.source == "product_reviews":
+            rows = [
+                product_reviews_ingest.row_to_product_review(srcmap.normalize_row(s.source, row), row)
+                for row in sh["rows"]
+            ]
+            batch = db.create_batch(
+                s.source, label, f"{file.filename}::{s.sheet_name}", len(rows), len(rows)
+            )
+            inserted = db.insert_product_reviews_batch(rows)
+            results.append(
+                {
+                    "sheet_name": s.sheet_name, "source": s.source, "label": label,
+                    "batch_id": batch["batch_id"], "inserted": inserted, "total": len(rows),
+                }
+            )
+            continue
+        items = [entry.item_from_canonical(srcmap.normalize_row(s.source, row), row) for row in sh["rows"]]
         batch = db.create_batch(s.source, label, f"{file.filename}::{s.sheet_name}", len(items), len(items))
         for it in items:
             it.batch_id = batch["batch_id"]
@@ -442,15 +461,31 @@ def get_problems(
     source: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
+    scores: str | None = None,
+    category_groups: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
+    星等 scores / 商品分類分組 category_groups 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     排序：評論時間 occurred_at DESC（新在前）+ item_id tiebreaker（穩定·跨頁不變）。
     """
-    return db.list_problems(source=source, judged=judged, polarity=polarity, limit=limit, offset=offset)
+    return db.list_problems(
+        source=source,
+        judged=judged,
+        polarity=polarity,
+        score=_csv_ints(scores),
+        category_group=_csv_strs(category_groups),
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
 
 
 class ExportProblemsIn(BaseModel):
@@ -460,16 +495,28 @@ class ExportProblemsIn(BaseModel):
     polarity: str | None = None
     judged: bool | None = None
     item_ids: list[str] | None = None
+    scores: list[int] | None = None
+    category_groups: list[str] | None = None
+    date_from: str | None = None
+    date_to: str | None = None
 
 
 @app.post("/api/problems/export")
 def export_problems(body: ExportProblemsIn) -> Response:
     """導出統一問題列表 CSV（全量·不受分頁限制；欄位齊全）。
 
-    item_ids 給定→只導那些（複選/分頁選取，可上千）；否則導符合 source/polarity/judged 全部。
+    item_ids 給定→只導那些（複選/分頁選取，可上千）；否則導符合 source/polarity/judged
+    + 星等 / 商品分類分組 / 日期區間 篩選（與列表頁一致，避免導出與畫面不同步）全部。
     """
     csv_bytes = db.export_problems_csv(
-        source=body.source, polarity=body.polarity, judged=body.judged, item_ids=body.item_ids
+        source=body.source,
+        polarity=body.polarity,
+        judged=body.judged,
+        item_ids=body.item_ids,
+        score=body.scores,
+        category_group=body.category_groups,
+        date_from=body.date_from,
+        date_to=body.date_to,
     )
     return Response(
         content=csv_bytes,
@@ -639,3 +686,22 @@ def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dic
     else:
         cfg["password"] = (saved.get("qc_passwords") or {}).get(cid, "")
     return _try_qc_db_connect(cfg)
+
+
+def _csv_ints(raw: str | None) -> list[int] | None:
+    """把前端 CSV query（如 '1,5'）拆成 int 清單；空/無有效值回 None（等同不過濾）。
+
+    非數字片段直接略過（防禦式），避免單一壞值讓整支查詢 422。
+    """
+    if not raw:
+        return None
+    out = [int(s) for s in raw.split(",") if s.strip().lstrip("-").isdigit()]
+    return out or None
+
+
+def _csv_strs(raw: str | None) -> list[str] | None:
+    """把前端 CSV query（如 'Tour,Exp'）拆成去空白的字串清單；空回 None（不過濾）。"""
+    if not raw:
+        return None
+    out = [s.strip() for s in raw.split(",") if s.strip()]
+    return out or None

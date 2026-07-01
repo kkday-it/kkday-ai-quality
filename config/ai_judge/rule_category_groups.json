@@ -1,0 +1,60 @@
+{
+  "groups": {
+    "Tour": [
+      "CATEGORY_019",
+      "CATEGORY_020",
+      "CATEGORY_021",
+      "CATEGORY_022",
+      "CATEGORY_023",
+      "CATEGORY_024",
+      "CATEGORY_025",
+      "CATEGORY_026",
+      "CATEGORY_027",
+      "CATEGORY_028",
+      "CATEGORY_029",
+      "CATEGORY_030"
+    ],
+    "Exp": [
+      "CATEGORY_031",
+      "CATEGORY_032",
+      "CATEGORY_033",
+      "CATEGORY_034",
+      "CATEGORY_035",
+      "CATEGORY_036",
+      "CATEGORY_037",
+      "CATEGORY_038",
+      "CATEGORY_039",
+      "CATEGORY_040",
+      "CATEGORY_041",
+      "CATEGORY_042",
+      "CATEGORY_043",
+      "CATEGORY_044",
+      "CATEGORY_045",
+      "CATEGORY_046",
+      "CATEGORY_047",
+      "CATEGORY_048",
+      "CATEGORY_049",
+      "CATEGORY_050",
+      "CATEGORY_051",
+      "CATEGORY_094"
+    ],
+    "Charter": [
+      "CATEGORY_068",
+      "CATEGORY_069",
+      "CATEGORY_070",
+      "CATEGORY_071"
+    ],
+    "Tix": [
+      "CATEGORY_002",
+      "CATEGORY_003",
+      "CATEGORY_004",
+      "CATEGORY_005",
+      "CATEGORY_006",
+      "CATEGORY_007",
+      "CATEGORY_008",
+      "CATEGORY_009",
+      "CATEGORY_010",
+      "CATEGORY_011"
+    ]
+  }
+}

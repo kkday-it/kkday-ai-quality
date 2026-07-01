@@ -62,8 +62,12 @@
         "prod_oid": "prod_oid",
         "pkg_oid": "pkg_oid",
         "order_oid": "order_oid",
+        "order_mid": "order_mid",
         "supplier_oid": "supplier_oid",
-        "member_uuid": "member_uuid"
+        "member_uuid": "member_uuid",
+        "traveller_type": "traveller_type",
+        "lst_dt_go": "go_date",
+        "product_category": "product_category"
       },
       "const_fields": {
         "channel": "review"

@@ -1,0 +1,35 @@
+{
+  "_comment": "反饋來源 SSOT（前後端共用非機密）。value=source code / label=顯示名 / hint=說明 / natural_key=增量上傳 upsert 的自然唯一鍵。前端 @config/global/sources.json、後端 app/core/sources.py 同讀。欄位映射(field_map/detection)在 config/ai_judge/source_mapping.json（後端專用，同 value 對應，不重複 label）。",
+  "sources": [
+    {
+      "value": "conversations",
+      "label": "售前售後進線",
+      "hint": "FreshDesk 工單 + 訂單訊息/chatbot（SQL 匯出）",
+      "natural_key": "session_oid"
+    },
+    {
+      "value": "freshdesk_tickets",
+      "label": "工單反饋",
+      "hint": "FreshDesk 工單",
+      "natural_key": "id"
+    },
+    {
+      "value": "product_reviews",
+      "label": "商品評論",
+      "hint": "商品評論 CSV/Excel",
+      "natural_key": "rec_oid"
+    },
+    {
+      "value": "app_feedback",
+      "label": "APP 反饋",
+      "hint": "App 內回饋",
+      "natural_key": "oid"
+    },
+    {
+      "value": "mixpanel_tracker",
+      "label": "埋點反饋",
+      "hint": "Mixpanel 訂單頁關懷埋點",
+      "natural_key": "$insert_id"
+    }
+  ]
+}

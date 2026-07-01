@@ -118,9 +118,16 @@ def is_stub() -> bool:
     return not has_key()
 
 
-def chat_json(system: str, user: str, stage: str = "default") -> dict:
+def chat_json(system: str, user: str, stage: str = "default", *, schema: dict | None = None) -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
-    stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。"""
+    stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。
+
+    Args:
+        schema: 傳入時用 OpenAI Structured Outputs（response_format=json_schema, strict）——
+            生成階段即 token-level 保證輸出符合此 JSON Schema（如 l3_code enum 只吐合法 code）。
+            不支援 json_schema 的 provider（回 400）自動回退 json_object（事後由白名單校驗）。
+            None＝維持 json_object（極性等不需 enum 的階段）。
+    """
     cfg = _resolve()
     client = _get_client(cfg["token"], cfg["base_url"])  # 共用快取 client（含 retry/timeout）
     kwargs: dict = {
@@ -129,15 +136,28 @@ def chat_json(system: str, user: str, stage: str = "default") -> dict:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "response_format": {"type": "json_object"},
     }
+    if schema is not None:
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "attribution", "strict": True, "schema": schema},
+        }
+    else:
+        kwargs["response_format"] = {"type": "json_object"}
     # gpt-5 系列 temperature 鎖定：僅非 None 時送（見 gpt5-temperature-locked）
     if cfg["temperature"] is not None:
         kwargs["temperature"] = float(cfg["temperature"])
     eff = cfg["reasoning_effort"]
     if eff and eff != "default":
         kwargs["reasoning_effort"] = eff
-    resp = client.chat.completions.create(**kwargs)
+    try:
+        resp = client.chat.completions.create(**kwargs)
+    except Exception as e:  # noqa: BLE001  json_schema 不受支援（400）→ 回退 json_object 重試一次
+        if schema is None:
+            raise
+        _log.warning("json_schema 不受支援(stage=%s)，回退 json_object：%s", stage, str(e).splitlines()[0][:160])
+        kwargs["response_format"] = {"type": "json_object"}
+        resp = client.chat.completions.create(**kwargs)
     # token 用量回報（供批量累計花費；失敗不影響判決）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)
