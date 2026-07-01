@@ -1,4 +1,4 @@
-# kkday-ai-product-quality（AI 法官）專案規則
+# kkday-ai-quality（AI 法官）專案規則
 
 ## 開發核心原則（最高優先 · 動手前必過）
 

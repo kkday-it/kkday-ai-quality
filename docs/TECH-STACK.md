@@ -1,4 +1,4 @@
-# kkday-ai-product-quality — 技術棧與「輪子」推薦清單
+# kkday-ai-quality — 技術棧與「輪子」推薦清單
 
 > 目標：盡量複用成熟輪子，**提高 AI 法官判斷準確性**，減少自造與重寫。
 > 基礎技術棧：**前端 Vue3（Node 工具鏈）+ 後端 Python**。

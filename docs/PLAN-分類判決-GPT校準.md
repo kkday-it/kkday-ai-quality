@@ -3,7 +3,7 @@
 > 把「問題分類層級結構（完整覆蓋版 v2，Confluence 2137915398）」+「prompt-工程-準確性保證」落地到 backend judge pipeline。
 > 狀態：**規劃中 · 暫不動工（2026-06-26）**。判決鏈用 **OpenAI GPT**（llm/client.py 已支援 per-stage model override，預設 gpt-5-mini）。
 
-> 🚧 **前置阻塞（Gate -1）**：本計劃所有 Phase（含 Phase 0 golden-eval harness）**需先完成「6 源來源匯總架構」**——intake 把 conversations/freshdesk/reviews/app_feedback/mixpanel/ai_review_summary 正規化成統一 NormalizedTicket → 批次導入本地 DB（kkdb_product_quality.db）。來源匯總未架好前，**不抽樣、不寫 classify_eval.py、不接 pipeline**。待來源匯總就位再啟動 Phase 0。
+> 🚧 **前置阻塞（Gate -1）**：本計劃所有 Phase（含 Phase 0 golden-eval harness）**需先完成「6 源來源匯總架構」**——intake 把 conversations/freshdesk/reviews/app_feedback/mixpanel/ai_review_summary 正規化成統一 NormalizedTicket → 批次導入本地 DB（kkdb_ai_quality.db）。來源匯總未架好前，**不抽樣、不寫 classify_eval.py、不接 pipeline**。待來源匯總就位再啟動 Phase 0。
 
 ## 0. Migration Delta（新設計 vs 現有 code，先對齊免重工）
 

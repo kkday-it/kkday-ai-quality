@@ -1,4 +1,4 @@
-# kkday-ai-product-quality
+# kkday-ai-quality
 
 **AI 商品質檢平台 — AI 法官（內容爭議裁決系統）**（KKday 內容質量 Pod 第三支柱）
 
@@ -54,7 +54,7 @@ python3 -m venv .venv
 # 3. 啟動 API（port 8100，--reload 開發熱重載）
 .venv/bin/uvicorn app.api.main:app --reload --port 8100
 ```
-> 需 Python ≥ 3.10。DB 為 SQLite，自動建於 `backend/data/kkdb_product_quality.db`（gitignore）。
+> 需 Python ≥ 3.10。DB 為 SQLite，自動建於 `backend/data/kkdb_ai_quality.db`（gitignore）。
 
 ### LLM 模式
 - **無 `OPENAI_API_KEY`**：自動走 **stub**（啟發式），可零 key 走通整條 pipeline。

@@ -1,4 +1,4 @@
-# kkday-ai-product-quality — 完整架構
+# kkday-ai-quality — 完整架構
 
 > AI 法官（內容爭議裁決系統）· 內容質量 Pod 第三支柱 · 獨立 repo（Vue3 + Node + ECharts）
 > 邏輯參照 folder 2117435397（工單驅動審核 L0–L5）+ AI 法官主頁五層架構；技術實作為前端 Vue3/Arco（Node 工具鏈）+ 後端 Python（FastAPI，沿用 ProductContentAIChecker 判決資產）。
@@ -73,7 +73,7 @@ flowchart TB
 ## 5. Repo 結構（backend Python + frontend Vue3）
 
 ```
-kkday-ai-product-quality/
+kkday-ai-quality/
 ├── backend/                # Python（FastAPI + 判決引擎，沿用 ProductContentAIChecker）
 │   ├── requirements.txt
 │   ├── fixtures/           # golden（product_150665.json）

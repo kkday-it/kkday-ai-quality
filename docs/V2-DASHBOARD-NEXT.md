@@ -3,7 +3,7 @@
 > 本檔為清 context 後接續實作的權威規格。參考設計稿 `docs/tickets-dashboard.html`（已存在）+ KKday Tour 五層治理架構 v3（感知層/執行層）。
 
 ## 當前狀態（已完成，2026-06-23）
-- repo `kkday-ai-product-quality`（monorepo：backend Python/FastAPI + frontend Vue3/Arco/ECharts）
+- repo `kkday-ai-quality`（monorepo：backend Python/FastAPI + frontend Vue3/Arco/ECharts）
 - 後端評論線端到端走通（錄入→拉取→判決 stub→Finding SQLite），API：`/api/inbound[/upload]` · `/api/diagnose` · `/api/findings[?prod_oid/dimension/verdict]` · `/api/findings/aggregate` · `/api/products` · `PATCH /api/findings/{id}/status`
 - 前端兩出口：`/analytics`（出口B）+ `/product`（出口A），FindingCard 共用元件、熱力矩陣下鑽、規則缺口、欄位分組、雙路徑動作
 - 路由 **history 模式**（無 #）；vite **port 5273**（config 固定，避開 tour-flow 5173）

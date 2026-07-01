@@ -1,4 +1,4 @@
-# kkday-ai-product-quality — 交付計劃（按 Aaron 四問歸類）
+# kkday-ai-quality — 交付計劃（按 Aaron 四問歸類）
 
 > 計劃以 folder 2117435397 的「四問」為主軸，每方面含**規格**與**交付時間**。
 > 基準日 2026-06-22。日期為 ⚠️ 預估，受外部 gate（OpenAI key 6/25、工單 API 6/30、order/DB 權限申請中）約束。
