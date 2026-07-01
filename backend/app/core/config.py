@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     aipq_jwt_secret: str | None = None
     jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
-    database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_product_quality"
+    database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
     cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
     http_timeout: int = 30  # 外部 API（B2C / 評論）httpx timeout 秒

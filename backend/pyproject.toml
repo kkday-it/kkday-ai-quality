@@ -1,5 +1,5 @@
 [project]
-name = "kkday-ai-product-quality-backend"
+name = "kkday-ai-quality-backend"
 version = "0.0.1"
 description = "AI 商品質檢平台 — 後端（FastAPI + 判決引擎，沿用 ProductContentAIChecker 資產）"
 requires-python = ">=3.10"

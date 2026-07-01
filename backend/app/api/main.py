@@ -1,4 +1,4 @@
-"""kkday-ai-product-quality 後端入口（FastAPI）。
+"""kkday-ai-quality 後端入口（FastAPI）。
 
 AI 商品質檢平台 — AI 法官（內容爭議裁決，內容質量 Pod 第三支柱）。
 本階段已實作：L1 資料錄入（CSV/Excel 批量 + 單個）→ 本地 SQLite。
@@ -23,7 +23,7 @@ from app.core import source_mapping as srcmap
 from app.judge.ingest import entry
 from app.judge.llm import client as llm_client
 
-app = FastAPI(title="kkday-ai-product-quality", version="0.0.1")
+app = FastAPI(title="kkday-ai-quality", version="0.0.1")
 
 app.add_middleware(
     CORSMiddleware,

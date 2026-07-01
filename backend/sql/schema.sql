@@ -1,4 +1,4 @@
--- AI 質檢本地 DB schema（kkdb_product_quality.db）— 主檔 + 事實 + 質檢彙總
+-- AI 質檢本地 DB schema（kkdb_ai_quality.db）— 主檔 + 事實 + 質檢彙總
 --
 -- 全 DB 共 10 表（無前綴、語義化命名）：
 --   主檔   products / packages / suppliers
@@ -15,7 +15,7 @@
 --   suppliers ← dw_kkdb.supplier
 --   質檢表（judgments/prod_quality/pkg_quality）無數倉來源（自產）；回寫公司須 DAP 另開 dataset
 --
--- 導入：sqlite3 backend/data/kkdb_product_quality.db < backend/sql/schema.sql
+-- 導入：sqlite3 backend/data/kkdb_ai_quality.db < backend/sql/schema.sql
 -- 灌資料：cd backend && .venv/bin/python -m app.core.roster
 -- BigQuery 移植：TEXT→STRING / REAL→FLOAT64 / INTEGER→INT64，ANSI DDL 零改寫。
 

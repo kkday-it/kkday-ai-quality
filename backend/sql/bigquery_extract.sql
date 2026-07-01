@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════
--- BigQuery 抽取 SQL（kkday-data-dap）→ 匯出 CSV → 導入本地 kkdb_product_quality.db
+-- BigQuery 抽取 SQL（kkday-data-dap）→ 匯出 CSV → 導入本地 kkdb_ai_quality.db
 --
 -- 兩段「分開跑、分開匯出」（grain 不同，禁合併成一個 JOIN）：
 --   Query A 進線     → inquiries / orders / suppliers / products(name,bd_tag)

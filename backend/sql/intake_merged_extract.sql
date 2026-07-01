@@ -3,7 +3,7 @@
 -- 實測：2026-06-23 於 DAP BigQuery 跑通 → 1651 列 / 44.9 GB（過 50GB 上限）
 --
 -- 用途：一支 SELECT 同時撈「這兩天進線對話 + 關聯商品/方案 Phase1 R1-R5 检验欄位」，
---       直接匯出（CSV / JSONL）→ 導入本地 kkdb_product_quality.db。
+--       直接匯出（CSV / JSONL）→ 導入本地 kkdb_ai_quality.db。
 -- 對照：bigquery_extract.sql 為「2 query 分開」設計（grain 不同、更省成本，生產正解）；
 --       本檔為「一次撈完」便利版，成本較高（product/package description_module 全掃 ~36GB）。
 --

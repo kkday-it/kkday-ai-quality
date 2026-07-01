@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kkday.com/ai-product-quality/schema/source_mapping.schema.json",
+  "$id": "https://kkday.com/ai-quality/schema/source_mapping.schema.json",
   "title": "反饋來源欄位映射標準 v1.0（source_mapping.json）",
   "description": "5 反饋來源 → 統一問題列表欄位映射的結構驗證。配對資料檔：config/ai_judge/source_mapping.json。",
   "type": "object",

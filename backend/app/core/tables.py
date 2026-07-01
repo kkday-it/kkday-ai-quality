@@ -1,7 +1,7 @@
 """資料層 schema 與 engine（SQLAlchemy Core · PostgreSQL only）。
 
 app 操作庫一律 PostgreSQL（對齊 QC DB）；連線取自 `config.env.database_url`
-（dev 預設本機 `postgresql+psycopg2://localhost:5432/kkdb_product_quality`，prod 經 env 覆蓋）。
+（dev 預設本機 `postgresql+psycopg2://localhost:5432/kkdb_ai_quality`，prod 經 env 覆蓋）。
 db.py 的 21 個函式皆走本模組的 engine + Table metadata；schema 演進由 Alembic 管（見 alembic/）。
 
 時間欄位沿用 ISO 字串（Text，與既有 API 回傳形態一致）。
