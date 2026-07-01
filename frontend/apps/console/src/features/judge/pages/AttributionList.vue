@@ -7,7 +7,7 @@
  * 正向/中性/數據不足 不歸因，只有負向才有 L1→L3。
  */
 import { exportProblems, getPrejudgeStatus, getProblems, getSettings, startPrejudge } from '@/api';
-import { CardSection, StateGuard } from '@/components';
+import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
@@ -322,11 +322,9 @@ const COLS = [
       </div>
     </div>
 
-    <CardSection
+    <TableLayout
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
       hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
-      class="flex min-h-0 flex-1 flex-col"
-      :body-style="{ flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' }"
     >
       <div class="mb-2 flex flex-wrap items-center gap-3">
         <a-checkbox v-model="onlyProblem" @change="onFilterChange">僅看問題（負向）</a-checkbox>
@@ -421,7 +419,7 @@ const COLS = [
           </template>
         </a-table>
       </StateGuard>
-    </CardSection>
+    </TableLayout>
 
     <!-- 二次確認彈窗：於此選 model 配置後才執行初判歸因 -->
     <a-modal
