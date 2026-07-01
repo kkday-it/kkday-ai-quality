@@ -28,7 +28,6 @@ from sqlalchemy import func, select
 
 from app.core import db
 from app.core import tables as T
-from app.core.schema import ACTIONABLE_VERDICTS
 from app.core.utils import now_iso as _now
 
 _DEFAULT_CSV = (
@@ -46,18 +45,6 @@ DIM_CODE: dict[str, str] = {
     "限制與風險": "restriction",
     "承諾與SLA": "sla",
 }
-
-# 主判定嚴重度（取最嚴重者代表該面向）
-_VERDICT_SEVERITY: dict[str, int] = {
-    "contract_breach": 6,
-    "real_config_issue": 5,
-    "content_missing": 4,
-    "content_unclear": 3,
-    "customer_misread": 2,
-    "escalate_ops": 1,
-}
-_ACTIONABLE = ACTIONABLE_VERDICTS  # 單一真相源＝schema.ACTIONABLE_VERDICTS（勿在此另寫一份）
-
 
 def _to_float(s: str) -> float:
     try:
@@ -333,25 +320,23 @@ def load_merged(csv_path: str | Path, channel: str = "", batch_id: str = "") -> 
 
 
 def _aggregate(judgments: list[dict]) -> dict:
-    """一組 judgment → 彙總欄位（整體 + 8 面向）。"""
+    """一組 judgment → 彙總欄位（整體 + 8 面向）。
+
+    註：verdict 軸已移除（單軸收斂為 polarity + L1→L3 歸因），content_issue_n /
+    contract_breach_n 原依 verdict 判定，暫固定為 0（欄位保留於 prod_quality/pkg_quality，
+    待新判準定義後重新計算，非本次移除範圍）。
+    """
     agg: dict[str, object] = {}
     for code in DIM_CODE.values():
         agg[f"{code}_n"] = 0
-        agg[f"{code}_verdict"] = None
-    best: dict[str, tuple[int, str]] = {}
-    content_issue_n = contract_breach_n = 0
     max_conf = 0.0
     dim_counts: dict[str, int] = {}
     statuses: set[str] = set()
     last_at = ""
 
     for f in judgments:
-        dim, verdict = f.get("dimension", ""), f.get("verdict", "")
+        dim = f.get("dimension", "")
         max_conf = max(max_conf, float(f.get("confidence") or 0.0))
-        if verdict in _ACTIONABLE:
-            content_issue_n += 1
-        if verdict == "contract_breach":
-            contract_breach_n += 1
         if f.get("status"):
             statuses.add(f["status"])
         if (f.get("created_at") or "") > last_at:
@@ -361,19 +346,13 @@ def _aggregate(judgments: list[dict]) -> dict:
             continue
         agg[f"{code}_n"] = int(agg[f"{code}_n"]) + 1  # type: ignore[arg-type]
         dim_counts[dim] = dim_counts.get(dim, 0) + 1
-        sev = _VERDICT_SEVERITY.get(verdict, 0)
-        if code not in best or sev > best[code][0]:
-            best[code] = (sev, verdict)
-
-    for code, (_, verdict) in best.items():
-        agg[f"{code}_verdict"] = verdict
 
     total = len(judgments)
     agg.update(
         judgments_total=total,
-        content_issue_n=content_issue_n,
-        content_issue_pct=round(content_issue_n / total, 3) if total else 0.0,
-        contract_breach_n=contract_breach_n,
+        content_issue_n=0,
+        content_issue_pct=0.0,
+        contract_breach_n=0,
         top_dimension=max(dim_counts, key=dim_counts.get) if dim_counts else None,  # type: ignore[arg-type]
         max_confidence=round(max_conf, 3),
         overall_status="/".join(sorted(statuses)) if statuses else None,

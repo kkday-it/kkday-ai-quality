@@ -23,7 +23,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 
 from app.core import tables as T
-from app.core.schema import ACTIONABLE_VERDICTS, InboundItem, TicketFinding
+from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR  # config/ai_judge 目錄（統一定位）
+from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR  # config/global 目錄（統一定位）
+from app.core.schema import InboundItem, TicketFinding
 
 
 class DuplicateEmailError(Exception):
@@ -167,7 +169,6 @@ def insert_finding(f: TicketFinding) -> None:
         "prod_oid": f.prod_oid,
         "pkg_oid": f.pkg_oid,
         "dimension": f.dimension,
-        "verdict": f.verdict,
         "confidence": f.confidence,
         "raw_confidence": f.raw_confidence,
         "is_enhanced": int(f.is_enhanced),
@@ -192,14 +193,12 @@ def insert_findings_batch(items: list[TicketFinding]) -> int:
 def list_findings(
     prod_oid: str | None = None,
     dimension: str | None = None,
-    verdict: str | None = None,
 ) -> list[dict]:
-    """列出判決結果（可依 prod_oid / dimension / verdict 過濾），新到舊。data 還原為完整 Finding。"""
+    """列出判決結果（可依 prod_oid / dimension 過濾），新到舊。data 還原為完整 Finding。"""
     stmt = select(T.judgments)
     for col, val in (
         (T.judgments.c.prod_oid, prod_oid),
         (T.judgments.c.dimension, dimension),
-        (T.judgments.c.verdict, verdict),
     ):
         if val:
             stmt = stmt.where(col == val)
@@ -254,48 +253,6 @@ def get_inbound_by_ids(item_ids: list[str]) -> list[dict]:
     stmt = select(T.intake_items).where(T.intake_items.c.item_id.in_(item_ids))
     with T.get_engine().connect() as c:
         return [dict(r) for r in c.execute(stmt).mappings()]
-
-
-def aggregate_findings() -> dict:
-    """dimension×verdict 熱力矩陣聚合 + KPI（出口B 用）。"""
-    cnt = func.count().label("count")
-    with T.get_engine().connect() as c:
-        matrix = [
-            dict(r)
-            for r in c.execute(
-                select(T.judgments.c.dimension, T.judgments.c.verdict, cnt).group_by(
-                    T.judgments.c.dimension, T.judgments.c.verdict
-                )
-            ).mappings()
-        ]
-        total = c.execute(select(func.count()).select_from(T.judgments)).scalar() or 0
-        # 內容問題 verdict 集合＝schema.ACTIONABLE_VERDICTS（單一真相源；勿在 SQL 硬寫）
-        content = (
-            c.execute(
-                select(func.count())
-                .select_from(T.judgments)
-                .where(T.judgments.c.verdict.in_(ACTIONABLE_VERDICTS))
-            ).scalar()
-            or 0
-        )
-        by_dim = [
-            dict(r)
-            for r in c.execute(
-                select(T.judgments.c.dimension, cnt)
-                .where(T.judgments.c.dimension != "non_content")
-                .group_by(T.judgments.c.dimension)
-                .order_by(cnt.desc())
-            ).mappings()
-        ]
-    return {
-        "matrix": matrix,
-        "kpi": {
-            "total": total,
-            "content_issue_pct": round(content / total, 3) if total else 0.0,
-            "top_dimension": by_dim[0]["dimension"] if by_dim else "",
-        },
-        "by_dimension": by_dim,
-    }
 
 
 # ── 帳號系統（users）+ per-user 設定（user_settings）─────────────────────
@@ -358,7 +315,7 @@ def save_user_settings(user_id: str, data: dict) -> None:
 
 # ── 判決規則版本（config/ai_judge/ 的 7 rule + schema；append-only 快照）────────
 # 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
-_AI_JUDGE_DIR = Path(__file__).resolve().parents[3] / "config" / "ai_judge"
+# _AI_JUDGE_DIR 由 app.core.paths 統一提供（見檔頭 import）。
 RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "C-7", "schema")
 
 
@@ -506,7 +463,7 @@ def _enrich_problem(row: dict) -> dict:
     """intake×judgment join 列 → 統一問題列表記錄（公共欄 + 反饋管道 + 歸因）。
 
     公共欄（occurred_at/title/channel/lang/order_oid/supplier_oid）由 raw 經 source_mapping 即時還原，
-    免欄位 migration；歸因欄（verdict/confidence/domain/l3…）取自 judgments + 其 data JSON。
+    免欄位 migration；歸因欄（confidence/domain/l3…）取自 judgments + 其 data JSON。
 
     Args:
         row: outerjoin 後的 mapping（intake 全欄 + jg_* 標籤欄）。
@@ -553,7 +510,6 @@ def _enrich_problem(row: dict) -> dict:
         "supplier_oid": canon.get("supplier_oid"),
         # 歸因（judgments；未判決則 None）
         "judged": bool(row.get("jg_finding_id")),
-        "verdict": row.get("jg_verdict"),
         "confidence": row.get("jg_confidence"),
         "raw_confidence": row.get("jg_raw_confidence"),
         "needs_review": bool(row.get("jg_needs_review")),
@@ -579,7 +535,6 @@ def _enrich_problem(row: dict) -> dict:
 
 def list_problems(
     source: str | None = None,
-    verdict: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
     limit: int = 100,
@@ -589,7 +544,6 @@ def list_problems(
 
     Args:
         source: 來源 code 過濾（product_reviews…）。
-        verdict: 判決過濾。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
         limit/offset: 分頁。
 
@@ -601,7 +555,6 @@ def list_problems(
     sel = select(
         ii,
         jg.c.finding_id.label("jg_finding_id"),
-        jg.c.verdict.label("jg_verdict"),
         jg.c.dimension.label("jg_dimension"),
         jg.c.confidence.label("jg_confidence"),
         jg.c.raw_confidence.label("jg_raw_confidence"),
@@ -610,8 +563,6 @@ def list_problems(
     ).select_from(j)
     if source:
         sel = sel.where(ii.c.source == source)
-    if verdict:
-        sel = sel.where(jg.c.verdict == verdict)
     if judged is True:
         sel = sel.where(jg.c.finding_id.isnot(None))
     elif judged is False:
@@ -648,7 +599,6 @@ _EXPORT_COLS: list[tuple[str, str]] = [
     ("L1", "l1_label"),
     ("L2", "l2_label"),
     ("L3", "l3_label"),
-    ("判決", "verdict"),
     ("信心", "confidence"),
     ("原始信心", "raw_confidence"),
     ("分層", "confidence_tier"),
@@ -656,14 +606,15 @@ _EXPORT_COLS: list[tuple[str, str]] = [
     ("依據", "reason"),
 ]
 
-# 導出時 code → 繁中的欄位（值為 SSOT label map 來源）；DB 仍存 code，僅導出/顯示轉中文
-# 傾向 4 值 SSOT（與前端 AttributionList POLARITY_LABEL 對齊）
-_POLARITY_LABEL_ZH: dict[str, str] = {
-    "positive": "正向",
-    "negative": "負向",
-    "neutral": "中性",
-    "unknown": "數據不足",
-}
+# 判決顯示 label + 信心閾值 SSOT＝config/global/judgment.json（前後端同讀）。
+# db 不能 import settings（settings 已 import db → 會循環），故此處以 paths.GLOBAL_DIR 自讀該檔。
+try:
+    _JUDGMENT_CFG: dict = json.loads((_GLOBAL_DIR / "judgment.json").read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    _JUDGMENT_CFG = {}
+
+# 導出/顯示 code → 繁中（DB 仍存 code，僅導出/顯示轉中文）；傾向 4 值取自 judgment.json.polarity_labels
+_POLARITY_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("polarity_labels", {})
 
 
 def fmt_datetime(value, *, date_only: bool = False) -> str:
@@ -681,24 +632,16 @@ def fmt_datetime(value, *, date_only: bool = False) -> str:
     return s
 
 
-# ── judge 顯示標籤（verdicts.json + inline 分層常數；取代已移除的 taxonomy）──────────────
-_AI_JUDGE_DIR = Path(__file__).resolve().parents[3] / "config" / "ai_judge"
-# 信心分層 code → 繁中（純顯示）＋ 分桶閾值（不再耦合已移除的 confidence.json）
-_TIER_LABEL_ZH = {"auto_accept": "自動採信", "jury": "jury 覆核", "needs_review": "待人工", "hold": "HOLD"}
-_CONFIDENCE_TIERS = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
-
-
-def _verdict_labels() -> dict[str, str]:
-    """verdict code → 繁中 label（讀 config/ai_judge/verdicts.json；失敗回空 map）。"""
-    try:
-        items = json.loads((_AI_JUDGE_DIR / "verdicts.json").read_text(encoding="utf-8"))["items"]
-        return {v["code"]: v.get("label_zh", v["code"]) for v in items}
-    except (OSError, ValueError, KeyError):
-        return {}
+# ── judge 顯示標籤（judgment.json；取代已移除的 taxonomy）─────────────────────────────
+# 信心分層 code → 繁中（純顯示）＋ 分桶閾值：改讀 config/global/judgment.json（SSOT，QC 可免改碼調校）
+_TIER_LABEL_ZH = _JUDGMENT_CFG.get("tier_labels", {})
+_CONFIDENCE_TIERS = _JUDGMENT_CFG.get(
+    "confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
+)
 
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/判決/分層 code→繁中，其餘原樣（None→空字串）。"""
+    """導出單格：時間欄正規化、傾向/分層 code→繁中，其餘原樣（None→空字串）。"""
     if value is None or value == "":
         return ""
     if key == "occurred_at":
@@ -707,8 +650,6 @@ def _export_cell(key: str, value) -> str:
         return fmt_datetime(value, date_only=True)
     if key == "polarity":
         return _POLARITY_LABEL_ZH.get(value, value)
-    if key == "verdict":
-        return _verdict_labels().get(value, value)
     if key == "confidence_tier":
         return _TIER_LABEL_ZH.get(value, value)
     return value
@@ -739,10 +680,10 @@ def export_problems_csv(
 
 
 def problems_summary() -> dict:
-    """即時匯總（不另存匯總表）：來源分佈 + 歸因 verdict/域/信心分層 + 總數。
+    """即時匯總（不另存匯總表）：來源分佈 + 歸因域/信心分層 + 總數。
 
     Returns:
-        {total_intake, judged, by_source, by_verdict, by_domain, by_tier}。
+        {total_intake, judged, by_source, by_domain, by_tier}。
     """
     ii, jg = T.intake_items, T.judgments
     cnt = func.count().label("n")
@@ -754,12 +695,6 @@ def problems_summary() -> dict:
             dict(r)
             for r in c.execute(
                 select(ii.c.source, cnt).group_by(ii.c.source).order_by(cnt.desc())
-            ).mappings()
-        ]
-        by_verdict = [
-            dict(r)
-            for r in c.execute(
-                select(jg.c.verdict, cnt).group_by(jg.c.verdict).order_by(cnt.desc())
             ).mappings()
         ]
         # 域 / 信心分層需讀 data JSON / confidence，Python 即時聚合（資料量小）
@@ -784,7 +719,6 @@ def problems_summary() -> dict:
         "total_intake": total_intake,
         "judged": judged,
         "by_source": by_source,
-        "by_verdict": by_verdict,
         "by_domain": [
             {"domain": k, "n": v} for k, v in sorted(by_domain.items(), key=lambda x: -x[1])
         ],
@@ -823,6 +757,27 @@ def upsert_calibration(scope: str, model: str, intercept: float, slope: float) -
     }
     with T.get_engine().begin() as c:
         c.execute(T.upsert(T.confidence_calibration, values, ["scope", "model"]))
+
+
+def unjudged_item_ids(source: str | None = None) -> list[str]:
+    """取未歸因（judgments 無對應 finding）的 item_id 清單（初判歸因 scope=all 標的）。
+
+    只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake（~8 萬列）做 source_mapping
+    還原的無謂開銷；供 prejudge_batch 批量派工前一次解析標的集合。
+
+    Args:
+        source: 來源 code 過濾（None＝全部來源）。
+
+    Returns:
+        未判 item_id 清單（順序不保證，批量判決不依賴順序）。
+    """
+    ii, jg = T.intake_items, T.judgments
+    j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
+    stmt = select(ii.c.item_id).select_from(j).where(jg.c.finding_id.is_(None))
+    if source:
+        stmt = stmt.where(ii.c.source == source)
+    with T.get_engine().connect() as c:
+        return [r[0] for r in c.execute(stmt)]
 
 
 def calibration_training_data(model: str | None = None) -> list[tuple[float, int]]:
@@ -873,13 +828,12 @@ def attribution_overview(source: str | None = None) -> dict:
         source: 來源 code 過濾（None＝全部來源）。
 
     Returns:
-        {total_intake, judged, attributed, by_polarity, by_l1, by_verdict, by_tier, by_score, trend}。
+        {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
         attributed＝已判且 data.l1_domain_code 非空（即負向，走過 L1→L3 歸因）。
     """
     ii, jg = T.intake_items, T.judgments
     cnt = func.count().label("n")
     tiers = _CONFIDENCE_TIERS
-    vd_label = _verdict_labels()
     # judgments.data JSON 內的歸因欄（JSONB 抽出，供 GROUP BY / FILTER）
     pol = sa_cast(jg.c.data, JSONB)["polarity"].astext
     l1c = sa_cast(jg.c.data, JSONB)["l1_domain_code"].astext
@@ -924,19 +878,6 @@ def attribution_overview(source: str | None = None) -> dict:
                     .select_from(j)
                     .where(l1c.isnot(None), l1c != "")
                     .group_by(l1c, l1l)
-                    .order_by(cnt.desc())
-                )
-            )
-            .mappings()
-            .all()
-        )
-        by_verdict_raw = (
-            c.execute(
-                _src(
-                    select(jg.c.verdict.label("verdict"), cnt)
-                    .select_from(j)
-                    .where(jg.c.verdict.isnot(None))
-                    .group_by(jg.c.verdict)
                     .order_by(cnt.desc())
                 )
             )
@@ -1002,10 +943,6 @@ def attribution_overview(source: str | None = None) -> dict:
         for r in by_polarity_raw
     ]
     by_l1 = [{"code": r["code"], "label": r["label"] or r["code"], "n": r["n"]} for r in by_l1_raw]
-    by_verdict = [
-        {"verdict": r["verdict"], "label": vd_label.get(r["verdict"], r["verdict"]), "n": r["n"]}
-        for r in by_verdict_raw
-    ]
     by_score = [{"score": r["score"], "n": r["n"]} for r in by_score_raw]
     trend = {
         "months": [r["ym"] for r in trend_rows],
@@ -1018,7 +955,6 @@ def attribution_overview(source: str | None = None) -> dict:
         "attributed": attributed,
         "by_polarity": by_polarity,
         "by_l1": by_l1,
-        "by_verdict": by_verdict,
         "by_tier": by_tier,
         "by_score": by_score,
         "trend": trend,

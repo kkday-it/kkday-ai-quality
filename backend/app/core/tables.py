@@ -47,11 +47,10 @@ _DIM_CODES = (
 
 
 def _dim_columns() -> list[Column]:
-    """8 面向各兩欄（{code}_n INTEGER / {code}_verdict TEXT）。"""
+    """8 面向各一欄（{code}_n INTEGER）。"""
     cols: list[Column] = []
     for code in _DIM_CODES:
         cols.append(Column(f"{code}_n", Integer, server_default="0"))
-        cols.append(Column(f"{code}_verdict", Text))
     return cols
 
 # ── 6 表（欄位對齊舊 DDL；composite PK 用多個 primary_key）──────────────────
@@ -79,7 +78,6 @@ judgments = Table(
     Column("prod_oid", Text),
     Column("pkg_oid", Text),
     Column("dimension", Text),
-    Column("verdict", Text),
     Column("confidence", Float),
     Column("raw_confidence", Float),
     Column("is_enhanced", Integer, server_default="0"),

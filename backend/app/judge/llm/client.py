@@ -53,7 +53,11 @@ def _get_client(token: str, base_url: str):
     with _CLIENT_LOCK:
         cli = _CLIENT_CACHE.get(key)
         if cli is None:
-            kwargs: dict = {"api_key": token, "max_retries": 5, "timeout": float(env.llm_timeout)}
+            kwargs: dict = {
+                "api_key": token,
+                "max_retries": env.llm_max_retries,
+                "timeout": float(env.llm_timeout),
+            }
             if base_url:
                 kwargs["base_url"] = base_url
             cli = OpenAI(**kwargs)

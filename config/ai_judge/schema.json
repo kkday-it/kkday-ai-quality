@@ -70,24 +70,6 @@
         }
       }
     },
-    "verdict": {
-      "title": "verdict 判決八分類",
-      "description": "預設/典型 verdict（對齊 backend schema.py Verdict）；arbiter 的判決傾向起點，非鎖定。",
-      "type": "string",
-      "enum": [
-        "real_config_issue",
-        "content_missing",
-        "content_unclear",
-        "contract_breach",
-        "customer_misread",
-        "escalate_ops",
-        "force_majeure",
-        "pre_sale_inquiry"
-      ],
-      "examples": [
-        "content_unclear"
-      ]
-    },
     "label": {
       "title": "label 顯示名（SKOS prefLabel）",
       "description": "節點顯示名，純展示、不當引用（識別用 code）。限定詞用 - 連字號隔離，禁全形（）／半形()（見 scripts/normalize_labels.py）。",
@@ -195,7 +177,7 @@
     },
     "l3": {
       "title": "L3 細項節點（葉）",
-      "description": "leaf；扛完整判準。分類元數據（meaning/rule/verdict）+ 判準本體（canon/允許禁止/正反例/機器規則/鐵則）。",
+      "description": "leaf；扛完整判準。分類元數據（meaning/rule）+ 判準本體（canon/允許禁止/正反例/機器規則）。",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -204,14 +186,12 @@
         "label",
         "meaning",
         "rule",
-        "verdict",
         "canon",
         "allow",
         "forbid",
         "positive_cases",
         "negative_cases",
-        "machine_clues",
-        "verdict_rules"
+        "machine_clues"
       ],
       "properties": {
         "code": {
@@ -243,9 +223,6 @@
             "R5"
           ]
         },
-        "verdict": {
-          "$ref": "#/$defs/verdict"
-        },
         "canon": {
           "type": "string",
           "description": "SKOS definition：唯一判準（§1 法典條文，arbiter L3 主依據）。空字串＝待 M1/M3 補。"
@@ -269,10 +246,6 @@
         "machine_clues": {
           "$ref": "#/$defs/strList",
           "description": "可程式檢查訊號（§5，字典／格式比對）。"
-        },
-        "verdict_rules": {
-          "$ref": "#/$defs/strList",
-          "description": "判決鐵則（§7 防過擬／防幻覺消歧規則）。"
         }
       }
     }

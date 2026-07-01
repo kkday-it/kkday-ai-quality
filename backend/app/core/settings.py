@@ -20,13 +20,12 @@ from __future__ import annotations
 import contextvars
 import json
 import uuid
-from pathlib import Path
 
 from app.core import db
+from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 # 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
-# parents[3]：settings.py = backend/app/core/settings.py → repo 根。後續新增全局配置於此目錄各建一 JSON。
-_GLOBAL_DIR = Path(__file__).resolve().parents[3] / "config" / "global"
+# 目錄定位統一由 app.core.paths 提供；後續新增全局配置於此目錄各建一 JSON。
 # QC DB 連線預設（port/schema/defaultEnv/environments）；main.py 連線測試的 port fallback 亦取此。
 QC_DB_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_qc.json").read_text(encoding="utf-8"))
 _LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_llm.json").read_text(encoding="utf-8"))
@@ -89,7 +88,7 @@ def _ensure_id(cfg: dict) -> dict:
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": "gpt-5-nano",  # 對齊 config/global/default_llm.json defaultModel（最省；準確度需驗，見 memory）
+    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-nano"),  # 讀 default_llm.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh

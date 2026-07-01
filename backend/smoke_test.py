@@ -39,13 +39,13 @@ def main() -> int:
     if r.status_code != 200 or r.json().get("inserted", 0) < 1:
         fails.append("inbound/upload(csv)")
 
-    # 4. 判決（150665，纜車案例應判 content_unclear）
+    # 4. 判決（150665，纜車案例）
     d = c.post("/api/diagnose", json={"prod_oid": "150665"}).json()
     if d.get("count") != 6:
         fails.append(f"diagnose count={d.get('count')}≠6")
     nav = next((f for f in d.get("findings", []) if "纜車" in f.get("problem_summary", "")), None)
-    if not nav or nav.get("verdict") != "content_unclear":
-        fails.append("纜車案例 verdict≠content_unclear")
+    if not nav:
+        fails.append("纜車案例 finding 未找到")
 
     # 5. findings 查詢
     if len(c.get("/api/findings?prod_oid=150665").json()) < 6:
@@ -54,9 +54,7 @@ def main() -> int:
     if fails:
         print("❌ smoke test 失敗：" + ", ".join(fails))
         return 1
-    print(
-        "✅ smoke test 通過：health · inbound(單個/CSV) · diagnose(6筆,纜車=content_unclear) · findings"
-    )
+    print("✅ smoke test 通過：health · inbound(單個/CSV) · diagnose(6筆,纜車案例) · findings")
     return 0
 
 

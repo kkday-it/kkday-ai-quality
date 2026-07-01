@@ -5,62 +5,388 @@
       "label": "內容質量 & 閉環引擎",
       "goal": "content",
       "sections": [
-        { "title": "核心指標", "desc": "北極星 · 落後 + 領先", "charts": ["content.scorecard"] },
-        { "title": "指標趨勢", "desc": "落後（越低越好）vs 領先（越高越好）", "charts": ["content.lagging_intake", "content.leading_trend"] },
-        { "title": "審品與覆蓋", "desc": "攔截留存 · 商品類別範圍", "charts": ["content.review_funnel", "content.coverage"] },
-        { "title": "閉環引擎", "desc": "進線 → 歸因 → Action → 審品/撰寫 → 供給↑ → 進線↓", "charts": ["content.loop", "content.engines"] },
-        { "title": "指標來源", "desc": "DAP 表 · 外部儀表板出處", "charts": ["content.source"] }
+        {
+          "title": "核心指標",
+          "desc": "北極星 · 落後 + 領先",
+          "charts": [
+            "content.scorecard"
+          ]
+        },
+        {
+          "title": "指標趨勢",
+          "desc": "落後（越低越好）vs 領先（越高越好）",
+          "charts": [
+            "content.lagging_intake",
+            "content.leading_trend"
+          ]
+        },
+        {
+          "title": "審品與覆蓋",
+          "desc": "攔截留存 · 商品類別範圍",
+          "charts": [
+            "content.review_funnel",
+            "content.coverage"
+          ]
+        },
+        {
+          "title": "閉環引擎",
+          "desc": "進線 → 歸因 → Action → 審品/撰寫 → 供給↑ → 進線↓",
+          "charts": [
+            "content.loop",
+            "content.engines"
+          ]
+        },
+        {
+          "title": "指標來源",
+          "desc": "DAP 表 · 外部儀表板出處",
+          "charts": [
+            "content.source"
+          ]
+        }
       ]
     },
     "presale": {
       "label": "售前轉化",
       "goal": "presale",
       "sections": [
-        { "title": "核心指標", "desc": "北極星 · CVR 與售前體驗", "charts": ["presale.scorecard"] },
-        { "title": "轉化指標", "desc": "CVR 達成率與趨勢", "charts": ["presale.cvr", "presale.cvr_trend"] },
-        { "title": "轉化拆解", "desc": "各產品線 CVR · 漏斗斷點", "charts": ["presale.cvr_by_cat", "presale.funnel"] },
-        { "title": "售前進訊與健康度", "desc": "諮詢量 · 用戶 feedback", "charts": ["presale.intake", "presale.health"] },
-        { "title": "指標來源", "desc": "DAP 表 · 外部儀表板出處", "charts": ["presale.source"] }
+        {
+          "title": "核心指標",
+          "desc": "北極星 · CVR 與售前體驗",
+          "charts": [
+            "presale.scorecard"
+          ]
+        },
+        {
+          "title": "轉化指標",
+          "desc": "CVR 達成率與趨勢",
+          "charts": [
+            "presale.cvr",
+            "presale.cvr_trend"
+          ]
+        },
+        {
+          "title": "轉化拆解",
+          "desc": "各產品線 CVR · 漏斗斷點",
+          "charts": [
+            "presale.cvr_by_cat",
+            "presale.funnel"
+          ]
+        },
+        {
+          "title": "售前進訊與健康度",
+          "desc": "諮詢量 · 用戶 feedback",
+          "charts": [
+            "presale.intake",
+            "presale.health"
+          ]
+        },
+        {
+          "title": "指標來源",
+          "desc": "DAP 表 · 外部儀表板出處",
+          "charts": [
+            "presale.source"
+          ]
+        }
       ]
     },
     "postsale": {
       "label": "售後履約",
       "goal": "postsale",
       "sections": [
-        { "title": "核心指標", "desc": "北極星 · 進線與履約", "charts": ["postsale.scorecard"] },
-        { "title": "進線洞察", "desc": "售後進線趨勢與結構", "charts": ["postsale.lagging_intake", "postsale.intake_donut"] },
-        { "title": "履約拆解", "desc": "履約趨勢 · 各節點達成", "charts": ["postsale.fulfillment_trend", "postsale.fulfillment_nodes"] },
-        { "title": "用戶體驗回饋", "desc": "評論滿意 · 售後資訊健康度", "charts": ["postsale.review", "postsale.health"] },
-        { "title": "指標來源", "desc": "DAP 表 · 外部儀表板出處", "charts": ["postsale.source"] }
+        {
+          "title": "核心指標",
+          "desc": "北極星 · 進線與履約",
+          "charts": [
+            "postsale.scorecard"
+          ]
+        },
+        {
+          "title": "進線洞察",
+          "desc": "售後進線趨勢與結構",
+          "charts": [
+            "postsale.lagging_intake",
+            "postsale.intake_donut"
+          ]
+        },
+        {
+          "title": "履約拆解",
+          "desc": "履約趨勢 · 各節點達成",
+          "charts": [
+            "postsale.fulfillment_trend",
+            "postsale.fulfillment_nodes"
+          ]
+        },
+        {
+          "title": "用戶體驗回饋",
+          "desc": "評論滿意 · 售後資訊健康度",
+          "charts": [
+            "postsale.review",
+            "postsale.health"
+          ]
+        },
+        {
+          "title": "指標來源",
+          "desc": "DAP 表 · 外部儀表板出處",
+          "charts": [
+            "postsale.source"
+          ]
+        }
       ]
     }
   },
   "charts": {
-    "content.scorecard": { "id": "content.scorecard", "title": "核心指標", "type": "scorecard", "goal": "content", "common": true, "grid": 24 },
-    "content.lagging_intake": { "id": "content.lagging_intake", "title": "落後指標・售後進線（內容類）", "type": "trend", "goal": "content", "kind": "lagging", "common": true, "dataKey": "laggingTrend", "grid": 12, "hint": "內容類占比 14.95% → 目標 <10%", "source": { "dapTable": "dw_kkdb.message", "dashboardUrl": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D" } },
-    "content.leading_trend": { "id": "content.leading_trend", "title": "領先指標・達標/校正/覆蓋", "type": "trend", "goal": "content", "kind": "leading", "dataKey": "leadingTrend", "grid": 12, "source": { "dapTable": "review_rule · review_case · review_case_rule" } },
-    "content.review_funnel": { "id": "content.review_funnel", "title": "審品攔截漏斗", "type": "funnel", "goal": "content", "kind": "structural", "dataKey": "reviewFunnel", "grid": 12, "hint": "必填→前審→後審→複核 逐級留存" },
-    "content.coverage": { "id": "content.coverage", "title": "商品類別覆蓋", "type": "coverage", "goal": "content", "kind": "structural", "dataKey": "categoryCoverage", "grid": 12, "hint": "Tier2/Tier3 · 依 P 級優先" },
-    "content.loop": { "id": "content.loop", "title": "閉環引擎流程", "type": "loop", "goal": "content", "grid": 24, "hint": "進線→歸因→Action→審品/撰寫→供給↑→進線↓ 持續收斂" },
-    "content.engines": { "id": "content.engines", "title": "三大 AI 引擎", "type": "engines", "goal": "content", "grid": 24 },
-    "content.source": { "id": "content.source", "title": "指標來源 & 外部儀表板", "type": "table", "goal": "content", "common": true, "grid": 24 },
-
-    "presale.scorecard": { "id": "presale.scorecard", "title": "核心指標", "type": "scorecard", "goal": "presale", "common": true, "grid": 24 },
-    "presale.cvr": { "id": "presale.cvr", "title": "CVR 達成率", "type": "gauge", "goal": "presale", "kind": "lagging", "common": true, "dataKey": "cvrGauge", "grid": 8, "hint": "總指標 1.2% → 目標 1.8%", "source": { "dashboardUrl": "https://tableau.kkday.com/#/views/ByJean-TourExperienceCharterAirportCharterMetric/QTDAchievementRate" } },
-    "presale.cvr_trend": { "id": "presale.cvr_trend", "title": "CVR 趨勢", "type": "trend", "goal": "presale", "kind": "lagging", "dataKey": "cvrTrend", "grid": 16, "source": { "dashboardUrl": "https://mixpanel.com/s/12GjJh" } },
-    "presale.cvr_by_cat": { "id": "presale.cvr_by_cat", "title": "各產品線 CVR", "type": "bar", "goal": "presale", "kind": "structural", "dataKey": "cvrByCat", "grid": 12, "hint": "各產品線轉化率 vs 目標 1.8%" },
-    "presale.funnel": { "id": "presale.funnel", "title": "售前轉化漏斗", "type": "funnel", "goal": "presale", "kind": "structural", "dataKey": "conversionFunnel", "grid": 12, "hint": "曝光→商品頁→比較加購→結帳→下單" },
-    "presale.intake": { "id": "presale.intake", "title": "售前進訊量趨勢", "type": "trend", "goal": "presale", "kind": "leading", "dataKey": "presaleIntakeTrend", "grid": 12, "source": { "dapTable": "dw_third_party.freshdesk_tickets · dw_kkdb_analytics.feedback_app", "dashboardUrl": "https://datastudio.google.com/u/0/reporting/8b3cae8a-043f-42ad-a5f1-45c913287c60/page/azXzC" } },
-    "presale.health": { "id": "presale.health", "title": "售前資訊健康度（用戶 feedback）", "type": "external", "goal": "presale", "kind": "leading", "grid": 12, "hint": "定位哪些售前資訊讓人不安 → 不確定感地圖", "source": { "dapTable": "mixpanel", "dashboardUrl": "https://mixpanel.com/s/3kF1vU" } },
-    "presale.source": { "id": "presale.source", "title": "指標來源 & 外部儀表板", "type": "table", "goal": "presale", "common": true, "grid": 24 },
-
-    "postsale.scorecard": { "id": "postsale.scorecard", "title": "核心指標", "type": "scorecard", "goal": "postsale", "common": true, "grid": 24 },
-    "postsale.lagging_intake": { "id": "postsale.lagging_intake", "title": "落後指標・售後進線率", "type": "trend", "goal": "postsale", "kind": "lagging", "common": true, "dataKey": "laggingTrend", "grid": 12, "hint": "地點類 14%↓ · 確認焦慮類約 57%", "source": { "dapTable": "dw_kkdb.message", "dashboardUrl": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D" } },
-    "postsale.intake_donut": { "id": "postsale.intake_donut", "title": "售後進線結構分布", "type": "donut", "goal": "postsale", "kind": "structural", "dataKey": "intakeBreakdown", "grid": 12 },
-    "postsale.fulfillment_trend": { "id": "postsale.fulfillment_trend", "title": "履約達成率趨勢（供應商）", "type": "trend", "goal": "postsale", "kind": "leading", "dataKey": "fulfillmentTrend", "grid": 12, "hint": "供應商履約節點達成；售後透明揭露、售前包裝", "source": { "dashboardUrl": "https://tableau.kkday.com/#/views/byMaggieHsu-Level/Level" } },
-    "postsale.fulfillment_nodes": { "id": "postsale.fulfillment_nodes", "title": "履約節點達成率", "type": "bar", "goal": "postsale", "kind": "structural", "dataKey": "fulfillmentNodes", "grid": 12, "hint": "訂單確認 / 成團 / 集合 / 出行 各節點達成" },
-    "postsale.review": { "id": "postsale.review", "title": "評論滿意度", "type": "external", "goal": "postsale", "kind": "leading", "grid": 12, "source": { "dapTable": "dw_kkdb.product_recommand · review_external_summary_lst", "dashboardUrl": "https://tableau.kkday.com/authoring/rd_kiki-reviewanalyse/sheet0#1" } },
-    "postsale.health": { "id": "postsale.health", "title": "售後資訊健康度（用戶 feedback）", "type": "external", "goal": "postsale", "kind": "leading", "grid": 12, "source": { "dapTable": "mixpanel", "dashboardUrl": "https://mixpanel.com/s/4r4qU2" } },
-    "postsale.source": { "id": "postsale.source", "title": "指標來源 & 外部儀表板", "type": "table", "goal": "postsale", "common": true, "grid": 24 }
+    "content.scorecard": {
+      "id": "content.scorecard",
+      "title": "核心指標",
+      "type": "scorecard",
+      "goal": "content",
+      "common": true,
+      "grid": 24
+    },
+    "content.lagging_intake": {
+      "id": "content.lagging_intake",
+      "title": "落後指標・售後進線（內容類）",
+      "type": "trend",
+      "goal": "content",
+      "kind": "lagging",
+      "common": true,
+      "dataKey": "laggingTrend",
+      "grid": 12,
+      "hint": "內容類占比 14.95% → 目標 <10%",
+      "source": {
+        "dapTable": "dw_kkdb.message",
+        "dashboardUrl": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D"
+      }
+    },
+    "content.leading_trend": {
+      "id": "content.leading_trend",
+      "title": "領先指標・達標/校正/覆蓋",
+      "type": "trend",
+      "goal": "content",
+      "kind": "leading",
+      "dataKey": "leadingTrend",
+      "grid": 12,
+      "source": {
+        "dapTable": "review_rule · review_case · review_case_rule"
+      }
+    },
+    "content.review_funnel": {
+      "id": "content.review_funnel",
+      "title": "審品攔截漏斗",
+      "type": "funnel",
+      "goal": "content",
+      "kind": "structural",
+      "dataKey": "reviewFunnel",
+      "grid": 12,
+      "hint": "必填→前審→後審→複核 逐級留存"
+    },
+    "content.coverage": {
+      "id": "content.coverage",
+      "title": "商品類別覆蓋",
+      "type": "coverage",
+      "goal": "content",
+      "kind": "structural",
+      "dataKey": "categoryCoverage",
+      "grid": 12,
+      "hint": "Tier2/Tier3 · 依 P 級優先"
+    },
+    "content.loop": {
+      "id": "content.loop",
+      "title": "閉環引擎流程",
+      "type": "loop",
+      "goal": "content",
+      "grid": 24,
+      "hint": "進線→歸因→Action→審品/撰寫→供給↑→進線↓ 持續收斂"
+    },
+    "content.engines": {
+      "id": "content.engines",
+      "title": "三大 AI 引擎",
+      "type": "engines",
+      "goal": "content",
+      "grid": 24
+    },
+    "content.source": {
+      "id": "content.source",
+      "title": "指標來源 & 外部儀表板",
+      "type": "table",
+      "goal": "content",
+      "common": true,
+      "grid": 24
+    },
+    "presale.scorecard": {
+      "id": "presale.scorecard",
+      "title": "核心指標",
+      "type": "scorecard",
+      "goal": "presale",
+      "common": true,
+      "grid": 24
+    },
+    "presale.cvr": {
+      "id": "presale.cvr",
+      "title": "CVR 達成率",
+      "type": "gauge",
+      "goal": "presale",
+      "kind": "lagging",
+      "common": true,
+      "dataKey": "cvrGauge",
+      "grid": 8,
+      "hint": "總指標 1.2% → 目標 1.8%",
+      "source": {
+        "dashboardUrl": "https://tableau.kkday.com/#/views/ByJean-TourExperienceCharterAirportCharterMetric/QTDAchievementRate"
+      }
+    },
+    "presale.cvr_trend": {
+      "id": "presale.cvr_trend",
+      "title": "CVR 趨勢",
+      "type": "trend",
+      "goal": "presale",
+      "kind": "lagging",
+      "dataKey": "cvrTrend",
+      "grid": 16,
+      "source": {
+        "dashboardUrl": "https://mixpanel.com/s/12GjJh"
+      }
+    },
+    "presale.cvr_by_cat": {
+      "id": "presale.cvr_by_cat",
+      "title": "各產品線 CVR",
+      "type": "bar",
+      "goal": "presale",
+      "kind": "structural",
+      "dataKey": "cvrByCat",
+      "grid": 12,
+      "hint": "各產品線轉化率 vs 目標 1.8%"
+    },
+    "presale.funnel": {
+      "id": "presale.funnel",
+      "title": "售前轉化漏斗",
+      "type": "funnel",
+      "goal": "presale",
+      "kind": "structural",
+      "dataKey": "conversionFunnel",
+      "grid": 12,
+      "hint": "曝光→商品頁→比較加購→結帳→下單"
+    },
+    "presale.intake": {
+      "id": "presale.intake",
+      "title": "售前進訊量趨勢",
+      "type": "trend",
+      "goal": "presale",
+      "kind": "leading",
+      "dataKey": "presaleIntakeTrend",
+      "grid": 12,
+      "source": {
+        "dapTable": "dw_third_party.freshdesk_tickets · dw_kkdb_analytics.feedback_app",
+        "dashboardUrl": "https://datastudio.google.com/u/0/reporting/8b3cae8a-043f-42ad-a5f1-45c913287c60/page/azXzC"
+      }
+    },
+    "presale.health": {
+      "id": "presale.health",
+      "title": "售前資訊健康度（用戶 feedback）",
+      "type": "external",
+      "goal": "presale",
+      "kind": "leading",
+      "grid": 12,
+      "hint": "定位哪些售前資訊讓人不安 → 不確定感地圖",
+      "source": {
+        "dapTable": "mixpanel",
+        "dashboardUrl": "https://mixpanel.com/s/3kF1vU"
+      }
+    },
+    "presale.source": {
+      "id": "presale.source",
+      "title": "指標來源 & 外部儀表板",
+      "type": "table",
+      "goal": "presale",
+      "common": true,
+      "grid": 24
+    },
+    "postsale.scorecard": {
+      "id": "postsale.scorecard",
+      "title": "核心指標",
+      "type": "scorecard",
+      "goal": "postsale",
+      "common": true,
+      "grid": 24
+    },
+    "postsale.lagging_intake": {
+      "id": "postsale.lagging_intake",
+      "title": "落後指標・售後進線率",
+      "type": "trend",
+      "goal": "postsale",
+      "kind": "lagging",
+      "common": true,
+      "dataKey": "laggingTrend",
+      "grid": 12,
+      "hint": "地點類 14%↓ · 確認焦慮類約 57%",
+      "source": {
+        "dapTable": "dw_kkdb.message",
+        "dashboardUrl": "https://datastudio.google.com/u/0/reporting/6874695c-08c3-43c1-8307-2e5ca81a4148/page/li45D"
+      }
+    },
+    "postsale.intake_donut": {
+      "id": "postsale.intake_donut",
+      "title": "售後進線結構分布",
+      "type": "donut",
+      "goal": "postsale",
+      "kind": "structural",
+      "dataKey": "intakeBreakdown",
+      "grid": 12
+    },
+    "postsale.fulfillment_trend": {
+      "id": "postsale.fulfillment_trend",
+      "title": "履約達成率趨勢（供應商）",
+      "type": "trend",
+      "goal": "postsale",
+      "kind": "leading",
+      "dataKey": "fulfillmentTrend",
+      "grid": 12,
+      "hint": "供應商履約節點達成；售後透明揭露、售前包裝",
+      "source": {
+        "dashboardUrl": "https://tableau.kkday.com/#/views/byMaggieHsu-Level/Level"
+      }
+    },
+    "postsale.fulfillment_nodes": {
+      "id": "postsale.fulfillment_nodes",
+      "title": "履約節點達成率",
+      "type": "bar",
+      "goal": "postsale",
+      "kind": "structural",
+      "dataKey": "fulfillmentNodes",
+      "grid": 12,
+      "hint": "訂單確認 / 成團 / 集合 / 出行 各節點達成"
+    },
+    "postsale.review": {
+      "id": "postsale.review",
+      "title": "評論滿意度",
+      "type": "external",
+      "goal": "postsale",
+      "kind": "leading",
+      "grid": 12,
+      "source": {
+        "dapTable": "dw_kkdb.product_recommand · review_external_summary_lst",
+        "dashboardUrl": "https://tableau.kkday.com/authoring/rd_kiki-reviewanalyse/sheet0#1"
+      }
+    },
+    "postsale.health": {
+      "id": "postsale.health",
+      "title": "售後資訊健康度（用戶 feedback）",
+      "type": "external",
+      "goal": "postsale",
+      "kind": "leading",
+      "grid": 12,
+      "source": {
+        "dapTable": "mixpanel",
+        "dashboardUrl": "https://mixpanel.com/s/4r4qU2"
+      }
+    },
+    "postsale.source": {
+      "id": "postsale.source",
+      "title": "指標來源 & 外部儀表板",
+      "type": "table",
+      "goal": "postsale",
+      "common": true,
+      "grid": 24
+    }
   }
 }

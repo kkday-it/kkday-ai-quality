@@ -27,7 +27,6 @@
               "label": "商品名稱",
               "meaning": "讓旅客最短時間理解去哪裡+做什麼+體驗型態",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "商品名稱僅能描述地點 × 體驗類型 × 核心內容，不得包含主觀評價、促銷、保證或比較性詞語",
               "allow": [
                 "以「客觀可驗證的體驗結構」命名，例如：地點、體驗類型、核心活動",
@@ -54,8 +53,7 @@
               "machine_clues": [
                 "命名模板檢核（是否含目的地）",
                 "促銷詞／禁詞字典比對"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-2",
@@ -63,7 +61,6 @@
               "label": "商品所在地",
               "meaning": "協助用戶與搜尋理解實際發生地，支援多點",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "必須填寫實際體驗執行的國家與城市，不得僅填出發地或行政泛區或行銷地名",
               "allow": [
                 "填寫「實際執行體驗所發生的主要國家與城市」",
@@ -85,8 +82,7 @@
               ],
               "machine_clues": [
                 "行程地點與所在地交叉比對"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-3",
@@ -94,7 +90,6 @@
               "label": "商品摘要",
               "meaning": "快速回答這是不是我要的",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "一段話說清「這是什麼體驗＋適合誰」，概述體驗範圍與內容，不得重複商品名稱或使用促銷語",
               "allow": [
                 "以一段話回答「這是什麼體驗，適合誰」",
@@ -117,8 +112,7 @@
               ],
               "machine_clues": [
                 "與商品名重複率限制"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-4",
@@ -126,7 +120,6 @@
               "label": "商品特色",
               "meaning": "快速掃描差異價值",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "僅能列出可被履約驗證的事實型賣點，不得為感受或評價",
               "allow": [
                 "列出「可被驗證的體驗事實型亮點」",
@@ -151,8 +144,7 @@
               "machine_clues": [
                 "條列格式",
                 "情緒詞黑名單"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-5",
@@ -160,7 +152,6 @@
               "label": "商品主圖",
               "meaning": "建立對商品主體的第一信任感與正確體驗想像",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "主圖必須呈現可合理代表「此商品核心體驗」的畫面，可使用代表性景點但不得誤導",
               "allow": [
                 "呈現能合理代表核心體驗的畫面",
@@ -184,8 +175,7 @@
               ],
               "machine_clues": [
                 "圖像相似度／庫存檢測"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-6",
@@ -193,7 +183,6 @@
               "label": "商品相簿",
               "meaning": "補足實際體驗樣貌理解",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "相簿需涵蓋至少兩種體驗面向（景點／活動／交通），不得全為同類型",
               "allow": [
                 "補充不同體驗面向的實際畫面，例如：景點、活動、交通",
@@ -214,8 +203,7 @@
               ],
               "machine_clues": [
                 "圖像主體分類 ≥ 2"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-7",
@@ -223,7 +211,6 @@
               "label": "商品影片",
               "meaning": "動態輔助理解流程降低想像落差",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "若提供影片，內容須與實際體驗一致，不得為純宣傳或品牌形象片",
               "allow": [
                 "真實呈現實際體驗流程或服務內容",
@@ -243,8 +230,7 @@
               ],
               "machine_clues": [
                 "禁 promo / sale 字樣"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-8",
@@ -252,7 +238,6 @@
               "label": "商品說明-文字",
               "meaning": "完整理解體驗內容與行程輪廓，定位與流程銜接層",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "商品說明文字必須： \\- 描述實際會發生的體驗內容與行程輪廓 \\- 與商品摘要、商品特色一致但不重複 \\- 不得僅為故事敘述、情緒渲染或行銷文案 \\- 不得新增未於其他欄位揭露之承諾或條件",
               "allow": [
                 "系統性說明體驗內容、流程與期待",
@@ -276,8 +261,7 @@
                 "與摘要／特色重複率檢測",
                 "情緒性形容詞比例檢測",
                 "是否包含實際體驗關鍵詞（景點／活動類型）"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-9",
@@ -285,7 +269,6 @@
               "label": "商品說明-圖文模組",
               "meaning": "降低閱讀負擔強化理解",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "圖文模組僅能作為「商品說明文字的視覺輔助」，不得： \\- 新增文字說明中未出現的承諾、條件或限制 \\- 以圖像誇大或誤導實際體驗內容- 作為行程流程的替代品",
               "allow": [
                 "視覺化補強體驗理解",
@@ -307,8 +290,7 @@
               "machine_clues": [
                 "圖文文字與主文一致性比對",
                 "圖像主體是否存在於行程資料中"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-10",
@@ -316,7 +298,6 @@
               "label": "方案名稱",
               "meaning": "讓旅客理解不同方案核心差異",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "方案名稱須反映差異來源（路線 / 時段 / 體驗重點），不得僅用 A/B",
               "allow": [
                 "清楚反映該方案與其他方案的體驗差異來源",
@@ -337,8 +318,7 @@
               ],
               "machine_clues": [
                 "方案名稱差異度檢測"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-11",
@@ -346,7 +326,6 @@
               "label": "方案描述",
               "meaning": "解釋方案差異原因",
               "rule": "R5",
-              "verdict": "content_unclear",
               "canon": "必須清楚說明與其他方案差異或與適合對象",
               "allow": [
                 "解釋「為何此方案存在、與其他方案差異在哪」",
@@ -366,8 +345,7 @@
               ],
               "machine_clues": [
                 "差異欄位檢測"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-1-12",
@@ -375,7 +353,6 @@
               "label": "方案圖片",
               "meaning": "視覺化方案差異",
               "rule": "R5",
-              "verdict": "content_missing",
               "canon": "圖片須能清楚區分方案內容，須對應該方案獨有或最具代表性的體驗",
               "allow": [
                 "僅在能補強方案差異理解時使用",
@@ -394,8 +371,7 @@
               ],
               "machine_clues": [
                 "圖像重複率檢測"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -410,7 +386,6 @@
               "label": "方案即行程線",
               "meaning": "讓旅客理解實際會做什麼去哪裡",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "同一商品下： \\- 路線不同者，必須拆為不同方案 \\- 路線相同但因時間差異導致主要體驗不同（如日景 / 夜景）者，視為不同方案 \\- 僅差異於導遊語言、出發時間（且不影響主要體驗）者，只能作為規格（spec），不得拆方案",
               "allow": [
                 "以「一條完整體驗邏輯」作為一個方案",
@@ -434,8 +409,7 @@
               ],
               "machine_clues": [
                 "同方案下關鍵景點集合差異檢測；行程總時長差異超過設定閾值（如 ±30%）"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-2",
@@ -443,7 +417,6 @@
               "label": "行程總時長",
               "meaning": "明確實際執行時間避免誤解",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "每方案須標示總時長或合理範圍，不得使用半日／全天等模糊詞",
               "allow": [
                 "提供方案層級的整體行程時長或合理範圍",
@@ -466,8 +439,7 @@
               ],
               "machine_clues": [
                 "是否存在總時長欄位"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-3",
@@ -475,7 +447,6 @@
               "label": "行程時間-出發/結束",
               "meaning": "明確實際執行時間避免誤解",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "行程時間屬於方案層，不得僅寫於商品層（除非單一方案）",
               "allow": [
                 "清楚標示該方案的實際出發與結束時間或區間",
@@ -494,8 +465,7 @@
               ],
               "machine_clues": [
                 "是否為具體時間格式"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-4",
@@ -503,7 +473,6 @@
               "label": "導遊語系",
               "meaning": "確保旅客能理解行程內容",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "導遊語系須對應方案列出實際可提供語言，不得使用「可能」「視情況」 商品層僅可彙總展示",
               "allow": [
                 "清楚標示「旅客可預期被服務的語言」，作為下單決策依據",
@@ -527,8 +496,7 @@
               ],
               "machine_clues": [
                 "語系是否來源於方案／規格"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-5",
@@ -536,7 +504,6 @@
               "label": "行程步驟",
               "meaning": "讓旅客理解實際會做什麼去哪裡",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "每一步驟需對應實際活動或地點；若無明確景點，須說明安排方式",
               "allow": [
                 "以實際發生順序描述整條行程流程",
@@ -560,8 +527,7 @@
               ],
               "machine_clues": [
                 "是否包含具體地點 / 活動關鍵詞"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-6",
@@ -569,7 +535,6 @@
               "label": "停留時間-每站",
               "meaning": "建立合理預期避免現場落差",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "每一行程節點需標示預計停留時間或範圍",
               "allow": [
                 "標示每一主要節點的預期停留時間或合理範圍",
@@ -588,8 +553,7 @@
               ],
               "machine_clues": [
                 "是否存在時間數值或區間"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-7",
@@ -597,7 +561,6 @@
               "label": "交通方式-各段",
               "meaning": "讓旅客理解移動方式與體驗節奏",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "需標示主要交通工具（巴士、步行、船等）",
               "allow": [
                 "標示主要移動方式（如巴士、步行、船等）",
@@ -616,8 +579,7 @@
               ],
               "machine_clues": [
                 "是否包含交通類型關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-8",
@@ -625,7 +587,6 @@
               "label": "行程亮點-行程專屬",
               "meaning": "強化方案差異理解但不取代流程",
               "rule": "R1",
-              "verdict": "content_unclear",
               "canon": "僅能摘要本方案關鍵體驗，不得新增流程",
               "allow": [
                 "摘要該方案行程中最具代表性的體驗節點",
@@ -644,8 +605,7 @@
               ],
               "machine_clues": [
                 "亮點是否對應既有流程節點"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-9",
@@ -653,7 +613,6 @@
               "label": "行程圖文模組",
               "meaning": "降低理解成本輔助流程理解",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "圖文內容須完全對應既有行程步驟",
               "allow": [
                 "完整對應既有行程步驟的視覺化呈現",
@@ -672,8 +631,7 @@
               ],
               "machine_clues": [
                 "圖文與流程節點一致性比對"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-10",
@@ -681,7 +639,6 @@
               "label": "行程地圖",
               "meaning": "強化空間理解與信任感",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "地圖僅能串接已定義之行程節點",
               "allow": [
                 "地圖節點與行程步驟一一對應",
@@ -700,8 +657,7 @@
               ],
               "machine_clues": [
                 "地圖座標是否來自行程節點"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-2-11",
@@ -709,7 +665,6 @@
               "label": "行程中注意事項",
               "meaning": "提前揭露行程進行中需注意事項",
               "rule": "R1",
-              "verdict": "content_missing",
               "canon": "僅包含行程進行中即會遇到的情境",
               "allow": [
                 "僅揭露「行程進行中必然會遇到的情境」",
@@ -733,8 +688,7 @@
               ],
               "machine_clues": [
                 "關鍵字是否屬於「行程進行中」"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -749,7 +703,6 @@
               "label": "包含項目",
               "meaning": "明確告知售價已涵蓋之內容建立價格信任",
               "rule": "R4",
-              "verdict": "content_missing",
               "canon": "僅能列出已包含於售價中、旅客無需另行支付之項目",
               "allow": [
                 "僅列出「已確定包含於售價中的項目」",
@@ -772,8 +725,7 @@
               ],
               "machine_clues": [
                 "是否包含「全包」、「所有」等模糊詞"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-3-2",
@@ -781,7 +733,6 @@
               "label": "不包含項目",
               "meaning": "避免誤以為所有費用皆已涵蓋",
               "rule": "R4",
-              "verdict": "content_missing",
               "canon": "僅能列出未包含且不一定發生之費用",
               "allow": [
                 "僅列出「未包含於售價中，且不一定發生的費用」",
@@ -802,8 +753,7 @@
               ],
               "machine_clues": [
                 "是否出現「必須」、「強制」字樣"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-3-3",
@@ -811,7 +761,6 @@
               "label": "強制費用-現場支付",
               "meaning": "防止最嚴重費用落差與糾紛(缺失可升P0)",
               "rule": "R4",
-              "verdict": "content_missing",
               "canon": "凡旅客一定需現場支付之費用，必須獨立揭露",
               "allow": [
                 "僅列出「不支付即無法完成行程的費用」",
@@ -831,8 +780,7 @@
               ],
               "machine_clues": [
                 "是否存在金額或「必付」關鍵詞"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-3-4",
@@ -840,7 +788,6 @@
               "label": "價格規則-兒童/嬰兒",
               "meaning": "確保家庭旅客理解實際費用",
               "rule": "R4",
-              "verdict": "content_missing",
               "canon": "僅描述價格與收費方式，不描述資格限制",
               "allow": [
                 "僅說明「價格如何計算」與「是否佔位」",
@@ -860,8 +807,7 @@
               ],
               "machine_clues": [
                 "是否同時出現價格與限制關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -876,7 +822,6 @@
               "label": "集合地點",
               "meaning": "讓旅客能實際抵達正確集合點",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "必須提供可被第三方地圖服務定位之具體地點，不得使用模糊或相對描述",
               "allow": [
                 "提供「唯一且可被實際到達的地點描述」",
@@ -900,8 +845,7 @@
               ],
               "machine_clues": [
                 "是否包含明確地標／正式地名（非相對詞）"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-2",
@@ -909,7 +853,6 @@
               "label": "地圖定位",
               "meaning": "降低跨語言跨文化辨識錯誤",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "集合地點必須附可點擊之地圖連結或座標",
               "allow": [
                 "地圖定位與文字集合地點為同一實體位置",
@@ -933,8 +876,7 @@
               ],
               "machine_clues": [
                 "是否存在有效 map URL／座標"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-3",
@@ -942,7 +884,6 @@
               "label": "集合時間",
               "meaning": "建立準時與遲到的裁決依據",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "必須標示「集合時間」，不得僅標示出發時間或模糊時間",
               "allow": [
                 "提供「單一、明確的集合時間點」",
@@ -965,8 +906,7 @@
               ],
               "machine_clues": [
                 "是否為明確 HH:MM 時間格式"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-4",
@@ -974,7 +914,6 @@
               "label": "集合方式",
               "meaning": "旅客與供應商如何會合",
               "rule": "R2",
-              "verdict": "content_unclear",
               "canon": "必須描述集合後的實際動作與流程",
               "allow": [
                 "清楚說明「旅客到達後應如何完成集合」",
@@ -998,8 +937,7 @@
               ],
               "machine_clues": [
                 "是否包含明確行為動詞（報到／上車等）"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-5",
@@ -1007,7 +945,6 @@
               "label": "集合識別方式",
               "meaning": "避免找不到人/認錯人",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "必須提供至少一項可視或可驗證的識別方式",
               "allow": [
                 "明確指出「旅客如何辨識正確的導遊／車輛／人員」",
@@ -1031,8 +968,7 @@
               ],
               "machine_clues": [
                 "是否包含外觀／標誌／驗證方式"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-6",
@@ -1040,7 +976,6 @@
               "label": "多集合點選擇",
               "meaning": "正確支援多集合設計避免誤會",
               "rule": "R2",
-              "verdict": "content_unclear",
               "canon": "僅在實際提供多集合點時使用，需明確標示每一選項",
               "allow": [
                 "僅在「實際存在多個固定集合點」時提供此選項",
@@ -1063,8 +998,7 @@
               ],
               "machine_clues": [
                 "是否存在兩組以上地點＋時間"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-4-7",
@@ -1072,7 +1006,6 @@
               "label": "遲到規範",
               "meaning": "降低遲到爭議與現場衝突",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "僅描述等待與否及最長等待時間，不得涉及退款或責任歸屬",
               "allow": [
                 "清楚說明「遲到的判定標準與後果」",
@@ -1095,8 +1028,7 @@
               ],
               "machine_clues": [
                 "是否出現退款、賠償等關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -1111,7 +1043,6 @@
               "label": "如何使用",
               "meaning": "確保旅客知道如何完成參與",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "僅描述集合後的資格確認流程，不得描述集合地點、行程或取消政策",
               "allow": [
                 "清楚說明旅客「抵達後第一步要做什麼」",
@@ -1137,8 +1068,7 @@
               ],
               "machine_clues": [
                 "是否包含「出示／核對／確認」等動詞"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-5-2",
@@ -1146,14 +1076,12 @@
               "label": "憑證需求",
               "meaning": "確保旅客知道如何資格確認",
               "rule": "R2",
-              "verdict": "content_unclear",
               "canon": "是否需憑證須明確標示，不得模糊",
               "allow": [],
               "forbid": [],
               "positive_cases": [],
               "negative_cases": [],
-              "machine_clues": [],
-              "verdict_rules": []
+              "machine_clues": []
             },
             {
               "code": "C-1-5-3",
@@ -1161,7 +1089,6 @@
               "label": "必要證件",
               "meaning": "避免現場因缺件而拒客",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "必須提前揭露所有必備證件",
               "allow": [
                 "明確說明現場如何辨識旅客身分（姓名、訂單、證件等）",
@@ -1183,8 +1110,7 @@
               ],
               "machine_clues": [
                 "是否出現「需攜帶」明確字樣"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-5-4",
@@ -1192,7 +1118,6 @@
               "label": "語系確認",
               "meaning": "管理語言期待避免誤解",
               "rule": "R2",
-              "verdict": "content_unclear",
               "canon": "必須明確標示語言是否為保證或安排目標",
               "allow": [
                 "清楚說明旅客是否可被保證以指定語言完成體驗",
@@ -1214,8 +1139,7 @@
               ],
               "machine_clues": [
                 "是否出現「保證」等高風險詞"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-5-5",
@@ -1223,7 +1147,6 @@
               "label": "旅客識別方式",
               "meaning": "防止認錯人或拒客",
               "rule": "R2",
-              "verdict": "content_missing",
               "canon": "必須說明旅客如何被識別為訂單持有人",
               "allow": [
                 "明確標示是否需要任何形式的憑證作為使用依據",
@@ -1245,8 +1168,7 @@
               ],
               "machine_clues": [
                 "是否包含姓名 / QR / 名單關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -1261,7 +1183,6 @@
               "label": "保證成團",
               "meaning": "建立用戶對出發確定性的信任",
               "rule": "R3",
-              "verdict": "content_unclear",
               "canon": "即時確認之訂單視為保證成團；非即時確認不得標示為保證",
               "allow": [
                 "明確標示是否為「保證成團」或「需達成條件才成團」",
@@ -1283,8 +1204,7 @@
               ],
               "machine_clues": [
                 "是否為 Instant Confirmation"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-6-2",
@@ -1292,7 +1212,6 @@
               "label": "最低成團人數",
               "meaning": "告知成團客觀門檻",
               "rule": "R3",
-              "verdict": "content_missing",
               "canon": "必須明確標示最低人數，不得模糊",
               "allow": [
                 "以明確數值定義最低成團人數",
@@ -1314,8 +1233,7 @@
               ],
               "machine_clues": [
                 "是否為數值"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-6-3",
@@ -1323,14 +1241,12 @@
               "label": "成團確認-期限",
               "meaning": "降低等待不安與行程風險",
               "rule": "R3",
-              "verdict": "content_missing",
               "canon": "必須標示最晚確認時間點",
               "allow": [],
               "forbid": [],
               "positive_cases": [],
               "negative_cases": [],
-              "machine_clues": [],
-              "verdict_rules": []
+              "machine_clues": []
             },
             {
               "code": "C-1-6-4",
@@ -1338,7 +1254,6 @@
               "label": "處理方式-未成團",
               "meaning": "管理未成團時心理預期",
               "rule": "R3",
-              "verdict": "content_missing",
               "canon": "僅描述訂單是否取消或改期，不涉及退款細節",
               "allow": [
                 "清楚定義最晚須對旅客給出成團結果的時間點",
@@ -1360,8 +1275,7 @@
               ],
               "machine_clues": [
                 "是否出現取消／改期關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-6-5",
@@ -1369,7 +1283,6 @@
               "label": "獨立成團",
               "meaning": "避免誤解是否併團",
               "rule": "R3",
-              "verdict": "content_unclear",
               "canon": "必須明確說明是否與其他旅客共團",
               "allow": [
                 "清楚說明未成團時的處理原則與結果",
@@ -1391,8 +1304,7 @@
               ],
               "machine_clues": [
                 "是否包含併團／專屬字樣"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -1407,7 +1319,6 @@
               "label": "天候保險-揭露",
               "meaning": "管理不可控因素預期",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須說明是否受天候影響與是否有保險",
               "allow": [
                 "清楚說明必須或建議的裝備與穿著",
@@ -1428,8 +1339,7 @@
               ],
               "machine_clues": [
                 "是否出現天候/保險字樣"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-2",
@@ -1437,7 +1347,6 @@
               "label": "年齡限制",
               "meaning": "避免不適齡參與造成風險",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須明確標示最小與最大年齡（如適用）",
               "allow": [
                 "明確揭露最低／最高可參加年齡",
@@ -1459,8 +1368,7 @@
               ],
               "machine_clues": [
                 "是否包含數值"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-3",
@@ -1468,7 +1376,6 @@
               "label": "身心健康限制",
               "meaning": "預防已知健康風險",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須揭露不適合參加的健康狀況",
               "allow": [
                 "明確揭露最低／最高可參加年齡",
@@ -1489,8 +1396,7 @@
               ],
               "machine_clues": [
                 "是否包含健康關鍵字"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-4",
@@ -1498,7 +1404,6 @@
               "label": "體能需求",
               "meaning": "讓旅客正確評估負荷",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須描述實際體能強度",
               "allow": [
                 "清楚說明不適合參加的健康狀況類型",
@@ -1519,8 +1424,7 @@
               ],
               "machine_clues": [
                 "是否出現量化描述"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-5",
@@ -1528,7 +1432,6 @@
               "label": "孕婦限制",
               "meaning": "高風險族群保護",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須明確是否可參加",
               "allow": [
                 "描述活動對體力、行走距離或耐力的基本要求",
@@ -1548,8 +1451,7 @@
               ],
               "machine_clues": [
                 "是否明確允許/禁止"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-6",
@@ -1557,7 +1459,6 @@
               "label": "參加條件限制",
               "meaning": "避免隱性門檻",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須揭露特殊條件",
               "allow": [
                 "明確說明是否適合孕婦參加",
@@ -1578,8 +1479,7 @@
               ],
               "machine_clues": [
                 "是否列出具體條件"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-7",
@@ -1587,7 +1487,6 @@
               "label": "行為限制",
               "meaning": "管理行程中不可接受行為",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須說明禁止或限制行為",
               "allow": [
                 "清楚揭露必要資格或條件",
@@ -1607,8 +1506,7 @@
               ],
               "machine_clues": [
                 "是否出現禁止字樣"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-8",
@@ -1616,7 +1514,6 @@
               "label": "安全風險說明",
               "meaning": "建立風險知情",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須揭露不可消除的風險",
               "allow": [
                 "明確說明不可接受的行為類型",
@@ -1637,8 +1534,7 @@
               ],
               "machine_clues": [
                 "是否出現風險描述"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-9",
@@ -1646,7 +1542,6 @@
               "label": "安全強制要求",
               "meaning": "確保不可妥協的安全底線",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須明確列出強制事項",
               "allow": [
                 "誠實揭露活動本身的潛在風險類型",
@@ -1667,8 +1562,7 @@
               ],
               "machine_clues": [
                 "是否出現「必須」"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-7-10",
@@ -1676,7 +1570,6 @@
               "label": "裝備與穿著要求",
               "meaning": "避免因準備不足影響安全",
               "rule": "R4+NOTICE",
-              "verdict": "content_missing",
               "canon": "必須區分自備與提供",
               "allow": [
                 "明確說明必須遵守的安全要求",
@@ -1697,8 +1590,7 @@
               ],
               "machine_clues": [
                 "是否區分自備/提供"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         },
@@ -1713,7 +1605,6 @@
               "label": "履約可行性確認",
               "meaning": "揭露出發前供應商主動確認成行的義務，避免到現場才知取消",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "履約可行性確認指供應商完成所有必要履約判定（如成團、人力、車輛、名額、庫存）。是否需成團依商品性質而定。FFC 完成前，訂單不得標示為已確認。",
               "allow": [
                 "清楚定義何時視為已完成履約可行性確認",
@@ -1736,8 +1627,7 @@
               ],
               "machine_clues": [
                 "是否存在 FFC timestamp 訂單確認時間不得早於 FFC"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-8-2",
@@ -1745,7 +1635,6 @@
               "label": "訂單確認與出單 SLA",
               "meaning": "明確付款後收到正式訂單確認/憑證的最長等待與方式",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "FFC 完成後，平台必須於既定 SLA 內明確回覆訂單確認或失敗結果，不得無故延遲。",
               "allow": [
                 "明確定義最晚完成訂單確認與出單的時間點",
@@ -1766,8 +1655,7 @@
               ],
               "machine_clues": [
                 "訂單確認時間 ≤ FFC + SLA"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-8-3",
@@ -1775,7 +1663,6 @@
               "label": "補救處理-未履約",
               "meaning": "供應商無法履約時的替代時限與退款路徑(最直接決定投訴走向)",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "若最終未完成 FFC，必須明確定義處理方式（全額退款、改期、替代方案），不得轉嫁責任給旅客。",
               "allow": [
                 "清楚定義無法履約時的處理原則",
@@ -1796,8 +1683,7 @@
               ],
               "machine_clues": [
                 "是否設定 fallback type"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-8-4",
@@ -1805,7 +1691,6 @@
               "label": "取消與退款 SLA",
               "meaning": "各節點退款比例/形式/到帳時限，與不含項目對齊",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "取消條件與退款時效必須明確揭露，不得僅以「依供應商規定」或「盡快處理」描述。",
               "allow": [
                 "明確定義取消與退款處理時效",
@@ -1826,8 +1711,7 @@
               ],
               "machine_clues": [
                 "是否存在取消規則與 refund SLA"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-8-5",
@@ -1835,7 +1719,6 @@
               "label": "異動與通知義務",
               "meaning": "付款後行程變更時供應商主動通知的時點與管道",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "凡涉及履約狀態、集合資訊、時間異動，平台皆須主動通知旅客，僅後台更新視為違規。",
               "allow": [
                 "清楚定義何種異動必須通知旅客",
@@ -1856,8 +1739,7 @@
               ],
               "machine_clues": [
                 "狀態異動是否觸發通知事件"
-              ],
-              "verdict_rules": []
+              ]
             },
             {
               "code": "C-1-8-6",
@@ -1865,7 +1747,6 @@
               "label": "風險處理-不可抗力/營運",
               "meaning": "區分供應商過失取消(全退)vs不可抗力取消(依條款)",
               "rule": "R3-6~10",
-              "verdict": "content_missing",
               "canon": "必須揭露天候、交通、管制等風險，並說明取消、改期、替代或退款原則，不得濫用免責條款。",
               "allow": [
                 "清楚說明不可抗力與營運風險的處理原則",
@@ -1886,8 +1767,7 @@
               ],
               "machine_clues": [
                 "是否存在風險與不可抗力政策"
-              ],
-              "verdict_rules": []
+              ]
             }
           ]
         }

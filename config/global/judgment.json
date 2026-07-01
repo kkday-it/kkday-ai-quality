@@ -1,0 +1,32 @@
+{
+  "_comment": "判決顯示與信心閾值——前後端共用非機密 SSOT（前端 @config/global/judgment.json、後端 settings.py 同讀）。信心閾值曾內嵌 db.py（舊 confidence.json 移除為簡化），此處重新外部化，理由：QC 校準後需免改碼調 auto_accept/jury 分層。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
+  "confidence_tiers": {
+    "auto_accept": 0.8,
+    "jury_low": 0.5,
+    "jury_high": 0.7
+  },
+  "ui_confidence_bands": {
+    "high": 0.85,
+    "mid": 0.7
+  },
+  "tier_labels": {
+    "auto_accept": "自動採信",
+    "jury": "評審覆核",
+    "needs_review": "待人工審核",
+    "hold": "暫緩保留"
+  },
+  "polarity_labels": {
+    "positive": "正向",
+    "negative": "負向",
+    "neutral": "中性",
+    "unknown": "數據不足"
+  },
+  "prejudge": {
+    "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞。",
+    "stage1_model": "gpt-5-nano",
+    "enable_stage0_skip": true,
+    "stage0_max_comment_len": 8,
+    "enable_adaptive_rejudge": true,
+    "neg_keywords": ["退款", "退費", "沒有", "錯", "誤導", "差", "爛", "騙", "找不到", "遲到", "取消", "沒收到", "客訴", "抱怨", "失望", "糟", "貴", "拒絕", "無法", "不符"]
+  }
+}

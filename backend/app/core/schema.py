@@ -34,26 +34,6 @@ LogicalField = Literal[
     "none",
 ]
 
-# verdict 八分類 —「是不是真內容問題 + 歸責型態」的判準（L3 靈魂；對齊 SSOT v2.7 B6）
-Verdict = Literal[
-    "real_config_issue",  # 設定寫錯/矛盾 → 進 PM 清單（規則已定義、供應商沒寫對）
-    "content_missing",  # 該講沒講 → 進 PM 清單（規則未定義、回饋修法）
-    "content_unclear",  # 模糊易誤解 → 進 PM 清單（規則未定義、回饋修法）
-    "contract_breach",  # 內容合規但承諾履約不符 → 計點違規（ERC）+ 要求供應商改善
-    "customer_misread",  # 其實寫清楚了 → 不進清單（UX 洞察）
-    "escalate_ops",  # 服務/出貨等非內容 → 不進清單（感知通報 + 協作）
-    "force_majeure",  # ⑦ 不可抗力（天災/疫情/罷工/惡劣天氣/政治）→ 非問題、不罰供應商
-    "pre_sale_inquiry",  # 售前諮詢/推薦（非問題）→ is_problem=false、排除問題率分母
-    "non_issue",  # 正向/中性·非問題（好評讚美、無抱怨）→ 不歸 L3、不進問題清單
-]
-
-# 進 PM 修改清單的 verdict（純內容問題）
-ACTIONABLE_VERDICTS: tuple[Verdict, ...] = (
-    "real_config_issue",
-    "content_missing",
-    "content_unclear",
-)
-
 RecommendedAction = Literal[
     "rewrite_field",
     "fix_contradiction",
@@ -145,7 +125,6 @@ class TicketFinding(BaseModel):
     suspected_field: str = "none"
     evidence_quote: str = ""  # 害客戶誤解的商品原文段
     ground_truth_quote: str = ""  # 客服對話擷取的正確答案（零幻覺）
-    verdict: Verdict
     confidence: float = 0.0  # 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）
     raw_confidence: float = 0.0  # arbiter LLM 原始信心（校準輸入；Cleanlab 離線擬合用）
     is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重判）
@@ -187,7 +166,7 @@ class TicketFinding(BaseModel):
     sub_cause: str = ""  # 子類（如：集合執行、語言服務）
     severity: Severity = "P3"  # 嚴重度（本期不判斷，保留預設供既有 pipeline 相容）
     responsible_party: str = ""  # 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）
-    judgment_tier: int | None = None  # v3 判定層（1/2/3A/3B），由 verdict 推導
+    judgment_tier: int | None = None  # v3 判定層（1/2/3A/3B）
     # ── config/ai_judge L3 歸因（prejudge 產出；歸因分類後新增的數據）──
     l1_domain_code: str = ""  # L1 域機器碼（content/supplier…；root_cause_domain 為其圈號）
     l1_label: str = ""  # L1 域中文名

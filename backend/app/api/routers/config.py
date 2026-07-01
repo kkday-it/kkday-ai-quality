@@ -18,12 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import auth
+from app.core.paths import CONFIG_DIR as _CONFIG  # repo 根 config/（統一定位，取代原 parents[4]）
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 # SSOT 目錄：config/ai_judge（唯一 judge config 家）。備份統一落 config/.backups/（建議 gitignore）。
-# config.py 位於 backend/app/api/routers/ → parents[4] = repo 根。
-_CONFIG: Path = Path(__file__).resolve().parents[4] / "config"
 _DIRS: tuple[Path, ...] = (_CONFIG / "ai_judge",)
 _BACKUP_DIR: Path = _CONFIG / ".backups"
 

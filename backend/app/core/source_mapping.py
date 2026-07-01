@@ -13,11 +13,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
-# config/ai_judge/source_mapping.json（backend/app/core/ → parents[3] = repo root）
-_MAPPING_FILE = Path(__file__).resolve().parents[3] / "config" / "ai_judge" / "source_mapping.json"
+from app.core.paths import AI_JUDGE_DIR  # config/ai_judge 目錄（統一定位）
+
+_MAPPING_FILE = AI_JUDGE_DIR / "source_mapping.json"
 
 _sources: dict[str, dict[str, Any]] = {}
 _canonical: list[str] = []

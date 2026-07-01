@@ -28,9 +28,12 @@ class Settings(BaseSettings):
         extra="ignore",  # .env 含未定義 key 不報錯
     )
 
+    # ── 環境 ──
+    app_env: str = "development"  # development / staging / production；非 development 缺 JWT secret 拒啟動
     # ── 認證 ──
     aiq_jwt_secret: str | None = None
     jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
+    min_password_length: int = 6  # 註冊密碼最短長度（安全政策，可依合規調整）
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
@@ -40,10 +43,11 @@ class Settings(BaseSettings):
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
-    bigquery_project_id: str = "kkday-data-dap"  # BQ live 抽取 project
+    bigquery_project_id: str = ""  # BQ live 抽取 project；強制各環境經 env 設定（移除硬編碼 project 名，避免洩漏；空值時 datasource live 應報錯）
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
     ai_judge_model: str = "gpt-5-nano"  # fallback 預設＝最省（對齊 default_llm.json defaultModel）；下拉見 defaultModels（minVersion 已降至 5）
+    llm_max_retries: int = 5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
     # ── KKday B2C API（datasource live 模式才需要）──
     kkday_b2c_token1: str = ""
     kkday_x_auth_token: str = ""

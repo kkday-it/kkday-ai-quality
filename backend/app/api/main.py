@@ -82,8 +82,11 @@ def _public_user(user: dict) -> dict:
 def register(body: RegisterIn) -> dict:
     """註冊新帳號 → 回 JWT + user。email 重複回 409。"""
     email = body.email.strip().lower()
-    if "@" not in email or len(body.password) < 6:
-        raise HTTPException(status_code=400, detail="email 格式錯誤或密碼少於 6 碼")
+    if "@" not in email or len(body.password) < config.env.min_password_length:
+        raise HTTPException(
+            status_code=400,
+            detail=f"email 格式錯誤或密碼少於 {config.env.min_password_length} 碼",
+        )
     try:
         user = db.create_user(str(uuid.uuid4()), email, auth.hash_password(body.password))
     except db.DuplicateEmailError:
@@ -423,10 +426,9 @@ def list_models(user: dict = Depends(load_user_context)) -> dict:
 def get_findings(
     prod_oid: str | None = None,
     dimension: str | None = None,
-    verdict: str | None = None,
 ) -> list[dict]:
-    """列出判決結果（可依 prod_oid / dimension / verdict 過濾；下鑽用）。"""
-    return db.list_findings(prod_oid, dimension, verdict)
+    """列出判決結果（可依 prod_oid / dimension 過濾；下鑽用）。"""
+    return db.list_findings(prod_oid, dimension)
 
 
 @app.get("/api/products")
@@ -438,7 +440,6 @@ def get_products() -> list[dict]:
 @app.get("/api/problems")
 def get_problems(
     source: str | None = None,
-    verdict: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
     limit: int = 100,
@@ -449,9 +450,7 @@ def get_problems(
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
     排序：評論時間 occurred_at DESC（新在前）+ item_id tiebreaker（穩定·跨頁不變）。
     """
-    return db.list_problems(
-        source=source, verdict=verdict, judged=judged, polarity=polarity, limit=limit, offset=offset
-    )
+    return db.list_problems(source=source, judged=judged, polarity=polarity, limit=limit, offset=offset)
 
 
 class ExportProblemsIn(BaseModel):
@@ -481,7 +480,7 @@ def export_problems(body: ExportProblemsIn) -> Response:
 
 @app.get("/api/problems/summary")
 def get_problems_summary() -> dict:
-    """問題即時匯總（不另存匯總表）：來源 / verdict / 歸因域 / 信心分層 分佈。"""
+    """問題即時匯總（不另存匯總表）：來源 / 歸因域 / 信心分層 分佈。"""
     return db.problems_summary()
 
 
@@ -500,12 +499,6 @@ def get_attribution_breakdown(l1: str, source: str | None = None) -> dict:
 class StatusIn(BaseModel):
     # 人工只可改這三態；new / data_missing 由系統設定。非法值 Pydantic 自動回 422。
     status: Literal["confirmed", "dismissed", "fixed"]
-
-
-@app.get("/api/findings/aggregate")
-def findings_aggregate() -> dict:
-    """dimension×verdict 熱力矩陣聚合 + KPI（出口B 用）。"""
-    return db.aggregate_findings()
 
 
 @app.patch("/api/findings/{finding_id}/status")

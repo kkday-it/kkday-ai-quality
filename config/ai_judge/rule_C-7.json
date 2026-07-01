@@ -28,7 +28,6 @@
               "label": "地震/海嘯",
               "meaning": "規模達門檻(M6.0+)且發緊急狀態；亦列 Act of God",
               "rule": "F7-1",
-              "verdict": "force_majeure",
               "canon": "購票後發生、規模 M6.0 以上或政府宣布緊急狀態之地震/海嘯，方認定不可抗力",
               "allow": [
                 "地震後政府宣布緊急狀態，景點/飯店強制關閉",
@@ -51,10 +50,6 @@
               "machine_clues": [
                 "客訴文本含「地震」「海嘯」「震度」「tsunami」「earthquake」關鍵字",
                 "可交叉比對 USGS/中央氣象局地震速報 API 確認規模與時間"
-              ],
-              "verdict_rules": [
-                "須提供官方緊急狀態公告或 M6.0+ 地震紀錄佐證",
-                "購票時點須在地震事件發生之前"
               ]
             },
             {
@@ -63,7 +58,6 @@
               "label": "火山爆發",
               "meaning": "警戒升 Level3/4，灰雲致停飛/疏散",
               "rule": "F7-2",
-              "verdict": "force_majeure",
               "canon": "購票後火山警戒升至 Level 3/4、致灰雲停飛或強制疏散，方認定不可抗力",
               "allow": [
                 "火山警戒 Level 4，航空局發停飛令，旅客無法入出境",
@@ -86,10 +80,6 @@
               "machine_clues": [
                 "文本含「火山」「噴發」「灰雲」「volcanic」「eruption」關鍵字",
                 "可比對當地火山監測機構（如 PVMBG / GNS）警戒等級紀錄"
-              ],
-              "verdict_rules": [
-                "須有官方警戒 Level 3/4 公告或停飛令佐證",
-                "購票時間點須在警戒升級之前"
               ]
             },
             {
@@ -98,7 +88,6 @@
               "label": "洪水",
               "meaning": "發洪水警報達等級；排除已知預警下購買",
               "rule": "F7-3",
-              "verdict": "force_majeure",
               "canon": "購票後政府發布達等級洪水警報且景點/交通受波及，方認定不可抗力；購票前已知雨季預警者不適用",
               "allow": [
                 "洪水警報達最高等級，景點強制閉園或道路中斷",
@@ -121,10 +110,6 @@
               "machine_clues": [
                 "文本含「洪水」「淹水」「水災」「flood」「flooding」關鍵字",
                 "可比對氣象局洪水警報紀錄確認等級與受影響地區"
-              ],
-              "verdict_rules": [
-                "須有官方洪水警報或緊急狀態公告佐證",
-                "購票前已知高洪患風險者，供應商應事先揭露並提供免費取消"
               ]
             },
             {
@@ -133,7 +118,6 @@
               "label": "山崩/土石流",
               "meaning": "封路令；需附豪雨特報佐證",
               "rule": "F7-4",
-              "verdict": "force_majeure",
               "canon": "購票後政府發豪雨特報且致山崩/土石流，發布封路令，方認定不可抗力",
               "allow": [
                 "豪大雨特報後發生山崩，公路主管機關宣布道路封閉",
@@ -156,10 +140,6 @@
               "machine_clues": [
                 "文本含「山崩」「土石流」「封路」「landslide」「mudslide」關鍵字",
                 "可比對公路總局/縣市政府封路公告確認時間與路段"
-              ],
-              "verdict_rules": [
-                "須有主管機關封路令或土石流警戒公告佐證",
-                "供應商應提供替代方案或及時通知，否則視程度降輕判"
               ]
             },
             {
@@ -168,7 +148,6 @@
               "label": "野火",
               "meaning": "強制疏散令觸發(自願撤離多不賠)",
               "rule": "F7-5",
-              "verdict": "force_majeure",
               "canon": "購票後政府發布強制疏散令（非建議疏散）且覆蓋景點/住宿範圍，方認定不可抗力",
               "allow": [
                 "政府發強制疏散令，景點位於疏散範圍內，行程無法執行",
@@ -191,10 +170,6 @@
               "machine_clues": [
                 "文本含「野火」「山火」「疏散」「wildfire」「bushfire」「evacuation order」關鍵字",
                 "可比對當地消防/緊急管理機構疏散令範圍與效期"
-              ],
-              "verdict_rules": [
-                "強制疏散令（mandatory evacuation）才觸發，建議疏散不適用",
-                "景點需在疏散令覆蓋範圍內，否則須另舉道路封閉佐證"
               ]
             }
           ]
@@ -210,7 +185,6 @@
               "label": "疾病爆發",
               "meaning": "局部群聚；須正式 Outbreak Alert 且購票後新發",
               "rule": "F7-6",
-              "verdict": "force_majeure",
               "canon": "購票後該地區新發正式 Outbreak Alert，且官方建議/禁止旅遊或強制隔離，方認定不可抗力",
               "allow": [
                 "衛生機關發 Outbreak Alert，目的地強制隔離令致行程無法執行",
@@ -233,10 +207,6 @@
               "machine_clues": [
                 "文本含「疫情」「爆發」「Outbreak」「隔離」「封城」關鍵字",
                 "可比對 WHO/CDC Outbreak Notices 時間點與目的地"
-              ],
-              "verdict_rules": [
-                "須有官方 Outbreak Alert 公告且購票後新發",
-                "個人健康風險考量不屬不可抗力，須有官方強制措施"
               ]
             },
             {
@@ -245,7 +215,6 @@
               "label": "流行病",
               "meaning": "政府宣公衛緊急；常為附加險非預設",
               "rule": "F7-7",
-              "verdict": "force_majeure",
               "canon": "購票後政府宣布公共衛生緊急狀態（Epidemic 等級），且頒布強制措施影響旅行，方認定不可抗力",
               "allow": [
                 "政府宣布公衛緊急狀態，禁止跨縣市移動或集會",
@@ -268,10 +237,6 @@
               "machine_clues": [
                 "文本含「Epidemic」「流行病」「公衛緊急」「封城」「禁止集會」關鍵字",
                 "可比對 WHO Epidemic Intelligence 或當地衛生部公告時間"
-              ],
-              "verdict_rules": [
-                "須有官方 Epidemic 宣告或公衛緊急令佐證，建議函不足",
-                "購票後新發者方適用，購票前已知背景風險不納"
               ]
             },
             {
@@ -280,7 +245,6 @@
               "label": "全球大流行",
               "meaning": "WHO 宣告日為分界；部分保單明確除外",
               "rule": "F7-8",
-              "verdict": "force_majeure",
               "canon": "以 WHO 宣告 Pandemic 日期為分界；購票在宣告前且行程受官方強制措施影響，方認定不可抗力",
               "allow": [
                 "WHO 宣告 Pandemic 後，政府頒布入境禁令或封國令",
@@ -303,10 +267,6 @@
               "machine_clues": [
                 "文本含「Pandemic」「大流行」「WHO 宣告」「封國」「入境禁令」關鍵字",
                 "可比對 WHO Pandemic 宣告日期確認購票/取消時間軸"
-              ],
-              "verdict_rules": [
-                "WHO 宣告日期為硬性分界，宣告後購票不適用免責",
-                "部分保單明確除外 Pandemic，須確認合約條款後裁量"
               ]
             },
             {
@@ -315,7 +275,6 @@
               "label": "生物恐怖攻擊",
               "meaning": "多歸恐怖主義條款，賠付標準不同",
               "rule": "F7-9",
-              "verdict": "force_majeure",
               "canon": "購票後發生確認生物恐怖攻擊事件，且官方宣布影響區域無法旅遊，方認定；賠付標準依恐怖主義條款非一般不可抗力",
               "allow": [
                 "政府確認生物恐怖攻擊並宣布隔離區，旅遊行程在範圍內",
@@ -338,10 +297,6 @@
               "machine_clues": [
                 "文本含「生物恐怖」「bioterrorism」「炭疽」「anthrax」「生化攻擊」關鍵字",
                 "需官方（FBI/CDC/WHO）確認聲明，媒體報導不足"
-              ],
-              "verdict_rules": [
-                "須有官方機構確認生物恐怖攻擊並宣布緊急狀態",
-                "賠付依恐怖主義條款而非一般天災條款，需對齊保單分類"
               ]
             }
           ]
@@ -357,7 +312,6 @@
               "label": "航空公司罷工",
               "meaning": "購票前已公告多拒賠；EU261/2004 另適用",
               "rule": "F7-10",
-              "verdict": "force_majeure",
               "canon": "購票後航空公司宣布罷工且致航班取消，方認定不可抗力；購票前已公告之罷工不適用",
               "allow": [
                 "購票後工會突然宣布罷工，直接致航班取消",
@@ -380,10 +334,6 @@
               "machine_clues": [
                 "文本含「罷工」「strike」「工會」「union action」「航班取消」關鍵字",
                 "可比對新聞媒體罷工公告日期與購票時間確認時序"
-              ],
-              "verdict_rules": [
-                "關鍵時點：罷工首次公開宣告日 vs 購票日，購票在前方適用",
-                "EU261/2004 適用時，航空公司有另案賠付責任，需區隔"
               ]
             },
             {
@@ -392,7 +342,6 @@
               "label": "機場地勤罷工",
               "meaning": "同航空原則；工會多提前7天公告，時點認定需精確",
               "rule": "F7-11",
-              "verdict": "force_majeure",
               "canon": "購票後機場地勤工會宣布罷工且致航班/登機停擺，方認定；公告日期須在購票後",
               "allow": [
                 "地勤工會罷工公告在購票後，致行李/登機停擺無法出行",
@@ -415,10 +364,6 @@
               "machine_clues": [
                 "文本含「地勤」「ground staff」「handling strike」「罷工」「機場停擺」關鍵字",
                 "可比對機場官方公告、新聞稿確認地勤罷工時間與影響範圍"
-              ],
-              "verdict_rules": [
-                "時點認定精確：工會公告日必須晚於購票日，否則屬可預見",
-                "需確認是正式工業行動（strike/industrial action），非個別請假"
               ]
             },
             {
@@ -427,7 +372,6 @@
               "label": "空中交通管制罷工",
               "meaning": "空域封閉跨國；多視為 extraordinary circumstance",
               "rule": "F7-12",
-              "verdict": "force_majeure",
               "canon": "購票後空中交通管制（ATC）工會宣布罷工致空域封閉，構成 extraordinary circumstance，方認定",
               "allow": [
                 "ATC 工會罷工封閉特定 FIR 空域，多國航班受阻",
@@ -450,10 +394,6 @@
               "machine_clues": [
                 "文本含「ATC」「空中交通管制」「罷工」「FIR」「空域關閉」關鍵字",
                 "可比對 EUROCONTROL/FAA 等官方 NOTAM 或罷工通告"
-              ],
-              "verdict_rules": [
-                "須確認為罷工行動（非技術故障），對齊 EU261 extraordinary circumstance 定義",
-                "購票時點須在 ATC 罷工公告之前"
               ]
             },
             {
@@ -462,7 +402,6 @@
               "label": "交通運輸罷工",
               "meaning": "鐵/公/船中斷；多列 strike cover 標準承保",
               "rule": "F7-13",
-              "verdict": "force_majeure",
               "canon": "購票後鐵路/公路/渡輪運輸工會宣布罷工致中斷，且為到達景點唯一可行交通，方認定",
               "allow": [
                 "鐵路工會罷工，唯一到達景點交通中斷，無替代路線",
@@ -485,10 +424,6 @@
               "machine_clues": [
                 "文本含「鐵路罷工」「渡輪罷工」「bus strike」「接駁中斷」「train strike」關鍵字",
                 "可查閱當地媒體罷工公告日期，確認是否晚於購票日"
-              ],
-              "verdict_rules": [
-                "須確認為到達景點之唯一或主要交通，替代方案存在則不認定",
-                "罷工公告需晚於購票日，否則屬可預見風險"
               ]
             },
             {
@@ -497,7 +432,6 @@
               "label": "全國大罷工",
               "meaning": "全面停擺；亦觸發 civil unrest 附加條款",
               "rule": "F7-14",
-              "verdict": "force_majeure",
               "canon": "購票後爆發全國性大罷工（general strike）致基本服務全停，且官方確認，方認定",
               "allow": [
                 "政府宣布全國大罷工狀態，交通/景點/飯店全面停擺",
@@ -520,10 +454,6 @@
               "machine_clues": [
                 "文本含「全國大罷工」「general strike」「工業行動」「全面停擺」關鍵字",
                 "可比對官方聲明或主要媒體確認罷工範圍與宣告時間"
-              ],
-              "verdict_rules": [
-                "須官方確認為全國性（general）而非特定行業罷工",
-                "罷工宣告時間須晚於購票日；civil unrest 條款另行處理"
               ]
             }
           ]
@@ -539,7 +469,6 @@
               "label": "颱風/颶風",
               "meaning": "以政府警報為賠付觸發點；升 Category + 政府疏散令→P0",
               "rule": "F7-15",
-              "verdict": "force_majeure",
               "canon": "購票後政府發布颱風/颶風警報（Category 1+ 或同等警戒），且致強制疏散或交通中斷，方認定",
               "allow": [
                 "政府發布颱風警報且同步宣布強制疏散或停班停課令",
@@ -562,10 +491,6 @@
               "machine_clues": [
                 "文本含「颱風」「颶風」「typhoon」「hurricane」「停班停課」「疏散」關鍵字",
                 "可比對中央氣象局/NHC 颱風警報等級及發布時間"
-              ],
-              "verdict_rules": [
-                "以官方停班停課令或強制疏散令為觸發點，建議撤離不足",
-                "升 Category 1+ 且有官方令才認定；純天候不佳不適用"
               ]
             },
             {
@@ -574,7 +499,6 @@
               "label": "暴風雪",
               "meaning": "機場/交通封閉令；須達 cancellation",
               "rule": "F7-16",
-              "verdict": "force_majeure",
               "canon": "購票後氣象機關發布暴風雪警報且致交通/機場封閉或強制取消，方認定",
               "allow": [
                 "暴風雪致機場官方關閉或大規模航班取消令",
@@ -597,10 +521,6 @@
               "machine_clues": [
                 "文本含「暴風雪」「blizzard」「snowstorm」「機場關閉」「道路封閉」關鍵字",
                 "可比對氣象局暴風雪警報及機場/交通主管機關封閉公告"
-              ],
-              "verdict_rules": [
-                "須達機場/交通主管機關宣布封閉或取消，天氣不佳不足",
-                "滑雪/雪地行程需區分：天候運作風險 vs 不可抗力"
               ]
             },
             {
@@ -609,7 +529,6 @@
               "label": "龍捲風",
               "meaning": "發 Tornado Warning 且影響當地",
               "rule": "F7-17",
-              "verdict": "force_majeure",
               "canon": "購票後氣象機關發布 Tornado Warning（非 Watch）且影響景點所在地，方認定",
               "allow": [
                 "Tornado Warning（非 Watch）發布，直接影響景點所在縣市",
@@ -632,10 +551,6 @@
               "machine_clues": [
                 "文本含「龍捲風」「tornado」「Tornado Warning」「強制關閉」關鍵字",
                 "可比對 NWS/氣象局 Warning 發布記錄與景點座標範圍"
-              ],
-              "verdict_rules": [
-                "Watch 與 Warning 嚴格區分：僅 Warning 觸發認定",
-                "影響範圍需包含景點所在地，遠距龍捲風不適用"
               ]
             },
             {
@@ -644,7 +559,6 @@
               "label": "極端高溫/寒流",
               "meaning": "須政府公衛警示；多不單獨承保",
               "rule": "F7-18",
-              "verdict": "force_majeure",
               "canon": "購票後政府發布極端高溫/寒流公衛警示且強制限制戶外活動或關閉設施，方認定；多不單獨承保",
               "allow": [
                 "政府發布極端高溫紅色警示，強制關閉戶外場館",
@@ -667,10 +581,6 @@
               "machine_clues": [
                 "文本含「極端高溫」「寒流」「heat wave」「cold snap」「公衛警示」「戶外禁止」關鍵字",
                 "可比對氣象局公衛警示等級與官方設施關閉公告"
-              ],
-              "verdict_rules": [
-                "須有官方公衛警示且附帶強制設施關閉或活動禁止令",
-                "多數保單不單獨承保極端氣溫，需確認合約條款"
               ]
             },
             {
@@ -679,7 +589,6 @@
               "label": "濃霧",
               "meaning": "限航班取消(非延誤)；單獨理賠成功率低",
               "rule": "F7-19",
-              "verdict": "force_majeure",
               "canon": "購票後氣象機關發布濃霧致航空主管機關宣布航班取消（非延誤），方認定；單獨理賠成功率低",
               "allow": [
                 "航空主管機關宣布能見度不足，航班正式取消（非延誤）",
@@ -702,10 +611,6 @@
               "machine_clues": [
                 "文本含「濃霧」「大霧」「fog」「能見度」「visibility」「航班取消」關鍵字",
                 "可比對航空局/機場 METAR/ATIS 記錄確認能見度與取消決定"
-              ],
-              "verdict_rules": [
-                "取消 vs 延誤嚴格區分，延誤不觸發；需官方取消決定",
-                "單獨濃霧成功理賠率低，需確認保單是否涵蓋 weather cancellation"
               ]
             }
           ]
@@ -721,7 +626,6 @@
               "label": "戰爭/軍事衝突",
               "meaning": "War Exclusion 最普遍除外；購票前已知不賠",
               "rule": "F7-20",
-              "verdict": "force_majeure",
               "canon": "購票後爆發戰爭/武裝衝突，且外交部宣布旅遊禁制（Level 4）或強制撤僑，方認定；多數保單有 War Exclusion",
               "allow": [
                 "購票後開戰，外交部升 Level 4 警示，強制撤僑",
@@ -744,10 +648,6 @@
               "machine_clues": [
                 "文本含「戰爭」「武裝衝突」「war」「military conflict」「撤僑」「Level 4」關鍵字",
                 "可比對外交部旅遊警示等級及生效日期確認購票時序"
-              ],
-              "verdict_rules": [
-                "購票時間須在衝突爆發之前；購票後升 Level 4 才認定",
-                "War Exclusion 須先確認保單條款，賠付責任可能落供應商"
               ]
             },
             {
@@ -756,7 +656,6 @@
               "label": "恐怖主義",
               "meaning": "事件後購買不賠；需 Terrorism Cover 附加",
               "rule": "F7-21",
-              "verdict": "force_majeure",
               "canon": "購票後發生恐怖主義事件，且外交部發警示或官方宣布影響旅遊安全，方認定；恐攻後購票不賠",
               "allow": [
                 "購票後恐怖攻擊事件爆發，外交部發旅遊警示",
@@ -779,10 +678,6 @@
               "machine_clues": [
                 "文本含「恐攻」「恐怖主義」「terrorism」「爆炸」「bombing」「旅遊警示」關鍵字",
                 "可比對外交部旅遊警示升級日期與購票日確認時序"
-              ],
-              "verdict_rules": [
-                "恐攻時間須在購票後，購票前已知事件不適用",
-                "需附 Terrorism Cover 才能依此條款賠付，需確認保單"
               ]
             },
             {
@@ -791,7 +686,6 @@
               "label": "政變",
               "meaning": "須 Level4 且購票後；觸發 civil commotion 條款",
               "rule": "F7-22",
-              "verdict": "force_majeure",
               "canon": "購票後發生政變且外交部升至 Level 4 旅遊禁制，方認定；觸發 civil commotion 條款",
               "allow": [
                 "購票後政變爆發，外交部升 Level 4 旅遊禁制",
@@ -814,10 +708,6 @@
               "machine_clues": [
                 "文本含「政變」「coup」「戒嚴」「martial law」「Level 4」「邊境關閉」關鍵字",
                 "可比對外交部旅遊警示升級時間確認購票前後"
-              ],
-              "verdict_rules": [
-                "須外交部升 Level 4 旅遊禁制，未升級者需另有強制措施佐證",
-                "購票日須在政變爆發前，否則屬可預見風險"
               ]
             },
             {
@@ -826,7 +716,6 @@
               "label": "暴動/民亂",
               "meaning": "須宵禁/緊急狀態(和平示威不觸發)",
               "rule": "F7-23",
-              "verdict": "force_majeure",
               "canon": "購票後爆發暴動/民亂且政府宣布宵禁或緊急狀態，方認定；和平示威不觸發",
               "allow": [
                 "政府宣布宵禁，旅客在宵禁時段無法執行行程",
@@ -849,10 +738,6 @@
               "machine_clues": [
                 "文本含「暴動」「民亂」「宵禁」「riot」「curfew」「緊急狀態」「civil unrest」關鍵字",
                 "可比對當地政府宵禁公告及景點強制關閉公告"
-              ],
-              "verdict_rules": [
-                "宵禁或緊急狀態宣布才觸發，和平示威不適用",
-                "暴動範圍需涵蓋景點或主要交通，遠距發生不認定"
               ]
             },
             {
@@ -861,7 +746,6 @@
               "label": "內戰",
               "meaning": "War & Civil War Exclusion 最廣除外",
               "rule": "F7-24",
-              "verdict": "force_majeure",
               "canon": "購票後爆發內戰且目的地列 Level 4 旅遊禁制，方認定；War & Civil War Exclusion 最廣除外",
               "allow": [
                 "購票後爆發內戰，外交部升 Level 4 旅遊禁制",
@@ -884,10 +768,6 @@
               "machine_clues": [
                 "文本含「內戰」「civil war」「武裝衝突」「Level 4」「撤僑」關鍵字",
                 "可比對外交部旅遊禁制升級日期與購票日確認時序"
-              ],
-              "verdict_rules": [
-                "War & Civil War Exclusion 為最廣除外，需先確認保單條款",
-                "購票日需在內戰爆發/升級日前，否則屬可預見風險"
               ]
             }
           ]
@@ -903,7 +783,6 @@
               "label": "大規模電網停電",
               "meaning": "區域電網崩潰致設施停擺(ABTA UEC 2023 納入)",
               "rule": "F7-25",
-              "verdict": "force_majeure",
               "canon": "購票後發生區域性電網崩潰（非局部停電），致景點/飯店/交通大規模停擺，方認定；ABTA UEC 2023 已納入",
               "allow": [
                 "電網崩潰致景點/機場大規模停電，運作完全停止",
@@ -926,10 +805,6 @@
               "machine_clues": [
                 "文本含「停電」「電網崩潰」「blackout」「power outage」「power grid failure」關鍵字",
                 "可比對當地電力公司/官方公告確認停電範圍與持續時間"
-              ],
-              "verdict_rules": [
-                "須為區域性電網問題（非設備故障），官方宣布或媒體廣泛報導為佐證",
-                "ABTA UEC 2023 納入框架，需確認適用地區與合約版本"
               ]
             },
             {
@@ -938,7 +813,6 @@
               "label": "核輻射事故",
               "meaning": "核電站事故，保險獨立除外條款",
               "rule": "F7-26",
-              "verdict": "force_majeure",
               "canon": "購票後發生核電站事故（INES Level 4+），且官方宣布疏散或禁入區域覆蓋景點，方認定；核除外條款獨立",
               "allow": [
                 "核電站事故 INES Level 4+，官方宣布禁入半徑覆蓋景點",
@@ -961,10 +835,6 @@
               "machine_clues": [
                 "文本含「核事故」「輻射」「nuclear」「INES」「疏散令」「禁入區」關鍵字",
                 "可比對 IAEA/官方核能監管機構事故等級紀錄與疏散範圍"
-              ],
-              "verdict_rules": [
-                "須達 INES Level 4+ 且官方疏散/禁入令覆蓋景點，低階事故不認定",
-                "核除外條款獨立於一般天災條款，需確認保單分類後裁量"
               ]
             },
             {
@@ -973,7 +843,6 @@
               "label": "關鍵基礎設施癱瘓",
               "meaning": "通訊/衛星/機場系統全停致無法運作",
               "rule": "F7-27",
-              "verdict": "force_majeure",
               "canon": "購票後發生關鍵基礎設施（通訊/機場資訊/航管系統）全面癱瘓，致旅遊無法執行，方認定",
               "allow": [
                 "機場 IT 系統全面故障，官方宣布暫停起降",
@@ -996,10 +865,6 @@
               "machine_clues": [
                 "文本含「機場系統」「航管癱瘓」「IT failure」「系統全停」「infrastructure outage」關鍵字",
                 "可比對官方公告或主要媒體確認關鍵設施癱瘓範圍與時間"
-              ],
-              "verdict_rules": [
-                "須為關鍵基礎設施（機場/航管/衛星）而非商業系統，且官方確認",
-                "須有官方宣布停擺決定，非供應商自評影響"
               ]
             }
           ]

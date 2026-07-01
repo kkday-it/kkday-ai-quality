@@ -7,10 +7,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-# config/ 位於 repo 根：backend/app/core/pricing.py → parents[3] = repo root
-_PRICE_FILE = Path(__file__).resolve().parents[3] / "config" / "global" / "model_pricing.json"
+from app.core.paths import GLOBAL_DIR  # config/global 目錄（統一定位）
+
+_PRICE_FILE = GLOBAL_DIR / "model_pricing.json"
 
 _cache: dict | None = None
 
