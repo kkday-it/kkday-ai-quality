@@ -14,6 +14,14 @@ export interface GetProblemsParams {
   dateFrom?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   dateTo?: string;
+  /** 商品 prod_oid 精確過濾。 */
+  prodOid?: string;
+  /** 訂單 order_oid 精確過濾。 */
+  orderOid?: string;
+  /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
+  sortBy?: string;
+  /** 排序方向（asc/desc；預設 desc）。 */
+  sortDir?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
@@ -28,6 +36,10 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
+  if (params.prodOid) q.set('prod_oid', params.prodOid);
+  if (params.orderOid) q.set('order_oid', params.orderOid);
+  if (params.sortBy) q.set('sort_by', params.sortBy);
+  if (params.sortDir) q.set('sort_dir', params.sortDir);
   q.set('limit', String(params.limit ?? 2000));
   q.set('offset', String(params.offset ?? 0));
   return j(`${BASE}/problems?${q.toString()}`);

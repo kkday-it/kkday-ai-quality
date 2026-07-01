@@ -99,9 +99,9 @@ const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
   { key: 'l3_candidates', label: 'L3 候選（top-3）' },
 ];
 
+// 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。
 const PRODUCT_REVIEWS_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
-  { type: 'score', options: [1, 2, 3, 4, 5] },
   { type: 'productVertical' },
   { type: 'dateRange', field: 'occurred_at', label: '評論時間' },
 ];

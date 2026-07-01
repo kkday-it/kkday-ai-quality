@@ -51,6 +51,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const scoreFilter = ref<number[]>([]);
   const productVerticalFilter = ref<string[]>([]);
   const dateRange = ref<string[]>([]);
+  const prodOidFilter = ref('');
+  const orderOidFilter = ref('');
+  /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
+  const sortValue = ref('occurred_at:desc');
   /** 生效的 polarity 篩選（送後端）。 */
   const effPolarity = computed(() =>
     onlyProblem.value ? 'negative' : polarityFilter.value || undefined,
@@ -94,10 +98,13 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const pageSize = ref(20);
   const loading = ref(true);
   const error = ref('');
+  /** 展開列 key（受控）；每次載入預設全展開，「一鍵收合」清空。 */
+  const expandedKeys = ref<string[]>([]);
 
   const loadPage = async () => {
     loading.value = true;
     error.value = '';
+    const [sortBy, sortDir] = sortValue.value.split(':');
     try {
       const r = await getProblems({
         source: toValue(source),
@@ -106,16 +113,38 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
+        prodOid: prodOidFilter.value.trim() || undefined,
+        orderOid: orderOidFilter.value.trim() || undefined,
+        sortBy: sortBy || undefined,
+        sortDir: (sortDir as 'asc' | 'desc') || 'desc',
         limit: pageSize.value,
         offset: (page.value - 1) * pageSize.value,
       });
       rows.value = r.rows || [];
       total.value = r.total || 0;
+      expandedKeys.value = rows.value.map((x) => x.item_id); // 載入後預設全展開
     } catch (e: any) {
       error.value = '載入失敗：' + (e?.message || e);
     } finally {
       loading.value = false;
     }
+  };
+  /** 一鍵收合 / 展開全部：依當前是否已全展開切換。 */
+  const allExpanded = computed(() => rows.value.length > 0 && expandedKeys.value.length >= rows.value.length);
+  const toggleExpandAll = () => {
+    expandedKeys.value = allExpanded.value ? [] : rows.value.map((x) => x.item_id);
+  };
+  /** 重置所有篩選 + 排序（回預設）並重載第 1 頁。 */
+  const resetFilters = () => {
+    polarityFilter.value = '';
+    onlyProblem.value = false;
+    scoreFilter.value = [];
+    productVerticalFilter.value = [];
+    dateRange.value = [];
+    prodOidFilter.value = '';
+    orderOidFilter.value = '';
+    sortValue.value = 'occurred_at:desc';
+    onFilterChange();
   };
   /** 取未判筆數（全部未判按鈕顯示）。 */
   const loadUnjudged = async () => {
@@ -146,6 +175,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       if (!filterTypes.has('score')) scoreFilter.value = [];
       if (!filterTypes.has('productVertical')) productVerticalFilter.value = [];
       if (!filterTypes.has('dateRange')) dateRange.value = [];
+      // prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
+      prodOidFilter.value = '';
+      orderOidFilter.value = '';
+      sortValue.value = 'occurred_at:desc';
       onFilterChange();
     },
   );
@@ -182,6 +215,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     const hi = Math.max(...pages);
     const ps = pageSize.value;
     try {
+      const [sortBy, sortDir] = sortValue.value.split(':');
       const r = await getProblems({
         source: toValue(source),
         polarity: effPolarity.value,
@@ -189,6 +223,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
+        prodOid: prodOidFilter.value.trim() || undefined,
+        orderOid: orderOidFilter.value.trim() || undefined,
+        sortBy: sortBy || undefined,
+        sortDir: (sortDir as 'asc' | 'desc') || 'desc',
         limit: (hi - lo + 1) * ps,
         offset: (lo - 1) * ps,
       });
@@ -313,7 +351,14 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     productVerticalFilter,
     productVerticalOpts,
     dateRange,
+    prodOidFilter,
+    orderOidFilter,
+    sortValue,
     onFilterChange,
+    resetFilters,
+    expandedKeys,
+    allExpanded,
+    toggleExpandAll,
     // 模型
     llmConfigId,
     llmConfigs,

@@ -293,31 +293,63 @@ def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
 # ── product_reviews 專表（拆自 intake_items；見 tables.py 註解）───────────────
 
 
-def insert_product_reviews_batch(rows: list[dict]) -> int:
+def insert_product_reviews_batch(rows: list[dict], errors: list[str] | None = None) -> int:
     """批量 upsert product_reviews 列（衝突鍵 source_record_id，覆蓋業務欄位、保留 xid）。
 
     PG ON CONFLICT DO UPDATE 只更新 set_ 列出的欄位，xid 不在其中故自動保留原值
     （同一 source_record_id 重複匯入＝更新內容、非新增列）。
 
+    容錯設計（大檔上傳穩定性）：分塊 executemany（效能）；整塊失敗自動 fallback 逐列隔離，
+    只跳過真正壞的列、不讓單筆髒資料令整批 rollback + HTTP 500。批內同鍵先去重避免
+    ON CONFLICT 同鍵重複影響。
+
     Args:
         rows: product_reviews_ingest.row_to_product_review 產出的欄位 dict 清單。
+        errors: 選填；提供時將跳過列的錯誤原因（最多 10 筆）append 進此清單供上層回報。
 
     Returns:
-        處理筆數（含新增與覆蓋）；空清單回 0。
+        成功 upsert 的唯一 source_record_id 筆數；空清單 / 全無自然鍵回 0。
     """
     if not rows:
         return 0
     pr = T.product_reviews
     business_cols = [c.name for c in pr.columns if c.name not in ("xid", "source_record_id")]
-    with T.get_engine().begin() as c:
-        for row in rows:
-            if not row.get("source_record_id"):
-                continue  # 無自然鍵者跳過（防禦：避免髒資料以 NULL 衝突鍵批量覆蓋彼此）
-            stmt = _pg_insert(pr).values(**row)
-            update = {k: stmt.excluded[k] for k in business_cols if k in row}
-            stmt = stmt.on_conflict_do_update(index_elements=["source_record_id"], set_=update)
-            c.execute(stmt)
-    return len(rows)
+    # 過濾無自然鍵 + 批內去重（同 source_record_id 留最後一筆）：避免 executemany 的 ON CONFLICT
+    # 在單一語句內同鍵重複影響（PG 會報 "cannot affect row a second time"）；冪等語義＝後者覆蓋前者。
+    dedup: dict[str, dict] = {}
+    for row in rows:
+        sid = row.get("source_record_id")
+        if not sid:
+            continue  # 無自然鍵者跳過（防禦：避免髒資料以 NULL 衝突鍵批量覆蓋彼此）
+        dedup[sid] = row
+    clean = list(dedup.values())
+    if not clean:
+        return 0
+    # executemany 要求每列同鍵：以固定欄位集（除 xid 自增）補齊，缺值填 None。
+    cols = [c.name for c in pr.columns if c.name != "xid"]
+    base = _pg_insert(pr)
+    stmt = base.on_conflict_do_update(
+        index_elements=["source_record_id"], set_={c: base.excluded[c] for c in business_cols}
+    )
+    eng = T.get_engine()
+    inserted = 0
+    chunk_size = 1000  # 分塊 executemany：29k 列由 60s→數秒，且避免單一巨型 transaction 長鎖/逾時
+    for i in range(0, len(clean), chunk_size):
+        params = [{c: row.get(c) for c in cols} for row in clean[i : i + chunk_size]]
+        try:
+            with eng.begin() as c:
+                c.execute(stmt, params)
+            inserted += len(params)
+        except Exception:  # noqa: BLE001 — 整塊失敗 → 逐列隔離跳過壞列，避免單筆髒資料令整批 500
+            for p in params:
+                try:
+                    with eng.begin() as c:
+                        c.execute(stmt, [p])
+                    inserted += 1
+                except Exception as ex:  # noqa: BLE001
+                    if errors is not None and len(errors) < 10:
+                        errors.append(f"{p.get('source_record_id')}: {type(ex).__name__}: {str(ex)[:160]}")
+    return inserted
 
 
 # ── 帳號系統（users）+ per-user 設定（user_settings）─────────────────────
@@ -684,6 +716,10 @@ def list_problems(
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: str = "occurred_at",
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "desc",
 ) -> dict:
     """統一問題列表（intake/專表 LEFT JOIN judgments），分頁。回 {rows, total}。
 
@@ -707,7 +743,8 @@ def list_problems(
     spec = source_registry.spec_for(source)
     if spec is not None:
         return _list_problems_spec(
-            spec, judged, polarity, limit, offset, score, product_vertical, date_from, date_to, date_field
+            spec, judged, polarity, limit, offset, score, product_vertical, date_from, date_to,
+            date_field, prod_oid, order_oid, sort_by, sort_dir,
         )
 
     ii, jg = T.intake_items, T.judgments
@@ -730,14 +767,15 @@ def list_problems(
     if polarity:
         # polarity 存 judgments.data JSON → 以 jsonb 抽出過濾（未判 data 為 null 自然排除）
         sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
+    if prod_oid:
+        sel = sel.where(ii.c.prod_oid == prod_oid)
     count_stmt = select(func.count()).select_from(sel.subquery())
-    # 純 SQL 穩定排序：評論時間 occurred_at DESC（新在前）+ item_id tiebreaker。
-    # 全在 SQL 排序，伺服器端分頁（limit/offset）才正確；occurred_at 為欄位故可索引。
-    page = (
-        sel.order_by(ii.c.occurred_at.desc().nullslast(), ii.c.item_id.asc())
-        .limit(limit)
-        .offset(offset)
-    )
+    # 純 SQL 穩定排序：預設評論時間 occurred_at DESC（新在前）+ item_id tiebreaker；
+    # 全在 SQL 排序，伺服器端分頁（limit/offset）才正確。動態排序走白名單防注入。
+    _sort_map = {"occurred_at": ii.c.occurred_at, "confidence": jg.c.confidence}
+    sort_col = _sort_map.get(sort_by or "", ii.c.occurred_at)
+    ordering = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+    page = sel.order_by(ordering.nullslast(), ii.c.item_id.asc()).limit(limit).offset(offset)
     with T.get_engine().connect() as c:
         total = c.execute(count_stmt).scalar() or 0
         rows = [_enrich_problem(dict(r), source) for r in c.execute(page).mappings()]
@@ -755,6 +793,10 @@ def _list_problems_spec(
     date_from: str | None,
     date_to: str | None,
     date_field: str,
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "desc",
 ) -> dict:
     """list_problems 的已拆表來源分支（product_reviews 等）：直接查該專表 LEFT JOIN judgments。
 
@@ -791,17 +833,26 @@ def _list_problems_spec(
             codes.extend(_product_vertical.codes_for_group(g))
         if codes:
             sel = sel.where(tbl.c[spec.category_col].in_(codes))
+    if prod_oid and "prod_oid" in tbl.c:
+        sel = sel.where(tbl.c.prod_oid == prod_oid)
+    if order_oid and "order_oid" in tbl.c:
+        sel = sel.where(tbl.c.order_oid == order_oid)
     date_col = tbl.c[date_field] if date_field in tbl.c else tbl.c[spec.date_col]
     if date_from:
         sel = sel.where(func.substr(date_col, 1, 10) >= date_from)
     if date_to:
         sel = sel.where(func.substr(date_col, 1, 10) <= date_to)
     count_stmt = select(func.count()).select_from(sel.subquery())
-    page = (
-        sel.order_by(tbl.c.occurred_at.desc().nullslast(), tbl.c.item_id.asc())
-        .limit(limit)
-        .offset(offset)
-    )
+    # 動態排序（白名單防注入；未指定/未知欄一律 occurred_at）；item_id tiebreaker 確保跨頁穩定。
+    _sort_map = {
+        "occurred_at": tbl.c.occurred_at,
+        "go_date": tbl.c.go_date if "go_date" in tbl.c else tbl.c.occurred_at,
+        "score": tbl.c[spec.score_col] if spec.score_col else tbl.c.occurred_at,
+        "confidence": jg.c.confidence,
+    }
+    sort_col = _sort_map.get(sort_by or "", tbl.c.occurred_at)
+    ordering = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+    page = sel.order_by(ordering.nullslast(), tbl.c.item_id.asc()).limit(limit).offset(offset)
     with T.get_engine().connect() as c:
         total = c.execute(count_stmt).scalar() or 0
         rows = [_enrich_problem(dict(r), spec.source) for r in c.execute(page).mappings()]

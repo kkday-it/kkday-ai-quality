@@ -25,17 +25,36 @@ const POLARITY_COLOR: Record<string, string> = {
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
+/** 排序選項（'欄位:方向'，對應後端 sort_by/sort_dir 白名單）；涵蓋評論時間 / 星等 / 信心。 */
+const SORT_OPTS = [
+  { value: 'occurred_at:desc', label: '評論時間 · 新→舊' },
+  { value: 'occurred_at:asc', label: '評論時間 · 舊→新' },
+  { value: 'score:desc', label: '星等 · 高→低' },
+  { value: 'score:asc', label: '星等 · 低→高' },
+  { value: 'confidence:desc', label: '信心 · 高→低' },
+  { value: 'confidence:asc', label: '信心 · 低→高' },
+];
+
+/** 依傾向給整列一個 class，用背景色一眼區分正負中性/數據不足（未判無色）。 */
+const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
+
 const source = ref('product_reviews');
 
 const {
   schema,
   polarityFilter,
   onlyProblem,
-  scoreFilter,
   productVerticalFilter,
   productVerticalOpts,
   dateRange,
+  prodOidFilter,
+  orderOidFilter,
+  sortValue,
   onFilterChange,
+  resetFilters,
+  expandedKeys,
+  allExpanded,
+  toggleExpandAll,
   llmConfigId,
   llmConfigs,
   rows,
@@ -132,14 +151,14 @@ onMounted(init);
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
       hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
     >
+      <!-- 篩選列 1：傾向 + 排序 + 操作（重置 / 一鍵收合）-->
       <div class="mb-2 flex flex-wrap items-center gap-3">
-        <!-- 傾向篩選（僅看問題 / 下拉互斥：勾選僅看問題時鎖定下拉為負向）-->
         <template v-if="schema.filters.some((f) => f.type === 'polarity')">
           <a-checkbox v-model="onlyProblem" @change="onFilterChange">僅看問題（負向）</a-checkbox>
           <a-select
             v-model="polarityFilter"
             size="small"
-            style="width: 140px"
+            style="width: 130px"
             :disabled="onlyProblem"
             :options="[
               { value: '', label: '全部傾向' },
@@ -151,23 +170,25 @@ onMounted(init);
             @change="onFilterChange"
           />
         </template>
+        <a-select
+          v-model="sortValue"
+          size="small"
+          style="width: 170px"
+          :options="SORT_OPTS"
+          @change="onFilterChange"
+        />
+        <a-button size="small" @click="resetFilters">重置篩選</a-button>
+        <a-button size="small" @click="toggleExpandAll">
+          {{ allExpanded ? '一鍵收合' : '全部展開' }}
+        </a-button>
+      </div>
 
-        <!-- 星等篩選（多選）-->
+      <!-- 篩選列 2：商品垂直分類 + 日期 + 商品/訂單 ID + 分頁選取（一行）-->
+      <div class="mb-2 flex flex-wrap items-center gap-3">
         <template v-for="f in schema.filters" :key="f.type">
-          <a-select
-            v-if="f.type === 'score'"
-            v-model="scoreFilter"
-            multiple
-            size="small"
-            style="min-width: 160px"
-            placeholder="星等"
-            :max-tag-count="2"
-            :options="f.options.map((s) => ({ value: s, label: `${s} 星` }))"
-            @change="onFilterChange"
-          />
           <!-- 商品垂直分類篩選（多選；選項來自 config 動態解析）-->
           <a-select
-            v-else-if="f.type === 'productVertical'"
+            v-if="f.type === 'productVertical'"
             v-model="productVerticalFilter"
             multiple
             size="small"
@@ -188,12 +209,29 @@ onMounted(init);
             @change="onFilterChange"
           />
         </template>
-
+        <a-input
+          v-model="prodOidFilter"
+          size="small"
+          allow-clear
+          style="width: 140px"
+          placeholder="商品 prod_oid"
+          @press-enter="onFilterChange"
+          @clear="onFilterChange"
+        />
+        <a-input
+          v-model="orderOidFilter"
+          size="small"
+          allow-clear
+          style="width: 140px"
+          placeholder="訂單 order_oid"
+          @press-enter="onFilterChange"
+          @clear="onFilterChange"
+        />
         <a-input
           v-model="pageSpec"
           size="small"
           allow-clear
-          style="width: 240px"
+          style="width: 200px"
           placeholder="如 1,2,3 或 1,2~5 或 1~5"
           @press-enter="selectPages"
         />
@@ -208,6 +246,7 @@ onMounted(init);
         empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
       >
         <a-table
+          v-model:expanded-keys="expandedKeys"
           :data="rows"
           :columns="COLS"
           :pagination="{
@@ -219,7 +258,8 @@ onMounted(init);
             showJumper: true,
           }"
           :row-selection="{ type: 'checkbox', selectedRowKeys: selectedKeys, showCheckedAll: true }"
-          :expandable="{ defaultExpandAllRows: true }"
+          :expandable="{}"
+          :row-class="rowClass"
           class="min-h-0 flex-1"
           size="small"
           row-key="item_id"
@@ -268,7 +308,7 @@ onMounted(init);
           </template>
           <!-- 展開行明細：依來源 schema.expandFields 呈現，預設全展開可收合 -->
           <template #expand-row="{ record }">
-            <a-descriptions :column="3" size="small" bordered>
+            <a-descriptions class="attr-expand" :column="3" size="small" bordered :label-style="{ width: '88px' }">
               <a-descriptions-item v-for="f in schema.expandFields" :key="f.key" :label="f.label">
                 {{ expandFieldText(record, f.key, f.format) }}
               </a-descriptions-item>
@@ -309,3 +349,29 @@ onMounted(init);
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+/* 傾向背景色（一眼區分正負中性/數據不足）：row-class 由 rowClass() 給出，
+   Arco 內部 tr/td 無法用 utility 觸及，故用 :deep + Arco 色階 token（非 --kk- DS token）。 */
+:deep(.arco-table-tr.pol-row-negative > .arco-table-td) {
+  background-color: rgb(var(--red-1));
+}
+:deep(.arco-table-tr.pol-row-positive > .arco-table-td) {
+  background-color: rgb(var(--green-1));
+}
+:deep(.arco-table-tr.pol-row-neutral > .arco-table-td) {
+  background-color: rgb(var(--gray-2));
+}
+:deep(.arco-table-tr.pol-row-unknown > .arco-table-td) {
+  background-color: rgb(var(--orange-1));
+}
+
+/* 展開明細固定欄寬：Arco a-descriptions 內部為 table，預設依內容自動撐欄→每列寬度不一。
+   table-layout:fixed + 固定 label 寬，讓 3 組 label/value 欄寬跨列一致（utility/prop 無法觸及內部 table）。 */
+:deep(.attr-expand .arco-descriptions-table) {
+  table-layout: fixed;
+}
+:deep(.attr-expand .arco-descriptions-item-value) {
+  word-break: break-word;
+}
+</style>

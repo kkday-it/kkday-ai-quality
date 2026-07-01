@@ -81,7 +81,16 @@ const confirmImport = async () => {
     );
     const ok = (r.results || []).filter((x: any) => !x.error);
     const total = ok.reduce((a: number, x: any) => a + (x.inserted || 0), 0);
-    Message.success(`已匯入 ${ok.length} 個工作表、共 ${total} 筆`);
+    const failed = ok.reduce((a: number, x: any) => a + (x.failed || 0), 0);
+    if (failed > 0) {
+      // 部分成功：容錯匯入下，壞列被跳過而非整批 500；列出前幾筆原因供排查。
+      const reasons = ok.flatMap((x: any) => x.errors || []).slice(0, 5);
+      Message.warning(
+        `已匯入 ${total} 筆，略過 ${failed} 筆${reasons.length ? `：${reasons.join('；')}` : ''}`,
+      );
+    } else {
+      Message.success(`已匯入 ${ok.length} 個工作表、共 ${total} 筆`);
+    }
     modalVisible.value = false;
     pendingFile.value = null;
     loadBatches();

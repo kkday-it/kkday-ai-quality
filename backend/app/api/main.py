@@ -218,18 +218,26 @@ async def upload_inbound(
             continue
         label = srcmap.source_label(s.source)
         if s.source == "product_reviews":
-            rows = [
-                product_reviews_ingest.row_to_product_review(srcmap.normalize_row(s.source, row), row)
-                for row in sh["rows"]
-            ]
+            # 逐列轉換容錯：單列 normalize / mapping 失敗只跳過該列並記因，不讓整批上傳 500。
+            rows: list[dict] = []
+            errs: list[str] = []
+            for row in sh["rows"]:
+                try:
+                    rows.append(
+                        product_reviews_ingest.row_to_product_review(srcmap.normalize_row(s.source, row), row)
+                    )
+                except Exception as ex:  # noqa: BLE001
+                    if len(errs) < 10:
+                        errs.append(f"transform: {type(ex).__name__}: {str(ex)[:120]}")
+            inserted = db.insert_product_reviews_batch(rows, errors=errs)
             batch = db.create_batch(
-                s.source, label, f"{file.filename}::{s.sheet_name}", len(rows), len(rows)
+                s.source, label, f"{file.filename}::{s.sheet_name}", len(sh["rows"]), inserted
             )
-            inserted = db.insert_product_reviews_batch(rows)
             results.append(
                 {
                     "sheet_name": s.sheet_name, "source": s.source, "label": label,
-                    "batch_id": batch["batch_id"], "inserted": inserted, "total": len(rows),
+                    "batch_id": batch["batch_id"], "inserted": inserted, "total": len(sh["rows"]),
+                    "failed": len(sh["rows"]) - inserted, "errors": errs[:10],
                 }
             )
             continue
@@ -455,6 +463,10 @@ def get_problems(
     product_verticals: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "desc",
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
@@ -463,7 +475,8 @@ def get_problems(
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
     星等 scores / 商品垂直分類 product_verticals 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
-    排序：評論時間 occurred_at DESC（新在前）+ item_id tiebreaker（穩定·跨頁不變）。
+    prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
+    未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
     """
     return db.list_problems(
         source=source,
@@ -473,6 +486,10 @@ def get_problems(
         product_vertical=_csv_strs(product_verticals),
         date_from=date_from,
         date_to=date_to,
+        prod_oid=prod_oid,
+        order_oid=order_oid,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
