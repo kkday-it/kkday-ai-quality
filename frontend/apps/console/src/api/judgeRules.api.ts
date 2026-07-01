@@ -12,6 +12,8 @@ export interface RuleMeta {
   author: string | null;
   note: string | null;
   created_at: string | null;
+  /** L1 域中文名，自 content._meta.label（SSOT）；schema 等無此欄者為 null，由前端 fallback 補。 */
+  label: string | null;
 }
 
 /** 歷史版本列。 */

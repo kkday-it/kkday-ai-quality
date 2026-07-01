@@ -10,7 +10,7 @@ export interface ScoreFilterDef {
   options: number[];
 }
 
-/** 商品分類分組篩選（多選；選項來自 config/ai_judge/rule_category_groups.json 動態解析）。 */
+/** 商品分類分組篩選（多選；選項來自 config/global/product_vertical.json 動態解析）。 */
 export interface CategoryGroupFilterDef {
   type: 'categoryGroup';
 }

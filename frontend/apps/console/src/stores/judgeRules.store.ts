@@ -15,16 +15,10 @@ import {
   type RuleVersionMeta,
 } from '@/api/judgeRules.api';
 
-/** 子規則顯示名（評論導向 6 域 C-1..C-6 + schema + 商品分類分組）。 */
-export const RULE_LABELS: Record<string, string> = {
-  schema: '結構規格', // 結構定義置首：先看整體規格，再編各域規則
-  'C-1': '商品內容',
-  'C-2': '商品品質',
-  'C-3': '供應商履約',
-  'C-4': '使用體驗',
-  'C-5': '客服營運',
-  'C-6': '客人理解',
-  category_groups: '商品分類分組', // 非歸因分類：Tour/Exp/Charter/Tix 等商品分類分組，供歸因列表篩選用
+/** 非域偽 rule 的顯示名 fallback。域規則（C-N）的中文名一律由後端 meta.label（content._meta.label，SSOT）
+ * 提供，見 store.labelFor——不再於前端各寫一份而漂移。schema 為結構規格、無 _meta.label，故在此補。 */
+export const RULE_LABELS_FALLBACK: Record<string, string> = {
+  schema: '結構規格',
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {
@@ -44,6 +38,12 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
       JSON.stringify(edited.value) !== JSON.stringify(baseline.value),
   );
   const currentMeta = computed(() => metas.value.find((m) => m.rule_code === activeCode.value));
+
+  /** rule code → 顯示名：優先後端 meta.label（SSOT），非域偽 rule 回退 fallback，最後回 code 本身。 */
+  function labelFor(code: string): string {
+    const m = metas.value.find((x) => x.rule_code === code);
+    return m?.label || RULE_LABELS_FALLBACK[code] || code;
+  }
 
   /** 載入清單（各 rule active meta）。 */
   async function loadList() {
@@ -116,6 +116,7 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     error,
     dirty,
     currentMeta,
+    labelFor,
     loadList,
     selectRule,
     setEdited,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import qcDefaults from '@config/global/default_qc.json';
+import qcDefaults from '@config/global/qc_db.json';
 import { testQcDb } from '@/api';
 import type { QcDbTestResult } from '@/api';
 import { Terminal } from '@/components';

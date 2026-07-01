@@ -127,7 +127,7 @@ export interface CategoryGroupsResolved {
 
 /**
  * 取已解析的商品分類分組（供篩選下拉；選項顯示分組名、送出亦送分組名，CATEGORY 代碼清單由後端展開）。
- * 對應 `judge_rule_versions` 版本化的 `category_groups` config（規則配置 tab 可編輯）。
+ * 資料源＝config/global/product_vertical.json（純 config，唯讀）；後端 category_groups loader 解析。
  * @returns {groups:{分組名:[CATEGORY代碼,...]}}
  */
 export const getCategoryGroupsResolved = (): Promise<CategoryGroupsResolved> =>

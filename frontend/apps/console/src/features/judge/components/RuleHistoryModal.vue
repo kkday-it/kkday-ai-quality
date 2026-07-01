@@ -6,7 +6,7 @@ import { create } from 'jsondiffpatch';
 import { format } from 'jsondiffpatch/formatters/html';
 import 'jsondiffpatch/formatters/styles/html.css';
 import { getRuleVersion } from '@/api/judgeRules.api';
-import { RULE_LABELS, useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 
 const visible = defineModel<boolean>('visible', { default: false });
 const store = useJudgeRulesStore();
@@ -26,7 +26,7 @@ const contentCache = new Map<number, Record<string, unknown>>();
 
 const versions = computed(() => store.history.map((h) => h.version));
 /** 彈窗標題：動態帶當前規則顯示名（「規則配置」為 RuleManager tab 新名，非固定字串）。 */
-const modalTitle = computed(() => `${RULE_LABELS[store.activeCode] ?? store.activeCode} — 歷史版本`);
+const modalTitle = computed(() => `${store.labelFor(store.activeCode)} — 歷史版本`);
 
 watch(visible, async (v) => {
   if (!v) return;

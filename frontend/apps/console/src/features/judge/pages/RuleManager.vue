@@ -8,15 +8,15 @@ import { Message, Modal } from '@arco-design/web-vue';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { getRule } from '@/api/judgeRules.api';
-import { RULE_LABELS, useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryModal from '../components/RuleHistoryModal.vue';
-import CategoryGroupPanel from '../components/CategoryGroupPanel.vue';
 
 const store = useJudgeRulesStore();
-const codes = Object.keys(RULE_LABELS); // C-1..C-7 + schema + category_groups
-// 歸因分類（C-N）；schema 屬結構規格、category_groups 屬商品分類配置，皆不入「恢復所有歸因分類」批次
-const domainCodes = codes.filter((c) => c !== 'schema' && c !== 'category_groups');
+// 歸因分類（C-N，schema 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不再讀前端靜態表。
+const domainCodes = computed(() =>
+  store.metas.filter((m) => m.rule_code !== 'schema').map((m) => m.rule_code),
+);
 const mode = ref<'panel' | 'json'>('panel');
 const historyOpen = ref(false);
 const saveOpen = ref(false);
@@ -27,8 +27,6 @@ const saving = ref(false);
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
 
 const isSchema = computed(() => store.activeCode === 'schema');
-// 商品分類分組：結構為 {groups:{name:[codes]}}，非 L1/L2/L3 樹 → 恆用專屬 CategoryGroupPanel，不走面板/JSON 切換
-const isCategoryGroups = computed(() => store.activeCode === 'category_groups');
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
@@ -51,7 +49,7 @@ async function pick(code: string) {
     Message.warning('有未儲存變更，請先儲存或切換版本');
     return;
   }
-  // schema 無樹狀結構 → 只用 JSON；category_groups 用專屬面板（mode 值不影響其渲染）；C-N 預設面板
+  // schema 無樹狀結構 → 只用 JSON；C-N 預設面板
   mode.value = code === 'schema' ? 'json' : 'panel';
   await store.selectRule(code);
 }
@@ -123,7 +121,7 @@ function doResetAll() {
     >
       <a-menu-item key="schema">
         <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
-        <span class="ml-2">{{ RULE_LABELS['schema'] }}</span>
+        <span class="ml-2">{{ store.labelFor('schema') }}</span>
       </a-menu-item>
       <a-menu-item-group>
         <template #title>
@@ -134,20 +132,16 @@ function doResetAll() {
         </template>
         <a-menu-item v-for="c in domainCodes" :key="c">
           <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-          <span class="ml-2">{{ RULE_LABELS[c] }}</span>
+          <span class="ml-2">{{ store.labelFor(c) }}</span>
         </a-menu-item>
       </a-menu-item-group>
-      <!-- 商品分類分組：獨立於歸因分類之外的配置項，不參與「恢復所有歸因分類」批次 -->
-      <a-menu-item key="category_groups">
-        <span class="ml-1">{{ RULE_LABELS['category_groups'] }}</span>
-      </a-menu-item>
     </a-menu>
 
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="mb-3 flex flex-none items-center gap-3">
-        <!-- schema 僅 JSON、category_groups 恆用專屬面板，皆不顯示面板/JSON 切換 -->
-        <a-radio-group v-if="!isSchema && !isCategoryGroups" v-model="mode" type="button" size="small">
+        <!-- schema 僅 JSON，不顯示面板/JSON 切換 -->
+        <a-radio-group v-if="!isSchema" v-model="mode" type="button" size="small">
           <a-radio value="panel">面板</a-radio>
           <a-radio value="json">JSON</a-radio>
         </a-radio-group>
@@ -171,17 +165,9 @@ function doResetAll() {
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
-          <!-- 商品分類分組：恆用專屬面板（非 L1/L2/L3 樹，不走 RuleTreePanel/JsonEditor 切換）-->
-          <CategoryGroupPanel
-            v-if="isCategoryGroups && store.edited"
-            :key="editorKey"
-            class="h-full"
-            :content="store.edited"
-            @change="onChange"
-          />
           <!-- schema 一律 JSON 模式；C-N 依 mode -->
           <RuleTreePanel
-            v-else-if="mode === 'panel' && !isSchema && store.edited"
+            v-if="mode === 'panel' && !isSchema && store.edited"
             :key="editorKey"
             class="h-full"
             :content="store.edited"

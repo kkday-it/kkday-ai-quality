@@ -23,6 +23,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { IconRefresh } from '@arco-design/web-vue/es/icon';
 import { StateGuard, CardSection } from '@/components';
 import { KpiCard } from '../components';
+import { SOURCE_LABEL } from '../constants';
 import { useAttributionDashboard } from '../composables';
 
 use([
@@ -39,14 +40,19 @@ use([
 
 /**
  * 檢視目錄：每個檢視綁定固定 source（縱覽=全部即 undefined），並宣告該 source 有無星等資料。
- * source 值對齊 config/ai_judge/source_mapping.json 與 SOURCES 常數；
+ * source 值對齊 config/global/sources.json 與 SOURCES 常數；
  * conversations（售前售後進線）無 score 映射 → showScore=false，不顯示星等分布。
  */
 const VIEWS = [
-  { key: 'overview', label: '縱覽', source: undefined, showScore: false },
-  { key: 'reviews', label: '商品評論', source: 'product_reviews', showScore: true },
-  { key: 'intake', label: '售前售後進線', source: 'conversations', showScore: false },
+  { key: 'overview', source: undefined, showScore: false },
+  { key: 'reviews', source: 'product_reviews', showScore: true },
+  { key: 'intake', source: 'conversations', showScore: false },
 ] as const;
+
+/** 檢視顯示名：綁定 source 者取 SOURCE_LABEL（SSOT＝sources.json），縱覽（無 source）為固定「縱覽」。 */
+function viewLabel(v: (typeof VIEWS)[number]): string {
+  return v.source ? (SOURCE_LABEL[v.source] ?? v.source) : '縱覽';
+}
 
 const view = ref<(typeof VIEWS)[number]['key']>('overview');
 const active = computed(() => VIEWS.find((v) => v.key === view.value)!);
@@ -87,7 +93,7 @@ const {
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
       <a-radio-group v-model="view" type="button" size="small">
-        <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ v.label }}</a-radio>
+        <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ viewLabel(v) }}</a-radio>
       </a-radio-group>
       <a-range-picker
         v-model="dateRange"

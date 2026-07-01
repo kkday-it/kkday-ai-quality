@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import qcDefaults from '@config/global/default_qc.json';
+import qcDefaults from '@config/global/qc_db.json';
 import { AccordionGroup, StateGuard } from '@/components';
 import { useSettingsConfigsStore } from '@/stores';
 import { QcConfigCard, QcConfigEditor } from '../components';

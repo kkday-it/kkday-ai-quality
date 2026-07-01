@@ -7,7 +7,7 @@ import {
   type AttributionBreakdown,
   type CountItem,
 } from '../utils';
-import { TIER_LABELS } from '../constants';
+import { POLARITY_LABELS, TIER_LABELS } from '../constants';
 
 /** 傾向語義色（對齊 AttributionList 的 POLARITY_COLOR 語義）。 */
 const POL_COLOR: Record<string, string> = {
@@ -189,7 +189,7 @@ export function useAttributionDashboard(
     return buildAttrFunnelOption([
       { name: '進線', value: d.total_intake },
       { name: '已判', value: d.judged },
-      { name: '負向', value: neg },
+      { name: POLARITY_LABELS.negative, value: neg },
       { name: '已歸因', value: d.attributed },
     ]);
   });
@@ -217,7 +217,7 @@ export function useAttributionDashboard(
       months: data.value?.trend.months ?? [],
       series: [
         { name: '已判', data: data.value?.trend.judged ?? [] },
-        { name: '負向', data: data.value?.trend.negative ?? [] },
+        { name: POLARITY_LABELS.negative, data: data.value?.trend.negative ?? [] },
       ],
     }),
   );
