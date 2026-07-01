@@ -34,6 +34,13 @@ const TIERS = [
 /** 商品內容 L1 域 code（config/ai_judge/domains.json items[].code，圈號① 商品內容）——優先關注佔比用。 */
 const CONTENT_DOMAIN_CODE = 'content';
 
+/** useAttributionDashboard 的響應式查詢輸入（日期區間 + 趨勢粒度；皆可 ref / getter / 純值）。 */
+export interface AttrDashboardQuery {
+  dateFrom?: MaybeRefOrGetter<string | undefined>;
+  dateTo?: MaybeRefOrGetter<string | undefined>;
+  granularity?: MaybeRefOrGetter<string | undefined>;
+}
+
 /**
  * 歸因縱覽儀表板的資料與圖表邏輯（縱覽 / 商品評論 / 售前售後進線 三檢視共用）。
  *
@@ -42,9 +49,13 @@ const CONTENT_DOMAIN_CODE = 'content';
  *
  * @param source 目標來源；傳 `undefined` 代表全部來源（縱覽）。可為 ref / getter / 純值，
  *   內部以 `toValue` 解包並 watch，切換檢視（source 變更）時自動重載並清空下鑽狀態。
+ * @param query 日期區間 + 趨勢粒度（皆響應式；任一變更即自動重載）。
  * @returns 載入三態、KPI 與各圖表 option（computed）、L1 下鑽狀態與操作、`reload` 手動重整。
  */
-export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefined>) {
+export function useAttributionDashboard(
+  source: MaybeRefOrGetter<string | undefined>,
+  query: AttrDashboardQuery = {},
+) {
   const data = ref<AttributionOverview | null>(null);
   const loading = ref(true);
   const error = ref('');
@@ -61,7 +72,12 @@ export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefi
     drillL1.value = null;
     breakdown.value = null;
     try {
-      data.value = (await getAttributionOverview(toValue(source))) as AttributionOverview;
+      data.value = (await getAttributionOverview({
+        source: toValue(source),
+        dateFrom: toValue(query.dateFrom),
+        dateTo: toValue(query.dateTo),
+        granularity: toValue(query.granularity),
+      })) as AttributionOverview;
     } catch (e: unknown) {
       error.value = '載入失敗：' + (e instanceof Error ? e.message : String(e));
     } finally {
@@ -75,10 +91,11 @@ export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefi
     drillLoading.value = true;
     breakdown.value = null;
     try {
-      breakdown.value = (await getAttributionBreakdown(
-        code,
-        toValue(source),
-      )) as AttributionBreakdown;
+      breakdown.value = (await getAttributionBreakdown(code, {
+        source: toValue(source),
+        dateFrom: toValue(query.dateFrom),
+        dateTo: toValue(query.dateTo),
+      })) as AttributionBreakdown;
     } catch (e: unknown) {
       error.value = '下鑽失敗：' + (e instanceof Error ? e.message : String(e));
     } finally {
@@ -92,8 +109,17 @@ export function useAttributionDashboard(source: MaybeRefOrGetter<string | undefi
     if (hit) openDrill(hit.code, hit.label);
   };
 
-  // source（檢視）變更即自動重載；immediate 取代 onMounted 首載
-  watch(() => toValue(source), reload, { immediate: true });
+  // source（檢視）/ 日期區間 / 粒度 任一變更即自動重載；immediate 取代 onMounted 首載
+  watch(
+    () => [
+      toValue(source),
+      toValue(query.dateFrom),
+      toValue(query.dateTo),
+      toValue(query.granularity),
+    ],
+    reload,
+    { immediate: true },
+  );
 
   const hasData = computed(() => !!data.value && data.value.total_intake > 0);
 

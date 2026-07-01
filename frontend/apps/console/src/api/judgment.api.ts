@@ -58,24 +58,41 @@ export const startPrejudge = (body: {
 export const getPrejudgeStatus = (jobId: string) =>
   j(`${BASE}/v1/judgment/prejudge/status?job_id=${encodeURIComponent(jobId)}`);
 
+/** 歸因聚合共用查詢參數（source 過濾 + 日期區間 + 趨勢粒度）。 */
+export interface AttrQuery {
+  /** 來源 code（省略＝全部來源） */
+  source?: string;
+  /** 起日 'YYYY-MM-DD'（含；省略＝不限） */
+  dateFrom?: string;
+  /** 迄日 'YYYY-MM-DD'（含；省略＝不限） */
+  dateTo?: string;
+  /** 趨勢粒度 year|month|day（省略＝後端預設 month；僅 overview 有效） */
+  granularity?: string;
+}
+
 /**
- * 歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/判決/信心分層/星等 分布 + 月趨勢。
+ * 歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
  * 一次取齊，避免前端全量 fetch 29k 列再算。
- * @param source 來源 code（省略＝全部來源）
+ * @param opts 來源 / 日期區間 / 趨勢粒度（皆選填）
  */
-export const getAttributionOverview = (source?: string) => {
+export const getAttributionOverview = (opts: AttrQuery = {}) => {
   const q = new URLSearchParams();
-  if (source) q.set('source', source);
+  if (opts.source) q.set('source', opts.source);
+  if (opts.dateFrom) q.set('date_from', opts.dateFrom);
+  if (opts.dateTo) q.set('date_to', opts.dateTo);
+  if (opts.granularity) q.set('granularity', opts.granularity);
   return j(`${BASE}/problems/attribution_overview?${q.toString()}`);
 };
 
 /**
  * 某 L1 歸因域下的 L2/L3 細項分布（縱覽長條點擊下鑽·懶載）。
  * @param l1 L1 歸因域 code（如 'supplier'）
- * @param source 來源 code（省略＝全部來源）
+ * @param opts 來源 / 日期區間（granularity 對下鑽無效，忽略）
  */
-export const getAttributionBreakdown = (l1: string, source?: string) => {
+export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   const q = new URLSearchParams({ l1 });
-  if (source) q.set('source', source);
+  if (opts.source) q.set('source', opts.source);
+  if (opts.dateFrom) q.set('date_from', opts.dateFrom);
+  if (opts.dateTo) q.set('date_to', opts.dateTo);
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };

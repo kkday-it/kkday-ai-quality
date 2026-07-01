@@ -51,7 +51,12 @@ const VIEWS = [
 const view = ref<(typeof VIEWS)[number]['key']>('overview');
 const active = computed(() => VIEWS.find((v) => v.key === view.value)!);
 
-// source 以 getter 傳入，切換檢視即觸發 composable 內 watch 自動重載
+// 日期區間（a-range-picker，'YYYY-MM-DD' 陣列）+ 趨勢粒度（年/月/日），驅動所有面板重載
+const dateRange = ref<string[]>([]);
+const granularity = ref('month');
+const granLabel = computed(() => ({ year: '年', month: '月', day: '日' })[granularity.value] ?? '月');
+
+// source / 日期 / 粒度 以 getter 傳入，任一變更即觸發 composable 內 watch 自動重載
 const {
   loading,
   error,
@@ -71,7 +76,11 @@ const {
   l3Bar,
   tierDonut,
   trend,
-} = useAttributionDashboard(() => active.value.source);
+} = useAttributionDashboard(() => active.value.source, {
+  dateFrom: () => dateRange.value?.[0],
+  dateTo: () => dateRange.value?.[1],
+  granularity,
+});
 </script>
 
 <template>
@@ -79,6 +88,17 @@ const {
     <div class="flex items-center gap-3">
       <a-radio-group v-model="view" type="button" size="small">
         <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ v.label }}</a-radio>
+      </a-radio-group>
+      <a-range-picker
+        v-model="dateRange"
+        size="small"
+        value-format="YYYY-MM-DD"
+        style="width: 240px"
+      />
+      <a-radio-group v-model="granularity" type="button" size="small">
+        <a-radio value="year">年</a-radio>
+        <a-radio value="month">月</a-radio>
+        <a-radio value="day">日</a-radio>
       </a-radio-group>
       <a-button size="small" :loading="loading" @click="reload">
         <template #icon><icon-refresh /></template>
@@ -118,7 +138,7 @@ const {
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="問題量趨勢（月）" hint="依評論時間聚合 · 已判 vs 負向問題量">
+          <CardSection :title="`問題量趨勢（${granLabel}）`" hint="依評論時間聚合 · 已判 vs 負向問題量">
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
