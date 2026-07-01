@@ -5,7 +5,7 @@
 
 分工：
 - 機密 / 環境相關（本檔）：JWT secret、LLM token fallback、KKday/Mixpanel 憑證 → backend/.env
-- 非機密共用預設（另處）：QC DB host/port、LLM provider 目錄 → repo 根 config/global/default_qc.json、default_llm.json
+- 非機密共用預設（另處）：QC DB host/port、LLM provider 目錄 → repo 根 config/global/qc_db.json、llm_model.json
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     bigquery_project_id: str = ""  # BQ live 抽取 project；強制各環境經 env 設定（移除硬編碼 project 名，避免洩漏；空值時 datasource live 應報錯）
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
-    ai_judge_model: str = "gpt-5-nano"  # fallback 預設＝最省（對齊 default_llm.json defaultModel）；下拉見 defaultModels（minVersion 已降至 5）
+    ai_judge_model: str = "gpt-5-nano"  # fallback 預設＝最省（對齊 llm_model.json defaultModel）；下拉見 defaultModels（minVersion 已降至 5）
     llm_max_retries: int = 5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
     # ── KKday B2C API（datasource live 模式才需要）──
     kkday_b2c_token1: str = ""

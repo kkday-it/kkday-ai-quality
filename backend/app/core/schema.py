@@ -6,11 +6,24 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field
 
-# 8 大內容治理 dimension（取自 ① 審品 rules.json，三支柱共用同一分類法）
+# 8 大內容治理 dimension label 的單一真相源（legacy 相容欄；roster.DIM_CODE / prejudge 關鍵詞映射皆引用此，
+# 不再各自手打中文，杜絕三處副本漂移）。順序即語義順序。
+CONTENT_DIMENSIONS: tuple[str, ...] = (
+    "商品定位",
+    "行程流程",
+    "費用資訊",
+    "集合資訊",
+    "使用兌換",
+    "成團條件",
+    "限制與風險",
+    "承諾與SLA",
+)
+
+# Dimension 型別（compile-time Literal 無法由 tuple 展開，故字面重列；下方 assert 保證與 CONTENT_DIMENSIONS 一致）。
 Dimension = Literal[
     "商品定位",
     "行程流程",
@@ -22,6 +35,11 @@ Dimension = Literal[
     "承諾與SLA",
     "non_content",  # 出貨/退款/系統/服務等非內容
 ]
+
+# import 期守衛：Literal 與 tuple 兩份字面若漂移即炸，強制同檔內同步（取代跨檔三副本的隱性 drift）。
+assert set(CONTENT_DIMENSIONS) | {"non_content"} == set(get_args(Dimension)), (
+    "CONTENT_DIMENSIONS 與 Dimension Literal 不一致，請同步"
+)
 
 # 商品可歸因的邏輯欄位（L0 已正規化別名）
 LogicalField = Literal[

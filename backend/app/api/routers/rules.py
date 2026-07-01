@@ -29,35 +29,16 @@ def _check_code(code: str) -> None:
         raise HTTPException(status_code=404, detail=f"未知 rule code：{code}")
 
 
-def _validate_category_groups(content: dict) -> None:
-    """category_groups 專屬結構驗證：{"groups": {str: [str, ...]}}；不合法拋 422。
-
-    商品分類分組非歸因分類（不對應 L1/L2/L3 schema 語意），套用該 schema 會誤判 422，
-    故獨立輕量結構檢查（不引入額外 schema 檔，符合本次範圍）。
-    """
-    groups = content.get("groups")
-    if not isinstance(groups, dict):
-        raise HTTPException(status_code=422, detail="category_groups 內容須含 'groups' dict")
-    for name, codes in groups.items():
-        if not isinstance(name, str):
-            raise HTTPException(status_code=422, detail=f"分組名須為字串：{name!r}")
-        if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
-            raise HTTPException(status_code=422, detail=f"分組「{name}」的代碼須為字串清單")
-
-
 def _validate(code: str, content: dict) -> None:
-    """存檔前驗證：schema 自身用 metaschema、category_groups 用專屬輕量結構檢查、其餘用 active schema。
+    """存檔前驗證：schema 自身用 metaschema、其餘用 active schema。不過拋 422。
 
-    不過拋 422。
+    註：商品分類分組（category_groups）已解耦為純 config/global/product_vertical.json（唯讀，不經此端點存檔）。
     """
     if code == "schema":
         try:
             jsonschema.Draft202012Validator.check_schema(content)
         except jsonschema.exceptions.SchemaError as e:
             raise HTTPException(status_code=422, detail=f"schema 不合法：{e.message}") from None
-        return
-    if code == "category_groups":
-        _validate_category_groups(content)
         return
     schema = db.get_rule_active("schema") or db.default_rule_content("schema")
     errs = sorted(
@@ -80,8 +61,13 @@ def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
 # 註：須定義於 `/{code}` GET 之前（雖然路徑段數不同不會衝突，仍比照 reset-default-all 慣例前置）。
 @router.get("/category-groups/resolved")
 def get_category_groups_resolved(user: dict = Depends(auth.get_current_user)) -> dict:
-    """取當前生效的商品分類分組定義（{"groups": {name: [codes]}}）；未設定則回空 groups。"""
-    return db.get_rule_active("category_groups") or {"groups": {}}
+    """取當前生效的商品分類分組定義（{"groups": {name: [codes]}}）；讀純 config loader，缺檔回空 groups。
+
+    註：category_groups 已解耦為 config/global/product_vertical.json（唯讀）；端點路徑保留供前端篩選面板不變。
+    """
+    from app.core import category_groups
+
+    return {"groups": category_groups.all_groups()}
 
 
 @router.get("/{code}")

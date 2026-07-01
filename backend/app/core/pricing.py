@@ -1,7 +1,7 @@
-"""LLM token → 花費估算（單價統一內聚於 config/global/default_llm.json 各 model）。
+"""LLM token → 花費估算（單價統一內聚於 config/global/llm_model.json 各 model）。
 
 判決批量「同步顯示 token 花費金額」用：把 usage（prompt/completion tokens）依模型單價換算 USD。
-單價 SSOT＝default_llm.json `providers[].defaultModels[]` 的 input/output 欄（每 1M tokens USD），
+單價 SSOT＝llm_model.json `providers[].defaultModels[]` 的 input/output 欄（每 1M tokens USD），
 與 model 清單同檔內聚（不再分立 model_pricing.json）；未列單價之模型回退根層 `price_default`。
 過時手動更新該檔即時生效（reload() 清快取）。
 """
@@ -12,7 +12,7 @@ import json
 
 from app.core.paths import GLOBAL_DIR  # config/global 目錄（統一定位）
 
-_LLM_FILE = GLOBAL_DIR / "default_llm.json"
+_LLM_FILE = GLOBAL_DIR / "llm_model.json"
 
 # lazy 快取：model id → {input, output}；_default 為未列出模型的回退單價。
 _table: dict[str, dict] | None = None
@@ -40,7 +40,7 @@ def _load() -> dict[str, dict]:
 
 
 def reload() -> None:
-    """清快取（default_llm.json 編輯後呼叫，使新單價即時生效）。"""
+    """清快取（llm_model.json 編輯後呼叫，使新單價即時生效）。"""
     global _table
     _table = None
 

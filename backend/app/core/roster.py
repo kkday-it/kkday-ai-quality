@@ -26,7 +26,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from app.core import db
+from app.core import db, schema
 from app.core import tables as T
 from app.core.utils import now_iso as _now
 
@@ -34,17 +34,20 @@ _DEFAULT_CSV = (
     Path(__file__).resolve().parents[2] / "fixtures" / "intake" / "postsale_intake_sample.csv"
 )
 
-# schema.py Dimension（judgments.dimension 實際值）→ 質檢彙總欄位前綴
-DIM_CODE: dict[str, str] = {
-    "商品定位": "positioning",
-    "行程流程": "itinerary",
-    "費用資訊": "fee",
-    "集合資訊": "meetup",
-    "使用兌換": "redeem",
-    "成團條件": "group_form",
-    "限制與風險": "restriction",
-    "承諾與SLA": "sla",
-}
+# schema.py Dimension（judgments.dimension 實際值）→ 質檢彙總欄位前綴。
+# key 由 schema.CONTENT_DIMENSIONS 逐位對映（不再手打中文 label，杜絕與 schema/prejudge 副本漂移）；
+# value（欄位前綴）為 roster 專有、無他處副本，順序須對齊 CONTENT_DIMENSIONS。
+_DIM_PREFIXES: tuple[str, ...] = (
+    "positioning",
+    "itinerary",
+    "fee",
+    "meetup",
+    "redeem",
+    "group_form",
+    "restriction",
+    "sla",
+)
+DIM_CODE: dict[str, str] = dict(zip(schema.CONTENT_DIMENSIONS, _DIM_PREFIXES, strict=True))
 
 def _to_float(s: str) -> float:
     try:

@@ -139,16 +139,6 @@ class SingleEntryIn(BaseModel):
     pkg_oid: str = ""
 
 
-# 來源標記 → 顯示名（用於批次自動命名「售前售後進線 2026062301」）
-SOURCE_LABELS: dict[str, str] = {
-    "conversations": "售前售後進線",
-    "review": "商品評論",
-    "ticket": "工單",
-    "manual": "其他",
-    "csv": "CSV",
-}
-
-
 class UploadSelection(BaseModel):
     """確認匯入時用戶勾選的工作表：sheet_name + 確認來源（通常＝自動辨識結果）。"""
 
@@ -431,7 +421,7 @@ def _model_meets_min(model_id: str, min_version: str) -> bool:
 def list_models(user: dict = Depends(load_user_context)) -> dict:
     """動態列出當前 user 配置可取得的 model id（過濾 ≥ 門檻版本）；無 token 回空清單。
 
-    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/global/default_llm.json defaultModels[].desc 提供（API 無此資訊）。
+    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/global/llm_model.json defaultModels[].desc 提供（API 無此資訊）。
     """
     from app.core import settings as app_settings
 
@@ -626,7 +616,7 @@ def _try_qc_db_connect(cfg: dict) -> dict:
             "error": "後端未安裝 psycopg2，無法測試連線（pip install psycopg2-binary）",
         }
     from app.core.settings import (
-        QC_DB_DEFAULTS,  # port fallback 取共用 config/global/default_qc.json
+        QC_DB_DEFAULTS,  # port fallback 取共用 config/global/qc_db.json
     )
 
     try:

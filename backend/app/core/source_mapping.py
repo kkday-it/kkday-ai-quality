@@ -57,9 +57,13 @@ def canonical_fields() -> list[str]:
 
 
 def source_label(source: str) -> str:
-    """來源 code → 中文顯示名；未知回原 code。"""
-    _ensure_loaded()
-    return _sources.get(source, {}).get("label", source)
+    """來源 code → 中文顯示名；委派 sources.label_for（label SSOT 唯一在 config/global/sources.json）。
+
+    本檔（欄位映射）不再自帶 label，避免與 sources.json 兩份漂移。
+    """
+    from app.core import sources
+
+    return sources.label_for(source)
 
 
 def _norm_headers(headers: list[str]) -> set[str]:

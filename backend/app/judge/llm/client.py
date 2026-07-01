@@ -88,7 +88,7 @@ def _resolve() -> dict:
 def list_models() -> list[str]:
     """回傳當前 provider（由 base_url 判定）的本地預設模型清單；不再打 /v1/models。
 
-    清單 SSOT＝`config/global/default_llm.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
+    清單 SSOT＝`config/global/llm_model.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
     新增模型只改該檔一處。改本地預設原因：/v1/models 會倒出帳號全模型（embedding / 語音 / 影像 /
     legacy davinci-babbage-ada / ft-kkday 舊 fine-tune），下拉可能誤選 whisper 當判決模型。
     base_url 空 → 預設 openai；非 OpenAI 依關鍵字判 gemini / bytedance。

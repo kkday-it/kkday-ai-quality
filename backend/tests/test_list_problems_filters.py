@@ -42,13 +42,12 @@ def _pr_row(**overrides) -> dict:
     return base
 
 
-def _seed_category_groups(temp_db) -> None:  # noqa: ARG001  fixture 僅需已啟用 temp_db 上下文
-    """seed 一版 category_groups 規則供 category_group 篩選測試使用。"""
-    db.save_rule_version(
-        "category_groups",
-        {"groups": {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}},
-        note="test seed",
-        author="test",
+def _seed_category_groups(monkeypatch) -> None:
+    """注入 category_groups loader 快取供 category_group 篩選測試（已解耦為 config loader，不再走 DB）。"""
+    from app.core import category_groups
+
+    monkeypatch.setattr(
+        category_groups, "_groups", {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}
     )
 
 
@@ -93,9 +92,9 @@ def test_list_problems_source_registry_score_filter(temp_db) -> None:
     assert result["rows"][0]["item_id"] == "product_reviews-R1"
 
 
-def test_list_problems_source_registry_category_group_filter(temp_db) -> None:
-    """source='product_reviews' + category_group='Tour'：依 category_groups 規則展開代碼篩選。"""
-    _seed_category_groups(temp_db)
+def test_list_problems_source_registry_category_group_filter(temp_db, monkeypatch) -> None:
+    """source='product_reviews' + category_group='Tour'：依 category_groups 分組展開代碼篩選。"""
+    _seed_category_groups(monkeypatch)
     db.insert_product_reviews_batch(
         [
             _pr_row(

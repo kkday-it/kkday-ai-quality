@@ -26,6 +26,7 @@ _l3_by_domain: dict[str, list[dict[str, Any]]] = {}
 _domain_label: dict[str, str] = {}  # code → 中文域名（自 rule tree[0].label）
 _domain_order: list[str] = []  # 域顯示順序（rule 檔名排序，穩定）
 _domain_excluded: set[str] = set()  # _meta.intake_excluded=true 的域（不進預判候選）
+_domain_action: dict[str, str] = {}  # code → recommended_action（自 rule _meta.recommended_action）
 _loaded = False
 
 
@@ -108,8 +109,12 @@ def _ensure_loaded() -> None:
         _domain_label[domain] = l1.get("label", domain)
         if domain not in _domain_order:
             _domain_order.append(domain)
-        if data.get("_meta", {}).get("intake_excluded"):
+        _meta = data.get("_meta", {})
+        if _meta.get("intake_excluded"):
             _domain_excluded.add(domain)
+        action = _meta.get("recommended_action")
+        if action:  # 域→建議行動（SSOT 內聚於各 rule _meta，取代 prejudge 舊硬編碼 dict）
+            _domain_action[domain] = action
         nodes = _flatten_l3(l1)
         _l3_by_domain.setdefault(domain, []).extend(nodes)
         for n in nodes:
@@ -125,6 +130,7 @@ def reload() -> None:
     _domain_label.clear()
     _domain_order.clear()
     _domain_excluded.clear()
+    _domain_action.clear()
     _loaded = False
     _ensure_loaded()
 
@@ -133,6 +139,15 @@ def domain_label(code: str) -> str:
     """域 code → 中文域名（顯示用）；未知回原 code。"""
     _ensure_loaded()
     return _domain_label.get(code, code)
+
+
+def domain_action(code: str) -> str:
+    """域 code → recommended_action（自 rule _meta.recommended_action）；未設回 escalate_ux。
+
+    取代 prejudge 舊 _DOMAIN_ACTION 硬編碼（曾用已廢域名 order/platform/cs，導致現行域靜默失準）。
+    """
+    _ensure_loaded()
+    return _domain_action.get(code, "escalate_ux")
 
 
 def l3_by_code(code: str) -> dict[str, Any] | None:

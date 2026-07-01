@@ -26,7 +26,6 @@ from sqlalchemy.exc import IntegrityError
 from app.core import source_registry
 from app.core import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR  # config/ai_judge 目錄（統一定位）
-from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR  # config/global 目錄（統一定位）
 from app.core.schema import InboundItem, TicketFinding
 
 
@@ -379,13 +378,14 @@ def save_user_settings(user_id: str, data: dict) -> None:
 # ── 判決規則版本（config/ai_judge/ 的 7 rule + schema；append-only 快照）────────
 # 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 # _AI_JUDGE_DIR 由 app.core.paths 統一提供（見檔頭 import）。
-# 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格
-# + category_groups（商品分類分組 Tour/Exp/Charter/Tix，非歸因分類，但復用同一版本化機制）
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "category_groups")
+# 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格。
+# 註：商品分類分組（category_groups）已解耦為純 config/global/product_vertical.json（app/core/category_groups.py
+# 直讀），不再入版本化 RULE_CODES。
+RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema")
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→schema.json，C-N→rule_C-N.json，category_groups→rule_category_groups.json）。"""
+    """rule_code → 對應默認檔（schema→schema.json，C-N→rule_C-N.json）。"""
     return _AI_JUDGE_DIR / ("schema.json" if code == "schema" else f"rule_{code}.json")
 
 
@@ -399,10 +399,21 @@ def _jrv():  # 縮寫
 
 
 def list_rule_meta() -> list[dict]:
-    """列所有 rule 的 active 版 meta（rule_code/version/author/note/created_at），無 active 者略。"""
+    """列所有 rule 的 active 版 meta（rule_code/version/author/note/created_at/label），無 active 者略。
+
+    label 自 content._meta.label（JSONB 路徑抽出，避免拉整份 content）；schema 等無 _meta.label 者回 None，
+    由前端 fallback 補顯示名。此為 L1 域中文名的唯一真相源（取代前端 RULE_LABELS 各寫一份而漂移）。
+    """
     j = _jrv()
     stmt = (
-        select(j.c.rule_code, j.c.version, j.c.author, j.c.note, j.c.created_at)
+        select(
+            j.c.rule_code,
+            j.c.version,
+            j.c.author,
+            j.c.note,
+            j.c.created_at,
+            j.c.content["_meta"]["label"].astext.label("label"),
+        )
         .where(j.c.is_active.is_(True))
         .order_by(j.c.rule_code)
     )
@@ -478,9 +489,9 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復所有歸因分類（C-N，排除 schema / category_groups）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    schema 屬結構規格、category_groups 屬商品分類分組，皆非歸因分類，不在此批次。
+    schema 屬結構規格、非歸因分類，不在此批次。
     缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
@@ -489,7 +500,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     done: list[dict] = []
     skipped: list[str] = []
     for code in RULE_CODES:
-        if code in ("schema", "category_groups"):
+        if code == "schema":
             continue
         try:
             done.append(reset_rule_default(code, author=author))
@@ -766,7 +777,7 @@ def _list_problems_spec(
     if score and spec.score_col:
         sel = sel.where(tbl.c[spec.score_col].in_(score))
     if category_group and spec.category_col:
-        # 延遲匯入：category_groups.py import db（單向），db.py 頂層 import 會造成循環。
+        # category_groups 已解耦為純 config loader（不再 import db）；此處局部 import 僅避免頂層冗餘依賴。
         from app.core import category_groups as _category_groups
 
         groups = [category_group] if isinstance(category_group, str) else list(category_group)
@@ -814,10 +825,10 @@ _EXPORT_COLS: list[tuple[str, str]] = [
     ("依據", "reason"),
 ]
 
-# 判決顯示 label + 信心閾值 SSOT＝config/global/judgment.json（前後端同讀）。
-# db 不能 import settings（settings 已 import db → 會循環），故此處以 paths.GLOBAL_DIR 自讀該檔。
+# 判決顯示 label + 信心閾值 SSOT＝config/ai_judge/judgment.json（前後端同讀）。
+# db 不能 import settings（settings 已 import db → 會循環），故此處以 paths.AI_JUDGE_DIR 自讀該檔。
 try:
-    _JUDGMENT_CFG: dict = json.loads((_GLOBAL_DIR / "judgment.json").read_text(encoding="utf-8"))
+    _JUDGMENT_CFG: dict = json.loads((_AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
 except (OSError, ValueError):
     _JUDGMENT_CFG = {}
 
@@ -841,7 +852,7 @@ def fmt_datetime(value, *, date_only: bool = False) -> str:
 
 
 # ── judge 顯示標籤（judgment.json；取代已移除的 taxonomy）─────────────────────────────
-# 信心分層 code → 繁中（純顯示）＋ 分桶閾值：改讀 config/global/judgment.json（SSOT，QC 可免改碼調校）
+# 信心分層 code → 繁中（純顯示）＋ 分桶閾值：改讀 config/ai_judge/judgment.json（SSOT，QC 可免改碼調校）
 _TIER_LABEL_ZH = _JUDGMENT_CFG.get("tier_labels", {})
 _CONFIDENCE_TIERS = _JUDGMENT_CFG.get(
     "confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}

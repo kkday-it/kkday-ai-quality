@@ -27,8 +27,8 @@ from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 # 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
 # 目錄定位統一由 app.core.paths 提供；後續新增全局配置於此目錄各建一 JSON。
 # QC DB 連線預設（port/schema/defaultEnv/environments）；main.py 連線測試的 port fallback 亦取此。
-QC_DB_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_qc.json").read_text(encoding="utf-8"))
-_LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "default_llm.json").read_text(encoding="utf-8"))
+QC_DB_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "qc_db.json").read_text(encoding="utf-8"))
+_LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "llm_model.json").read_text(encoding="utf-8"))
 # LLM model 下拉的最低版本門檻（僅 gpt-* 受限）；/api/settings/models 動態清單過濾用。
 LLM_MODEL_MIN_VERSION: str = _LLM_DEFAULTS.get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
@@ -88,7 +88,7 @@ def _ensure_id(cfg: dict) -> dict:
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-nano"),  # 讀 default_llm.json 首 provider defaultModel（消除三重維護）
+    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-nano"),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh

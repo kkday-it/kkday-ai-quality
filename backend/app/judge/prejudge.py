@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from typing import Any, get_args
 
 from app.core import ai_judge
-from app.core.paths import GLOBAL_DIR
-from app.core.schema import RecommendedAction, TicketFinding
+from app.core.paths import AI_JUDGE_DIR
+from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
 from app.judge.llm import client
 
 # ── config（judgment.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
@@ -29,11 +29,11 @@ _cfg_cache: dict | None = None
 
 
 def _cfg() -> dict:
-    """讀 config/global/judgment.json（信心閾值 + prejudge 旋鈕）；缺檔回內建預設。"""
+    """讀 config/ai_judge/judgment.json（信心閾值 + prejudge 旋鈕）；缺檔回內建預設。"""
     global _cfg_cache
     if _cfg_cache is None:
         try:
-            _cfg_cache = json.loads((GLOBAL_DIR / "judgment.json").read_text(encoding="utf-8"))
+            _cfg_cache = json.loads((AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             _cfg_cache = {}
     return _cfg_cache
@@ -53,30 +53,22 @@ def _prejudge_cfg() -> dict:
     return _cfg().get("prejudge", {})
 
 
-# 歸因域 → 建議行動（schema.RecommendedAction 值域內；取代原 verdict→action，因 verdict 已移除）。
-# 語義：內容域修文案、供應商域計點違規、訂單/平台/客服升營運、客人理解導 UX、不可抗力不處理。
-_DOMAIN_ACTION: dict[str, str] = {
-    "content": "clarify_wording",
-    "supplier": "penalize_breach",
-    "order": "escalate_ops",
-    "platform": "escalate_ops",
-    "cs": "escalate_ops",
-    "customer": "escalate_ux",
-    "force_majeure": "no_action",
-}
+# 歸因域 → 建議行動 SSOT＝各 rule_C-*.json 的 _meta.recommended_action（ai_judge.domain_action 讀）；
+# 不再於此硬編碼（舊 dict 用已廢域名 order/platform/cs，現行 product_quality/redemption/service 查無而失準）。
 _VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendedAction))
 
 # content 域 L2 label 關鍵詞 → 舊 8 面向 Dimension（TicketFinding.dimension 必填、為 legacy 欄）。
+# dim label 引用 schema.CONTENT_DIMENSIONS（單一真相源，不再手打中文）；關鍵詞為本檔專有比對規則。
 # 新流程真實信號在 l1/l2/l3_code；dimension 僅為相容既有彙總，低權重。無匹配→非內容用 non_content。
 _CONTENT_DIM_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
-    (("定位", "名稱", "特色", "摘要"), "商品定位"),
-    (("行程", "流程", "步驟"), "行程流程"),
-    (("費用", "價格", "包含", "退款"), "費用資訊"),
-    (("集合", "地點", "交通"), "集合資訊"),
-    (("兌換", "使用", "憑證", "voucher"), "使用兌換"),
-    (("成團", "人數"), "成團條件"),
-    (("限制", "風險", "年齡", "安全"), "限制與風險"),
-    (("承諾", "sla", "保證"), "承諾與SLA"),
+    (("定位", "名稱", "特色", "摘要"), CONTENT_DIMENSIONS[0]),  # 商品定位
+    (("行程", "流程", "步驟"), CONTENT_DIMENSIONS[1]),  # 行程流程
+    (("費用", "價格", "包含", "退款"), CONTENT_DIMENSIONS[2]),  # 費用資訊
+    (("集合", "地點", "交通"), CONTENT_DIMENSIONS[3]),  # 集合資訊
+    (("兌換", "使用", "憑證", "voucher"), CONTENT_DIMENSIONS[4]),  # 使用兌換
+    (("成團", "人數"), CONTENT_DIMENSIONS[5]),  # 成團條件
+    (("限制", "風險", "年齡", "安全"), CONTENT_DIMENSIONS[6]),  # 限制與風險
+    (("承諾", "sla", "保證"), CONTENT_DIMENSIONS[7]),  # 承諾與SLA
 ]
 
 
@@ -120,12 +112,12 @@ def _dimension_for(l1_domain: str, l2_label: str) -> str:
     for kws, dim in _CONTENT_DIM_KEYWORDS:
         if any(k in low for k in kws):
             return dim
-    return "商品定位"  # content 域無匹配時的保守預設（Literal 需合法值）
+    return CONTENT_DIMENSIONS[0]  # content 域無匹配時的保守預設（Literal 需合法值）
 
 
 def _action_for(l1_domain: str) -> str:
-    """歸因域 → recommended_action（未歸類 / 未知域回 escalate_ux）。"""
-    action = _DOMAIN_ACTION.get(l1_domain, "escalate_ux")
+    """歸因域 → recommended_action（讀 config；未歸類 / 未知域回 escalate_ux）。"""
+    action = ai_judge.domain_action(l1_domain)
     return action if action in _VALID_ACTIONS else "no_action"
 
 
@@ -230,9 +222,16 @@ _POLARITY_SYS = (
     "你是 KKday 旅遊商品進線極性判官。只判斷整體情緒傾向，不做任何歸因。輸出 JSON。"
 )
 
+# 判準指引由 GEPA（gpt-4.1-mini proxy 優化，valset 58.6%→69.5%）精煉 + 人工適配保留 JSON 輸出。
+# 核心：域優先 + 明示界線（content↔供應商履約、商品品質↔客服）+ 寧缺勿濫，直擊本專案主要誤判源。
 _ATTR_SYS = (
-    "你是 KKday 旅遊商品客訴歸因判官。依提供的『問題分類 L3 目錄』把這則負向進線歸到最貼切的一條 "
-    "L3（回其 code），並給信心。只能從目錄內選 code；無法歸類時 l3_code 回空字串。輸出 JSON。"
+    "你是 KKday 旅遊商品客訴歸因判官。依『問題分類 L3 目錄』把這則負向評論嚴格且精準歸到最貼切的一條 code，並給信心。\n"
+    "判斷流程：①先定主體問題域（商品內容／商品品質／供應商履約／使用兌換／客服營運／客人理解）②再依細項定義選最貼切 code。\n"
+    "界線鐵則：\n"
+    "- 商品內容＝商品頁描述／定位／行程／費用「寫的與實際不符」；供應商履約＝執行面「沒依約做到」（臨時取消、變更、接送遲到、人員態度）。\n"
+    "- 商品品質＝產品本身實際品質（網路訊號、餐飲、車輛設備）；客服營運＝訂單售後互動（退款、回應、態度）。\n"
+    "- 客人理解＝旅客自身期待或誤解造成、無可歸責商家。\n"
+    "多個問題時取最核心、最直接的抱怨點，勿被次要問題誤導。只能從目錄內選 code；無法明確歸類時 l3_code 回空字串（寧缺勿濫）。輸出 JSON。"
 )
 
 
