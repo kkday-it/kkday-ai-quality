@@ -65,12 +65,17 @@ def _dspy_lm(dspy, eff, model=None, reasoning=None):
     provider = app_settings.provider_id_for(base)
     token = (eff.get("provider_tokens") or {}).get(provider) or ""
     m = model or eff.get("model") or "gpt-5-nano"
-    # gpt-5 系列（reasoning）dspy 要求 temperature=1.0 + max_tokens>=16000
-    kw = {"model": f"openai/{m}", "api_key": token, "temperature": 1.0, "max_tokens": 16000}
+    is_reasoning = m.startswith(("gpt-5", "o1", "o3", "o4"))
+    if is_reasoning:
+        # gpt-5 / o 系列（reasoning）dspy 要求 temperature=1.0 + max_tokens>=16000
+        kw = {"model": f"openai/{m}", "api_key": token, "temperature": 1.0, "max_tokens": 16000}
+        if reasoning:
+            kw["reasoning_effort"] = reasoning
+    else:
+        # 非推理（gpt-4.1-mini / 4o-mini）：正常參數，快且分類 temp=0 穩定
+        kw = {"model": f"openai/{m}", "api_key": token, "temperature": 0.0, "max_tokens": 2000}
     if base:
         kw["api_base"] = base
-    if reasoning:
-        kw["reasoning_effort"] = reasoning
     return dspy.LM(**kw)
 
 
@@ -121,8 +126,10 @@ def _build_trainset(dspy, catalog: str):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true", help="只驗證接線（不真跑 GEPA）")
-    ap.add_argument("--budget", choices=["light", "medium", "heavy"], help="真優化預算")
+    ap.add_argument("--budget", choices=["light", "medium", "heavy"], help="真優化預算（auto）")
+    ap.add_argument("--max-calls", type=int, default=None, help="硬上限 metric 呼叫數（取代 auto，早停快出：GEPA 增益前段集中）")
     ap.add_argument("--reflection-model", default=None, help="反射 LM 模型（建議用較強者，如 gpt-5.4）")
+    ap.add_argument("--model", default=None, help="student 分類模型（預設 user 設定；快跑指定 gpt-4.1-mini 非推理）")
     ap.add_argument("--threads", type=int, default=16, help="並行 API 呼叫數（I/O bound，越高越快，受 provider RPM 限制）")
     ap.add_argument("--reasoning", default="minimal", help="student 分類的 reasoning_effort（minimal 最快，適合挑 code 任務）")
     args = ap.parse_args()
@@ -172,9 +179,9 @@ def main() -> None:
     trainpart = [e for i, e in enumerate(trainset) if i % 5 != 0]
     print(f"trainset：{len(trainpart)} train / {len(valset)} val（C-2~C-6 positive_cases，排除 content）", flush=True)
 
-    dspy.configure(lm=_dspy_lm(dspy, eff, reasoning=args.reasoning))  # student：minimal 推理大幅提速
+    dspy.configure(lm=_dspy_lm(dspy, eff, model=args.model, reasoning=args.reasoning))  # student（快跑指定 gpt-4.1-mini）
 
-    if args.smoke or not args.budget:
+    if args.smoke or (not args.budget and not args.max_calls):
         # 只跑 3 條驗證 program + metric 接線，不動 GEPA
         sample = trainset[:3]
         ok = 0
@@ -186,12 +193,15 @@ def main() -> None:
         print(f"smoke OK：{ok}/{len(sample)} exact。真優化請加 --budget light（有 token 成本）")
         return
 
-    reflection = _dspy_lm(dspy, eff, model=args.reflection_model or eff.get("model"))
-    optimizer = dspy.GEPA(
-        metric=metric, reflection_lm=reflection, auto=args.budget,
-        num_threads=args.threads, track_stats=True,
-    )
-    print(f"GEPA 優化中（budget={args.budget}, threads={args.threads}）… 有 token 成本", flush=True)
+    reflection = _dspy_lm(dspy, eff, model=args.reflection_model or args.model or eff.get("model"))
+    gepa_kw = {"metric": metric, "reflection_lm": reflection, "num_threads": args.threads, "track_stats": True}
+    if args.max_calls:
+        gepa_kw["max_metric_calls"] = args.max_calls
+    else:
+        gepa_kw["auto"] = args.budget
+    optimizer = dspy.GEPA(**gepa_kw)
+    _b = f"max_calls={args.max_calls}" if args.max_calls else f"budget={args.budget}"
+    print(f"GEPA 優化中（{_b}, threads={args.threads}, model={args.model or 'default'}）", flush=True)
     optimized = optimizer.compile(program, trainset=trainpart, valset=valset)
 
     # 存優化後指令
