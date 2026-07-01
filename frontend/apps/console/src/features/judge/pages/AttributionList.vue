@@ -6,20 +6,14 @@
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
  * 正向/中性/數據不足 不歸因，只有負向才有 L1→L3。
  */
-import { ref, computed, onMounted } from 'vue';
+import { exportProblems, getPrejudgeStatus, getProblems, getSettings, startPrejudge } from '@/api';
+import { CardSection, StateGuard } from '@/components';
+import { composeLlmLabel } from '@/features/settings/utils';
 import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
-import { CardSection, StateGuard } from '@/components';
-import {
-  getProblems,
-  startPrejudge,
-  getPrejudgeStatus,
-  getSettings,
-  exportProblems,
-} from '@/api';
-import { SOURCES } from '../constants';
-import { composeLlmLabel } from '@/features/settings/utils';
 import verdictsCfg from '@config/ai_judge/verdicts.json';
+import { computed, onMounted, ref } from 'vue';
+import { SOURCES } from '../constants';
 
 const vdLabel = Object.fromEntries(verdictsCfg.items.map((v: any) => [v.code, v.label_zh]));
 /** 信心分層 code → 繁中 label（純顯示；未知 code 回退原值）。 */
@@ -60,7 +54,9 @@ const source = ref('product_reviews');
 const polarityFilter = ref('');
 const onlyProblem = ref(false);
 /** 生效的 polarity 篩選（送後端）。 */
-const effPolarity = computed(() => (onlyProblem.value ? 'negative' : polarityFilter.value || undefined));
+const effPolarity = computed(() =>
+  onlyProblem.value ? 'negative' : polarityFilter.value || undefined,
+);
 
 // ── LLM 模型（已保存配置）──
 const llmConfigId = ref('');
@@ -293,11 +289,19 @@ const COLS = [
 
 <template>
   <div class="flex flex-col gap-4">
-    <CardSection title="初判歸因" hint="選來源+模型 → 勾選列/分頁選取/全部未判 → 進行初判歸因（正向不分類，只有負向歸 L1→L3）">
+    <CardSection
+      title="初判歸因"
+      hint="選來源+模型 → 勾選列/分頁選取/全部未判 → 進行初判歸因（正向不分類，只有負向歸 L1→L3）"
+    >
       <div class="flex flex-wrap items-end gap-3">
         <div>
           <div class="mb-1 text-xs text-gray-500">來源</div>
-          <a-select v-model="source" style="width: 150px" :options="SOURCE_OPTS" @change="onFilterChange" />
+          <a-select
+            v-model="source"
+            style="width: 150px"
+            :options="SOURCE_OPTS"
+            @change="onFilterChange"
+          />
         </div>
         <a-button type="primary" :loading="running" @click="runSelected">
           進行初判歸因（已選 {{ runCount }}）
@@ -309,7 +313,10 @@ const COLS = [
         </a-button>
       </div>
       <div v-if="running" class="mt-3">
-        <a-progress :percent="progressPct / 100" :status="progressPct >= 100 ? 'success' : 'normal'" />
+        <a-progress
+          :percent="progressPct / 100"
+          :status="progressPct >= 100 ? 'success' : 'normal'"
+        />
         <div class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500">
           <span>已處理 {{ progress.processed }} / {{ progress.total }} 筆…</span>
           <span v-if="costText">花費 {{ costText }}</span>
@@ -317,7 +324,10 @@ const COLS = [
       </div>
     </CardSection>
 
-    <CardSection :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`" hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出">
+    <CardSection
+      :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
+      hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
+    >
       <div class="mb-2 flex flex-wrap items-center gap-3">
         <a-checkbox v-model="onlyProblem" @change="onFilterChange">僅看問題（負向）</a-checkbox>
         <a-select
@@ -338,15 +348,20 @@ const COLS = [
           v-model="pageSpec"
           size="small"
           allow-clear
-          style="width: 180px"
-          placeholder="分頁選取 如 1,2,3,5 或 1~200"
+          style="width: 240px"
+          placeholder="如 1,2,3 或 1,2~5 或 1~5"
           @press-enter="selectPages"
         />
         <a-button size="small" @click="selectPages">選取分頁</a-button>
         <a-button v-if="runCount" size="small" @click="clearSelection">清除選擇</a-button>
         <span class="text-xs text-gray-400">每頁 {{ pageSize }} · 已選 {{ runCount }}</span>
       </div>
-      <StateGuard :loading="loading" :error="error" :empty="!rows.length" empty-text="尚無資料，請先到「資料上傳」上傳 CSV">
+      <StateGuard
+        :loading="loading"
+        :error="error"
+        :empty="!rows.length"
+        empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
+      >
         <a-table
           :data="rows"
           :columns="COLS"
@@ -362,8 +377,19 @@ const COLS = [
           size="small"
           row-key="item_id"
           :scroll="{ y: 560 }"
-          @page-change="(p: number) => { page = p; loadPage(); }"
-          @page-size-change="(s: number) => { pageSize = s; page = 1; loadPage(); }"
+          @page-change="
+            (p: number) => {
+              page = p;
+              loadPage();
+            }
+          "
+          @page-size-change="
+            (s: number) => {
+              pageSize = s;
+              page = 1;
+              loadPage();
+            }
+          "
           @selection-change="(keys) => (selectedKeys = keys.map(String))"
         >
           <template #occurred="{ record }">{{ fmtDt(record.occurred_at) }}</template>
@@ -377,16 +403,24 @@ const COLS = [
           <template #attr="{ record }">
             <div v-if="record.l1_label || record.l3_label" class="text-xs leading-relaxed">
               <div><span class="text-gray-400">L1</span> {{ record.l1_label }}</div>
-              <div v-if="record.l2_label"><span class="text-gray-400">L2</span> {{ record.l2_label }}</div>
-              <div v-if="record.l3_label"><span class="text-gray-400">L3</span> {{ record.l3_label }}</div>
+              <div v-if="record.l2_label">
+                <span class="text-gray-400">L2</span> {{ record.l2_label }}
+              </div>
+              <div v-if="record.l3_label">
+                <span class="text-gray-400">L3</span> {{ record.l3_label }}
+              </div>
             </div>
             <span v-else class="text-gray-300">—</span>
           </template>
           <template #vd="{ record }">
-            <a-tag v-if="record.verdict" size="small">{{ vdLabel[record.verdict] || record.verdict }}</a-tag>
+            <a-tag v-if="record.verdict" size="small">{{
+              vdLabel[record.verdict] || record.verdict
+            }}</a-tag>
           </template>
           <template #tier="{ record }">
-            <span v-if="record.confidence_tier">{{ tierLabel[record.confidence_tier] || record.confidence_tier }}</span>
+            <span v-if="record.confidence_tier">{{
+              tierLabel[record.confidence_tier] || record.confidence_tier
+            }}</span>
             <span v-else class="text-gray-300">—</span>
           </template>
         </a-table>

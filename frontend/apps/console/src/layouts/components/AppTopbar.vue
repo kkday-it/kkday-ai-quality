@@ -20,7 +20,7 @@ defineEmits<{
 
 <template>
   <div class="flex h-[52px] items-center gap-1.5 border-b border-[#f0f0f0] bg-white px-5">
-    <span class="select-none text-base font-bold text-[#165dff]">AI 商品質檢</span>
+    <span class="select-none text-base font-bold text-[#165dff]">AI 質檢</span>
     <span class="text-[#c9cdd4]">/</span>
     <a-select
       :model-value="activeModule"

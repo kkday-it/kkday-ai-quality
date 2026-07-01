@@ -34,7 +34,7 @@ const submit = async () => {
 <template>
   <div class="flex h-screen items-center justify-center bg-[#f7f8fa]">
     <a-card class="w-[380px]">
-      <div class="text-lg font-bold text-[#165dff]">⚖️ AI 商品質檢</div>
+      <div class="text-lg font-bold text-[#165dff]">⚖️ AI 質檢</div>
       <div class="mb-[18px] mt-1 text-[13px] text-[#86909c]">
         {{ mode === 'login' ? '登入以繼續' : '註冊新帳號' }}
       </div>
