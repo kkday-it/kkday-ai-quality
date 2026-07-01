@@ -1,0 +1,119 @@
+// 判決規則狀態（7 rule + schema 的 active content / dirty / 歷史 / 存檔恢復）。
+// 檔案＝默認 seed，DB＝live+歷史；所有寫操作走後端版本化，store 只持有當前選中 rule 的編輯態。
+import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
+import {
+  getRule,
+  getRuleHistory,
+  listRules,
+  resetRuleDefault,
+  restoreRule,
+  saveRule,
+  type RuleCode,
+  type RuleMeta,
+  type RuleVersionMeta,
+} from '@/api/judgeRules.api';
+
+/** 子規則顯示名（C-1..C-7 + schema）。 */
+export const RULE_LABELS: Record<string, string> = {
+  schema: '結構規格', // 結構定義置首：先看整體規格，再編各域規則
+  'C-1': '商品內容',
+  'C-2': '供應商履約',
+  'C-3': '訂單交易',
+  'C-4': '平台系統',
+  'C-5': '客服營運',
+  'C-6': '客人理解',
+  'C-7': '不可抗力',
+};
+
+export const useJudgeRulesStore = defineStore('judgeRules', () => {
+  const metas = ref<RuleMeta[]>([]); // 各 rule active 版 meta
+  const activeCode = ref<RuleCode>('C-1'); // 當前選中子規則
+  const baseline = ref<Record<string, unknown> | null>(null); // 載入時的 content（dirty 比對基準）
+  const edited = ref<Record<string, unknown> | null>(null); // 編輯中 content（合法時更新）
+  const editValid = ref(true); // JSON 模式語法/結構合法
+  const history = ref<RuleVersionMeta[]>([]);
+  const loading = ref(false);
+  const error = ref('');
+
+  const dirty = computed(
+    () =>
+      editValid.value &&
+      edited.value != null &&
+      JSON.stringify(edited.value) !== JSON.stringify(baseline.value),
+  );
+  const currentMeta = computed(() => metas.value.find((m) => m.rule_code === activeCode.value));
+
+  /** 載入清單（各 rule active meta）。 */
+  async function loadList() {
+    metas.value = await listRules();
+  }
+
+  /** 切換並載入某 rule 的 active content。 */
+  async function selectRule(code: RuleCode) {
+    activeCode.value = code;
+    loading.value = true;
+    error.value = '';
+    try {
+      const r = await getRule(code);
+      baseline.value = r.content;
+      edited.value = r.content;
+      editValid.value = true;
+      history.value = [];
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /** JSON / 面板編輯回報的內容變更。 */
+  function setEdited(content: unknown, valid: boolean) {
+    editValid.value = valid;
+    if (valid) edited.value = content as Record<string, unknown>;
+  }
+
+  /** 存檔（後端驗證 + 新版）。成功後重載 list + 當前 rule。 */
+  async function save(note: string) {
+    if (!dirty.value || !edited.value) return;
+    await saveRule(activeCode.value, edited.value, note);
+    await Promise.all([loadList(), selectRule(activeCode.value)]);
+  }
+
+  /** 載入當前 rule 歷史。 */
+  async function loadHistory() {
+    history.value = await getRuleHistory(activeCode.value);
+  }
+
+  /** 恢復某歷史版本。 */
+  async function restore(version: number) {
+    await restoreRule(activeCode.value, version);
+    await Promise.all([loadList(), selectRule(activeCode.value), loadHistory()]);
+  }
+
+  /** 恢復默認（檔案 seed）。 */
+  async function resetDefault() {
+    await resetRuleDefault(activeCode.value);
+    await Promise.all([loadList(), selectRule(activeCode.value)]);
+  }
+
+  return {
+    metas,
+    activeCode,
+    baseline,
+    edited,
+    editValid,
+    history,
+    loading,
+    error,
+    dirty,
+    currentMeta,
+    loadList,
+    selectRule,
+    setEdited,
+    save,
+    loadHistory,
+    restore,
+    resetDefault,
+  };
+});

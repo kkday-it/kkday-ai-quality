@@ -2,21 +2,23 @@
 import type { RouteRecordRaw } from 'vue-router';
 import JudgeLayout from '../JudgeLayout.vue';
 import Analytics from '../pages/Analytics.vue';
-import AttributionPanel from '../pages/AttributionPanel.vue';
+import AttributionList from '../pages/AttributionList.vue';
+import AttributionOverview from '../pages/AttributionOverview.vue';
 import DataUpload from '../pages/DataUpload.vue';
 import ProductDetail from '../pages/ProductDetail.vue';
-import RulesConfig from '../pages/RulesConfig.vue';
+import RuleManager from '../pages/RuleManager.vue';
 
 export const judgeRoutes: RouteRecordRaw = {
   path: '/judge',
   component: JudgeLayout,
-  redirect: '/judge/upload',
+  redirect: '/judge/rules',
   children: [
+    { path: 'rules', component: RuleManager, meta: { text: '判決規則' } }, // config/ai_judge 7 域判決規則：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
     { path: 'upload', component: DataUpload, meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
-    { path: 'attribution', component: AttributionPanel, meta: { text: '歸因總覽' } }, // 判定層脊椎·多維展示
+    { path: 'list', component: AttributionList, meta: { text: '歸因列表' } }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
+    { path: 'attribution', component: AttributionOverview, meta: { text: '歸因縱覽' } }, // 歸因列表的聚合儀表板：KPI + 漏斗 + L1~L3 + 趨勢
     { path: 'analytics', component: Analytics, meta: { text: 'RD／品控 分析' } }, // 出口 B
     { path: 'product', component: ProductDetail, meta: { text: 'PM／AM 單品' } }, // 出口 A
-    { path: 'rules', component: RulesConfig, meta: { text: '規則' } }, // AI 法官判決邏輯配置（歸因/預判/判決），原設定抽屜的「規則」tab 移此
   ],
 };
 

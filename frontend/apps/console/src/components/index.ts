@@ -2,3 +2,5 @@
 export { default as StateGuard } from './StateGuard.vue';
 export { default as CardSection } from './CardSection.vue';
 export { default as Terminal } from './Terminal.vue';
+export { default as AccordionGroup } from './AccordionGroup.vue';
+export { default as JsonEditor } from './JsonEditor.vue';
