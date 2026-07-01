@@ -316,7 +316,8 @@ def save_user_settings(user_id: str, data: dict) -> None:
 # ── 判決規則版本（config/ai_judge/ 的 7 rule + schema；append-only 快照）────────
 # 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 # _AI_JUDGE_DIR 由 app.core.paths 統一提供（見檔頭 import）。
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "C-7", "schema")
+# 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格
+RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema")
 
 
 def _rule_file(code: str) -> Path:
@@ -410,6 +411,27 @@ def restore_rule_version(code: str, version: int, author: str = "") -> dict:
 def reset_rule_default(code: str, author: str = "") -> dict:
     """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。回 {rule_code, version}。"""
     return save_rule_version(code, default_rule_content(code), note="恢復默認", author=author)
+
+
+def reset_all_rule_defaults(author: str = "") -> dict:
+    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+
+    schema 屬結構規格非歸因分類，不在此批次。缺默認檔的 code 跳過不中斷
+    （如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
+
+    Returns:
+        {reset: [{rule_code, version}, ...], skipped: [code, ...]}（依 RULE_CODES 順序）。
+    """
+    done: list[dict] = []
+    skipped: list[str] = []
+    for code in RULE_CODES:
+        if code == "schema":
+            continue
+        try:
+            done.append(reset_rule_default(code, author=author))
+        except FileNotFoundError:
+            skipped.append(code)  # 該分類無默認檔 → 跳過
+    return {"reset": done, "skipped": skipped}
 
 
 def seed_rules_from_files() -> dict:

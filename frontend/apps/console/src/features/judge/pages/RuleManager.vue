@@ -14,6 +14,7 @@ import RuleHistoryModal from '../components/RuleHistoryModal.vue';
 
 const store = useJudgeRulesStore();
 const codes = Object.keys(RULE_LABELS); // C-1..C-7 + schema
+const domainCodes = codes.filter((c) => c !== 'schema'); // 歸因分類（C-N）；schema 屬結構規格，不入批次恢復
 const mode = ref<'panel' | 'json'>('panel');
 const historyOpen = ref(false);
 const saveOpen = ref(false);
@@ -78,20 +79,50 @@ async function doReset() {
     Message.error(e instanceof Error ? e.message : '恢復失敗');
   }
 }
+
+/** 恢復所有歸因分類（C-N）為檔案默認，各新增版本覆蓋當前（保留歷史）。 */
+async function doResetAll() {
+  try {
+    const res = await store.resetAllDefault();
+    const skip = res.skipped?.length ? `，略過 ${res.skipped.join('、')}（無默認檔）` : '';
+    Message.success(`已恢復 ${res.reset.length} 個歸因分類為默認（各新增版本）${skip}`);
+  } catch (e) {
+    Message.error(e instanceof Error ? e.message : '恢復失敗');
+  }
+}
 </script>
 
 <template>
   <div class="flex h-full gap-4">
-    <!-- 左：子規則選單 -->
+    <!-- 左：子規則選單（schema 結構規格 · 規則分類 C-N〔可批次恢復默認〕） -->
     <a-menu
       :selected-keys="[store.activeCode]"
       class="h-full w-44 shrink-0 overflow-auto rounded-lg border"
       @menu-item-click="pick"
     >
-      <a-menu-item v-for="c in codes" :key="c">
-        <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-        <span class="ml-2">{{ RULE_LABELS[c] }}</span>
+      <a-menu-item key="schema">
+        <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
+        <span class="ml-2">{{ RULE_LABELS['schema'] }}</span>
       </a-menu-item>
+      <a-menu-item-group>
+        <template #title>
+          <div class="flex items-center justify-between pr-1">
+            <span>規則分類</span>
+            <a-popconfirm
+              content="恢復所有歸因分類為檔案默認？各分類將新增一個版本覆蓋當前（保留歷史）"
+              ok-text="恢復"
+              position="right"
+              @ok="doResetAll"
+            >
+              <a-button size="mini" type="text" @click.stop>恢復默認</a-button>
+            </a-popconfirm>
+          </div>
+        </template>
+        <a-menu-item v-for="c in domainCodes" :key="c">
+          <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+          <span class="ml-2">{{ RULE_LABELS[c] }}</span>
+        </a-menu-item>
+      </a-menu-item-group>
     </a-menu>
 
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->

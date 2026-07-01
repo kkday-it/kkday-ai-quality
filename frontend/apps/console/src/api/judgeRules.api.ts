@@ -76,3 +76,10 @@ export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
     method: 'POST',
     headers: JSON_HEADERS,
   });
+
+/** 恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
+export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipped: string[] }> =>
+  j(`${BASE}/judge-rules/reset-default-all`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });

@@ -6,6 +6,7 @@ import {
   getRule,
   getRuleHistory,
   listRules,
+  resetAllRuleDefaults,
   resetRuleDefault,
   restoreRule,
   saveRule,
@@ -23,7 +24,6 @@ export const RULE_LABELS: Record<string, string> = {
   'C-4': '平台系統',
   'C-5': '客服營運',
   'C-6': '客人理解',
-  'C-7': '不可抗力',
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {
@@ -97,6 +97,13 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     await Promise.all([loadList(), selectRule(activeCode.value)]);
   }
 
+  /** 恢復所有歸因分類（C-N）為檔案默認，各新增版本；重載清單與當前選中，回傳 {reset, skipped}。 */
+  async function resetAllDefault() {
+    const res = await resetAllRuleDefaults();
+    await Promise.all([loadList(), selectRule(activeCode.value)]);
+    return res;
+  }
+
   return {
     metas,
     activeCode,
@@ -115,5 +122,6 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     loadHistory,
     restore,
     resetDefault,
+    resetAllDefault,
   };
 });

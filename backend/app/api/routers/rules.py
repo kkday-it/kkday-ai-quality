@@ -86,6 +86,16 @@ def get_version(
     return {"rule_code": code, "version": version, "content": content}
 
 
+# 註：須定義於 `/{code}` POST 之前，否則會被 save_rule 的 code path 攔截。
+@router.post("/reset-default-all")
+def reset_default_all(user: dict = Depends(auth.get_current_user)) -> dict:
+    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一個版本覆蓋當前。
+
+    缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
+    """
+    return db.reset_all_rule_defaults(author=user.get("user_id", ""))
+
+
 @router.post("/{code}")
 def save_rule(
     code: str, body: SaveIn, user: dict = Depends(auth.get_current_user)
