@@ -5,7 +5,7 @@ import { Message } from '@arco-design/web-vue';
 import { testLlm } from '@/api';
 import { Terminal } from '@/components';
 import { MODEL_MIN_VERSION, PROVIDERS, REASONING } from '../constants';
-import { configStamp, deriveProviderId, modelMeetsMin } from '../utils';
+import { composeLlmLabel, deriveProviderId, modelMeetsMin } from '../utils';
 import type { LlmConfig } from '../types';
 
 // 單套 LLM config 編輯器（modal 內容）：props 注入 config + 已知 token map，emit save 由父元件持久化。
@@ -23,7 +23,6 @@ const emit = defineEmits<{
 }>();
 
 const form = ref({
-  label: props.modelValue.label,
   base_url: props.modelValue.base_url,
   model: props.modelValue.model,
   temperature: props.modelValue.temperature ?? 0,
@@ -65,10 +64,14 @@ const selectProvider = (id: unknown) => {
   if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
 };
 
-/** 組出當前表單的 LlmConfig（保留 id）。 */
+/** 組出當前表單的 LlmConfig（保留 id）。label 由參數自動拼接（provider/model/reasoning），不再手動命名。 */
 const buildConfig = (): LlmConfig => ({
   id: props.modelValue.id,
-  label: form.value.label.trim() || `LLM ${configStamp()}`,
+  label: composeLlmLabel({
+    provider: selectedProvider.value,
+    model: form.value.model,
+    reasoning_effort: form.value.reasoning_effort,
+  }),
   provider: selectedProvider.value,
   base_url: form.value.base_url,
   model: form.value.model,
@@ -157,10 +160,6 @@ watch(testResult, async (r) => {
 
 <template>
   <a-form :model="form" layout="vertical">
-    <a-form-item label="配置名稱">
-      <a-input v-model="form.label" placeholder="可自訂名稱（預設 LLM + 時間戳）" allow-clear />
-    </a-form-item>
-
     <a-form-item label="供應商">
       <a-select
         :model-value="selectedProvider"

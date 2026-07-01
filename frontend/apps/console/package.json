@@ -1,5 +1,5 @@
 {
-  "name": "@aipq/console",
+  "name": "@aiq/console",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@aipq/types": "workspace:*",
+    "@aiq/types": "workspace:*",
     "@arco-design/web-vue": "^2.58.0",
     "@vueuse/core": "^14.3.0",
     "@xterm/addon-fit": "^0.11.0",

@@ -1,73 +1,57 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed } from 'vue';
+import QcConfigEditor from './QcConfigEditor.vue';
 import type { QcConfig } from '../types';
 
 // 單一 QC config 卡片：以手風琴面板（a-collapse-item）呈現。
-// header＝label（點擊可 inline 改名）+ 環境標籤 + 狀態徽章；extra＝啟用開關 / 編輯 / 刪除；body＝host / databases。
+// header＝label（唯讀）+ 環境標籤 + 狀態徽章 + 收合時的連線 preview；extra＝啟用開關 / 刪除；
+// body＝展開即為 QcConfigEditor 表單本身（無「編輯」中間步驟，展開＝可編輯；改名走表單內「連線名稱」欄）。
 // itemKey：對應 AccordionGroup 的 active-key（Arco 由 a-collapse-item 的 vnode key 解析），須與面板 default-active 一致。
-const props = defineProps<{ config: QcConfig; active: boolean; itemKey: string }>();
-const emit = defineEmits<{
-  (e: 'edit'): void;
-  (e: 'delete'): void;
-  (e: 'activate'): void;
-  (e: 'rename', label: string): void;
+const props = defineProps<{
+  config: QcConfig;
+  active: boolean;
+  itemKey: string;
+  /** 是否為當前展開面板；收合時於 header 顯示 host/db preview，展開時交由 body 表單呈現。 */
+  expanded?: boolean;
+  /** 此 config 已知明文 password（供編輯器眼睛切換 / 留空不變更）。 */
+  password?: string;
 }>();
 
+/** 收合預覽用的資料庫摘要：≤2 個全列，>2 個列前 2 個 + 總數。 */
 const dbSummary = computed(() => {
   const n = props.config.names;
   if (!n.length) return '未綁定資料庫';
   return n.length <= 2 ? n.join(', ') : `${n.slice(0, 2).join(', ')} 等 ${n.length} 個`;
 });
-
-// inline 改名：點名稱 → 切 input，enter/blur 提交（非空且有變更才 emit），esc 取消。
-const editing = ref(false);
-const draft = ref('');
-const inputRef = ref<{ focus?: () => void } | null>(null);
-const startEdit = async () => {
-  draft.value = props.config.label;
-  editing.value = true;
-  await nextTick();
-  inputRef.value?.focus?.();
-};
-const commit = () => {
-  if (!editing.value) return;
-  editing.value = false;
-  const v = draft.value.trim();
-  if (v && v !== props.config.label) emit('rename', v);
-};
+defineEmits<{
+  (e: 'delete'): void;
+  (e: 'activate'): void;
+  (e: 'save', payload: { config: QcConfig; password?: string }): void;
+  (e: 'cancel'): void;
+}>();
 </script>
 
 <template>
   <!-- :key 提供 a-collapse-item 名稱，供手風琴單開與 default-active 對應 -->
   <a-collapse-item :key="itemKey">
-    <!-- header 整列點擊會切換面板，故 label/輸入框 click 需 .stop 才能改名而不誤觸折疊 -->
+    <!-- header：連線名稱（唯讀）+ 環境 + 狀態；收合時於名稱下方顯示 host/db preview -->
     <template #header>
-      <a-input
-        v-if="editing"
-        ref="inputRef"
-        v-model="draft"
-        size="mini"
-        class="max-w-[220px]"
-        @click.stop
-        @blur="commit"
-        @keyup.enter="commit"
-        @keyup.esc="editing = false"
-      />
-      <span
-        v-else
-        class="cursor-pointer truncate font-medium hover:text-[#165dff]"
-        title="點擊修改名稱"
-        @click.stop="startEdit"
-      >
-        {{ config.label }}
+      <span class="inline-flex flex-col">
+        <span class="inline-flex items-center">
+          <span class="truncate font-medium">{{ config.label }}</span>
+          <a-tag class="ml-2" size="small" :color="config.env === 'sit' ? 'arcoblue' : 'purple'">
+            {{ config.env.toUpperCase() }}
+          </a-tag>
+          <!-- 狀態徽章：所有卡片皆顯示，僅顏色/文字依啟用狀態不同（綠＝啟用中 / 灰＝未啟用） -->
+          <a-tag class="ml-1" :color="active ? 'green' : 'gray'" size="small">
+            {{ active ? '啟用中' : '未啟用' }}
+          </a-tag>
+        </span>
+        <!-- 收合預覽：未展開時顯示連線摘要；展開時隱藏（由 body 表單呈現），避免資訊重複 -->
+        <span v-if="!expanded" class="mt-0.5 truncate text-xs text-[#86909c]">
+          {{ config.host }}:{{ config.port ?? 5432 }} · {{ dbSummary }}
+        </span>
       </span>
-      <a-tag class="ml-2" size="small" :color="config.env === 'sit' ? 'arcoblue' : 'purple'">
-        {{ config.env.toUpperCase() }}
-      </a-tag>
-      <!-- 狀態徽章：所有卡片皆顯示，僅顏色/文字依啟用狀態不同（綠＝啟用中 / 灰＝未啟用） -->
-      <a-tag class="ml-1" :color="active ? 'green' : 'gray'" size="small">
-        {{ active ? '啟用中' : '未啟用' }}
-      </a-tag>
     </template>
 
     <!-- extra 為 header 右側操作區，整體 .stop 避免點按鈕/開關時連帶折疊面板 -->
@@ -81,16 +65,18 @@ const commit = () => {
           :title="active ? '當前啟用中' : '開啟以設為啟用'"
           @change="$emit('activate')"
         />
-        <a-button size="mini" @click="$emit('edit')">編輯</a-button>
         <a-popconfirm content="確定刪除此連線？" type="warning" @ok="$emit('delete')">
           <a-button size="mini" status="danger">刪除</a-button>
         </a-popconfirm>
       </a-space>
     </template>
 
-    <!-- body：展開後顯示連線細節 -->
-    <div class="text-xs text-[#86909c]">
-      {{ config.host }}:{{ config.port ?? 5432 }} · {{ dbSummary }}
-    </div>
+    <!-- body：展開即為編輯表單本身；編輯器自管草稿，儲存/取消由父層處理 -->
+    <QcConfigEditor
+      :model-value="config"
+      :password="password ?? ''"
+      @save="(payload) => $emit('save', payload)"
+      @cancel="$emit('cancel')"
+    />
   </a-collapse-item>
 </template>

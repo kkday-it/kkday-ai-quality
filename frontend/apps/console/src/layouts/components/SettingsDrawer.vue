@@ -3,7 +3,7 @@ import { watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { LlmConnectionsPanel, QcConnectionsPanel } from '@/features/settings/pages';
 
-// ⚙️ 設定抽屜＝「公共配置」：右滑疊加，兩分頁直接是基礎連線層 —— 🤖 LLM 模型 ｜ 🗄️ QC DB 接口。
+// ⚙️ 設定抽屜＝「公共配置」：右滑疊加，兩分頁直接是基礎連線層 —— 🤖 LLM 模型連線 ｜ 🗄️ QC DB 連線。
 // 各 tab 自帶多套 config 管理 + 卡片內啟用切換（不再獨立「啟用」分頁）。
 // 帳號 → 獨立抽屜（topbar email chip 開）；規則 → AI 法官主頁路由 /judge/rules（不在此）。
 // 分頁狀態同步 URL query(?settings=llm|qc)，並相容舊深連結。
@@ -56,8 +56,8 @@ onMounted(async () => {
     unmount-on-close
   >
     <a-tabs v-model:active-key="tab">
-      <a-tab-pane key="llm" title="🤖 LLM 模型"><LlmConnectionsPanel /></a-tab-pane>
-      <a-tab-pane key="qc" title="🗄️ QC DB 接口"><QcConnectionsPanel /></a-tab-pane>
+      <a-tab-pane key="llm" title="🤖 LLM 模型連線"><LlmConnectionsPanel /></a-tab-pane>
+      <a-tab-pane key="qc" title="🗄️ QC DB 連線"><QcConnectionsPanel /></a-tab-pane>
     </a-tabs>
   </a-drawer>
 </template>

@@ -38,7 +38,7 @@ importers:
 
   apps/console:
     dependencies:
-      '@aipq/types':
+      '@aiq/types':
         specifier: workspace:*
         version: link:../../packages/types
       '@arco-design/web-vue':

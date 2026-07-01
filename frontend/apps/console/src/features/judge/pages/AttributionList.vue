@@ -18,6 +18,7 @@ import {
   exportProblems,
 } from '@/api';
 import { SOURCES } from '../constants';
+import { composeLlmLabel } from '@/features/settings/utils';
 import verdictsCfg from '@config/ai_judge/verdicts.json';
 
 const vdLabel = Object.fromEntries(verdictsCfg.items.map((v: any) => [v.code, v.label_zh]));
@@ -63,17 +64,21 @@ const effPolarity = computed(() => (onlyProblem.value ? 'negative' : polarityFil
 
 // ── LLM 模型（已保存配置）──
 const llmConfigId = ref('');
-const llmConfigs = ref<{ id: string; label: string; model: string }[]>([]);
+// 與「設定 › LLM 模型連線」同源（backend settings.llm_configs）；顯示名共用 composeLlmLabel 確保同步
+const llmConfigs = ref<{ id: string; provider: string; model: string; reasoning_effort: string }[]>(
+  [],
+);
 const LLM_OPTS = computed(() =>
-  llmConfigs.value.map((c) => ({ value: c.id, label: `${c.label}（${c.model}）` })),
+  llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })),
 );
 const loadConfigs = async () => {
   try {
     const s = await getSettings();
     llmConfigs.value = (s.llm_configs || []).map((c: any) => ({
       id: c.id,
-      label: c.label || c.id,
+      provider: c.provider || '',
       model: c.model || '',
+      reasoning_effort: c.reasoning_effort || 'default',
     }));
     llmConfigId.value = s.active_llm_config_id || llmConfigs.value[0]?.id || '';
   } catch {
@@ -228,14 +233,27 @@ const _run = async (body: { item_ids?: string[]; source?: string; scope?: string
     running.value = false;
   }
 };
+// 二次確認彈窗：進行初判/全部未判皆先開彈窗，於其中選 model 配置再確認執行
+const confirmOpen = ref(false);
+const pendingScope = ref<'selected' | 'all'>('selected');
 const runSelected = () => {
   if (!selectedKeys.value.length) {
     Message.warning('請先勾選/分頁選取要分析的列');
     return;
   }
-  _run({ item_ids: selectedKeys.value });
+  pendingScope.value = 'selected';
+  confirmOpen.value = true;
 };
-const runAll = () => _run({ source: source.value, scope: 'all' });
+const runAll = () => {
+  pendingScope.value = 'all';
+  confirmOpen.value = true;
+};
+/** 二次確認後執行：依 pendingScope 決定範圍，用彈窗內選定的 llmConfigId。 */
+const doRun = () => {
+  confirmOpen.value = false;
+  if (pendingScope.value === 'selected') _run({ item_ids: selectedKeys.value });
+  else _run({ source: source.value, scope: 'all' });
+};
 
 /** 導出 CSV（POST 全量；有勾選→只導已選，否則導符合目前篩選全部）→ blob 下載。 */
 const exportCsv = async () => {
@@ -280,10 +298,6 @@ const COLS = [
         <div>
           <div class="mb-1 text-xs text-gray-500">來源</div>
           <a-select v-model="source" style="width: 150px" :options="SOURCE_OPTS" @change="onFilterChange" />
-        </div>
-        <div>
-          <div class="mb-1 text-xs text-gray-500">LLM 模型（已保存配置）</div>
-          <a-select v-model="llmConfigId" style="width: 250px" :options="LLM_OPTS" placeholder="選擇模型（預設啟用中）" />
         </div>
         <a-button type="primary" :loading="running" @click="runSelected">
           進行初判歸因（已選 {{ runCount }}）
@@ -378,5 +392,35 @@ const COLS = [
         </a-table>
       </StateGuard>
     </CardSection>
+
+    <!-- 二次確認彈窗：於此選 model 配置後才執行初判歸因 -->
+    <a-modal
+      v-model:visible="confirmOpen"
+      title="確認初判歸因"
+      ok-text="開始判決"
+      cancel-text="取消"
+      :ok-loading="running"
+      @ok="doRun"
+    >
+      <div class="flex flex-col gap-3">
+        <div class="text-sm text-[var(--color-text-1)]">
+          將對
+          <b class="text-[rgb(var(--primary-6))]">{{
+            pendingScope === 'all' ? `全部未判 ${unjudged}` : `已選 ${runCount}`
+          }}</b>
+          筆進行初判歸因（正向不分類，只有負向歸 L1→L3）。
+        </div>
+        <div>
+          <div class="mb-1 text-xs text-gray-500">LLM 模型配置（同「設定 › LLM 模型連線」）</div>
+          <a-select
+            v-model="llmConfigId"
+            style="width: 100%"
+            :options="LLM_OPTS"
+            placeholder="選擇模型（預設啟用中）"
+          />
+        </div>
+        <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
+      </div>
+    </a-modal>
   </div>
 </template>

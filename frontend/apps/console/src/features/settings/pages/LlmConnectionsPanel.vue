@@ -5,7 +5,7 @@ import { AccordionGroup, StateGuard } from '@/components';
 import { useSettingsConfigsStore } from '@/stores';
 import { LlmConfigCard, LlmConfigEditor } from '../components';
 import { DEFAULT_LLM_FORM, PROVIDERS } from '../constants';
-import { configStamp } from '../utils';
+import { composeLlmLabel } from '../utils';
 import type { LlmConfig } from '../types';
 
 // 🤖 LLM 模型 tab：管理多套 LLM 配置（卡片清單 + inline 新增/編輯 + 刪除 + 卡片內「設為啟用」）。
@@ -14,14 +14,20 @@ const store = useSettingsConfigsStore();
 const OPENAI = PROVIDERS.find((p) => p.id === 'openai');
 onMounted(() => store.loadAll());
 
-// inline 編輯：editing 持有「編輯中的 config」（新建＝blank，id 不在清單→渲染於尾端；編輯＝既有副本，就地取代卡片）。
+// 新增流程：editing 僅持有「新建中的 blank config」（尚未落庫，渲染於清單尾端）。
+// 既有卡片已「展開即編輯」（LlmConfigCard body 直接是表單），不再需要編輯態切換。
 const editing = ref<LlmConfig | null>(null);
 const isEditingNew = computed(
   () => !!editing.value && !store.llmConfigs.some((c) => c.id === editing.value!.id)
 );
 const blank = (): LlmConfig => ({
   id: crypto.randomUUID(),
-  label: `LLM ${configStamp()}`,
+  // 名稱由參數自動拼接（provider/model/reasoning），不再手動命名。
+  label: composeLlmLabel({
+    provider: 'openai',
+    model: DEFAULT_LLM_FORM.model,
+    reasoning_effort: DEFAULT_LLM_FORM.reasoning_effort,
+  }),
   provider: 'openai',
   base_url: OPENAI?.base_url ?? '', // 預設帶入 OpenAI 端點（https://api.openai.com/v1）
   model: DEFAULT_LLM_FORM.model,
@@ -38,18 +44,25 @@ watch(
   },
   { immediate: true, deep: false }
 );
-const openNew = () => (editing.value = blank());
-// 編輯：載入副本 + 主動展開該面板（編輯器就地展開於面板 body 內，面板須為開啟態才看得到）
-const openEdit = (cfg: LlmConfig) => {
-  editing.value = { ...cfg };
-  activeId.value = cfg.id;
+// 單開不變量：展開任一既有面板（activeId 變真值）即丟棄尚未存的「新增」草稿，
+// 確保任何交互下只有一個編輯面板展開（新增尾卡在手風琴單開控制之外，須手動互斥）。
+watch(activeId, (id) => {
+  if (id) editing.value = null;
+});
+// 新增＝先收合所有既有面板（activeId=''），只展開尾端新增編輯器。
+const openNew = () => {
+  activeId.value = '';
+  editing.value = blank();
 };
 const cancel = () => (editing.value = null);
+// 既有卡片的編輯器按「取消」＝收合該面板（草稿不落庫）。
+const collapse = () => (activeId.value = '');
 
 const onSave = async (payload: { config: LlmConfig; tokenPatch?: Record<string, string> }) => {
   try {
     await store.saveLlmConfig(payload.config, payload.tokenPatch);
     editing.value = null;
+    activeId.value = payload.config.id; // 存後展開該套（新增者以正式卡片呈現並保持開啟）
     Message.success('已儲存 LLM 配置');
   } catch (e: any) {
     Message.error('儲存失敗：' + (e?.message || e));
@@ -71,21 +84,13 @@ const onActivate = async (id: string) => {
     Message.error('切換失敗：' + (e?.message || e));
   }
 };
-const onRename = async (cfg: LlmConfig, label: string) => {
-  try {
-    await store.saveLlmConfig({ ...cfg, label }); // 不帶 token → 僅改名，機密不動
-    Message.success('已更新名稱');
-  } catch (e: any) {
-    Message.error('改名失敗：' + (e?.message || e));
-  }
-};
 </script>
 
 <template>
   <StateGuard :loading="store.loading">
     <div>
       <div class="mb-2 flex items-center justify-between">
-        <span class="font-medium">⚙️ LLM 模型連線</span>
+        <span class="font-medium">🤖 LLM 模型連線</span>
         <a-button type="primary" size="small" @click="openNew">新增配置</a-button>
       </div>
       <a-empty
@@ -101,14 +106,11 @@ const onRename = async (cfg: LlmConfig, label: string) => {
           :config="c"
           :item-key="c.id"
           :active="c.id === store.activeLlmId"
-          :editing="editing && editing.id === c.id ? editing : null"
           :provider-tokens="store.providerTokens"
-          @edit="openEdit(c)"
           @delete="onDelete(c.id)"
           @activate="onActivate(c.id)"
-          @rename="(label) => onRename(c, label)"
           @save="onSave"
-          @cancel="cancel"
+          @cancel="collapse"
         />
 
         <!-- 新增配置：無對應既有面板，於清單尾端以平卡 inline 展開編輯器 -->

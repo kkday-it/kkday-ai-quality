@@ -1,5 +1,5 @@
 // verdict（判決）相關常數：label / color / key 順序 / 「內容問題」集合。
-import { ACTIONABLE_VERDICTS } from '@aipq/types';
+import { ACTIONABLE_VERDICTS } from '@aiq/types';
 
 /** verdict → 中文 label（卡片標籤、篩選下拉）。插入順序＝heatmap 橫軸順序。 */
 export const VERDICT_LABEL: Record<string, string> = {
@@ -27,5 +27,5 @@ export const VERDICT_KEYS = Object.keys(VERDICT_LABEL);
 /** verdict label 順序（與 VERDICT_KEYS 平行，heatmap 橫軸文字）。 */
 export const VERDICT_LABELS = VERDICT_KEYS.map((k) => VERDICT_LABEL[k]);
 
-/** 「內容問題」verdict 集合（KPI / 缺口計算），復用 @aipq/types 的 actionable 清單。 */
+/** 「內容問題」verdict 集合（KPI / 缺口計算），復用 @aiq/types 的 actionable 清單。 */
 export const CONTENT_VERDICTS = new Set<string>(ACTIONABLE_VERDICTS);

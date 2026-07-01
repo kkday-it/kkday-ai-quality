@@ -1,11 +1,11 @@
 {
-  "name": "kkday-ai-product-quality-web",
+  "name": "kkday-ai-quality-web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @aipq/console dev",
-    "build": "pnpm --filter @aipq/console build",
+    "dev": "pnpm --filter @aiq/console dev",
+    "build": "pnpm --filter @aiq/console build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"apps/**/*.{ts,vue,js,css}\" \"packages/**/*.{ts,js}\"",

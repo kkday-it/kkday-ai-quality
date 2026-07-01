@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import qcDefaults from '@config/global/default_qc.json';
 import { AccordionGroup, StateGuard } from '@/components';
@@ -17,7 +17,8 @@ const envOf = (id: string) => QC.environments.find((e) => e.id === id) ?? QC.env
 
 onMounted(() => store.loadAll());
 
-// inline 編輯：editing 持有「編輯中的 config」（新建＝blank，id 不在清單→渲染於尾端；編輯＝既有副本，就地取代卡片）。
+// 新增流程：editing 僅持有「新建中的 blank config」（尚未落庫，渲染於清單尾端）。
+// 既有卡片已「展開即編輯」（QcConfigCard body 直接是表單），不再需要編輯態切換。
 const editing = ref<QcConfig | null>(null);
 const isEditingNew = computed(
   () => !!editing.value && !store.qcConfigs.some((c) => c.id === editing.value!.id)
@@ -32,17 +33,34 @@ const blank = (): QcConfig => ({
   names: [],
   schemas: [QC.schema],
 });
-// 手風琴預設展開第一張卡片（StateGuard 待 loadAll 完成才渲染 AccordionGroup，故此時 configs 已就緒）
-const firstConfigId = computed(() => store.qcConfigs[0]?.id ?? '');
-const openNew = () => (editing.value = blank());
-const openEdit = (cfg: QcConfig) =>
-  (editing.value = { ...cfg, names: [...cfg.names], schemas: [...cfg.schemas] });
+// 手風琴受控展開：activeId＝當前展開面板；預設展開第一張（loadAll 完成後第一筆就緒時補上）。
+const activeId = ref('');
+watch(
+  () => store.qcConfigs,
+  (list) => {
+    if (!activeId.value && list[0]) activeId.value = list[0].id;
+  },
+  { immediate: true, deep: false }
+);
+// 單開不變量：展開任一既有面板（activeId 變真值）即丟棄尚未存的「新增」草稿，
+// 確保任何交互下只有一個編輯面板展開（新增尾卡在手風琴單開控制之外，須手動互斥）。
+watch(activeId, (id) => {
+  if (id) editing.value = null;
+});
+// 新增＝先收合所有既有面板（activeId=''），只展開尾端新增編輯器。
+const openNew = () => {
+  activeId.value = '';
+  editing.value = blank();
+};
 const cancel = () => (editing.value = null);
+// 既有卡片的編輯器按「取消」＝收合該面板（草稿不落庫）。
+const collapse = () => (activeId.value = '');
 
 const onSave = async (payload: { config: QcConfig; password?: string }) => {
   try {
     await store.saveQcConfig(payload.config, payload.password);
     editing.value = null;
+    activeId.value = payload.config.id; // 存後展開該套（新增者以正式卡片呈現並保持開啟）
     Message.success('已儲存 QC DB 連線');
   } catch (e: any) {
     Message.error('儲存失敗：' + (e?.message || e));
@@ -64,21 +82,13 @@ const onActivate = async (id: string) => {
     Message.error('切換失敗：' + (e?.message || e));
   }
 };
-const onRename = async (cfg: QcConfig, label: string) => {
-  try {
-    await store.saveQcConfig({ ...cfg, label }); // 不帶 password → 僅改名，機密不動
-    Message.success('已更新名稱');
-  } catch (e: any) {
-    Message.error('改名失敗：' + (e?.message || e));
-  }
-};
 </script>
 
 <template>
   <StateGuard :loading="store.loading">
     <div>
       <div class="mb-2 flex items-center justify-between">
-        <span class="font-medium">🗄️ QC DB（PostgreSQL）連線</span>
+        <span class="font-medium">🗄️ QC DB 連線</span>
         <a-button type="primary" size="small" @click="openNew">新增連線</a-button>
       </div>
       <a-empty
@@ -87,27 +97,20 @@ const onRename = async (cfg: QcConfig, label: string) => {
       />
 
       <!-- 手風琴卡片清單（單開 + 預設展開第一張）；編輯中者就地展開為 inline 編輯器 -->
-      <AccordionGroup v-if="store.qcConfigs.length || isEditingNew" :default-active="firstConfigId">
-        <template v-for="c in store.qcConfigs" :key="c.id">
-          <a-card v-if="editing && editing.id === c.id" :bordered="true" size="small" class="mb-2">
-            <QcConfigEditor
-              :model-value="editing"
-              :password="store.qcPasswords[editing.id] ?? ''"
-              @save="onSave"
-              @cancel="cancel"
-            />
-          </a-card>
-          <QcConfigCard
-            v-else
-            :config="c"
-            :item-key="c.id"
-            :active="c.id === store.activeQcId"
-            @edit="openEdit(c)"
-            @delete="onDelete(c.id)"
-            @activate="onActivate(c.id)"
-            @rename="(label) => onRename(c, label)"
-          />
-        </template>
+      <AccordionGroup v-if="store.qcConfigs.length || isEditingNew" v-model:active="activeId">
+        <QcConfigCard
+          v-for="c in store.qcConfigs"
+          :key="c.id"
+          :config="c"
+          :item-key="c.id"
+          :active="c.id === store.activeQcId"
+          :expanded="activeId === c.id"
+          :password="store.qcPasswords[c.id] ?? ''"
+          @delete="onDelete(c.id)"
+          @activate="onActivate(c.id)"
+          @save="onSave"
+          @cancel="collapse"
+        />
 
         <!-- 新增：於清單尾端 inline 展開一條 -->
         <a-card v-if="isEditingNew && editing" :bordered="true" size="small" class="mb-2">

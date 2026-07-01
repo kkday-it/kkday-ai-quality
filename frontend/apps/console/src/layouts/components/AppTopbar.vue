@@ -2,11 +2,11 @@
 import type { AuthUser } from '@/api';
 import { MODULES } from '../modules';
 
-// 頂部菜單欄：品牌 + 功能模組下拉 + 設定 / 帳號入口。
-// ⚙️ 設定＝公共配置抽屜（LLM/QC）→ open-settings；email chip＝帳號抽屜 → open-account。各自獨立抽屜。
+// 頂部菜單欄：品牌 + 功能模組下拉（左）+ 配置 / 帳號入口（右）。
+// ⚙️ 配置＝公共設定抽屜（LLM/QC）→ open-settings；email chip＝帳號抽屜 → open-account。各自獨立抽屜。
 // 功能模組下拉：選項取自 MODULES 註冊表；active 值由殼層依當前路由注入，切換時 emit 由殼層導航。
 
-// topbar 連結（設定 / 帳號）共用樣式
+// topbar 連結（配置 / 帳號）共用樣式
 const NAV_LINK =
   'cursor-pointer select-none rounded-md px-3 py-1 text-sm text-[#4e5969] hover:bg-[#e8f3ff] hover:text-[#165dff]';
 
@@ -30,8 +30,9 @@ defineEmits<{
     >
       <a-option v-for="m in MODULES" :key="m.value" :value="m.value">{{ m.label }}</a-option>
     </a-select>
-    <a :class="NAV_LINK" @click="$emit('open-settings')">⚙️ 設定</a>
+    <!-- 配置 / 帳號 皆置於右側並列（配置＝公共設定抽屜；email chip＝帳號抽屜） -->
     <span class="ml-auto flex items-center gap-2">
+      <a :class="NAV_LINK" @click="$emit('open-settings')">⚙️ 配置</a>
       <a v-if="user" :class="NAV_LINK" @click="$emit('open-account')">👤 {{ user.email }}</a>
     </span>
   </div>
