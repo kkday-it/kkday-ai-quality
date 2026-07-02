@@ -21,3 +21,8 @@ CONFIG_DIR: Path = Path(os.getenv("AIQ_CONFIG_DIR") or (REPO_ROOT / "config")).r
 GLOBAL_DIR: Path = CONFIG_DIR / "global"      # 前後端共用非機密（model 清單 / QC 預設 / 定價）
 AI_JUDGE_DIR: Path = CONFIG_DIR / "ai_judge"  # 判決領域規則樹（rule_C-* / source_mapping / domains）
 TAXONOMY_DIR: Path = CONFIG_DIR / "taxonomy"  # 軸A 歸因分類（domains 回退來源）
+
+# constants/＝固定共用參照常數（enum / 代碼字典，非業務可調），按維度分子資料夾；前端以 @constants alias 同讀。
+# 與 config/（業務可調）分家：constants 由工程師維護、變動低頻。可用 AIQ_CONSTANTS_DIR 覆蓋（Docker 掛載）。
+CONSTANTS_DIR: Path = Path(os.getenv("AIQ_CONSTANTS_DIR") or (REPO_ROOT / "constants")).resolve()
+LABELS_DIR: Path = CONSTANTS_DIR / "labels"   # 代碼→文案字典（lang / traveller_type，源自 kkday-member-ci）

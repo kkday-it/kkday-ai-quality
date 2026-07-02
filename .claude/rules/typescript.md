@@ -27,6 +27,22 @@ paths:
 
 > 響應式回呼用 `useDebounceFn`（自動解包 + 自動清理）；純函式用 lodash-es `debounce`。
 
+## 檔案命名規範（`<name>.<type>.<ext>` · 強制）
+
+新建檔案一律以**類型後綴**標明職責：`<語意名>.<類型>.<副檔名>`，讓檔案一眼可辨用途、利於 grep / 分層。
+
+| 類型後綴 | 用途 | 例 |
+|---|---|---|
+| `.constant.ts` / `.constant.json` | 常數 / 代碼字典（`.json` 用於前後端共用的 `constants/` SSOT） | `pagination.constant.ts`、`constants/labels/guide_lang.constant.json` |
+| `.config.ts` / `.config.json` | 配置（業務可調） | `vite.config.ts`、`config/global/llm_model.json`(既有可不追改) |
+| `.util.ts` | 純函式工具（無副作用） | `format.util.ts` |
+| `.api.ts` | API 請求層 | `judgment.api.ts` |
+| `.store.ts` | Pinia store | `auth.store.ts` |
+| `.composable.ts` / `use*.ts` | composable（既有慣例 `useXxx.ts` 亦可） | `useAttributionList.ts` |
+
+- **適用對象**：新建檔案。既有不符者**touch 即轉**，不主動發起大規模改名 codemod。
+- `index.ts`（barrel）、路由 `*.route.ts`、頁面 `*.vue` 元件依既有慣例，不強加後綴。
+
 ## Barrel exports
 
 資料夾有 barrel `index.ts`：對外從資料夾根 import，內部 cross-import 用相對路徑。

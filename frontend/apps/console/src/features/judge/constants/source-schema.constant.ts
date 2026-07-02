@@ -43,8 +43,8 @@ export interface ExpandFieldDef {
   format?: 'datetime' | 'date';
   /** a-descriptions 跨欄數（:column=4 版面控制每列排布；預設 1）。 */
   span?: number;
-  /** 特殊渲染：'rate' 星等 a-rate / 'lang' 導覽語言映射 / 'traveller' 旅客類型映射。 */
-  kind?: 'rate' | 'lang' | 'traveller';
+  /** 特殊渲染：'rate' 星等 a-rate / 'traveller' 旅客類型映射。 */
+  kind?: 'rate' | 'traveller';
 }
 
 /** 單一來源的歸因列表 schema：欄位 + 篩選器 + 展開行明細。 */
@@ -106,13 +106,15 @@ const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
   // 第二行：方案OID / 方案名稱
   { key: 'pkg_oid', label: '方案OID', span: 1 },
   { key: 'package_name', label: '方案名稱', span: 3 },
-  // 第三行：評論標題 / 評論內容 / 評論星等 / 評論時間
+  // 第三行（評論 meta）：評論ID / 評論標題 / 評論星等 / 評論時間
+  { key: 'source_record_id', label: '評論ID', span: 1 },
   { key: 'title', label: '評論標題', span: 1 },
-  { key: 'content', label: '評論內容', span: 1 },
   { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
   { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
-  // 第四行：導覽語言 / 會員UUID / 旅客類型
-  { key: 'lang', label: '導覽語言', span: 1, kind: 'lang' },
+  // 第四行：評論內容（單獨整行）
+  { key: 'content', label: '評論內容', span: 4 },
+  // 第五行：商品語系（lang_code 直接顯示，非導覽語系）/ 會員UUID / 旅客類型
+  { key: 'lang', label: '商品語系', span: 1 },
   { key: 'member_uuid', label: '會員UUID', span: 2 },
   { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
   // 判決欄

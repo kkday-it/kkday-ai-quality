@@ -16,11 +16,17 @@ paths:
 |---|---|---|
 | **機密**（token / 密碼 / private key）| `backend/.env`（Pydantic `Settings`）| `config.py`，同名大寫 env var 覆蓋 |
 | **跨環境會變的非機密**（DB URL / CORS origins / port / project id / timeout / 並發數）| `backend/.env`（有 dev default）| `config.py` |
-| **前後端共用的非機密**（模型清單 / provider 目錄 / QC 連線預設 / 顯示 label / 定價）| `config/global/*.json` | 後端 `settings.py`、前端 `@config/global/*` **同讀一份**（SSOT）|
+| **前後端共用「業務可調」非機密**（模型清單 / provider 目錄 / QC 連線預設 / 顯示 label / 定價）| `config/global/*.json` | 後端 `settings.py`、前端 `@config/global/*` **同讀一份**（SSOT）|
 | **判決領域**（verdict / L1-L3 判準 / 來源欄位映射 / 信心分層閾值）| `config/ai_judge/*.json` | 後端 lazy load、前端 import 同一 JSON |
+| **前後端共用「固定參照」常數**（enum / 代碼字典，如 traveller_type 代碼→文案、狀態碼→中文，非業務可調）| `constants/<維度>/*.json`（repo 根，按維度分子資料夾）| 後端 `paths.CONSTANTS_DIR`、前端 `@constants/<維度>/*` **同讀一份**（SSOT）|
 | **純前端 UI**（Arco 色 token / 分頁大小 / 輪詢間隔 / 元件私有常數）| `frontend/.../features/*/constants/*.constant.ts` | barrel `index.ts` 出口 |
 
-> **SSOT 鐵律**：同一語義的值（如 verdict 中文 label、來源清單、模型名）**只准有一份真相源**。前端顯示 verdict label → 直接讀 `config/ai_judge/verdicts.json` 的 `label_zh`，**禁止**在前端 constants 另寫一份翻譯。前後端都用到 → 進 `config/global/` 或 `config/ai_judge/`，禁各寫一份。
+> **config/ vs constants/（repo 根兩大共用目錄，前後端同源）**：
+> - `config/`＝**業務/QC 會調**的值（規則樹、閾值、model 清單、連線預設）——非工程師改、可版本化、變動較頻。
+> - `constants/`＝**固定參照**常數（enum、代碼→文案字典、對照表）——工程師維護、變動低頻、通常來自外部權威來源（如 kkday-member-ci）。按**維度**分子資料夾（如 `constants/labels/`）。
+> - 兩者皆前後端同讀同一份 JSON：前端 `@config` / `@constants` alias，後端 `paths.CONFIG_DIR` / `paths.CONSTANTS_DIR`。
+
+> **SSOT 鐵律**：同一語義的值（如 verdict 中文 label、來源清單、模型名、代碼字典）**只准有一份真相源**。前端顯示 verdict label → 讀 `config/ai_judge/verdicts.json`；顯示 traveller_type 文案 → 讀 `constants/labels/*.json`，**禁止**在前端另寫一份翻譯。前後端都用到 → 進 `config/` 或 `constants/`，禁各寫一份。
 
 ## 允許保留代碼內的例外（過度工程防禦）
 
@@ -35,8 +41,8 @@ paths:
 
 ## 新增常數自問清單（寫死前必答）
 
-1. 這個值 codebase / config 裡已經有一份了嗎？→ 有則復用，禁平行造第二份
-2. 前後端都會用到嗎？→ 是則進 `config/global/` 或 `config/ai_judge/`（單一真相源）
+1. 這個值 codebase / config / constants 裡已經有一份了嗎？→ 有則復用，禁平行造第二份
+2. 前後端都會用到嗎？→ 是則進 repo 根共用目錄（**業務可調** → `config/`；**固定參照/字典** → `constants/<維度>/`），單一真相源
 3. 是機密或跨環境值嗎？→ 是則進 `.env`
-4. 業務 / QC 主管將來要調嗎？→ 是則 config 化
-5. 以上皆否 → 留代碼內，但**提取為具名常數 + 註解說明「為什麼是這個值」**，禁散落 inline magic number
+4. 業務 / QC 主管將來要調嗎？→ 是 → `config/`；否但前後端共用的固定對照 → `constants/`
+5. 以上皆否（純前端 UI）→ `features/*/constants/*.constant.ts`；再否則留代碼內，但**提取為具名常數 + 註解**，禁裸 magic number

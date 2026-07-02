@@ -670,7 +670,8 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "channel": "review",
             "lang": row.get("lang"),
             "supplier_oid": row.get("supplier_oid"),
-            # 展開行重設計新增：商品分類 / 方案名 / 會員 / 旅客類型（資料已在專表列，直接取）
+            # 展開行重設計新增：評論ID / 商品分類 / 方案名 / 會員 / 旅客類型（資料已在專表列，直接取）
+            "source_record_id": row.get("source_record_id"),  # rec_oid（評論ID）
             "product_category_main": row.get("product_category_main"),
             "package_name": _extract_package_name({"order_snap_json": row.get("prod_name_snapshot")}),
             "member_uuid": row.get("member_uuid"),

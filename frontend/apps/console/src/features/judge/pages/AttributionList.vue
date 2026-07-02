@@ -15,7 +15,6 @@ import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import {
   ALL_PAGINATION,
-  LANG_LABELS,
   POLARITY_LABELS,
   SOURCES,
   TABLE_DEFAULTS,
@@ -306,9 +305,6 @@ onMounted(init);
                   readonly
                   :count="5"
                 />
-                <template v-else-if="f.kind === 'lang'">
-                  {{ LANG_LABELS[String(record.lang ?? '')] ?? record.lang ?? '—' }}
-                </template>
                 <template v-else-if="f.kind === 'traveller'">
                   {{
                     TRAVELLER_TYPE_LABELS[String(record.traveller_type ?? '')] ??
