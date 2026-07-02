@@ -101,6 +101,18 @@ export const getPrejudgeStatus = (jobId: string) =>
 export const prejudgeStreamUrl = (jobId: string): string =>
   `${BASE}/v1/judgment/prejudge/stream?job_id=${encodeURIComponent(jobId)}`;
 
+/** 暫停初判歸因任務（提交迴圈阻塞，已在跑的收斂後 processed 停增）→ 更新後快照。 */
+export const pausePrejudge = (jobId: string) =>
+  j(`${BASE}/v1/judgment/prejudge/pause?job_id=${encodeURIComponent(jobId)}`, { method: 'POST' });
+
+/** 恢復已暫停的初判歸因任務（提交迴圈續跑）→ 更新後快照。 */
+export const resumePrejudge = (jobId: string) =>
+  j(`${BASE}/v1/judgment/prejudge/resume?job_id=${encodeURIComponent(jobId)}`, { method: 'POST' });
+
+/** 停止初判歸因任務（不再派新工，已在跑的收斂後轉 cancelled；已判已落庫，剩餘可重跑）→ 更新後快照。 */
+export const cancelPrejudge = (jobId: string) =>
+  j(`${BASE}/v1/judgment/prejudge/cancel?job_id=${encodeURIComponent(jobId)}`, { method: 'POST' });
+
 /** 歸因聚合共用查詢參數（source 過濾 + 日期區間 + 趨勢粒度）。 */
 export interface AttrQuery {
   /** 來源 code（省略＝全部來源） */

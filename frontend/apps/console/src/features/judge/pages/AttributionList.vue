@@ -45,6 +45,9 @@ const {
   dateRange,
   prodOidFilter,
   orderOidFilter,
+  verticalOptions,
+  verticalGroups,
+  onVerticalChange,
   onSortChange,
   onFilterChange,
   resetFilters,
@@ -67,6 +70,7 @@ const {
   pageSpec,
   selectPages,
   running,
+  jobStatus,
   progress,
   progressPct,
   costText,
@@ -75,6 +79,9 @@ const {
   runSelected,
   runAll,
   doRun,
+  pauseJob,
+  resumeJob,
+  cancelJob,
   exportCsv,
   init,
 } = useAttributionList(source);
@@ -110,6 +117,18 @@ onMounted(init);
         :options="SOURCE_OPTS"
         @change="onFilterChange"
       />
+      <!-- 商品垂直分類複選（全局 SSOT；預設全選，剩 1 不可移除，子集生成新列表）-->
+      <span class="text-sm text-gray-500">商品垂直分類</span>
+      <a-select
+        :model-value="verticalGroups"
+        multiple
+        size="small"
+        style="width: 220px"
+        :max-tag-count="1"
+        placeholder="選分類分組"
+        :options="verticalOptions.map((g) => ({ value: g, label: g }))"
+        @change="onVerticalChange"
+      />
       <a-button type="primary" size="small" :loading="running" @click="runSelected">
         進行初判歸因（已選 {{ runCount }}）
       </a-button>
@@ -126,12 +145,40 @@ onMounted(init);
   <div class="flex h-full flex-col gap-4">
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
     <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
-      <a-progress
-        :percent="progressPct / 100"
-        :status="progressPct >= 100 ? 'success' : 'normal'"
-      />
+      <div class="flex items-center gap-3">
+        <a-progress
+          class="flex-1"
+          :percent="progressPct / 100"
+          :status="jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'"
+        />
+        <!-- 一鍵暫停/恢復/停止：依 jobStatus 切換 -->
+        <a-button
+          v-if="jobStatus === 'paused'"
+          size="small"
+          type="primary"
+          @click="resumeJob"
+        >
+          恢復
+        </a-button>
+        <a-button
+          v-else
+          size="small"
+          :disabled="jobStatus === 'cancelling'"
+          @click="pauseJob"
+        >
+          暫停
+        </a-button>
+        <a-popconfirm content="確定停止？已判結果會保留，剩餘未判可稍後重跑。" @ok="cancelJob">
+          <a-button size="small" status="danger" :disabled="jobStatus === 'cancelling'">
+            {{ jobStatus === 'cancelling' ? '停止中…' : '停止' }}
+          </a-button>
+        </a-popconfirm>
+      </div>
       <div class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500">
-        <span>已處理 {{ progress.processed }} / {{ progress.total }} 筆…</span>
+        <span>
+          {{ jobStatus === 'paused' ? '已暫停' : jobStatus === 'cancelling' ? '停止中' : '已處理' }}
+          {{ progress.processed }} / {{ progress.total }} 筆…
+        </span>
         <span v-if="costText">花費 {{ costText }}</span>
       </div>
     </div>

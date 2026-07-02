@@ -91,15 +91,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 給編輯器一個合理高度上限 + 內捲，避免大型 config（如 attribution_tree 104KB）撐爆抽屜 */
+/* 定高 + 外層不捲：讓 vanilla-jsoneditor 內部 menu（text/tree/table 工具列）與導覽列固定，只捲 .jse-contents。
+   原 max-height + overflow:auto 會把整塊（含工具列）一起捲走；改給定高、overflow 交還 editor 內部 flex 佈局。 */
 .json-editor-host {
   --jse-font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  max-height: 60vh;
-  overflow: auto;
+  height: 60vh;
+  overflow: hidden;
 }
-/* fill：整頁編輯時撐滿父容器（父須有定高），取代 60vh 上限 */
+/* fill：整頁編輯時撐滿父容器（父須有定高），取代 60vh；仍由 editor 內部捲 contents（工具列固定） */
 .json-editor-fill {
-  max-height: none;
   height: 100%;
 }
 </style>

@@ -12,6 +12,7 @@ import StateGuard from '@/components/StateGuard.vue';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import ProductVerticalPanel from './ProductVerticalPanel.vue';
 import RuleHistoryModal from './RuleHistoryModal.vue';
+import { versionLabel } from '../utils';
 
 /** active：所屬 tab 是否為當前選中——僅在啟用時才載入，避免抽屜一開就搶佔共用 store.activeCode。 */
 const props = defineProps<{ active?: boolean }>();
@@ -83,7 +84,7 @@ function doReset() {
     <div class="mb-3 flex flex-none items-center gap-3">
       <span class="text-sm font-medium">商品垂直分類</span>
       <span v-if="isCurrent && store.currentMeta" class="text-xs text-[var(--color-text-3)]">
-        v{{ store.currentMeta.version }}
+        {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
         <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
       </span>
       <div class="flex-1" />

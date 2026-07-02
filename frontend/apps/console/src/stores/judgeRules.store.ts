@@ -19,6 +19,8 @@ import {
  * 提供，見 store.labelFor——不再於前端各寫一份而漂移。schema 為結構規格、無 _meta.label，故在此補。 */
 export const RULE_LABELS_FALLBACK: Record<string, string> = {
   schema: '結構規格',
+  // 整體規則：seed 檔含 _meta.label，DB 未 seed 時由此 fallback，避免選單顯示原始 code。
+  global_rule: '整體規則',
   // 商品垂直分類：seed 檔已含 _meta.label，但既有 DB 若在補 _meta 前即 seed 過（label 為 None）時，
   // 由此 fallback 補顯示名，避免選單顯示原始 code。
   product_vertical: '商品垂直分類',

@@ -2,10 +2,13 @@
 // 使頁面薄化為模板+綁定；來源切換時整組篩選按新 schema 清空殘留值。
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import {
+  cancelPrejudge,
   exportProblems,
+  pausePrejudge,
   prejudgeStreamUrl,
   getProblems,
   getSettings,
+  resumePrejudge,
   startPrejudge,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
@@ -44,12 +47,21 @@ export const fmtDt = (value: unknown, dateOnly = false): string => {
  */
 export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const schema = computed(() => schemaFor(toValue(source)));
-  // 全局商品垂直分類篩選（規則配置頁開關 + 選中；取代原列表本地垂直篩選，統一驅動 list/unjudged/縱覽/scope）。
+
+  // ── 全局商品垂直分類篩選（兩層 SSOT）：工具列複選＝實際篩選；可選分類＝規則配置頁設定的選項池──
   const verticalFilter = useVerticalFilterStore();
-  /** 生效的全局垂直分類分組（關閉/未選＝空陣列），送查詢用。 */
-  const effVerticals = computed(() =>
-    verticalFilter.activeGroups.length ? verticalFilter.activeGroups : undefined,
+  /** 工具列可選分類＝規則配置頁設定的選項池（總 list）。 */
+  const verticalOptions = computed(() => verticalFilter.toolbarOptions);
+  /** 工具列篩選選中（複選；預設全選選項池，剩 1 不可移除，由 store.setFilter 守衛）。 */
+  const verticalGroups = computed(() => verticalFilter.filter);
+  /** 生效的垂直分類（送查詢用）：全 pool/未選＝不篩選（回 undefined），子集才送分組名。 */
+  const effVerticals = computed<string[] | undefined>(() =>
+    verticalFilter.activeGroups.length ? [...verticalFilter.activeGroups] : undefined,
   );
+  /** 複選變更：剩 1 不可移除（清空由 store.setFilter 忽略）；寫回全局 store（列表/縱覽/scope 同步）。 */
+  const onVerticalChange = (v: unknown) => {
+    verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
+  };
 
   // ── 篩選狀態（各來源 schema 決定哪些生效；切來源時一併清空）──
   const polarityFilter = ref('');
@@ -188,9 +200,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     },
   );
 
-  // 全局商品垂直分類（開關 / 選中）變更 → 列表 + 未判 count 即時重載（縱覽頁另有自己的 watch）。
+  // 全局垂直分類（選中）變更 → 列表 + 未判 count 即時重載（縱覽頁另有自己的 watch）。
   watch(
-    () => [verticalFilter.enabled, verticalFilter.groups],
+    () => verticalFilter.filter,
     () => onFilterChange(),
     { deep: true },
   );
@@ -256,6 +268,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   // ── 初判歸因 ──
   const running = ref(false);
+  /** 當前 job_id（供暫停/恢復/停止；無執行中為空）。 */
+  const jobId = ref('');
+  /** 當前 job 狀態（running/paused/cancelling/cancelled/done/error；由 SSE 權威更新，動作先樂觀設）。 */
+  const jobStatus = ref('');
   const progress = ref({ processed: 0, total: 0, totalTokens: 0, costUsd: 0 });
   const progressPct = computed(() =>
     progress.value.total ? Math.round((progress.value.processed / progress.value.total) * 100) : 0,
@@ -276,13 +292,14 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       };
       es.onmessage = (ev) => {
         const st = JSON.parse(ev.data);
+        jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
         progress.value = {
           processed: st.processed || 0,
           total: st.total || progress.value.total,
           totalTokens: st.total_tokens || 0,
           costUsd: st.cost_usd || 0,
         };
-        if (st.status === 'done' || st.status === 'error') finish();
+        if (st.status === 'done' || st.status === 'error' || st.status === 'cancelled') finish();
       };
       es.onerror = finish;
     });
@@ -294,22 +311,60 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   }) => {
     if (running.value) return;
     running.value = true;
+    jobStatus.value = 'running';
     progress.value = { processed: 0, total: 0, totalTokens: 0, costUsd: 0 };
     try {
       const r = await startPrejudge({ ...body, llm_config_id: llmConfigId.value || undefined });
+      jobId.value = r.job_id;
       progress.value = { processed: 0, total: r.total, totalTokens: 0, costUsd: 0 };
       if (!r.total) {
         Message.warning('沒有可分析的對象');
         return;
       }
       await _poll(r.job_id);
-      Message.success(`初判歸因完成：${progress.value.processed} 筆（模型 ${r.model}）`);
+      if (jobStatus.value === 'cancelled') {
+        Message.info(`已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`);
+      } else {
+        Message.success(`初判歸因完成：${progress.value.processed} 筆（模型 ${r.model}）`);
+      }
       await loadPage(); // 重載當前頁（保持頁碼，就地看到結果）
       await loadUnjudged();
     } catch (e: any) {
       Message.error('初判歸因失敗：' + (e?.message || e));
     } finally {
       running.value = false;
+      jobId.value = '';
+      jobStatus.value = '';
+    }
+  };
+  /** 暫停當前 job（樂觀設 paused，SSE 隨後權威更新）。 */
+  const pauseJob = async () => {
+    if (!jobId.value) return;
+    try {
+      await pausePrejudge(jobId.value);
+      jobStatus.value = 'paused';
+    } catch (e: any) {
+      Message.error('暫停失敗：' + (e?.message || e));
+    }
+  };
+  /** 恢復當前已暫停的 job。 */
+  const resumeJob = async () => {
+    if (!jobId.value) return;
+    try {
+      await resumePrejudge(jobId.value);
+      jobStatus.value = 'running';
+    } catch (e: any) {
+      Message.error('恢復失敗：' + (e?.message || e));
+    }
+  };
+  /** 停止當前 job（不再派新工，已在跑的收斂後轉 cancelled；已判已落庫）。 */
+  const cancelJob = async () => {
+    if (!jobId.value) return;
+    try {
+      await cancelPrejudge(jobId.value);
+      jobStatus.value = 'cancelling';
+    } catch (e: any) {
+      Message.error('停止失敗：' + (e?.message || e));
     }
   };
   // 二次確認彈窗：進行初判/全部未判皆先開彈窗，於其中選 model 配置再確認執行
@@ -331,7 +386,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const doRun = () => {
     confirmOpen.value = false;
     if (pendingScope.value === 'selected') _run({ item_ids: selectedKeys.value });
-    else _run({ source: toValue(source), scope: 'all', product_verticals: verticalFilter.activeGroups });
+    else _run({ source: toValue(source), scope: 'all', product_verticals: effVerticals.value });
   };
 
   /** 導出 CSV（POST 全量；有勾選→只導已選，否則導符合目前篩選全部）→ blob 下載。 */
@@ -367,6 +422,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     dateRange,
     prodOidFilter,
     orderOidFilter,
+    verticalOptions,
+    verticalGroups,
+    onVerticalChange,
     onSortChange,
     onFilterChange,
     resetFilters,
@@ -393,6 +451,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     selectPages,
     // 初判歸因
     running,
+    jobStatus,
     progress,
     progressPct,
     costText,
@@ -401,6 +460,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     runSelected,
     runAll,
     doRun,
+    pauseJob,
+    resumeJob,
+    cancelJob,
     // 導出
     exportCsv,
     // 初始化（onMounted 呼叫）

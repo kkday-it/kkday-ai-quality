@@ -50,10 +50,19 @@ export function useAttributionDashboard(
   source: MaybeRefOrGetter<string | undefined>,
   query: AttrDashboardQuery = {},
 ) {
-  // 全局商品垂直分類篩選（規則配置頁開關；縱覽亦跟隨，控制整個 AI 法官總數）。
+  // 全局商品垂直分類篩選（工具列複選 = 規則配置頁 = 縱覽，SSOT，控制整個 AI 法官總數）。
   const verticalFilter = useVerticalFilterStore();
+  // 確保選項已載入（activeGroups「全選＝不篩選」判定需 options）；首次亦補成全選。
+  verticalFilter.loadOptions();
   const effVerticals = () =>
-    verticalFilter.activeGroups.length ? verticalFilter.activeGroups : undefined;
+    verticalFilter.activeGroups.length ? [...verticalFilter.activeGroups] : undefined;
+  /** 縱覽工具列可選分類＝規則配置頁設定的選項池。 */
+  const verticalOptions = computed(() => verticalFilter.toolbarOptions);
+  /** 縱覽工具列篩選選中（與歸因列表同一份 SSOT，改任一處兩頁同步）。 */
+  const verticalGroups = computed(() => verticalFilter.filter);
+  /** 複選變更：寫回全局 store（剩 1 不可移除由 setFilter 守衛）→ watch activeGroups 觸發縱覽重載。 */
+  const onVerticalChange = (v: unknown) =>
+    verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
 
   const data = ref<AttributionOverview | null>(null);
   const loading = ref(true);
@@ -243,6 +252,10 @@ export function useAttributionDashboard(
     openDrill,
     onL1Click,
     reload,
+    // 全局垂直分類篩選（縱覽工具列）
+    verticalOptions,
+    verticalGroups,
+    onVerticalChange,
     // 圖表 option
     polarityDonut,
     contentRatioDonut,

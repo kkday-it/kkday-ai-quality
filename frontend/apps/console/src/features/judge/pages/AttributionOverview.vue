@@ -73,6 +73,9 @@ const {
   drillLoading,
   onL1Click,
   reload,
+  verticalOptions,
+  verticalGroups,
+  onVerticalChange,
   polarityDonut,
   contentRatioDonut,
   scoreBar,
@@ -95,6 +98,17 @@ const {
       <a-radio-group v-model="view" type="button" size="small">
         <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ viewLabel(v) }}</a-radio>
       </a-radio-group>
+      <!-- 商品垂直分類複選（與歸因列表同一 SSOT；限定縱覽數據範圍，全選＝不篩選）-->
+      <a-select
+        :model-value="verticalGroups"
+        multiple
+        size="small"
+        style="width: 200px"
+        :max-tag-count="1"
+        placeholder="商品垂直分類"
+        :options="verticalOptions.map((g) => ({ value: g, label: g }))"
+        @change="onVerticalChange"
+      />
       <a-range-picker
         v-model="dateRange"
         size="small"

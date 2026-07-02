@@ -12,6 +12,7 @@ import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryModal from '../components/RuleHistoryModal.vue';
+import { versionLabel } from '../utils';
 
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
@@ -20,7 +21,12 @@ const verticalFilter = useVerticalFilterStore();
 // product_vertical（商品垂直分類）非歸因判準，已移至「配置」抽屜維護，故此處一律排除、不在規則管理顯示。
 const domainCodes = computed(() =>
   store.metas
-    .filter((m) => m.rule_code !== 'schema' && m.rule_code !== 'product_vertical')
+    .filter(
+      (m) =>
+        m.rule_code !== 'schema' &&
+        m.rule_code !== 'product_vertical' &&
+        m.rule_code !== 'global_rule',
+    )
     .map((m) => m.rule_code),
 );
 const mode = ref<'panel' | 'json'>('panel');
@@ -33,6 +39,8 @@ const saving = ref(false);
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
 
 const isSchema = computed(() => store.activeCode === 'schema');
+// 非 L1-L3 歸因樹的規則（schema 結構規格 / global_rule 判決總規範）→ 一律 JSON 編輯、不走 RuleTreePanel。
+const isNonTree = computed(() => store.activeCode === 'schema' || store.activeCode === 'global_rule');
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
@@ -56,8 +64,8 @@ async function pick(code: string) {
     Message.warning('有未儲存變更，請先儲存或切換版本');
     return;
   }
-  // schema 無樹狀結構 → 只用 JSON；C-N 預設面板
-  mode.value = code === 'schema' ? 'json' : 'panel';
+  // schema / global_rule 無 L1-L3 樹 → 只用 JSON；C-N 預設面板
+  mode.value = code === 'schema' || code === 'global_rule' ? 'json' : 'panel';
   await store.selectRule(code);
 }
 
@@ -122,6 +130,13 @@ function doResetAll() {
   <div class="flex h-full gap-4">
     <!-- 左：子規則選單 + 全局商品垂直分類篩選 -->
     <div class="flex h-full w-44 shrink-0 flex-col gap-3">
+      <!-- 歸因分類標題列 + 恢復默認：獨立於 a-menu-item-group（其 title slot 內按鈕點擊會被 Arco menu 吞掉）-->
+      <div class="flex flex-none items-center justify-between px-1">
+        <span class="text-xs text-[var(--color-text-3)]">歸因分類</span>
+        <a-button size="mini" type="text" @click="doResetAll">恢復默認</a-button>
+      </div>
+
+      <!-- schema 置頂為第一項，其後為歸因分類子規則（C-N）-->
       <a-menu
         :selected-keys="[store.activeCode]"
         class="min-h-0 flex-1 overflow-auto rounded-lg border"
@@ -131,37 +146,32 @@ function doResetAll() {
           <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
           <span class="ml-2">{{ store.labelFor('schema') }}</span>
         </a-menu-item>
-        <a-menu-item-group>
-          <template #title>
-            <div class="flex items-center justify-between pr-1">
-              <span>歸因分類</span>
-              <a-button size="mini" type="text" @click.stop="doResetAll">恢復默認</a-button>
-            </div>
-          </template>
-          <a-menu-item v-for="c in domainCodes" :key="c">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-            <span class="ml-2">{{ store.labelFor(c) }}</span>
-          </a-menu-item>
-        </a-menu-item-group>
+        <a-menu-item key="global_rule">
+          <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
+          <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
+        </a-menu-item>
+        <a-menu-item v-for="c in domainCodes" :key="c">
+          <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+          <span class="ml-2">{{ store.labelFor(c) }}</span>
+        </a-menu-item>
       </a-menu>
 
-      <!-- 全局商品垂直分類篩選（查詢用，非判準；控制整個 AI 法官）-->
+      <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
       <div class="flex-none rounded-lg border p-3">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-medium">商品垂直分類篩選</span>
-          <a-switch v-model="verticalFilter.enabled" size="small" />
+          <span class="text-xs font-medium">商品垂直分類選項池</span>
         </div>
         <a-select
-          v-model="verticalFilter.groups"
+          :model-value="verticalFilter.pool"
           multiple
           size="small"
-          :disabled="!verticalFilter.enabled"
           placeholder="選分類分組"
           :max-tag-count="1"
-          :options="verticalFilter.options.map((g) => ({ value: g, label: g }))"
+          :options="verticalFilter.allOptions.map((g) => ({ value: g, label: g }))"
+          @change="(v) => verticalFilter.setPool(v as string[])"
         />
         <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-3)]">
-          開啟後全局套用：歸因列表 / 縱覽 / 未判 皆依所選分類篩選（僅商品評論生效）。
+          配置歸因列表工具列可選的分類（選項池／總 list）；實際篩選於工具列進行，此處不直接篩資料（複選；至少 1 個）。
         </div>
       </div>
     </div>
@@ -169,13 +179,13 @@ function doResetAll() {
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="mb-3 flex flex-none items-center gap-3">
-        <!-- schema 僅 JSON，不顯示面板/JSON 切換 -->
-        <a-radio-group v-if="!isSchema" v-model="mode" type="button" size="small">
+        <!-- schema / global_rule 僅 JSON，不顯示面板/JSON 切換 -->
+        <a-radio-group v-if="!isNonTree" v-model="mode" type="button" size="small">
           <a-radio value="panel">面板</a-radio>
           <a-radio value="json">JSON</a-radio>
         </a-radio-group>
         <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
-          v{{ store.currentMeta.version }}
+          {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
           <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
         </span>
         <div class="flex-1" />
@@ -194,9 +204,9 @@ function doResetAll() {
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
-          <!-- schema 一律 JSON；C-N 歸因分類依 mode 走 RuleTreePanel / JsonEditor -->
+          <!-- schema / global_rule 一律 JSON；C-N 歸因分類依 mode 走 RuleTreePanel / JsonEditor -->
           <RuleTreePanel
-            v-if="mode === 'panel' && !isSchema && store.edited"
+            v-if="mode === 'panel' && !isNonTree && store.edited"
             :key="editorKey"
             class="h-full"
             :content="store.edited"
@@ -208,7 +218,7 @@ function doResetAll() {
             class="h-full"
             fill
             :json="store.edited"
-            :schema="isSchema ? undefined : (schemaContent ?? undefined)"
+            :schema="isNonTree ? undefined : (schemaContent ?? undefined)"
             :mode="jsonEditorMode"
             @change="onChange"
           />
