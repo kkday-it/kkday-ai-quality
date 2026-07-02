@@ -3,13 +3,13 @@
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import {
   exportProblems,
-  getProductVerticalResolved,
   prejudgeStreamUrl,
   getProblems,
   getSettings,
   startPrejudge,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
+import { useVerticalFilterStore } from '@/stores';
 import { schemaFor, type ProblemRow } from '../constants';
 
 /** LLM 模型配置選項（同「設定 › LLM 模型連線」）。 */
@@ -44,12 +44,17 @@ export const fmtDt = (value: unknown, dateOnly = false): string => {
  */
 export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const schema = computed(() => schemaFor(toValue(source)));
+  // 全局商品垂直分類篩選（規則配置頁開關 + 選中；取代原列表本地垂直篩選，統一驅動 list/unjudged/縱覽/scope）。
+  const verticalFilter = useVerticalFilterStore();
+  /** 生效的全局垂直分類分組（關閉/未選＝空陣列），送查詢用。 */
+  const effVerticals = computed(() =>
+    verticalFilter.activeGroups.length ? verticalFilter.activeGroups : undefined,
+  );
 
   // ── 篩選狀態（各來源 schema 決定哪些生效；切來源時一併清空）──
   const polarityFilter = ref('');
   const onlyProblem = ref(false);
   const scoreFilter = ref<number[]>([]);
-  const productVerticalFilter = ref<string[]>([]);
   const dateRange = ref<string[]>([]);
   const prodOidFilter = ref('');
   const orderOidFilter = ref('');
@@ -59,17 +64,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const effPolarity = computed(() =>
     onlyProblem.value ? 'negative' : polarityFilter.value || undefined,
   );
-
-  // ── 商品垂直分類選項（來自 config，動態解析）──
-  const productVerticalOpts = ref<string[]>([]);
-  const loadProductVerticals = async () => {
-    try {
-      const r = await getProductVerticalResolved();
-      productVerticalOpts.value = Object.keys(r.groups || {});
-    } catch {
-      productVerticalOpts.value = [];
-    }
-  };
 
   // ── LLM 模型（已保存配置）──
   const llmConfigId = ref('');
@@ -110,7 +104,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
+        productVerticals: effVerticals.value,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
         prodOid: prodOidFilter.value.trim() || undefined,
@@ -147,7 +141,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     polarityFilter.value = '';
     onlyProblem.value = false;
     scoreFilter.value = [];
-    productVerticalFilter.value = [];
     dateRange.value = [];
     prodOidFilter.value = '';
     orderOidFilter.value = '';
@@ -157,7 +150,12 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 取未判筆數（全部未判按鈕顯示）。 */
   const loadUnjudged = async () => {
     try {
-      const r = await getProblems({ source: toValue(source), judged: false, limit: 1 });
+      const r = await getProblems({
+        source: toValue(source),
+        judged: false,
+        productVerticals: effVerticals.value,
+        limit: 1,
+      });
       unjudged.value = r.total || 0;
     } catch {
       unjudged.value = 0;
@@ -181,7 +179,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         onlyProblem.value = false;
       }
       if (!filterTypes.has('score')) scoreFilter.value = [];
-      if (!filterTypes.has('productVertical')) productVerticalFilter.value = [];
       if (!filterTypes.has('dateRange')) dateRange.value = [];
       // prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
       prodOidFilter.value = '';
@@ -191,9 +188,16 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     },
   );
 
+  // 全局商品垂直分類（開關 / 選中）變更 → 列表 + 未判 count 即時重載（縱覽頁另有自己的 watch）。
+  watch(
+    () => [verticalFilter.enabled, verticalFilter.groups],
+    () => onFilterChange(),
+    { deep: true },
+  );
+
   const init = () => {
     loadConfigs();
-    loadProductVerticals();
+    verticalFilter.loadOptions();
     loadPage();
     loadUnjudged();
   };
@@ -228,7 +232,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        productVerticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
+        productVerticals: effVerticals.value,
         dateFrom: dateRange.value?.[0] || undefined,
         dateTo: dateRange.value?.[1] || undefined,
         prodOid: prodOidFilter.value.trim() || undefined,
@@ -282,7 +286,12 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       };
       es.onerror = finish;
     });
-  const _run = async (body: { item_ids?: string[]; source?: string; scope?: string }) => {
+  const _run = async (body: {
+    item_ids?: string[];
+    source?: string;
+    scope?: string;
+    product_verticals?: string[];
+  }) => {
     if (running.value) return;
     running.value = true;
     progress.value = { processed: 0, total: 0, totalTokens: 0, costUsd: 0 };
@@ -322,7 +331,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const doRun = () => {
     confirmOpen.value = false;
     if (pendingScope.value === 'selected') _run({ item_ids: selectedKeys.value });
-    else _run({ source: toValue(source), scope: 'all' });
+    else _run({ source: toValue(source), scope: 'all', product_verticals: verticalFilter.activeGroups });
   };
 
   /** 導出 CSV（POST 全量；有勾選→只導已選，否則導符合目前篩選全部）→ blob 下載。 */
@@ -332,7 +341,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         source: toValue(source),
         polarity: effPolarity.value,
         scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        product_verticals: productVerticalFilter.value.length ? productVerticalFilter.value : undefined,
+        product_verticals: effVerticals.value,
         date_from: dateRange.value?.[0] || undefined,
         date_to: dateRange.value?.[1] || undefined,
         item_ids: selectedKeys.value.length ? selectedKeys.value : undefined,
@@ -355,8 +364,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     polarityFilter,
     onlyProblem,
     scoreFilter,
-    productVerticalFilter,
-    productVerticalOpts,
     dateRange,
     prodOidFilter,
     orderOidFilter,

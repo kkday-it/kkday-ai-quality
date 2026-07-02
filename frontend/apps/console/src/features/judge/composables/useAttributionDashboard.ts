@@ -1,5 +1,6 @@
 import { ref, computed, watch, toValue, type MaybeRefOrGetter } from 'vue';
 import { getAttributionOverview, getAttributionBreakdown } from '@/api';
+import { useVerticalFilterStore } from '@/stores';
 import { buildDonutOption, buildBarOption, buildTrendOption } from '@/features/overview/utils';
 import {
   buildAttrFunnelOption,
@@ -49,6 +50,11 @@ export function useAttributionDashboard(
   source: MaybeRefOrGetter<string | undefined>,
   query: AttrDashboardQuery = {},
 ) {
+  // 全局商品垂直分類篩選（規則配置頁開關；縱覽亦跟隨，控制整個 AI 法官總數）。
+  const verticalFilter = useVerticalFilterStore();
+  const effVerticals = () =>
+    verticalFilter.activeGroups.length ? verticalFilter.activeGroups : undefined;
+
   const data = ref<AttributionOverview | null>(null);
   const loading = ref(true);
   const error = ref('');
@@ -70,6 +76,7 @@ export function useAttributionDashboard(
         dateFrom: toValue(query.dateFrom),
         dateTo: toValue(query.dateTo),
         granularity: toValue(query.granularity),
+        productVerticals: effVerticals(),
       })) as AttributionOverview;
     } catch (e: unknown) {
       error.value = '載入失敗：' + (e instanceof Error ? e.message : String(e));
@@ -88,6 +95,7 @@ export function useAttributionDashboard(
         source: toValue(source),
         dateFrom: toValue(query.dateFrom),
         dateTo: toValue(query.dateTo),
+        productVerticals: effVerticals(),
       })) as AttributionBreakdown;
     } catch (e: unknown) {
       error.value = '下鑽失敗：' + (e instanceof Error ? e.message : String(e));
@@ -109,6 +117,7 @@ export function useAttributionDashboard(
       toValue(query.dateFrom),
       toValue(query.dateTo),
       toValue(query.granularity),
+      verticalFilter.activeGroups, // 全局垂直分類變更 → 縱覽同步重載
     ],
     reload,
     { immediate: true },

@@ -9,10 +9,13 @@ import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { getRule } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryModal from '../components/RuleHistoryModal.vue';
 
 const store = useJudgeRulesStore();
+// 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
+const verticalFilter = useVerticalFilterStore();
 // 歸因分類（C-N，schema 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不再讀前端靜態表。
 // product_vertical（商品垂直分類）非歸因判準，已移至「配置」抽屜維護，故此處一律排除、不在規則管理顯示。
 const domainCodes = computed(() =>
@@ -38,6 +41,7 @@ const jsonEditorMode = computed<'tree' | 'text'>(() =>
 const editorKey = computed(() => `${store.activeCode}-${store.currentMeta?.version ?? 0}-${mode.value}`);
 
 onMounted(async () => {
+  verticalFilter.loadOptions();
   await store.loadList();
   await store.selectRule('C-1');
   try {
@@ -116,29 +120,51 @@ function doResetAll() {
 
 <template>
   <div class="flex h-full gap-4">
-    <!-- 左：子規則選單（schema 結構規格 · 規則分類 C-N〔可批次恢復默認〕） -->
-    <a-menu
-      :selected-keys="[store.activeCode]"
-      class="h-full w-44 shrink-0 overflow-auto rounded-lg border"
-      @menu-item-click="pick"
-    >
-      <a-menu-item key="schema">
-        <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
-        <span class="ml-2">{{ store.labelFor('schema') }}</span>
-      </a-menu-item>
-      <a-menu-item-group>
-        <template #title>
-          <div class="flex items-center justify-between pr-1">
-            <span>歸因分類</span>
-            <a-button size="mini" type="text" @click.stop="doResetAll">恢復默認</a-button>
-          </div>
-        </template>
-        <a-menu-item v-for="c in domainCodes" :key="c">
-          <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-          <span class="ml-2">{{ store.labelFor(c) }}</span>
+    <!-- 左：子規則選單 + 全局商品垂直分類篩選 -->
+    <div class="flex h-full w-44 shrink-0 flex-col gap-3">
+      <a-menu
+        :selected-keys="[store.activeCode]"
+        class="min-h-0 flex-1 overflow-auto rounded-lg border"
+        @menu-item-click="pick"
+      >
+        <a-menu-item key="schema">
+          <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
+          <span class="ml-2">{{ store.labelFor('schema') }}</span>
         </a-menu-item>
-      </a-menu-item-group>
-    </a-menu>
+        <a-menu-item-group>
+          <template #title>
+            <div class="flex items-center justify-between pr-1">
+              <span>歸因分類</span>
+              <a-button size="mini" type="text" @click.stop="doResetAll">恢復默認</a-button>
+            </div>
+          </template>
+          <a-menu-item v-for="c in domainCodes" :key="c">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+            <span class="ml-2">{{ store.labelFor(c) }}</span>
+          </a-menu-item>
+        </a-menu-item-group>
+      </a-menu>
+
+      <!-- 全局商品垂直分類篩選（查詢用，非判準；控制整個 AI 法官）-->
+      <div class="flex-none rounded-lg border p-3">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-xs font-medium">商品垂直分類篩選</span>
+          <a-switch v-model="verticalFilter.enabled" size="small" />
+        </div>
+        <a-select
+          v-model="verticalFilter.groups"
+          multiple
+          size="small"
+          :disabled="!verticalFilter.enabled"
+          placeholder="選分類分組"
+          :max-tag-count="1"
+          :options="verticalFilter.options.map((g) => ({ value: g, label: g }))"
+        />
+        <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-3)]">
+          開啟後全局套用：歸因列表 / 縱覽 / 未判 皆依所選分類篩選（僅商品評論生效）。
+        </div>
+      </div>
+    </div>
 
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
     <div class="flex min-w-0 flex-1 flex-col">

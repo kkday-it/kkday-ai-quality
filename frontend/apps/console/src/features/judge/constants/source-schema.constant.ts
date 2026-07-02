@@ -152,9 +152,9 @@ const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
 ];
 
 // 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。
+// 商品垂直分類已改為規則配置頁的全局開關（跨列表/縱覽共用），不再是列表本地篩選。
 const PRODUCT_REVIEWS_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
-  { type: 'productVertical' },
   { type: 'dateRange', field: 'occurred_at', label: '評論時間' },
 ];
 

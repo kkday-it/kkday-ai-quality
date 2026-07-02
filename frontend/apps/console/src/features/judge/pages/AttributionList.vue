@@ -42,8 +42,6 @@ const {
   schema,
   polarityFilter,
   onlyProblem,
-  productVerticalFilter,
-  productVerticalOpts,
   dateRange,
   prodOidFilter,
   orderOidFilter,
@@ -167,24 +165,12 @@ onMounted(init);
         </a-button>
       </div>
 
-      <!-- 篩選列 2：商品垂直分類 + 日期 + 商品/訂單 ID + 分頁選取（一行）-->
+      <!-- 篩選列 2：日期 + 商品/訂單 ID + 分頁選取（商品垂直分類已移至規則配置頁的全局開關）-->
       <div class="mb-2 flex flex-wrap items-center gap-3">
         <template v-for="f in schema.filters" :key="f.type">
-          <!-- 商品垂直分類篩選（多選；選項來自 config 動態解析）-->
-          <a-select
-            v-if="f.type === 'productVertical'"
-            v-model="productVerticalFilter"
-            multiple
-            size="small"
-            style="min-width: 180px"
-            placeholder="商品垂直分類"
-            :max-tag-count="2"
-            :options="productVerticalOpts.map((g) => ({ value: g, label: g }))"
-            @change="onFilterChange"
-          />
           <!-- 日期區間篩選 -->
           <a-range-picker
-            v-else-if="f.type === 'dateRange'"
+            v-if="f.type === 'dateRange'"
             v-model="dateRange"
             size="small"
             value-format="YYYY-MM-DD"
@@ -379,5 +365,12 @@ onMounted(init);
 }
 :deep(.attr-expand .arco-descriptions-item-value) {
   word-break: break-word;
+}
+/* 分組標題：預設偏大偏深，調小 + 轉次級文字色，作為分區標籤不搶眼。 */
+:deep(.attr-expand .arco-descriptions-title) {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-3);
+  margin-bottom: 6px;
 }
 </style>

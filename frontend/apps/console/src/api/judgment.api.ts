@@ -82,6 +82,7 @@ export const startPrejudge = (body: {
   source?: string;
   scope?: string;
   llm_config_id?: string;
+  product_verticals?: string[];
 }) =>
   j(`${BASE}/v1/judgment/prejudge`, {
     method: 'POST',
@@ -110,6 +111,8 @@ export interface AttrQuery {
   dateTo?: string;
   /** 趨勢粒度 year|month|day（省略＝後端預設 month；僅 overview 有效） */
   granularity?: string;
+  /** 全局商品垂直分類分組（多選；僅 product_reviews 生效） */
+  productVerticals?: string[];
 }
 
 /**
@@ -123,6 +126,7 @@ export const getAttributionOverview = (opts: AttrQuery = {}) => {
   if (opts.dateFrom) q.set('date_from', opts.dateFrom);
   if (opts.dateTo) q.set('date_to', opts.dateTo);
   if (opts.granularity) q.set('granularity', opts.granularity);
+  if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
   return j(`${BASE}/problems/attribution_overview?${q.toString()}`);
 };
 
@@ -136,6 +140,7 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   if (opts.source) q.set('source', opts.source);
   if (opts.dateFrom) q.set('date_from', opts.dateFrom);
   if (opts.dateTo) q.set('date_to', opts.dateTo);
+  if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
 
