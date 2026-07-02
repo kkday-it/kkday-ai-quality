@@ -39,9 +39,9 @@
 
 | 規則檔 | 觸發路徑（glob）| 內容 |
 |---|---|---|
-| `frontend-vue.md` | `**/*.vue` `**/*.css` `**/*.scss` | 樣式鐵律（Tailwind 優先級）+ Arco 元件復用 |
+| `frontend-vue.md` | `**/*.vue` `**/*.css` `**/*.scss` | 樣式鐵律（Tailwind 優先級）+ Arco 元件復用 + 懶加載/code-splitting |
 | `typescript.md` | `**/*.ts` `**/*.tsx` `**/*.vue` | JSDoc 註釋 + 工具函式優先序 + barrel |
-| `python.md` | `**/*.py` | Google-style docstring + 註釋密度 |
+| `python.md` | `**/*.py` | Google-style docstring + 註釋密度 + 重庫 lazy import |
 | `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` | 禁硬編碼配置化完整規範 |
 
 > 冷啟動問「有什麼規則」時，只答本檔常駐部分；rules/ 條件規則不列為常駐。
