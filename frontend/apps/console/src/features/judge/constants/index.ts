@@ -7,4 +7,5 @@ export * from './channel.constant';
 export * from './status.constant';
 export * from './source.constant';
 export * from './judgment.constant';
+export * from './labels.constant';
 export * from './source-schema.constant';

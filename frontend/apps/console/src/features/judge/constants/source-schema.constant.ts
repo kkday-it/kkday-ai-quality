@@ -41,6 +41,10 @@ export interface ExpandFieldDef {
   label: string;
   /** 特殊格式化：'datetime' 完整時間 / 'date' 僅日期 / 未指定＝原樣顯示。 */
   format?: 'datetime' | 'date';
+  /** a-descriptions 跨欄數（:column=4 版面控制每列排布；預設 1）。 */
+  span?: number;
+  /** 特殊渲染：'rate' 星等 a-rate / 'lang' 導覽語言映射 / 'traveller' 旅客類型映射。 */
+  kind?: 'rate' | 'lang' | 'traveller';
 }
 
 /** 單一來源的歸因列表 schema：欄位 + 篩選器 + 展開行明細。 */
@@ -90,20 +94,31 @@ const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
 ];
 
-/** product_reviews 展開行：原始數據（商品名稱 + 評論全文 + 星等 + 時間 + 旅客資訊）+ 判決依據，一次看齊。 */
+/**
+ * product_reviews 展開行版面（a-descriptions :column=4，每列 span 合計 4）：
+ * 商品 → 方案 → 評論 → 旅客 四段原始數據，末段接判決欄。
+ */
 const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
-  { key: 'prod_name', label: '商品名稱' },
-  { key: 'content', label: '評論全文' },
-  { key: 'score', label: '星等' },
-  { key: 'occurred_at', label: '評論時間', format: 'datetime' },
-  { key: 'go_date', label: '出發日', format: 'date' },
-  { key: 'traveller_type', label: '旅客類型' },
-  { key: 'lang', label: '語言' },
-  { key: 'member_uuid', label: '會員 UUID' },
-  { key: 'pkg_oid', label: '套裝ID' },
-  { key: 'problem_summary', label: '問題摘要' },
-  { key: 'evidence_quote', label: '判決依據引用' },
-  { key: 'reason', label: '判決理由' },
+  // 第一行：商品OID / 商品名稱 / 商品分類
+  { key: 'prod_oid', label: '商品OID', span: 1 },
+  { key: 'prod_name', label: '商品名稱', span: 2 },
+  { key: 'product_category_main', label: '商品分類', span: 1 },
+  // 第二行：方案OID / 方案名稱
+  { key: 'pkg_oid', label: '方案OID', span: 1 },
+  { key: 'package_name', label: '方案名稱', span: 3 },
+  // 第三行：評論標題 / 評論內容 / 評論星等 / 評論時間
+  { key: 'title', label: '評論標題', span: 1 },
+  { key: 'content', label: '評論內容', span: 1 },
+  { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
+  { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
+  // 第四行：導覽語言 / 會員UUID / 旅客類型
+  { key: 'lang', label: '導覽語言', span: 1, kind: 'lang' },
+  { key: 'member_uuid', label: '會員UUID', span: 2 },
+  { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
+  // 判決欄
+  { key: 'problem_summary', label: '問題摘要', span: 2 },
+  { key: 'evidence_quote', label: '判決依據', span: 2 },
+  { key: 'reason', label: '判決理由', span: 4 },
 ];
 
 // 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。

@@ -13,7 +13,14 @@ import { computed, onMounted, ref } from 'vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
-import { POLARITY_LABELS, SOURCES, TIER_LABELS, type ProblemRow } from '../constants';
+import {
+  LANG_LABELS,
+  POLARITY_LABELS,
+  SOURCES,
+  TIER_LABELS,
+  TRAVELLER_TYPE_LABELS,
+  type ProblemRow,
+} from '../constants';
 import { fmtDt, useAttributionList } from '../composables';
 
 const POLARITY_COLOR: Record<string, string> = {
@@ -283,11 +290,38 @@ onMounted(init);
             }}</span>
             <span v-else class="text-gray-300">—</span>
           </template>
-          <!-- 展開行明細：依來源 schema.expandFields 呈現，預設全展開可收合 -->
+          <!-- 展開行明細：schema.expandFields 版面（span 控制每列排布，kind 決定特殊渲染），預設全展開可收合 -->
           <template #expand-row="{ record }">
-            <a-descriptions class="attr-expand" :column="3" size="small" bordered :label-style="{ width: '88px' }">
-              <a-descriptions-item v-for="f in schema.expandFields" :key="f.key" :label="f.label">
-                {{ expandFieldText(record, f.key, f.format) }}
+            <a-descriptions
+              class="attr-expand"
+              :column="4"
+              size="small"
+              bordered
+              :label-style="{ width: '88px' }"
+            >
+              <a-descriptions-item
+                v-for="f in schema.expandFields"
+                :key="f.key"
+                :span="f.span || 1"
+                :label="f.label"
+              >
+                <a-rate
+                  v-if="f.kind === 'rate'"
+                  :model-value="Number(record.score) || 0"
+                  readonly
+                  :count="5"
+                />
+                <template v-else-if="f.kind === 'lang'">
+                  {{ LANG_LABELS[String(record.lang ?? '')] ?? record.lang ?? '—' }}
+                </template>
+                <template v-else-if="f.kind === 'traveller'">
+                  {{
+                    TRAVELLER_TYPE_LABELS[String(record.traveller_type ?? '')] ??
+                    record.traveller_type ??
+                    '—'
+                  }}
+                </template>
+                <template v-else>{{ expandFieldText(record, f.key, f.format) }}</template>
               </a-descriptions-item>
             </a-descriptions>
           </template>

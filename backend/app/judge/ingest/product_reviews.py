@@ -14,30 +14,42 @@ from app.core.utils import now_iso as _now
 
 
 def _parse_category(raw_value: Any) -> tuple[str | None, list[str]]:
-    """解析 product_category 欄：格式 {"main": "CATEGORY_xxx", "sub": [...]}（可能是 JSON 字串或已解析 dict）。
+    """解析 product_category 欄 → (main_code, sub_codes)。
 
-    來源資料品質不保證（可能缺欄、非法 JSON、非 dict），防禦式解析失敗一律回 (None, [])，
-    不讓單筆髒資料中斷整批匯入。
+    放呆支援多種來源形態，避免格式差異靜默遺失分類：
+    - dict `{"main": "CATEGORY_xxx", "sub": [...]}`（或其 JSON 字串）→ 取 main / sub
+    - list `["CATEGORY_082", ...]`（或其 JSON 字串）→ 首元素為 main、其餘為 sub
+    - 純代碼字串 `CATEGORY_082`（非法 JSON）→ 直接當 main
+
+    來源資料品質不保證，無法解析一律回 (None, [])，不讓單筆髒資料中斷整批匯入。
 
     Args:
-        raw_value: 原始 product_category 欄值（str | dict | None）。
+        raw_value: 原始 product_category 欄值（str | dict | list | None）。
 
     Returns:
         (main_code, sub_codes)；解析失敗或無資料回 (None, [])。
     """
     if not raw_value:
         return None, []
-    try:
-        d = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
-        if not isinstance(d, dict):
-            return None, []
+    d: Any = raw_value
+    if isinstance(raw_value, str):
+        s = raw_value.strip()
+        try:
+            d = json.loads(s)  # 可能是 {"main":..} / ["CATEGORY_.."] / 帶引號字串
+        except (ValueError, TypeError):
+            return (s or None), []  # 非法 JSON → 視為純代碼字串（如 CATEGORY_082）
+    if isinstance(d, dict):
         main = d.get("main")
         sub = d.get("sub") or []
         if not isinstance(sub, list):
             sub = []
-        return (str(main) if main else None), [str(s) for s in sub]
-    except (ValueError, TypeError):
-        return None, []
+        return (str(main) if main else None), [str(x) for x in sub]
+    if isinstance(d, list):
+        codes = [str(x) for x in d if x]
+        return (codes[0] if codes else None), codes[1:]
+    if isinstance(d, str):  # json.loads 出來的帶引號字串
+        return (d or None), []
+    return None, []
 
 
 def _parse_json_field(raw_value: Any) -> dict:

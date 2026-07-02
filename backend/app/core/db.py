@@ -601,6 +601,27 @@ def _extract_prod_name(raw: dict) -> str:
     return ""
 
 
+def _extract_package_name(raw: dict) -> str:
+    """從 order_snap_json 多語 dict 取方案名 package_name；語系優先序與 _extract_prod_name 一致。"""
+    snap = raw.get("order_snap_json")
+    if not snap:
+        return ""
+    try:
+        d = json.loads(snap) if isinstance(snap, str) else snap
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(d, dict):
+        return ""
+    for k in ("zh-tw", "zh-hk", "zh-cn", "en"):
+        nm = (d.get(k) or {}).get("package_name")
+        if nm:
+            return str(nm)
+    for v in d.values():  # 任一語系兜底
+        if isinstance(v, dict) and v.get("package_name"):
+            return str(v["package_name"])
+    return ""
+
+
 def _enrich_problem(row: dict, source: str | None = None) -> dict:
     """intake×judgment join 列 → 統一問題列表記錄（公共欄 + 反饋管道 + 歸因）。
 
@@ -649,6 +670,11 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "channel": "review",
             "lang": row.get("lang"),
             "supplier_oid": row.get("supplier_oid"),
+            # 展開行重設計新增：商品分類 / 方案名 / 會員 / 旅客類型（資料已在專表列，直接取）
+            "product_category_main": row.get("product_category_main"),
+            "package_name": _extract_package_name({"order_snap_json": row.get("prod_name_snapshot")}),
+            "member_uuid": row.get("member_uuid"),
+            "traveller_type": row.get("traveller_type"),
         }
     else:
         from app.core import source_mapping as _srcmap

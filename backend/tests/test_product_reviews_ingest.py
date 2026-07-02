@@ -45,13 +45,22 @@ def test_row_to_product_review_normal_case() -> None:
     assert out["status"] == "pending"
 
 
-def test_row_to_product_review_dirty_category_field() -> None:
-    """product_category 為非 JSON 字串 / 缺欄時防禦式處理，不炸整批匯入。"""
+def test_row_to_product_review_plain_string_category() -> None:
+    """product_category 為純代碼字串（非 JSON）→ 放呆直接當 main（如 CATEGORY_082 直接匹配），不炸整批匯入。"""
     canon = {"source_record_id": "REC999", "content": "x"}
-    raw = {"rec_oid": "REC999", "product_category": "not-a-json-string"}
+    raw = {"rec_oid": "REC999", "product_category": "CATEGORY_082"}
     out = product_reviews_ingest.row_to_product_review(canon, raw)
-    assert out["product_category_main"] is None
+    assert out["product_category_main"] == "CATEGORY_082"
     assert out["product_category_sub"] == []
+
+
+def test_row_to_product_review_list_category() -> None:
+    """product_category 為 list（如 [CATEGORY_082, ...]）→ 首為 main、其餘為 sub。"""
+    canon = {"source_record_id": "REC998", "content": "x"}
+    raw = {"rec_oid": "REC998", "product_category": ["CATEGORY_082", "CATEGORY_083"]}
+    out = product_reviews_ingest.row_to_product_review(canon, raw)
+    assert out["product_category_main"] == "CATEGORY_082"
+    assert out["product_category_sub"] == ["CATEGORY_083"]
 
 
 def test_row_to_product_review_missing_category_field() -> None:
