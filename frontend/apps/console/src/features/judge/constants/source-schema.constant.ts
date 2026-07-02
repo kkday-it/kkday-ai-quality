@@ -47,11 +47,21 @@ export interface ExpandFieldDef {
   kind?: 'rate' | 'traveller';
 }
 
-/** 單一來源的歸因列表 schema：欄位 + 篩選器 + 展開行明細。 */
+/** 展開行分組：每組渲染一個帶標題的 a-descriptions，讓明細分區更顯眼。 */
+export interface ExpandGroupDef {
+  /** 分組標題（a-descriptions title；空＝無標題）。 */
+  title?: string;
+  /** 該組 a-descriptions 欄數（預設 4）。 */
+  column?: number;
+  /** 組內欄位。 */
+  fields: ExpandFieldDef[];
+}
+
+/** 單一來源的歸因列表 schema：欄位 + 篩選器 + 展開行分組明細。 */
 export interface SourceListSchema {
   columns: TableColumnData[];
   filters: SourceFilterDef[];
-  expandFields: ExpandFieldDef[];
+  expandGroups: ExpandGroupDef[];
 }
 
 /** L3 候選（後端 `l3_candidates`：目前僅 code/score；label 保留給未來後端補中文名）。 */
@@ -95,32 +105,50 @@ const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
 ];
 
 /**
- * product_reviews 展開行版面（a-descriptions :column=4，每列 span 合計 4）：
- * 商品 → 方案 → 評論 → 旅客 四段原始數據，末段接判決欄。
+ * product_reviews 展開行分組（每組一個帶標題 a-descriptions，:column=4，span 合計 4）：
+ * 商品 / 評論 / 旅客 / 判決 四區，分區呈現更顯眼。
  */
-const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
-  // 第一行：商品OID / 商品名稱 / 商品分類
-  { key: 'prod_oid', label: '商品OID', span: 1 },
-  { key: 'prod_name', label: '商品名稱', span: 2 },
-  { key: 'product_category_main', label: '商品分類', span: 1 },
-  // 第二行：方案OID / 方案名稱
-  { key: 'pkg_oid', label: '方案OID', span: 1 },
-  { key: 'package_name', label: '方案名稱', span: 3 },
-  // 第三行（評論 meta）：評論ID / 評論標題 / 評論星等 / 評論時間
-  { key: 'source_record_id', label: '評論ID', span: 1 },
-  { key: 'title', label: '評論標題', span: 1 },
-  { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
-  { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
-  // 第四行：評論內容（單獨整行）
-  { key: 'content', label: '評論內容', span: 4 },
-  // 第五行：商品語系（lang_code 直接顯示，非導覽語系）/ 會員UUID / 旅客類型
-  { key: 'lang', label: '商品語系', span: 1 },
-  { key: 'member_uuid', label: '會員UUID', span: 2 },
-  { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
-  // 判決欄
-  { key: 'problem_summary', label: '問題摘要', span: 2 },
-  { key: 'evidence_quote', label: '判決依據', span: 2 },
-  { key: 'reason', label: '判決理由', span: 4 },
+const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
+  {
+    title: '商品資訊',
+    column: 4,
+    fields: [
+      { key: 'prod_oid', label: '商品OID', span: 1 },
+      { key: 'prod_name', label: '商品名稱', span: 2 },
+      { key: 'product_category_main', label: '商品分類', span: 1 },
+      { key: 'pkg_oid', label: '方案OID', span: 1 },
+      { key: 'package_name', label: '方案名稱', span: 3 },
+    ],
+  },
+  {
+    title: '評論資訊',
+    column: 4,
+    fields: [
+      { key: 'source_record_id', label: '評論ID', span: 1 },
+      { key: 'title', label: '評論標題', span: 1 },
+      { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
+      { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
+      { key: 'content', label: '評論內容', span: 4 },
+    ],
+  },
+  {
+    title: '旅客資訊',
+    column: 4,
+    fields: [
+      { key: 'lang', label: '商品語系', span: 1 }, // lang_code 直接顯示，非導覽語系
+      { key: 'member_uuid', label: '會員UUID', span: 2 },
+      { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
+    ],
+  },
+  {
+    title: '判決資訊',
+    column: 4,
+    fields: [
+      { key: 'problem_summary', label: '問題摘要', span: 2 },
+      { key: 'evidence_quote', label: '判決依據', span: 2 },
+      { key: 'reason', label: '判決理由', span: 4 },
+    ],
+  },
 ];
 
 // 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。
@@ -144,17 +172,22 @@ const FALLBACK_COLUMNS: TableColumnData[] = [
   { title: '信心', dataIndex: 'confidence' },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
 ];
-const FALLBACK_EXPAND_FIELDS: ExpandFieldDef[] = [
-  { key: 'content', label: '內容全文' },
-  { key: 'problem_summary', label: '問題摘要' },
-  { key: 'evidence_quote', label: '判決依據引用' },
-  { key: 'reason', label: '判決理由' },
+const FALLBACK_EXPAND_GROUPS: ExpandGroupDef[] = [
+  {
+    column: 1,
+    fields: [
+      { key: 'content', label: '內容全文' },
+      { key: 'problem_summary', label: '問題摘要' },
+      { key: 'evidence_quote', label: '判決依據' },
+      { key: 'reason', label: '判決理由' },
+    ],
+  },
 ];
 const FALLBACK_FILTERS: SourceFilterDef[] = [{ type: 'polarity' }];
 const FALLBACK_SCHEMA: SourceListSchema = {
   columns: FALLBACK_COLUMNS,
   filters: FALLBACK_FILTERS,
-  expandFields: FALLBACK_EXPAND_FIELDS,
+  expandGroups: FALLBACK_EXPAND_GROUPS,
 };
 
 /** source code → 該來源歸因列表 schema；未註冊來源一律回退 `FALLBACK_SCHEMA`。 */
@@ -162,7 +195,7 @@ export const SOURCE_LIST_SCHEMAS: Record<string, SourceListSchema> = {
   product_reviews: {
     columns: PRODUCT_REVIEWS_COLUMNS,
     filters: PRODUCT_REVIEWS_FILTERS,
-    expandFields: PRODUCT_REVIEWS_EXPAND_FIELDS,
+    expandGroups: PRODUCT_REVIEWS_EXPAND_GROUPS,
   },
 };
 

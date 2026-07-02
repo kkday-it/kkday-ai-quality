@@ -284,17 +284,21 @@ onMounted(init);
             }}</span>
             <span v-else class="text-gray-300">—</span>
           </template>
-          <!-- 展開行明細：schema.expandFields 版面（span 控制每列排布，kind 決定特殊渲染），預設全展開可收合 -->
+          <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合 -->
           <template #expand-row="{ record }">
             <a-descriptions
+              v-for="(g, gi) in schema.expandGroups"
+              :key="gi"
               class="attr-expand"
-              :column="4"
+              :class="{ 'mt-2': gi > 0 }"
+              :title="g.title"
+              :column="g.column || 4"
               size="small"
               bordered
               :label-style="{ width: '88px' }"
             >
               <a-descriptions-item
-                v-for="f in schema.expandFields"
+                v-for="f in g.fields"
                 :key="f.key"
                 :span="f.span || 1"
                 :label="f.label"
