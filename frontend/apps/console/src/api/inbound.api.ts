@@ -23,21 +23,54 @@ export const validateInbound = (file: File): Promise<{ filename: string; sheets:
   return j(`${BASE}/inbound/validate`, { method: 'POST', body: fd });
 };
 
+/** 上傳背景 job 單一工作表的進度（SSE 事件內 sheets[] 元素）。 */
+export interface UploadSheetProgress {
+  sheet_name: string;
+  source: string;
+  label: string;
+  total: number;
+  processed: number;
+  inserted: number;
+  failed: number;
+  status: 'pending' | 'running' | 'done' | 'error';
+  batch_id: string | null;
+  errors: string[];
+}
+
+/** 上傳背景 job 進度快照（SSE `data` 事件 / /status 回傳）。 */
+export interface UploadJobSnapshot {
+  status: 'running' | 'done' | 'error';
+  total_sheets: number;
+  done_sheets: number;
+  sheets: UploadSheetProgress[];
+  invalid: { sheet_name: string; source: string; reason: string }[];
+}
+
 /**
- * 確認匯入：只匯入用戶勾選且校驗通過的工作表。
+ * 確認匯入（背景 job）：上傳勾選工作表 → 立即回 { job_id, sheets }；進度以 SSE 推送（見 uploadStreamUrl）。
  * @param file 同一份檔案（需重送供後端再解析）
  * @param selections 勾選清單 [{ sheet_name, source }]
- * @returns { results: [{ sheet_name, source, label, batch_id, inserted, total } | { error }] }
+ * @returns { job_id, sheets: [{ sheet_name, source, label, total, valid, reason }] }
  */
 export const uploadInbound = (
   file: File,
   selections: { sheet_name: string; source: string }[],
-) => {
+): Promise<{
+  job_id: string;
+  sheets: { sheet_name: string; source: string; label: string; total: number; valid: boolean; reason: string }[];
+}> => {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('selections', JSON.stringify(selections));
   return j(`${BASE}/inbound/upload`, { method: 'POST', body: fd });
 };
+
+/**
+ * 上傳進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。
+ * @param jobId uploadInbound 回傳的 job_id
+ */
+export const uploadStreamUrl = (jobId: string): string =>
+  `${BASE}/inbound/upload/stream?job_id=${encodeURIComponent(jobId)}`;
 
 /** 上傳批次清單（新到舊）。 */
 export const getBatches = () => j(`${BASE}/batches`);

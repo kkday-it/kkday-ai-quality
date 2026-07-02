@@ -6,15 +6,17 @@
  * 「每表偵測到哪個來源、可否上傳、缺哪些欄」→ 用戶勾選通過項 → /upload 確認匯入。
  * 免手選 tab；一次可傳整本 xlsx（多分頁）。
  */
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   validateInbound,
   uploadInbound,
+  uploadStreamUrl,
   getBatches,
   getBatchItems,
   exportBatchUrl,
   type SheetValidation,
+  type UploadJobSnapshot,
 } from '@/api';
 import { StateGuard, CardSection } from '@/components';
 import { SOURCE_LABEL } from '../constants';
@@ -66,7 +68,19 @@ const STATUS_META: Record<string, { color: string; text: string }> = {
   unknown: { color: 'gray', text: '無法辨識' },
 };
 
-/** 確認匯入勾選且通過的工作表。 */
+// ── 上傳進度（背景 job + SSE 長連線推送，免輪詢）──
+const uploadJob = ref<UploadJobSnapshot | null>(null); // null＝驗證階段；有值＝進度階段
+let eventSource: EventSource | null = null;
+
+/** 關閉 SSE 連線（收尾 / 元件卸載 / 重開彈窗時呼叫）。 */
+const closeStream = () => {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+};
+
+/** 確認匯入：啟動背景 job → 開 SSE 接收各表進度（每表獨立進度條）。 */
 const confirmImport = async () => {
   const picked = okSheets.value.filter((s) => selectedKeys.value.includes(s.sheet_name));
   if (!picked.length) {
@@ -74,32 +88,51 @@ const confirmImport = async () => {
     return;
   }
   importing.value = true;
+  uploadJob.value = null;
   try {
-    const r = await uploadInbound(
+    const { job_id } = await uploadInbound(
       pendingFile.value!,
       picked.map((s) => ({ sheet_name: s.sheet_name, source: s.detected_source as string })),
     );
-    const ok = (r.results || []).filter((x: any) => !x.error);
-    const total = ok.reduce((a: number, x: any) => a + (x.inserted || 0), 0);
-    const failed = ok.reduce((a: number, x: any) => a + (x.failed || 0), 0);
-    if (failed > 0) {
-      // 部分成功：容錯匯入下，壞列被跳過而非整批 500；列出前幾筆原因供排查。
-      const reasons = ok.flatMap((x: any) => x.errors || []).slice(0, 5);
-      Message.warning(
-        `已匯入 ${total} 筆，略過 ${failed} 筆${reasons.length ? `：${reasons.join('；')}` : ''}`,
-      );
-    } else {
-      Message.success(`已匯入 ${ok.length} 個工作表、共 ${total} 筆`);
-    }
-    modalVisible.value = false;
-    pendingFile.value = null;
-    loadBatches();
+    closeStream();
+    // 原生 EventSource 接收 server 推送（單向，免前端輪詢）；status≠running 即收尾關閉連線
+    eventSource = new EventSource(uploadStreamUrl(job_id));
+    eventSource.onmessage = (ev) => {
+      const snap = JSON.parse(ev.data) as UploadJobSnapshot;
+      uploadJob.value = snap;
+      if (snap.status !== 'running') {
+        closeStream();
+        importing.value = false;
+        const inserted = snap.sheets.reduce((a, s) => a + s.inserted, 0);
+        const failed = snap.sheets.reduce((a, s) => a + s.failed, 0);
+        if (snap.status === 'error') Message.error('匯入發生錯誤，請查看各表進度');
+        else if (failed > 0) Message.warning(`已匯入 ${inserted} 筆，略過 ${failed} 筆`);
+        else Message.success(`已匯入 ${inserted} 筆`);
+        loadBatches();
+      }
+    };
+    eventSource.onerror = () => {
+      closeStream();
+      importing.value = false;
+      Message.error('進度連線中斷，請至下方批次列表確認結果');
+      loadBatches();
+    };
   } catch (e: any) {
-    Message.error('匯入失敗：' + (e?.message || e));
-  } finally {
     importing.value = false;
+    Message.error('匯入啟動失敗：' + (e?.message || e));
   }
 };
+
+/** 關閉彈窗（收尾 SSE + 重置狀態；匯入進行中禁關）。 */
+const closeModal = () => {
+  if (importing.value) return;
+  closeStream();
+  modalVisible.value = false;
+  uploadJob.value = null;
+  pendingFile.value = null;
+};
+
+onBeforeUnmount(closeStream);
 
 // ── 批次列表（三態）──────────────────────────────────
 const batches = ref<any[]>([]);
@@ -198,42 +231,89 @@ const exportBatch = (batch: any) => {
     <!-- 校驗預覽彈窗：每工作表偵測來源 + 可否上傳 + 勾選確認 -->
     <a-modal
       v-model:visible="modalVisible"
-      title="上傳預覽 · 表頭校驗結果"
+      :title="uploadJob ? '匯入進度' : '上傳預覽 · 表頭校驗結果'"
       :width="760"
-      :ok-text="`匯入勾選的 ${selectedKeys.length} 張工作表`"
-      :ok-button-props="{ disabled: !selectedKeys.length }"
-      :confirm-loading="importing"
-      @ok="confirmImport"
+      :mask-closable="false"
+      :closable="!importing"
+      @cancel="closeModal"
     >
-      <p class="mb-3 text-xs text-gray-500">
-        共偵測 {{ sheets.length }} 張工作表，其中 {{ okSheets.length }} 張可上傳。勾選要匯入的工作表後按確認；不可上傳者已停用勾選。
-      </p>
-      <a-table :data="sheets" :pagination="false" size="small" row-key="sheet_name">
-        <template #columns>
-          <a-table-column title="" :width="50">
-            <template #cell="{ record }">
-              <a-checkbox
-                :model-value="selectedKeys.includes(record.sheet_name)"
-                :disabled="record.status !== 'ok'"
-                @change="(v) => toggleSheet(record.sheet_name, !!v)"
-              />
-            </template>
-          </a-table-column>
-          <a-table-column title="工作表" data-index="sheet_name" :width="160" />
-          <a-table-column title="偵測來源" :width="120">
-            <template #cell="{ record }">{{ record.label || '—' }}</template>
-          </a-table-column>
-          <a-table-column title="狀態" :width="100">
-            <template #cell="{ record }">
-              <a-tag :color="STATUS_META[record.status]?.color">{{
-                STATUS_META[record.status]?.text || record.status
-              }}</a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="筆數" data-index="row_count" :width="80" />
-          <a-table-column title="說明" data-index="reason" ellipsis tooltip />
+      <!-- 驗證階段：勾選工作表 -->
+      <template v-if="!uploadJob">
+        <p class="mb-3 text-xs text-gray-500">
+          共偵測 {{ sheets.length }} 張工作表，其中 {{ okSheets.length }} 張可上傳。勾選要匯入的工作表後按確認；不可上傳者已停用勾選。
+        </p>
+        <a-table :data="sheets" :pagination="false" size="small" row-key="sheet_name">
+          <template #columns>
+            <a-table-column title="" :width="50">
+              <template #cell="{ record }">
+                <a-checkbox
+                  :model-value="selectedKeys.includes(record.sheet_name)"
+                  :disabled="record.status !== 'ok'"
+                  @change="(v) => toggleSheet(record.sheet_name, !!v)"
+                />
+              </template>
+            </a-table-column>
+            <a-table-column title="工作表" data-index="sheet_name" :width="160" />
+            <a-table-column title="偵測來源" :width="120">
+              <template #cell="{ record }">{{ record.label || '—' }}</template>
+            </a-table-column>
+            <a-table-column title="狀態" :width="100">
+              <template #cell="{ record }">
+                <a-tag :color="STATUS_META[record.status]?.color">{{
+                  STATUS_META[record.status]?.text || record.status
+                }}</a-tag>
+              </template>
+            </a-table-column>
+            <a-table-column title="筆數" data-index="row_count" :width="80" />
+            <a-table-column title="說明" data-index="reason" ellipsis tooltip />
+          </template>
+        </a-table>
+      </template>
+
+      <!-- 進度階段：每張工作表獨立進度條（SSE 長連線推送，免輪詢）-->
+      <template v-else>
+        <div v-for="sh in uploadJob.sheets" :key="sh.sheet_name" class="mb-4">
+          <div class="mb-1 flex items-center justify-between text-sm">
+            <span>
+              <b>{{ sh.label }}</b> · <span class="text-gray-500">{{ sh.sheet_name }}</span>
+            </span>
+            <span class="text-xs text-gray-500">
+              {{ sh.processed }} / {{ sh.total }}（成功 {{ sh.inserted }}<template v-if="sh.failed">、略過 {{ sh.failed }}</template>）
+            </span>
+          </div>
+          <a-progress
+            :percent="sh.total ? sh.processed / sh.total : 0"
+            :status="sh.status === 'error' ? 'danger' : sh.status === 'done' ? 'success' : 'normal'"
+          />
+          <div v-if="sh.errors?.length" class="mt-1 text-xs text-orange-600">
+            {{ sh.errors.slice(0, 3).join('；') }}
+          </div>
+        </div>
+        <div
+          v-for="inv in uploadJob.invalid"
+          :key="inv.sheet_name"
+          class="text-xs text-red-500"
+        >
+          {{ inv.sheet_name }}：{{ inv.reason }}（未匯入）
+        </div>
+      </template>
+
+      <template #footer>
+        <template v-if="!uploadJob">
+          <a-button @click="closeModal">取消</a-button>
+          <a-button
+            type="primary"
+            :disabled="!selectedKeys.length"
+            :loading="importing"
+            @click="confirmImport"
+          >
+            匯入勾選的 {{ selectedKeys.length }} 張工作表
+          </a-button>
         </template>
-      </a-table>
+        <a-button v-else type="primary" :loading="importing" @click="closeModal">
+          {{ importing ? '匯入中…' : '完成' }}
+        </a-button>
+      </template>
     </a-modal>
 
     <CardSection title="上傳批次" :hint="`共 ${batches.length} 批 · 新到舊 · 點「查看」展開明細`">
