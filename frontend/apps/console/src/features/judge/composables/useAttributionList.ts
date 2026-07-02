@@ -134,6 +134,14 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const toggleExpandAll = () => {
     expandedKeys.value = allExpanded.value ? [] : rows.value.map((x) => x.item_id);
   };
+  /** Arco 表頭點擊排序變更 → 映射後端 sort_by/sort_dir；清除排序（direction 空）回預設評論時間新→舊。 */
+  const onSortChange = (dataIndex: string, direction: string) => {
+    sortValue.value = direction
+      ? `${dataIndex}:${direction === 'ascend' ? 'asc' : 'desc'}`
+      : 'occurred_at:desc';
+    onFilterChange();
+  };
+
   /** 重置所有篩選 + 排序（回預設）並重載第 1 頁。 */
   const resetFilters = () => {
     polarityFilter.value = '';
@@ -352,7 +360,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     dateRange,
     prodOidFilter,
     orderOidFilter,
-    sortValue,
+    onSortChange,
     onFilterChange,
     resetFilters,
     expandedKeys,

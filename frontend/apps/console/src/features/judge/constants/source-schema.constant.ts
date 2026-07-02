@@ -31,10 +31,7 @@ export interface PolarityFilterDef {
 
 /** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
 export type SourceFilterDef =
-  | PolarityFilterDef
-  | ScoreFilterDef
-  | ProductVerticalFilterDef
-  | DateRangeFilterDef;
+  PolarityFilterDef | ScoreFilterDef | ProductVerticalFilterDef | DateRangeFilterDef;
 
 /** 展開行明細單一欄位定義（key 對應 `_enrich_problem` 回傳欄位；缺值防禦式顯示「—」）。 */
 export interface ExpandFieldDef {
@@ -79,9 +76,17 @@ export interface ProblemRow {
  */
 const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
   { title: '訂單', dataIndex: 'order_mid' },
+  // 評論時間 / 信心走表頭點擊排序（Arco sortable）→ 後端 sort_by=occurred_at / confidence；
+  // 其餘欄後端無對應排序欄故不開。評論時間為可排序欄故留主列（不再進展開，避免重複）。
+  {
+    title: '評論時間',
+    dataIndex: 'occurred_at',
+    slotName: 'occurred',
+    sortable: { sortDirections: ['ascend', 'descend'] },
+  },
   { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
   { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
-  { title: '信心', dataIndex: 'confidence' },
+  { title: '信心', dataIndex: 'confidence', sortable: { sortDirections: ['ascend', 'descend'] } },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
 ];
 
@@ -99,7 +104,6 @@ const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
   { key: 'problem_summary', label: '問題摘要' },
   { key: 'evidence_quote', label: '判決依據引用' },
   { key: 'reason', label: '判決理由' },
-  { key: 'l3_candidates', label: 'L3 候選（top-3）' },
 ];
 
 // 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。

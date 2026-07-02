@@ -13,7 +13,7 @@ import { computed, onMounted, ref } from 'vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
-import { POLARITY_LABELS, SOURCES, TIER_LABELS, type L3Candidate, type ProblemRow } from '../constants';
+import { POLARITY_LABELS, SOURCES, TIER_LABELS, type ProblemRow } from '../constants';
 import { fmtDt, useAttributionList } from '../composables';
 
 const POLARITY_COLOR: Record<string, string> = {
@@ -24,14 +24,6 @@ const POLARITY_COLOR: Record<string, string> = {
 };
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
-
-/** 排序選項（'欄位:方向'，對應後端 sort_by/sort_dir 白名單）；星等不參與排序，只留評論時間 / 信心。 */
-const SORT_OPTS = [
-  { value: 'occurred_at:desc', label: '評論時間 · 新→舊' },
-  { value: 'occurred_at:asc', label: '評論時間 · 舊→新' },
-  { value: 'confidence:desc', label: '信心 · 高→低' },
-  { value: 'confidence:asc', label: '信心 · 低→高' },
-];
 
 /** 依傾向給整列一個 class，用背景色一眼區分正負中性/數據不足（未判無色）。 */
 const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
@@ -47,7 +39,7 @@ const {
   dateRange,
   prodOidFilter,
   orderOidFilter,
-  sortValue,
+  onSortChange,
   onFilterChange,
   resetFilters,
   expandedKeys,
@@ -88,16 +80,9 @@ const SEQ_COL = { title: '序號', slotName: 'seq', width: 64 };
 /** 目前來源欄位（序號欄 + schema 業務欄）。 */
 const COLS = computed(() => [SEQ_COL, ...schema.value.columns]);
 
-/** 展開行明細值：無值防禦式顯示「—」；l3_candidates 為陣列另行格式化。 */
+/** 展開行明細值：無值防禦式顯示「—」；時間欄依 format 正規化。 */
 function expandFieldText(record: ProblemRow, key: string, format?: 'datetime' | 'date'): string {
   const v = record?.[key];
-  if (key === 'l3_candidates') {
-    const arr: L3Candidate[] = Array.isArray(v) ? v : [];
-    if (!arr.length) return '—';
-    return arr
-      .map((c) => `${c.label ?? c.code ?? ''}${c.score !== undefined ? `(${c.score})` : ''}`)
-      .join('、');
-  }
   if (v === null || v === undefined || v === '') return '—';
   if (format === 'datetime') return fmtDt(v) || '—';
   if (format === 'date') return fmtDt(v, true) || '—';
@@ -168,13 +153,6 @@ onMounted(init);
             @change="onFilterChange"
           />
         </template>
-        <a-select
-          v-model="sortValue"
-          size="small"
-          style="width: 170px"
-          :options="SORT_OPTS"
-          @change="onFilterChange"
-        />
         <a-button size="small" @click="resetFilters">重置篩選</a-button>
         <a-button size="small" @click="toggleExpandAll">
           {{ allExpanded ? '一鍵收合' : '全部展開' }}
@@ -276,6 +254,7 @@ onMounted(init);
             }
           "
           @selection-change="(keys) => (selectedKeys = keys.map(String))"
+          @sorter-change="onSortChange"
         >
           <template #seq="{ rowIndex }">{{ (page - 1) * pageSize + rowIndex + 1 }}</template>
           <template #occurred="{ record }">{{ fmtDt(record.occurred_at) }}</template>
