@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kkday.com/ai-quality/schema/global_rule.schema.json",
+  "title": "整體規則（global_rule.json）標準 v1.0",
+  "description": "AI 法官整體規則（判決流程 SSOT）：極性閘門 / abstain 政策 / 證據政策 / 六域決策樹 / 跨域界線 / cascade 設定。配對資料檔：config/ai_judge/global_rule.json。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "polarity_gate",
+    "abstain_policy",
+    "evidence_policy",
+    "decision_tree",
+    "global_boundaries",
+    "cascade"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "_meta": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "polarity_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attribute_only_when"
+      ],
+      "properties": {
+        "attribute_only_when": {
+          "type": "string",
+          "enum": [
+            "negative"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "abstain_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "l1",
+        "l2",
+        "l3"
+      ],
+      "properties": {
+        "l1": {
+          "type": "string",
+          "enum": [
+            "force_for_negative",
+            "allow_empty_low_evidence"
+          ]
+        },
+        "l2": {
+          "type": "string",
+          "enum": [
+            "force_for_negative",
+            "allow_empty_low_evidence"
+          ]
+        },
+        "l3": {
+          "type": "string",
+          "enum": [
+            "force_for_negative",
+            "allow_empty_low_evidence"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_quote_grounded",
+        "l3_min_confidence"
+      ],
+      "properties": {
+        "require_quote_grounded": {
+          "type": "boolean"
+        },
+        "l3_min_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "caps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "domain",
+              "require",
+              "cap"
+            ],
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "require": {
+                "type": "string"
+              },
+              "cap": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "decision_tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "gates"
+      ],
+      "properties": {
+        "order": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "content",
+              "product_quality",
+              "supplier",
+              "redemption",
+              "service",
+              "customer"
+            ]
+          }
+        },
+        "gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "domain",
+              "core",
+              "need"
+            ],
+            "properties": {
+              "domain": {
+                "type": "string",
+                "enum": [
+                  "content",
+                  "product_quality",
+                  "supplier",
+                  "redemption",
+                  "service",
+                  "customer"
+                ]
+              },
+              "core": {
+                "type": "string",
+                "minLength": 1
+              },
+              "need": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "global_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cascade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "stageA_l1",
+        "stageB"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "stageA_l1": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "self_consistency": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "stageB": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "inject": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

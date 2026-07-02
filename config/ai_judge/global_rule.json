@@ -1,0 +1,96 @@
+{
+  "$schema": "./global_rule.schema.json",
+  "_meta": {
+    "version": "1.0",
+    "label": "整體規則",
+    "about": "AI 法官整體規則（判決流程 SSOT）：極性閘門 + abstain 政策 + 證據政策 + 六域決策樹 + 跨域界線 + cascade 設定。集中原散落在各 rule_C-*.json forbid 與 prejudge._ATTR_SYS 的全局規則。",
+    "thick_fields_status": "ai_refined_pending_review"
+  },
+  "polarity_gate": {
+    "attribute_only_when": "negative",
+    "note": "只有負向評論才進歸因；正向/中性/數據不足一律 non_issue 不歸因。"
+  },
+  "abstain_policy": {
+    "l1": "force_for_negative",
+    "l2": "force_for_negative",
+    "l3": "allow_empty_low_evidence",
+    "note": "負向評論必落 L1（域）+ L2（面向）；低信心仍給 L2 但標 needs_review（不留空）。L3（細項）僅證據充足才給，證據不足留空、不硬判。"
+  },
+  "evidence_policy": {
+    "require_quote_grounded": true,
+    "l3_min_confidence": 0.5,
+    "caps": [
+      {
+        "domain": "supplier",
+        "require": "order_oid",
+        "cap": "jury_low",
+        "note": "判供應商履約缺訂單佐證→信心封頂"
+      }
+    ],
+    "note": "evidence_quote 須為進線原文逐字片段才採信；未命中或 L3 信心 < l3_min_confidence → L3 降階留空。"
+  },
+  "decision_tree": {
+    "order": [
+      "content",
+      "product_quality",
+      "supplier",
+      "redemption",
+      "service",
+      "customer"
+    ],
+    "gates": [
+      {
+        "domain": "content",
+        "core": "商品頁描述/定位/行程/費用「寫的與實際不符」或該寫沒寫/寫不清",
+        "need": "商品頁"
+      },
+      {
+        "domain": "product_quality",
+        "core": "產品本身實際品質差（網路訊號、餐飲、車輛、住宿、設施設備、票券兌換價值）",
+        "need": "現場實際體驗"
+      },
+      {
+        "domain": "supplier",
+        "core": "執行面沒依約做到（臨時取消/變更、接送遲到、現場人員態度/爽約）",
+        "need": "訂單+供應商回覆"
+      },
+      {
+        "domain": "redemption",
+        "core": "使用兌換當下卡關（憑證核銷、啟用設定、效期、取票入場、預約時段、使用限制、數量份數、App 操作）",
+        "need": "憑證/現場兌換動作"
+      },
+      {
+        "domain": "service",
+        "core": "售後客服互動問題（確認修改、取消退款、回應速度/管道、態度）",
+        "need": "客服紀錄"
+      },
+      {
+        "domain": "customer",
+        "core": "客人自身造成（期待落差、看錯方案、未讀須知、使用不當、個人因素）或不可抗力（天災/疫情/罷工），無可歸責商家",
+        "need": "無商家過失事實"
+      }
+    ],
+    "note": "負向評論按上述優先序選唯一最貼切的 L1 域；先排除 content（商品頁問題）再往履約/現場走，避免把症狀誤歸供應商。"
+  },
+  "global_boundaries": [
+    "描述不符→content｜履約沒依約做到→supplier",
+    "產品實體品質差→product_quality｜售後互動差→service",
+    "現場兌換動作失敗→redemption｜商品頁沒講兌換方式→content",
+    "客人自己沒看說明→customer(未讀須知)｜商品頁根本沒寫→content",
+    "天災/疫情/罷工外力→customer(不可抗力)｜商家應變不佳→supplier"
+  ],
+  "cascade": {
+    "enabled": false,
+    "stageA_l1": {
+      "model": "",
+      "self_consistency": 2,
+      "note": "L1 域分類：注入 decision_tree（6 域 core + gates + global_boundaries）。model 空＝沿用主模型/config stage1_model。"
+    },
+    "stageB": {
+      "model": "",
+      "inject": "selected_domain_only",
+      "note": "L2/L3：只注入選中域 canon。model 空＝沿用主判決模型。"
+    },
+    "note": "enabled=false 時判決走現行單次 Stage2（可回退）；true 時走 L1→L2/L3 cascade。"
+  }
+}
