@@ -424,13 +424,15 @@ def save_user_settings(user_id: str, data: dict) -> None:
 # 6 歸因域（rebuild 後 force_majeure 併入 customer，無 C-7）+ schema 結構規格 + product_vertical。
 # 商品垂直分類（product_vertical：Tour/Exp/Charter/Tix→CATEGORY 代碼）為可編輯版本化規則，
 # 復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認），非歸因分類。
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "product_vertical")
+RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "product_vertical", "global_rule")
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，C-N→rule_C-N.json）。"""
+    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，global_rule→config/ai_judge，C-N→rule_C-N.json）。"""
     if code == "product_vertical":  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
         return _GLOBAL_DIR / "product_vertical.json"
+    if code == "global_rule":  # 整體規則（判決流程總規範）與判決 config 同置，默認 seed 放 config/ai_judge
+        return _AI_JUDGE_DIR / "global_rule.json"
     return _AI_JUDGE_DIR / ("rule.schema.json" if code == "schema" else f"rule_{code}.json")
 
 
@@ -536,7 +538,7 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 def reset_all_rule_defaults(author: str = "") -> dict:
     """恢復所有歸因分類（C-N，排除 schema / product_vertical）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    schema 屬結構規格、product_vertical 屬商品垂直分類，皆非歸因分類，不在此批次。
+    schema 屬結構規格、product_vertical 屬商品垂直分類、global_rule 屬整體規則，皆非歸因分類，不在此批次。
     缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
@@ -545,7 +547,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     done: list[dict] = []
     skipped: list[str] = []
     for code in RULE_CODES:
-        if code in ("schema", "product_vertical"):
+        if code in ("schema", "product_vertical", "global_rule"):
             continue
         try:
             done.append(reset_rule_default(code, author=author))

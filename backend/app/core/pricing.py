@@ -18,6 +18,11 @@ _LLM_FILE = GLOBAL_DIR / "llm_model.json"
 _table: dict[str, dict] | None = None
 _default: dict = {"input": 0.0, "output": 0.0}
 
+# prompt caching 命中的 input token 折扣倍率：OpenAI 自動前綴快取 cached input 約為原價 50%
+# （新模型可再低，此為跨模型保守近似）。屬 provider 定價事實、非業務可調值，故具名常數留碼內；
+# 若日後需 per-model 精確，改於 llm_model.json 各 model 加 `cached_input` 欄並在此讀取。
+_CACHED_INPUT_MULT = 0.5
+
 
 def _load() -> dict[str, dict]:
     """lazy 建 model→單價 索引並快取；缺檔/壞檔回空表（不中斷判決，花費顯示 0）。"""
@@ -50,13 +55,17 @@ def price_for(model: str) -> dict:
     return _load().get(model) or _default
 
 
-def cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+def cost_usd(model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> float:
     """token 用量 → 花費 USD（依模型單價；6 位小數）。
+
+    prompt caching 命中的 cached_tokens 以折扣價（`_CACHED_INPUT_MULT`）計入 input，使花費顯示
+    與實際帳單對齊、能反映 caching 省下的成本；未傳 cached_tokens（=0）時等同全額 input 計價。
 
     Args:
         model: 模型 id（如 gpt-5-mini）。
-        prompt_tokens: 輸入 token 數。
+        prompt_tokens: 輸入 token 數（含 cached 部分）。
         completion_tokens: 輸出 token 數。
+        cached_tokens: prompt_tokens 中命中 prompt cache 的部分（折扣計價）。
 
     Returns:
         估算花費 USD（單價缺失時以 price_default 計，仍可能為 0）。
@@ -64,4 +73,7 @@ def cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     p = price_for(model)
     inp = float(p.get("input", 0.0))
     out = float(p.get("output", 0.0))
-    return round(prompt_tokens / 1_000_000 * inp + completion_tokens / 1_000_000 * out, 6)
+    cached = min(max(cached_tokens, 0), prompt_tokens)  # 防呆：夾在 [0, prompt_tokens]
+    fresh_in = prompt_tokens - cached
+    input_cost = (fresh_in / 1_000_000 * inp) + (cached / 1_000_000 * inp * _CACHED_INPUT_MULT)
+    return round(input_cost + completion_tokens / 1_000_000 * out, 6)

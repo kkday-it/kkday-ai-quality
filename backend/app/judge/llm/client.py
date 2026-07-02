@@ -20,13 +20,14 @@ _log = logging.getLogger(__name__)
 
 # token 用量回報槽（ContextVar）：批量判決設定 sink，chat_json 每次呼叫把 usage 回報以累計花費。
 # 用 ContextVar 是因 prejudge_batch 以 copy_context 派工，worker 自動繼承 _run 設的 sink。
-# sink 簽名：(model:str, prompt_tokens:int, completion_tokens:int) → None（須自行 thread-safe）。
-_usage_sink: ContextVar[Callable[[str, int, int], None] | None] = ContextVar(
+# sink 簽名：(model, prompt_tokens, completion_tokens, cached_tokens) → None（須自行 thread-safe）；
+# cached_tokens＝prompt_tokens 中命中 prompt cache 的部分，供折扣計價。
+_usage_sink: ContextVar[Callable[[str, int, int, int], None] | None] = ContextVar(
     "llm_usage_sink", default=None
 )
 
 
-def set_usage_sink(cb: Callable[[str, int, int], None] | None) -> None:
+def set_usage_sink(cb: Callable[[str, int, int, int], None] | None) -> None:
     """設定當前 context 的 token 用量回報 sink（批量判決用；None＝不回報）。"""
     _usage_sink.set(cb)
 
@@ -118,7 +119,14 @@ def is_stub() -> bool:
     return not has_key()
 
 
-def chat_json(system: str, user: str, stage: str = "default", *, schema: dict | None = None) -> dict:
+def chat_json(
+    system: str,
+    user: str,
+    stage: str = "default",
+    *,
+    schema: dict | None = None,
+    cache_key: str | None = None,
+) -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
     stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。
 
@@ -127,6 +135,9 @@ def chat_json(system: str, user: str, stage: str = "default", *, schema: dict | 
             生成階段即 token-level 保證輸出符合此 JSON Schema（如 l3_code enum 只吐合法 code）。
             不支援 json_schema 的 provider（回 400）自動回退 json_object（事後由白名單校驗）。
             None＝維持 json_object（極性等不需 enum 的階段）。
+        cache_key: OpenAI prompt caching 路由提示（`prompt_cache_key`），把相同前綴的呼叫導向同一
+            伺服器提升命中率。**僅 OpenAI 支援**此參數，故依 provider（base_url 反推）判斷才帶，
+            避免相容端點（Gemini/ByteDance）拒收。實際命中仍靠「靜態前綴放前、動態放後」的排序。
     """
     cfg = _resolve()
     client = _get_client(cfg["token"], cfg["base_url"])  # 共用快取 client（含 retry/timeout）
@@ -137,6 +148,8 @@ def chat_json(system: str, user: str, stage: str = "default", *, schema: dict | 
             {"role": "user", "content": user},
         ],
     }
+    if cache_key and _settings.provider_id_for(cfg["base_url"]) == "openai":
+        kwargs["prompt_cache_key"] = cache_key
     if schema is not None:
         kwargs["response_format"] = {
             "type": "json_schema",
@@ -161,15 +174,19 @@ def chat_json(system: str, user: str, stage: str = "default", *, schema: dict | 
     # token 用量回報（供批量累計花費；失敗不影響判決）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)
-    if sink and usage:
-        try:
-            sink(
-                cfg["model"],
-                int(getattr(usage, "prompt_tokens", 0) or 0),
-                int(getattr(usage, "completion_tokens", 0) or 0),
-            )
-        except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
-            _log.debug("usage sink 回報失敗 stage=%s", stage)
+    if usage:
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        # prompt caching 命中：cached_tokens 非零代表靜態前綴（判準法典）已重用、input 計費打折
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+        if cached:
+            _log.info("prompt cache 命中 stage=%s cached=%d/%d", stage, cached, prompt_tokens)
+        if sink:
+            try:
+                sink(cfg["model"], prompt_tokens, completion_tokens, cached)
+            except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
+                _log.debug("usage sink 回報失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"
     try:
         return json.loads(raw)

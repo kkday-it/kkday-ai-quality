@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +17,19 @@ from app.core import auth, db
 router = APIRouter(prefix="/api/judge-rules", tags=["judge-rules"])
 
 _VALID_CODES = set(db.RULE_CODES)
+
+
+def _reload_judge_cache() -> None:
+    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ 判決總規範即時反映新規則
+    （對齊 config.py；ai_judge / global_rule 皆讀 DB active 版，reload 後 prejudge 立即採用；
+    reload 失敗不阻斷已成功的寫入）。"""
+    try:
+        from app.core import ai_judge, global_rule
+
+        ai_judge.reload()
+        global_rule.reload()
+    except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
+        pass
 
 
 class SaveIn(BaseModel):
@@ -30,10 +45,11 @@ def _check_code(code: str) -> None:
 
 
 def _validate(code: str, content: dict) -> None:
-    """存檔前驗證：schema 自身用 metaschema、product_vertical 用輕量結構驗、其餘用 active schema。不過拋 422。
+    """存檔前驗證：schema 自身用 metaschema、product_vertical 用輕量結構驗、global_rule 用自身 schema、
+    其餘（C-N 歸因分類）用 active 歸因 schema。不過拋 422。
 
-    product_vertical（商品垂直分類）內容形態為 {"groups": {分組名: [CATEGORY 代碼,...]}}，
-    非 L1/L2/L3 歸因樹，故**不套** active 歸因 schema，改輕量結構驗證。
+    product_vertical（商品垂直分類）/ global_rule（整體規則）內容形態皆非 L1/L2/L3 歸因樹，
+    故**不套** active 歸因 schema：前者輕量結構驗，後者驗 config/ai_judge/global_rule.schema.json。
     """
     if code == "schema":
         try:
@@ -48,6 +64,22 @@ def _validate(code: str, content: dict) -> None:
         for name, codes in groups.items():
             if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
                 raise HTTPException(status_code=422, detail=f"分組「{name}」的代碼須為字串清單")
+        return
+    if code == "global_rule":
+        # 整體規則：驗其自身 schema（config/ai_judge/global_rule.schema.json），非 L1-L3 歸因樹 schema。
+        from app.core.paths import AI_JUDGE_DIR
+
+        try:
+            gschema = json.loads((AI_JUDGE_DIR / "global_rule.schema.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return  # 無 schema 檔 → 跳過結構驗（後端仍為最終閘）
+        gerrs = sorted(
+            jsonschema.Draft202012Validator(gschema).iter_errors(content),
+            key=lambda e: list(e.path),
+        )
+        if gerrs:
+            gmsgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in gerrs[:8]]
+            raise HTTPException(status_code=422, detail={"errors": gmsgs, "count": len(gerrs)})
         return
     schema = db.get_rule_active("schema") or db.default_rule_content("schema")
     errs = sorted(
@@ -117,7 +149,9 @@ def reset_default_all(user: dict = Depends(auth.get_current_user)) -> dict:
 
     缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
     """
-    return db.reset_all_rule_defaults(author=user.get("user_id", ""))
+    res = db.reset_all_rule_defaults(author=user.get("email") or user.get("user_id", ""))
+    _reload_judge_cache()
+    return res
 
 
 @router.post("/{code}")
@@ -127,7 +161,9 @@ def save_rule(
     """存檔（先 jsonschema 驗證 → 新版 active）。"""
     _check_code(code)
     _validate(code, body.content)
-    return db.save_rule_version(code, body.content, note=body.note, author=user.get("user_id", ""))
+    res = db.save_rule_version(code, body.content, note=body.note, author=user.get("email") or user.get("user_id", ""))
+    _reload_judge_cache()
+    return res
 
 
 @router.post("/{code}/restore/{version}")
@@ -137,9 +173,11 @@ def restore_rule(
     """恢復某歷史版本（複製為新 active 版）。"""
     _check_code(code)
     try:
-        return db.restore_rule_version(code, version, author=user.get("user_id", ""))
+        res = db.restore_rule_version(code, version, author=user.get("email") or user.get("user_id", ""))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    _reload_judge_cache()
+    return res
 
 
 @router.post("/{code}/reset-default")
@@ -147,6 +185,8 @@ def reset_default(code: str, user: dict = Depends(auth.get_current_user)) -> dic
     """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。"""
     _check_code(code)
     try:
-        return db.reset_rule_default(code, author=user.get("user_id", ""))
+        res = db.reset_rule_default(code, author=user.get("email") or user.get("user_id", ""))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="默認檔不存在") from None
+    _reload_judge_cache()
+    return res

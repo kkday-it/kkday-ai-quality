@@ -1,24 +1,20 @@
-"""config/ai_judge 規則樹載入器：rule_C-*.json → 扁平 L3 判準（canon／正反例）。
+"""AI 法官「問題分類規則樹」載入器：judge_rule_versions（DB）→ 扁平 L3 判準（canon／正反例）。
 
-config/ai_judge 為 AI 法官「問題分類規則樹」SSOT（評論導向 6 歸因域，遞迴 children，L3 葉節點
-扛完整判準）。本模組負責讀檔、扁平化、建索引，供 prejudge 在判決時注入「厚判準」（canon +
-allow／forbid + 正反例），讓 LLM 依法典條文判 L3，而非僅憑名稱。
+規則樹 SSOT＝DB judge_rule_versions active 版（評論導向 6 歸因域，遞迴 children，L3 葉節點扛完整
+判準），config/ai_judge/rule_C-*.json 為初始 seed / 無 DB 版本時的 fallback。本模組讀 DB、扁平化、
+建索引，供 prejudge 在判決時注入「厚判準」（canon + allow／forbid + 正反例），讓 LLM 依法典條文
+判 L3。改讀 DB（原直讀檔）與 RuleManager／product_vertical 一致，使線上編輯／恢復默認即時生效。
 
-域清單（code / label / 順序 / 是否排除）直接自各 rule 檔推導——tree[0].domain 為域機器值、
-tree[0].label 為中文域名、檔名 rule_C-N.json 排序為顯示順序、`_meta.intake_excluded=true` 則
-不進預判候選域（可選 knob，預設 false）。不再需要獨立 domains.json（域資訊已在 rule 檔內，SSOT
-唯一化，避免兩處維護漂移）。
+域清單（code / label / 順序 / 是否排除）自各 rule active content 推導——tree[0].domain 為域機器值、
+tree[0].label 為中文域名、db.RULE_CODES 的 C-N 數字序為顯示順序、`_meta.intake_excluded=true` 則
+不進預判候選域（可選 knob，預設 false）；`_meta.recommended_action` 為域→行動 SSOT。
 
-快取：首次存取時 lazy 載入並快取於模組級變數；config 編輯後呼叫 reload() 重載。
+快取：首次存取時 lazy 載入並快取於模組級變數；規則寫入（存檔／恢復默認／恢復版本）後呼叫 reload() 重載。
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
-
-# config/ 目錄定位統一由 app.core.paths 提供（唯一數層數處），勿在此重算 parents[N]。
-from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
 # ── 模組級快取（lazy；reload() 清空重建）──
 _l3_by_code: dict[str, dict[str, Any]] = {}
@@ -89,16 +85,29 @@ def _flatten_l3(l1: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _ensure_loaded() -> None:
-    """lazy 載入所有 rule_C-*.json，建索引 + 域 meta 並快取（冪等）。
+    """lazy 載入 C-N 域規則，建索引 + 域 meta 並快取（冪等）。
 
-    域清單／順序／label／排除旗標全自 rule 檔推導（檔名排序＝顯示順序，tree[0] 帶 domain/label，
-    _meta.intake_excluded 決定是否進預判候選）。不讀 domains.json。
+    **SSOT＝DB judge_rule_versions active 版**（缺版本才回退 config/ai_judge seed 檔），與 RuleManager／
+    product_vertical 一致改讀 DB——使線上編輯／恢復默認後呼叫 reload() 即時反映於判決，不再直讀檔造成
+    「UI 改了判決卻沒變」。域清單依 db.RULE_CODES 的 C-N（按數字序＝顯示順序），tree[0] 帶 domain/label，
+    _meta.intake_excluded 決定是否進預判候選、_meta.recommended_action 為域→行動 SSOT。
     """
     global _loaded
     if _loaded:
         return
-    for rule_file in sorted(_AI_JUDGE_DIR.glob("rule_C-*.json")):
-        data = json.loads(rule_file.read_text(encoding="utf-8"))
+    from app.core import db  # lazy：避免 import-time 拉 sqlalchemy；db 不 import 本模組故無循環
+
+    domain_codes = sorted(
+        (c for c in db.RULE_CODES if c.startswith("C-")),
+        key=lambda c: int(c.split("-", 1)[1]),
+    )
+    for code in domain_codes:
+        data = db.get_rule_active(code)
+        if data is None:
+            try:
+                data = db.default_rule_content(code)  # 無 DB 版本 → 回退 seed 檔
+            except FileNotFoundError:
+                continue
         tree = data.get("tree", [])
         if not tree:
             continue
