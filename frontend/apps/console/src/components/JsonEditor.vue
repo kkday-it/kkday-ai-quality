@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, shallowRef } from 'vue';
-import {
-  createJSONEditor,
-  createAjvValidator,
-  toJSONContent,
-  Mode,
-  type Content,
-  type Validator,
-} from 'vanilla-jsoneditor';
+import type { Content, Validator } from 'vanilla-jsoneditor';
 // 預設（亮色）主題已內建於套件 JS，無需另引 CSS；themes/ 僅提供 dark 覆蓋（jse-theme-dark.css）。
 
 /**
@@ -17,6 +10,8 @@ import {
  *   （避免游標跳動 / 更新迴圈）。消費端切換檔案時以 `:key` 重掛即可重置內容。
  * onChange 嘗試把當前內容正規化為 JSON：合法 → 回 { json, valid:true }；
  *   text 模式打到一半語法錯 → { json:undefined, valid:false, error }，供存檔閘判斷。
+ * 效能：vanilla-jsoneditor 為巨型套件（內含 CodeMirror），改為掛載時「動態 import」，
+ *   使其不進初始 / 頁面 chunk，只在本編輯器實際掛載時才載入（規則頁、config 編輯共用受益）。
  */
 const props = withDefaults(
   defineProps<{
@@ -33,11 +28,15 @@ const props = withDefaults(
   { readOnly: false, mode: 'tree', fill: false },
 );
 
+// jsoneditor API 於掛載時動態載入；型別走 import type（編譯期擦除，不進 bundle）
+type JseModule = typeof import('vanilla-jsoneditor');
+let jse: JseModule | undefined;
+
 /** best-effort 建 schema 驗證器；2020-12 等 ajv 不支援時優雅回 undefined（不阻斷編輯器）。 */
 function buildValidator(): Validator | undefined {
-  if (!props.schema) return undefined;
+  if (!props.schema || !jse) return undefined;
   try {
-    return createAjvValidator({ schema: props.schema });
+    return jse.createAjvValidator({ schema: props.schema });
   } catch {
     return undefined; // 後端 422 為最終驗證閘
   }
@@ -50,25 +49,29 @@ const emit = defineEmits<{
 
 const el = ref<HTMLDivElement>();
 // editor 實例非響應式（內部自管 DOM/狀態），用 shallowRef 持有以便 unmount 銷毀
-const editor = shallowRef<ReturnType<typeof createJSONEditor>>();
+const editor = shallowRef<ReturnType<JseModule['createJSONEditor']>>();
 
 /** editor 內容變更 → 嘗試正規化為 JSON 並回報合法性。 */
 const onChange = (content: Content): void => {
+  if (!jse) return;
   try {
-    const { json } = toJSONContent(content);
+    const { json } = jse.toJSONContent(content);
     emit('change', { json, valid: true });
   } catch (e) {
     emit('change', { json: undefined, valid: false, error: e instanceof Error ? e.message : String(e) });
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   if (!el.value) return;
-  editor.value = createJSONEditor({
+  jse = await import('vanilla-jsoneditor');
+  // await 後元件可能已卸載（快速切換）：el 已無 → 放棄建立，交給 onBeforeUnmount
+  if (!el.value) return;
+  editor.value = jse.createJSONEditor({
     target: el.value,
     props: {
       content: { json: props.json } as Content,
-      mode: props.mode === 'text' ? Mode.text : Mode.tree,
+      mode: props.mode === 'text' ? jse.Mode.text : jse.Mode.tree,
       readOnly: props.readOnly,
       validator: buildValidator(),
       onChange,
