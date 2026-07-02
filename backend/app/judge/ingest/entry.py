@@ -8,9 +8,25 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+from datetime import date, datetime, time
 
 from app.core.schema import InboundItem
 from app.core.utils import now_iso as _now
+
+
+def _cell(value):
+    """xlsx 儲存格值正規化：日期時間→字串（對齊 CSV 全字串語義，避免 datetime 無法 JSON 序列化），None→空字串。
+
+    openpyxl `data_only=True` 會把 Excel 日期格回傳成 datetime/date/time 物件；下游 json.dumps(raw)
+    無法序列化 → 整列轉換 TypeError。此處在讀取邊界統一轉字串，使 xlsx 與 CSV 行為一致。
+    """
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    return value
 
 # 欄位別名映射（容錯各種 CSV/Excel 表頭）
 FIELD_ALIASES: dict[str, list[str]] = {
@@ -160,7 +176,7 @@ def read_sheets(content: bytes, filename: str) -> list[dict]:
             headers = [str(h).strip() if h is not None else "" for h in raw_rows[0]]
             rows = []
             for r in raw_rows[1:]:
-                row = {headers[i]: (r[i] if i < len(r) else "") for i in range(len(headers))}
+                row = {headers[i]: (_cell(r[i]) if i < len(r) else "") for i in range(len(headers))}
                 if any(v not in (None, "") for v in row.values()):
                     rows.append(row)
             out.append({"sheet_name": ws.title, "headers": [h for h in headers if h], "rows": rows})
