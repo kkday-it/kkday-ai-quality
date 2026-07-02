@@ -19,7 +19,7 @@ import {
   type UploadJobSnapshot,
 } from '@/api';
 import { StateGuard, CardSection } from '@/components';
-import { SOURCE_LABEL } from '../constants';
+import { ALL_PAGINATION, SOURCE_LABEL, TABLE_DEFAULTS } from '../constants';
 
 const sourceLabel = (v: string) => SOURCE_LABEL[v] || v;
 
@@ -326,10 +326,10 @@ const exportBatch = (batch: any) => {
         empty-text="尚無上傳批次，請於上方上傳檔案"
       >
         <a-table
+          v-bind="TABLE_DEFAULTS"
           :columns="batchCols"
           :data="batches"
-          :pagination="{ pageSize: 15, showTotal: true }"
-          size="small"
+          :pagination="ALL_PAGINATION"
           row-key="batch_id"
           :scroll="{ x: 900 }"
         >
@@ -368,12 +368,12 @@ const exportBatch = (batch: any) => {
         empty-text="此批次無明細資料"
       >
         <a-table
+          v-bind="TABLE_DEFAULTS"
           class="min-h-0 flex-1"
           :columns="itemCols"
           :data="items"
-          :pagination="{ pageSize: 20, showTotal: true }"
+          :pagination="ALL_PAGINATION"
           :scroll="{ y: '100%' }"
-          size="small"
           row-key="item_id"
         />
       </StateGuard>

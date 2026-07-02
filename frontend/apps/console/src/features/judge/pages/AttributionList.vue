@@ -14,9 +14,11 @@ import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import {
+  ALL_PAGINATION,
   LANG_LABELS,
   POLARITY_LABELS,
   SOURCES,
+  TABLE_DEFAULTS,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
   type ProblemRow,
@@ -229,22 +231,15 @@ onMounted(init);
         empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
       >
         <a-table
+          v-bind="TABLE_DEFAULTS"
           v-model:expanded-keys="expandedKeys"
           :data="rows"
           :columns="COLS"
-          :pagination="{
-            current: page,
-            pageSize,
-            total,
-            showTotal: true,
-            showPageSize: true,
-            showJumper: true,
-          }"
+          :pagination="{ ...ALL_PAGINATION, current: page, pageSize, total }"
           :row-selection="{ type: 'checkbox', selectedRowKeys: selectedKeys, showCheckedAll: true }"
           :expandable="{}"
           :row-class="rowClass"
           class="min-h-0 flex-1"
-          size="small"
           row-key="item_id"
           :scroll="{ y: '100%' }"
           @page-change="

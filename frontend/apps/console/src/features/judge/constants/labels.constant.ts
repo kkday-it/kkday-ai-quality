@@ -3,27 +3,25 @@
 
 /**
  * 導覽語言 lang_code → 顯示文案。
- * 來源：kkday-member-ci `application/config/lang.php` 的 `guide_lang_map`；
- * 本地補 zh-cn / zh-hk（該 map 未含，但商品評論資料會出現）。
+ * 完全參照 kkday-member-ci `application/config/lang.php` 的 `guide_lang_map`（不增刪；
+ * 未含之 code 如 zh-cn/zh-hk 由呼叫端回退顯示原始代碼）。
  */
 export const LANG_LABELS: Record<string, string> = {
-  'zh-tw': '中文',
-  'zh-cn': '简体中文',
-  'zh-hk': '繁體中文（香港）',
-  ct: '廣東話',
-  en: 'English',
-  ja: '日本語',
-  ko: '한국어',
-  th: 'ไทย',
-  vi: 'Tiếng Việt',
   bi: 'Bahasa Indonesia',
   de: 'Deutsch',
+  en: 'English',
   es: 'Español',
   fr: 'Français',
   it: 'Italiano',
   pt: 'Português',
+  vi: 'Tiếng Việt',
   ru: 'русский',
   ar: 'العربية',
+  th: 'ไทย',
+  'zh-tw': '中文',
+  ct: '廣東話',
+  ja: '日本語',
+  ko: '한국어',
 };
 
 /**
