@@ -73,18 +73,21 @@ export interface ProblemRow {
   [key: string]: unknown;
 }
 
-/** product_reviews 打樣欄位：序號欄由 AttributionList 統一前置，此處只列業務欄。 */
+/**
+ * product_reviews 主列欄位：只放「判決數據」（訂單 / 傾向 / 歸因 / 信心 / 分層）；
+ * 原始數據（商品名稱、評論全文等）移入展開行，主列聚焦判決結果。序號欄由 AttributionList 統一前置。
+ */
 const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
   { title: '訂單', dataIndex: 'order_mid' },
-  { title: '商品名稱', dataIndex: 'prod_name', ellipsis: true, tooltip: true },
   { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
   { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
   { title: '信心', dataIndex: 'confidence' },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
 ];
 
-/** product_reviews 展開行：評論全文 + 星等 + 時間 + 旅客資訊 + 判決依據，一次看齊。 */
+/** product_reviews 展開行：原始數據（商品名稱 + 評論全文 + 星等 + 時間 + 旅客資訊）+ 判決依據，一次看齊。 */
 const PRODUCT_REVIEWS_EXPAND_FIELDS: ExpandFieldDef[] = [
+  { key: 'prod_name', label: '商品名稱' },
   { key: 'content', label: '評論全文' },
   { key: 'score', label: '星等' },
   { key: 'occurred_at', label: '評論時間', format: 'datetime' },

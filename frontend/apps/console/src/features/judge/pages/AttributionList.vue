@@ -25,12 +25,10 @@ const POLARITY_COLOR: Record<string, string> = {
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
-/** 排序選項（'欄位:方向'，對應後端 sort_by/sort_dir 白名單）；涵蓋評論時間 / 星等 / 信心。 */
+/** 排序選項（'欄位:方向'，對應後端 sort_by/sort_dir 白名單）；星等不參與排序，只留評論時間 / 信心。 */
 const SORT_OPTS = [
   { value: 'occurred_at:desc', label: '評論時間 · 新→舊' },
   { value: 'occurred_at:asc', label: '評論時間 · 舊→新' },
-  { value: 'score:desc', label: '星等 · 高→低' },
-  { value: 'score:asc', label: '星等 · 低→高' },
   { value: 'confidence:desc', label: '信心 · 高→低' },
   { value: 'confidence:asc', label: '信心 · 低→高' },
 ];

@@ -284,7 +284,9 @@ const exportBatch = (batch: any) => {
           <a-progress
             :percent="sh.total ? sh.processed / sh.total : 0"
             :status="sh.status === 'error' ? 'danger' : sh.status === 'done' ? 'success' : 'normal'"
-          />
+          >
+            <template #text="{ percent }">{{ (percent * 100).toFixed(2) }}%</template>
+          </a-progress>
           <div v-if="sh.errors?.length" class="mt-1 text-xs text-orange-600">
             {{ sh.errors.slice(0, 3).join('；') }}
           </div>
