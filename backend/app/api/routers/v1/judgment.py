@@ -6,7 +6,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core import auth, db
@@ -49,8 +53,36 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
 
 @router.get("/prejudge/status")
 def prejudge_status(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
-    """查初判歸因任務進度 → {status, total, processed, ok, failed, model, total_tokens, cost_usd}。"""
+    """查初判歸因任務進度（輪詢後備；主推 /stream SSE）→ {status, total, processed, ok, failed, model, total_tokens, cost_usd}。"""
     snap = prejudge_batch.get_job(job_id)
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job 不存在或已清除：{job_id}")
     return snap
+
+
+@router.get("/prejudge/stream")
+async def prejudge_stream(job_id: str) -> StreamingResponse:
+    """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job done/error 即關閉。
+
+    不加 auth Depends：原生 EventSource 無法帶 Authorization header；job_id 為不可猜的隨機
+    capability token（僅發起判決的登入者取得），以其本身作為存取憑證（與上傳 SSE 一致）。
+    `X-Accel-Buffering: no` 關 nginx 緩衝確保即時推送。
+    """
+
+    async def _events():
+        """快照 → SSE event 產生器；job 不存在推 error、終態推完即 return 結束串流。"""
+        while True:
+            snap = prejudge_batch.get_job(job_id)
+            if snap is None:
+                yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
+                return
+            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
+            if snap["status"] in ("done", "error"):
+                return
+            await asyncio.sleep(0.8)
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )

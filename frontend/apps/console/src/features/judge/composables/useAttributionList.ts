@@ -4,7 +4,7 @@ import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import {
   exportProblems,
   getProductVerticalResolved,
-  getPrejudgeStatus,
+  prejudgeStreamUrl,
   getProblems,
   getSettings,
   startPrejudge,
@@ -254,26 +254,25 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       ? `${progress.value.totalTokens.toLocaleString()} tokens · ≈ $${progress.value.costUsd.toFixed(4)}`
       : '',
   );
+  // 以 SSE 長連線接收批量判決進度（取代 setInterval 輪詢）；done/error 或連線中斷即 resolve。
   const _poll = (jobId: string) =>
     new Promise<void>((resolve) => {
-      const timer = setInterval(async () => {
-        try {
-          const st = await getPrejudgeStatus(jobId);
-          progress.value = {
-            processed: st.processed || 0,
-            total: st.total || progress.value.total,
-            totalTokens: st.total_tokens || 0,
-            costUsd: st.cost_usd || 0,
-          };
-          if (st.status === 'done' || st.status === 'error') {
-            clearInterval(timer);
-            resolve();
-          }
-        } catch {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 1000);
+      const es = new EventSource(prejudgeStreamUrl(jobId));
+      const finish = () => {
+        es.close();
+        resolve();
+      };
+      es.onmessage = (ev) => {
+        const st = JSON.parse(ev.data);
+        progress.value = {
+          processed: st.processed || 0,
+          total: st.total || progress.value.total,
+          totalTokens: st.total_tokens || 0,
+          costUsd: st.cost_usd || 0,
+        };
+        if (st.status === 'done' || st.status === 'error') finish();
+      };
+      es.onerror = finish;
     });
   const _run = async (body: { item_ids?: string[]; source?: string; scope?: string }) => {
     if (running.value) return;
