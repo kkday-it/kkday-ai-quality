@@ -27,6 +27,7 @@ class PrejudgeIn(BaseModel):
     source: str | None = None
     scope: str | None = None  # "all"＝全部未判（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
+    product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
 
 
 @router.post("/prejudge")
@@ -43,7 +44,7 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     if body.item_ids:
         item_ids = body.item_ids
     elif body.scope == "all":
-        item_ids = db.unjudged_item_ids(body.source)
+        item_ids = db.unjudged_item_ids(body.source, body.product_verticals)
     else:
         item_ids = []
 

@@ -817,6 +817,23 @@ def list_problems(
     return {"rows": rows, "total": total}
 
 
+def _vertical_codes(product_vertical: str | list[str] | None) -> list[str]:
+    """商品垂直分類分組名 → CATEGORY 代碼清單（多分組 extend 合併；空/None 回空清單）。
+
+    局部 import：product_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
+    供 list_problems / overview / breakdown / unjudged 共用（比對 spec.category_col 的 IN 篩選）。
+    """
+    if not product_vertical:
+        return []
+    from app.core import product_vertical as _product_vertical
+
+    groups = [product_vertical] if isinstance(product_vertical, str) else list(product_vertical)
+    codes: list[str] = []
+    for g in groups:
+        codes.extend(_product_vertical.codes_for_group(g))
+    return codes
+
+
 def _list_problems_spec(
     spec: source_registry.SourceSpec,
     judged: bool | None,
@@ -858,14 +875,8 @@ def _list_problems_spec(
         sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
     if score and spec.score_col:
         sel = sel.where(tbl.c[spec.score_col].in_(score))
-    if product_vertical and spec.category_col:
-        # 局部 import：product_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
-        from app.core import product_vertical as _product_vertical
-
-        groups = [product_vertical] if isinstance(product_vertical, str) else list(product_vertical)
-        codes: list[str] = []
-        for g in groups:
-            codes.extend(_product_vertical.codes_for_group(g))
+    if spec.category_col:
+        codes = _vertical_codes(product_vertical)
         if codes:
             sel = sel.where(tbl.c[spec.category_col].in_(codes))
     if prod_oid and "prod_oid" in tbl.c:
@@ -1053,7 +1064,9 @@ def problems_summary() -> dict:
 # ── 信心度校準參數（confidence_calibration；Cleanlab/Platt 離線擬合 → 線上套用）──────
 
 
-def unjudged_item_ids(source: str | None = None) -> list[str]:
+def unjudged_item_ids(
+    source: str | None = None, product_vertical: str | list[str] | None = None
+) -> list[str]:
     """取未歸因（judgments 無對應 finding）的 item_id 清單（初判歸因 scope=all 標的）。
 
     只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake（~8 萬列）做 source_mapping
@@ -1062,6 +1075,8 @@ def unjudged_item_ids(source: str | None = None) -> list[str]:
 
     Args:
         source: 來源 code 過濾（None＝全部來源；未拆表來源沿用 intake_items）。
+        product_vertical: 商品垂直分類分組（全局篩選；僅 spec.category_col 存在的來源生效，
+            intake_items fallback 無分類欄故不套——結構性限制）。
 
     Returns:
         未判 item_id 清單（順序不保證，批量判決不依賴順序）。
@@ -1071,6 +1086,10 @@ def unjudged_item_ids(source: str | None = None) -> list[str]:
         tbl = T.judgments
         j = spec.table.outerjoin(tbl, spec.table.c.item_id == tbl.c.item_id)
         stmt = select(spec.table.c.item_id).select_from(j).where(tbl.c.finding_id.is_(None))
+        if spec.category_col:
+            codes = _vertical_codes(product_vertical)
+            if codes:
+                stmt = stmt.where(spec.table.c[spec.category_col].in_(codes))
         with T.get_engine().connect() as c:
             return [r[0] for r in c.execute(stmt)]
 
@@ -1091,6 +1110,7 @@ def attribution_overview(
     date_from: str | None = None,
     date_to: str | None = None,
     granularity: str = "month",
+    product_vertical: str | list[str] | None = None,
 ) -> dict:
     """歸因縱覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
@@ -1131,8 +1151,11 @@ def attribution_overview(
     _GRAN_LEN = {"year": 4, "month": 7, "day": 10}
     glen = _GRAN_LEN.get(granularity, 7)
 
+    # 全局商品垂直分類 codes 一次算好（僅 spec.category_col 存在的來源可套）；供 _src 各查詢共用。
+    _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
+
     def _src(stmt):
-        """套用 source + 日期區間過濾（None＝不限）；日期比對 occurred_at 前 10 字（含端點）。
+        """套用 source + 日期區間 + 商品垂直分類過濾（None／空＝不限）；日期比對 occurred_at 前 10 字（含端點）。
 
         spec 命中時該表本身已是單一來源，不再套 WHERE source=（intake_items 才需要此過濾）。
         """
@@ -1142,6 +1165,8 @@ def attribution_overview(
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)
         if date_to:
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) <= date_to)
+        if _v_codes:
+            stmt = stmt.where(ii.c[spec.category_col].in_(_v_codes))
         return stmt
 
     with T.get_engine().connect() as c:
@@ -1266,6 +1291,7 @@ def attribution_breakdown(
     l1: str,
     date_from: str | None = None,
     date_to: str | None = None,
+    product_vertical: str | list[str] | None = None,
 ) -> dict:
     """某 L1 歸因域下的 L2 / L3 細項分布（縱覽下鑽·懶載）。
 
@@ -1291,6 +1317,8 @@ def attribution_breakdown(
     l2c, l2l = d["l2_code"].astext, d["l2_label"].astext
     l3c, l3l = d["l3_code"].astext, d["l3_label"].astext
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
+    # 全局商品垂直分類 codes（僅 spec.category_col 存在的來源可套）
+    _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
 
     def _level(code_col, label_col):
         """組某層（L2/L3）的 GROUP BY 查詢：限定 L1 域 + 非空 code，依筆數降序。"""
@@ -1305,6 +1333,8 @@ def attribution_breakdown(
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) >= date_from)
         if date_to:
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) <= date_to)
+        if _v_codes:
+            stmt = stmt.where(ii.c[spec.category_col].in_(_v_codes))
         return stmt.group_by(code_col, label_col).order_by(cnt.desc())
 
     with T.get_engine().connect() as c:

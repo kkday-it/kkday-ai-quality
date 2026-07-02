@@ -531,13 +531,19 @@ def get_attribution_overview(
     date_from: str | None = None,
     date_to: str | None = None,
     granularity: str = "month",
+    product_verticals: str | None = None,
 ) -> dict:
     """歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
 
-    可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）。
+    可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）；
+    product_verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）。
     """
     return db.attribution_overview(
-        source=source, date_from=date_from, date_to=date_to, granularity=granularity
+        source=source,
+        date_from=date_from,
+        date_to=date_to,
+        granularity=granularity,
+        product_vertical=_csv_strs(product_verticals),
     )
 
 
@@ -547,9 +553,16 @@ def get_attribution_breakdown(
     source: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    product_verticals: str | None = None,
 ) -> dict:
-    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間。"""
-    return db.attribution_breakdown(source=source, l1=l1, date_from=date_from, date_to=date_to)
+    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類。"""
+    return db.attribution_breakdown(
+        source=source,
+        l1=l1,
+        date_from=date_from,
+        date_to=date_to,
+        product_vertical=_csv_strs(product_verticals),
+    )
 
 
 class StatusIn(BaseModel):
