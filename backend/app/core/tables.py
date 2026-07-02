@@ -33,27 +33,7 @@ from app.core.config import env
 
 metadata = MetaData()
 
-# 8 面向 code（質檢彙總 prod_quality/pkg_quality 用；對齊 roster.DIM_CODE）
-_DIM_CODES = (
-    "positioning",
-    "itinerary",
-    "fee",
-    "meetup",
-    "redeem",
-    "group_form",
-    "restriction",
-    "sla",
-)
-
-
-def _dim_columns() -> list[Column]:
-    """8 面向各一欄（{code}_n INTEGER）。"""
-    cols: list[Column] = []
-    for code in _DIM_CODES:
-        cols.append(Column(f"{code}_n", Integer, server_default="0"))
-    return cols
-
-# ── 6 表（欄位對齊舊 DDL；composite PK 用多個 primary_key）──────────────────
+# ── 來源數據表（欄位對齊舊 DDL；composite PK 用多個 primary_key）──────────────────
 intake_items = Table(
     "intake_items",
     metadata,
@@ -157,16 +137,6 @@ user_settings = Table(
     Column("updated_at", Text),
 )
 
-confidence_calibration = Table(
-    "confidence_calibration",
-    metadata,
-    Column("scope", Text, primary_key=True),
-    Column("model", Text, primary_key=True),
-    Column("intercept", Float),
-    Column("slope", Float),
-    Column("updated_at", Text),
-)
-
 # ── 判決規則版本（config/ai_judge/ 的 7 rule + schema 的 live + 歷史）────────────
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
 # 檔案 config/ai_judge/rule_C-*.json 為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
@@ -189,130 +159,6 @@ judge_rule_versions = Table(
         unique=True,
         postgresql_where=text("is_active"),
     ),
-)
-
-
-# ── roster 層：主檔 / 事實 / 質檢彙總（取代 sql/schema.sql 的 7 表）────────────
-products = Table(
-    "products",
-    metadata,
-    Column("prod_oid", Text, primary_key=True),
-    Column("prod_mid", Text),
-    Column("master_lang", Text),
-    Column("prod_name", Text),
-    Column("prod_summary", Text),
-    Column("prod_feature", Text),
-    Column("prod_desc", Text),
-    Column("prod_schedules", Text),
-    Column("prod_notice", Text),
-    Column("prod_fee", Text),
-    Column("prod_meetup", Text),
-    Column("prod_redeem", Text),
-    Column("prod_purchase", Text),
-    Column("bd_tag_note", Text),
-    Column("updated_at", Text),
-)
-
-packages = Table(
-    "packages",
-    metadata,
-    Column("pkg_oid", Text, primary_key=True),
-    Column("prod_oid", Text),
-    Column("pkg_name", Text),
-    Column("pkg_desc", Text),
-    Column("pkg_schedules", Text),
-    Column("pkg_fee", Text),
-    Column("pkg_meetup", Text),
-    Column("pkg_refund", Text),
-    Column("pkg_order_process", Text),
-    Column("updated_at", Text),
-    Index("idx_packages_prod", "prod_oid"),
-)
-
-suppliers = Table(
-    "suppliers",
-    metadata,
-    Column("supplier_oid", Text, primary_key=True),
-    Column("supplier_name", Text),
-    Column("updated_at", Text),
-)
-
-orders = Table(
-    "orders",
-    metadata,
-    Column("order_oid", Text, primary_key=True),
-    Column("order_mid", Text),  # ⚠️ 會員 id（個資）
-    Column("prod_oid", Text),
-    Column("order_profit", Float),
-    Column("updated_at", Text),
-    Index("idx_orders_prod", "prod_oid"),
-)
-
-inquiries = Table(
-    "inquiries",
-    metadata,
-    Column("session_oid", Text, primary_key=True),
-    Column("channel", Text),
-    Column("order_oid", Text),
-    Column("prod_oid", Text),
-    Column("pkg_oid", Text),
-    Column("supplier_oid", Text),
-    Column("master_lang", Text),
-    Column("zendesk_ticket_id", Text),
-    Column("session_create_date", Text),
-    Column("sessionable_type", Text),
-    Column("sessionable_id", Text),
-    Column("session_direction", Text),
-    Column("msg_handler", Text),
-    Column("aggregated_messages", Text),  # ⚠️ 多輪對話原文（個資）
-    Column("batch_id", Text),
-    Column("created_at", Text),
-    Index("idx_inquiries_prod", "prod_oid"),
-    Index("idx_inquiries_order", "order_oid"),
-    Index("idx_inquiries_channel", "channel"),
-    Index("idx_inquiries_pkg", "pkg_oid"),
-    Index("idx_inquiries_supplier", "supplier_oid"),
-)
-
-prod_quality = Table(
-    "prod_quality",
-    metadata,
-    Column("prod_oid", Text, primary_key=True),
-    Column("prod_name", Text),
-    Column("bd_tag_note", Text),
-    Column("supplier_oid", Text),
-    Column("inquiry_count", Integer, server_default="0"),
-    Column("order_count", Integer, server_default="0"),
-    Column("order_profit_sum", Float, server_default="0"),
-    Column("judgments_total", Integer, server_default="0"),
-    Column("content_issue_n", Integer, server_default="0"),
-    Column("content_issue_pct", Float, server_default="0"),
-    Column("contract_breach_n", Integer, server_default="0"),
-    Column("top_dimension", Text),
-    Column("max_confidence", Float, server_default="0"),
-    Column("overall_status", Text),
-    *_dim_columns(),
-    Column("last_judged_at", Text),
-    Index("idx_prod_quality_issue", "content_issue_n"),  # PG 可反向掃，免 DESC index
-)
-
-pkg_quality = Table(
-    "pkg_quality",
-    metadata,
-    Column("pkg_oid", Text, primary_key=True),
-    Column("prod_oid", Text),
-    Column("prod_name", Text),
-    Column("inquiry_count", Integer, server_default="0"),
-    Column("judgments_total", Integer, server_default="0"),
-    Column("content_issue_n", Integer, server_default="0"),
-    Column("content_issue_pct", Float, server_default="0"),
-    Column("contract_breach_n", Integer, server_default="0"),
-    Column("top_dimension", Text),
-    Column("max_confidence", Float, server_default="0"),
-    Column("overall_status", Text),
-    *_dim_columns(),
-    Column("last_judged_at", Text),
-    Index("idx_pkg_quality_prod", "prod_oid"),
 )
 
 

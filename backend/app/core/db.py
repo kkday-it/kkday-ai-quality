@@ -1026,36 +1026,6 @@ def problems_summary() -> dict:
 # ── 信心度校準參數（confidence_calibration；Cleanlab/Platt 離線擬合 → 線上套用）──────
 
 
-def get_calibration(scope: str, model: str) -> dict | None:
-    """取某 (scope, model) 的 Platt 校準參數 {intercept, slope}；無則 None（線上 identity）。
-
-    Args:
-        scope: 'global' 或 'domain:<code>' 粒度。
-        model: 生效 LLM 模型名（不同模型校準曲線不同）。
-
-    Returns:
-        {"intercept", "slope"} 或 None。
-    """
-    cc = T.confidence_calibration
-    stmt = select(cc.c.intercept, cc.c.slope).where(cc.c.scope == scope, cc.c.model == model)
-    with T.get_engine().connect() as c:
-        r = c.execute(stmt).mappings().first()
-        return dict(r) if r else None
-
-
-def upsert_calibration(scope: str, model: str, intercept: float, slope: float) -> None:
-    """寫入/更新校準參數（離線擬合後呼叫）。"""
-    values = {
-        "scope": scope,
-        "model": model,
-        "intercept": intercept,
-        "slope": slope,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    with T.get_engine().begin() as c:
-        c.execute(T.upsert(T.confidence_calibration, values, ["scope", "model"]))
-
-
 def unjudged_item_ids(source: str | None = None) -> list[str]:
     """取未歸因（judgments 無對應 finding）的 item_id 清單（初判歸因 scope=all 標的）。
 
@@ -1084,38 +1054,6 @@ def unjudged_item_ids(source: str | None = None) -> list[str]:
         stmt = stmt.where(ii.c.source == source)
     with T.get_engine().connect() as c:
         return [r[0] for r in c.execute(stmt)]
-
-
-def calibration_training_data(model: str | None = None) -> list[tuple[float, int]]:
-    """擷取離線校準訓練樣本：(raw_confidence, correct) — correct＝預測 l3_code 是否＝true_label。
-
-    僅取已人工標註（true_label 非空）且有 raw_confidence 的 judgments。
-
-    Args:
-        model: 限定模型（None＝全部）。
-
-    Returns:
-        [(raw_confidence, 1|0)]；correct 以 data.l3_code == true_label 判定。
-    """
-    jg = T.judgments
-    stmt = select(jg.c.raw_confidence, jg.c.true_label, jg.c.data).where(
-        jg.c.true_label.isnot(None), jg.c.raw_confidence.isnot(None)
-    )
-    out: list[tuple[float, int]] = []
-    with T.get_engine().connect() as c:
-        for r in c.execute(stmt).mappings():
-            try:
-                pred = json.loads(r["data"] or "{}").get("l3_code") or ""
-            except (ValueError, TypeError):
-                pred = ""
-            if model:
-                try:
-                    if json.loads(r["data"] or "{}").get("model_used") != model:
-                        continue
-                except (ValueError, TypeError):
-                    continue
-            out.append((float(r["raw_confidence"]), 1 if pred == r["true_label"] else 0))
-    return out
 
 
 # ── 歸因縱覽聚合（縱覽頁專用；problems_summary 的進階版，多 polarity/L1-code/星等/月趨勢）────

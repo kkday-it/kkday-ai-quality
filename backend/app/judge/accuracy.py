@@ -4,7 +4,7 @@
 「raw_confidence 派生的 pred_probs」餵 Cleanlab。這在數學上是**內部一致性 / 可疑樣本偵測**，
 非絕對準確率——模型系統性偏誤（整片同錯一類）無法靠自證揭露。故報表定位＝一致性體檢 +
 低品質樣本人審清單，非真值指標；若結果與 rule_audit 的 rule_coverage 矛盾應以人審為準。
-真值到位（judgments.true_label ≥ 200）後改走 db.calibration_training_data 做真校準。
+真值到位（judgments.true_label ≥ 200）後應改走真值監督評估（非本自證底座）。
 
 輸入：judgments.data 的負向 attributed finding（l3_code / raw_confidence / l3_candidates）。
 輸出：data/reports/accuracy.{md,json}（DB 或 cleanlab 不可用時優雅降級為 skipped）。
