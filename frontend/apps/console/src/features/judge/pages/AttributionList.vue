@@ -10,6 +10,7 @@
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
 import { computed, onMounted, ref } from 'vue';
+import type { TableData } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
@@ -46,6 +47,19 @@ const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 /** 依傾向給整列一個 class，用背景色一眼區分正負中性/傾向不明（未判無色）。 */
 const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
 
+/**
+ * Arco span-method（1:N 儲存格合併）：歸因欄逐列顯示；其餘 review 級欄（序號/訂單/評論時間/傾向）
+ * 與操作欄（勾選/展開，span-all 納入）依 `_rowspan` 合併——首列 rowspan=N、續列 rowspan/colspan=0（隱藏）。
+ */
+const ATTR_COLS = new Set(['attr', 'confidence', 'confidence_tier', 'judgment_stage']);
+const spanMethod = (data: { record: TableData; column: object }) => {
+  // 操作欄（勾選/展開）無 dataIndex → 視為 review 級合併；歸因欄有 dataIndex 且在 ATTR_COLS → 逐列不合併
+  const dataIndex = (data.column as { dataIndex?: string | number }).dataIndex;
+  if (dataIndex && ATTR_COLS.has(String(dataIndex))) return;
+  const rs = Number((data.record as ProblemRow)._rowspan ?? 1);
+  return { rowspan: rs, colspan: rs > 0 ? 1 : 0 };
+};
+
 const source = ref('product_reviews');
 
 const {
@@ -74,7 +88,8 @@ const {
   loading,
   error,
   loadPage,
-  selectedKeys,
+  selectedRowKeys,
+  onSelectionChange,
   runCount,
   clearSelection,
   pageSpec,
@@ -281,11 +296,13 @@ onMounted(init);
           :data="rows"
           :columns="COLS"
           :pagination="{ ...ALL_PAGINATION, current: page, pageSize, total }"
-          :row-selection="{ type: 'checkbox', selectedRowKeys: selectedKeys, showCheckedAll: true }"
+          :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
           :expandable="{}"
           :row-class="rowClass"
+          :span-method="spanMethod"
+          span-all
           class="min-h-0 flex-1"
-          row-key="item_id"
+          row-key="finding_id"
           :scroll="{ y: '100%' }"
           @page-change="
             (p: number) => {
@@ -300,10 +317,10 @@ onMounted(init);
               loadPage();
             }
           "
-          @selection-change="(keys) => (selectedKeys = keys.map(String))"
+          @selection-change="onSelectionChange"
           @sorter-change="onSortChange"
         >
-          <template #seq="{ rowIndex }">{{ (page - 1) * pageSize + rowIndex + 1 }}</template>
+          <template #seq="{ record }">{{ record._seq }}</template>
           <template #occurred="{ record }">{{ fmtDt(record.occurred_at) }}</template>
           <template #godate="{ record }">{{ fmtDt(record.go_date, true) }}</template>
           <template #pol="{ record }">
@@ -312,6 +329,7 @@ onMounted(init);
             </a-tag>
             <span v-else class="text-gray-300">未判</span>
           </template>
+          <!-- 每行＝一條獨立歸因分類（1:N；一個問題多條歸因各自一行，各帶 L1-L3/信心/分層/階段）-->
           <template #attr="{ record }">
             <div v-if="record.l1_label || record.l3_label" class="text-xs leading-relaxed">
               <div><span class="text-gray-400">L1</span> {{ record.l1_label }}</div>

@@ -71,6 +71,7 @@ export interface L3Candidate {
   score?: number;
 }
 
+
 /**
  * 歸因列表單列（`_enrich_problem` 回傳）。常用欄位具名、其餘走 index signature——
  * 各來源欄位集不同（product_reviews 有 score、conversations 無），故不列窮舉、以 `unknown` 保型別安全
@@ -81,6 +82,11 @@ export interface ProblemRow {
   polarity?: string;
   confidence_tier?: string;
   l3_candidates?: L3Candidate[];
+  // ── 1:N fan-out 欄（後端 _paged_fanout 附）：一則評論多條歸因各一列，靠 span 合併 review 級欄 ──
+  finding_id?: string; // 每歸因列唯一（前端 rowKey；未判＝item_id）
+  _group?: string; // 所屬 review 的 item_id（同組連續）
+  _rowspan?: number; // 該組首列＝歸因數 N（span 合併 review 級欄）、其餘＝0
+  _seq?: number; // review 在本頁的序號（#seq 合併格顯示）
   [key: string]: unknown;
 }
 

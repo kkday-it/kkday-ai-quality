@@ -105,12 +105,6 @@ product_reviews = Table(
     Column("status", Text),
     Column("created_at", Text),
     Column("raw", Text),  # 兜底：field_map 未涵蓋的原始欄
-    # ── 多歸因判決（product_reviews 專表自帶判決欄；其餘 4 來源仍走 judgments 表）──
-    # 一則評論可同時違反多規則（如 C-1-1 + C-2-1），各違規線隔離存為 judges 陣列一元素，
-    # 各自帶 action / 負責單位；取代「一評論一 finding」的 judgments 1:1 舊模型（見 ReviewJudge）。
-    Column("judges", JSONB, nullable=False, server_default=text("'[]'::jsonb")),  # list[ReviewJudge]
-    Column("review_polarity", Text),  # 整則評論傾向（一次判定，非逐違規）；NULL=未判
-    Column("judged_at", Text),  # 最近一次判決時間（ISO）；NULL=未判
     Index("idx_product_reviews_score", "score"),
     Index("idx_product_reviews_category_main", "product_category_main"),
     Index("idx_product_reviews_occurred_at", "occurred_at"),

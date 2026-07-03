@@ -499,12 +499,12 @@ class ExportProblemsIn(BaseModel):
 
 @app.post("/api/problems/export")
 def export_problems(body: ExportProblemsIn) -> Response:
-    """導出統一問題列表 CSV（全量·不受分頁限制；欄位齊全）。
+    """導出統一問題列表為**美化 xlsx**（全量·不受分頁限制；1:N 每條歸因一列、xid 第一列、不含 item_id）。
 
-    item_ids 給定→只導那些（複選/分頁選取，可上千）；否則導符合 source/polarity/judged
+    item_ids 給定→只導那些 review（複選/分頁選取，可上千）；否則導符合 source/polarity/judged
     + 星等 / 商品垂直分類 / 日期區間 篩選（與列表頁一致，避免導出與畫面不同步）全部。
     """
-    csv_bytes = db.export_problems_csv(
+    xlsx_bytes = db.export_problems_xlsx(
         source=body.source,
         polarity=body.polarity,
         judged=body.judged,
@@ -515,9 +515,11 @@ def export_problems(body: ExportProblemsIn) -> Response:
         date_to=body.date_to,
     )
     return Response(
-        content=csv_bytes,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="problems_{body.source or "all"}.csv"'},
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="problems_{body.source or "all"}.xlsx"'
+        },
     )
 
 

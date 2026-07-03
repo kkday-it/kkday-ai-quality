@@ -23,6 +23,7 @@ _domain_label: dict[str, str] = {}  # code → 中文域名（自 rule tree[0].l
 _domain_order: list[str] = []  # 域顯示順序（rule 檔名排序，穩定）
 _domain_excluded: set[str] = set()  # _meta.intake_excluded=true 的域（不進預判候選）
 _domain_action: dict[str, str] = {}  # code → recommended_action（自 rule _meta.recommended_action）
+_domain_owner: dict[str, str] = {}  # code → 負責單位（自 rule _meta.owner_role；值待業務填，空則不顯示）
 _loaded = False
 
 
@@ -122,6 +123,9 @@ def _ensure_loaded() -> None:
         action = _meta.get("recommended_action")
         if action:  # 域→建議行動（SSOT 內聚於各 rule _meta，取代 prejudge 舊硬編碼 dict）
             _domain_action[domain] = action
+        owner = _meta.get("owner_role")
+        if owner:  # 域→負責單位（SSOT 於各 rule _meta.owner_role；值待業務填，填後 re-seed 即流通）
+            _domain_owner[domain] = owner
         nodes = _flatten_l3(l1)
         _l3_by_domain.setdefault(domain, []).extend(nodes)
         for n in nodes:
@@ -138,6 +142,7 @@ def reload() -> None:
     _domain_order.clear()
     _domain_excluded.clear()
     _domain_action.clear()
+    _domain_owner.clear()
     _loaded = False
     _ensure_loaded()
 
@@ -155,6 +160,16 @@ def domain_action(code: str) -> str:
     """
     _ensure_loaded()
     return _domain_action.get(code, "escalate_ux")
+
+
+def domain_owner(code: str) -> str:
+    """域 code → 負責單位（自 rule _meta.owner_role，如 AM / 客服）；未設回空字串（前端空則不顯示）。
+
+    值為業務配置（禁自創）：於各 rule_C-N.json `_meta.owner_role` 填入、經 RuleManager 恢復默認
+    re-seed 後即流通到判決 judges；未填時 owner 恆空，前端不顯示負責單位標籤。
+    """
+    _ensure_loaded()
+    return _domain_owner.get(code, "")
 
 
 def l3_by_code(code: str) -> dict[str, Any] | None:

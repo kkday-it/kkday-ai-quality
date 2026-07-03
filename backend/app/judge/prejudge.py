@@ -22,7 +22,7 @@ from typing import Any, get_args
 
 from app.core import ai_judge, global_rule
 from app.core.paths import AI_JUDGE_DIR
-from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, ReviewJudge, TicketFinding
+from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
 from app.judge.llm import client
 
 # ── config（judgment.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
@@ -411,6 +411,7 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
+        owner_role=ai_judge.domain_owner(attr["l1_domain_code"]),  # 負責單位（rule _meta.owner_role；未填空）
         problem_summary=attr.get("evidence_quote", "")[:200],
         evidence_quote=attr.get("evidence_quote", ""),
         polarity="negative",
@@ -664,9 +665,8 @@ def to_finding(item: dict, *, model: str) -> TicketFinding:
     return _attributed_finding(item, attr, used_model, enhanced=False)
 
 
-# ── 多歸因（product_reviews 專用）：一則負向評論同時違反多規則 → list[ReviewJudge] ──────
-# 與 to_finding（單歸因，其餘 4 來源）平行並存、刻意不改 to_finding 與既有 helper（零回歸）；
-# 復用純函式 _skip0/_stage1_polarity/_stage_b/_finalize_attr/_action_for/_tier_for/_derive_stage。
+# ── 多歸因（全 5 來源 1:N）：一則負向評論同時違反多規則 → 多條 attr dict，由 to_findings 各組一 TicketFinding ──
+# 復用純函式 _stage_b/_finalize_attr/_action_for/_tier_for/_derive_stage；to_finding（單歸因）保留供其他呼叫端。
 def _max_attributions() -> int:
     """一則評論最多輸出幾條獨立違規歸因（config；防過度歸因，硬上限 3、下限 1）。"""
     n = int(_prejudge_cfg().get("max_attributions", 2) or 2)
@@ -804,101 +804,46 @@ def _resolve_attrs_multi(item: dict, text: str, model: str, max_n: int) -> list[
     return ranked[:max_n]
 
 
-def _attrs_to_judges(attrs: list[dict], model: str) -> list[ReviewJudge]:
-    """多條 attr dict → list[ReviewJudge]（各自 tier/action/stage；index 0＝信心最高標 is_primary）。"""
-    now = _now_iso()
-    judges: list[ReviewJudge] = []
-    for i, a in enumerate(attrs):
-        conf = a["confidence"]
-        tier = _tier_for(conf)
-        dom = a.get("l1_domain_code", "")
-        judges.append(
-            ReviewJudge(
-                judge_id=dom,  # 冪等鍵＝L1 域（同域重判替換）
-                l1_domain_code=dom,
-                l1_label=a.get("l1_label", ""),
-                l2_code=a.get("l2_code", ""),
-                l2_label=a.get("l2_label", ""),
-                l3_code=a.get("l3_code", ""),
-                l3_label=a.get("l3_label", ""),
-                confidence=conf,
-                raw_confidence=a.get("raw_confidence", conf),
-                confidence_tier=tier,
-                judgment_stage=_derive_stage("negative", a.get("l3_code", ""), tier, a.get("evidence_capped", False)),
-                recommended_action=_action_for(dom),
-                owner="",  # 負責單位：P4 接 rule _meta.owner_role（值待業務提供，禁自創）
-                evidence_quote=a.get("evidence_quote", "")[:300],
-                problem_summary=a.get("evidence_quote", "")[:200],
-                is_primary=(i == 0),
-                is_enhanced=False,
-                model_used=model,
-                judged_at=now,
-            )
-        )
-    return judges
+def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
+    """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
+    全 5 來源統一入口，取代單歸因 to_finding。每條歸因＝一個 TicketFinding（獨立 finding_id、
+    L1-L3、信心、分層、判決階段、action），落庫為 judgments 獨立列（見 db.replace_item_findings）。
+    - 正向/中性/純好評 → [單一 non_issue finding]（不歸因）。
+    - 負向且有歸因 → 每域一條 finding（信心最高標 is_primary）。
+    - 負向但全無法歸類 → [單一負向未歸因 finding]（pending_data）。
 
-def to_review_judges(item: dict, *, model: str) -> tuple[str, list[ReviewJudge]]:
-    """一則商品評論 → (review_polarity, list[ReviewJudge])（多歸因；product_reviews 專用入口）。
-
-    與 to_finding 平行：Stage0/1 復用（正向/中性 → 空 judges）；負向走多歸因 Stage2。
-    review_polarity 為整則評論一次判定（頂層欄）；judges 為各違規線（可空＝負向但無法歸類，pending_data）。
-
-    Args:
-        item: product_reviews 列 dict（item_id/content/score/order_oid/raw…）。
-        model: 主判決模型；stub 模式走啟發式極性、judges 回空。
-
-    Returns:
-        (review_polarity, judges)：polarity ∈ positive/negative/neutral/unknown。
-    """
-    used_model = "stub" if client.is_stub() else model
-    text = _text_of(item)
-
-    if _skip0(item, text):
-        return "positive", []
-    polarity = _stage1_polarity(item, text, model)
-    if polarity != "negative":
-        return polarity, []
-
-    attrs = _resolve_attrs_multi(item, text, model, _max_attributions())
-    return "negative", _attrs_to_judges(attrs, used_model)
-
-
-_EMPTY_ATTR_KEYS = ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
-
-
-def to_finding_multi(item: dict, *, model: str) -> TicketFinding:
-    """一條進線 → 單一 TicketFinding，帶多歸因 `judges` 陣列（全 5 來源統一入口）。
-
-    多歸因走 to_review_judges 的引擎；primary（信心最高一條）映射到單值 l1/l2/l3/action/confidence 欄
-    供既有單歸因讀取（list_problems/overview）過渡期相容，完整 `judges` 陣列內嵌隨 insert_finding 落
-    judgments.data。正向/中性/純好評 → judges 空、走 non_issue 單值。負向但全無法歸類 → primary 空
-    （pending_data）、judges 空。
+    finding_id：非負向/未歸因＝`fd_{item_id}`；多歸因每條＝`fd_{item_id}__{l1_domain}`（域級去重→唯一）。
 
     Args:
         item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
-        model: 主判決模型；stub 走啟發式極性、judges 空。
+        model: 主判決模型；stub 走啟發式極性、負向回未歸因單筆。
 
     Returns:
-        單一 TicketFinding（primary 單值欄 + judges 陣列）。
+        TicketFinding 清單（≥1 筆）。
     """
     used_model = "stub" if client.is_stub() else model
     text = _text_of(item)
+    item_id = item.get("item_id", "")
 
     if _skip0(item, text):
-        return _non_issue_finding(item, "positive", "heuristic")
+        return [_non_issue_finding(item, "positive", "heuristic")]
     polarity = _stage1_polarity(item, text, model)
     if polarity != "negative":
-        return _non_issue_finding(item, polarity, used_model)
+        return [_non_issue_finding(item, polarity, used_model)]
 
     attrs = _resolve_attrs_multi(item, text, model, _max_attributions())
-    judges = _attrs_to_judges(attrs, used_model)
-    # primary＝信心最高的 attr（attrs 已降冪）；全 abstain 時給空 attr（→ pending_data）
-    primary_attr = attrs[0] if attrs else {
-        **{k: "" for k in _EMPTY_ATTR_KEYS},
-        "confidence": 0.5, "raw_confidence": 0.5,
-        "evidence_quote": text[:200], "l3_candidates": [], "evidence_capped": False,
-    }
-    f = _attributed_finding(item, primary_attr, used_model, enhanced=False)
-    f.judges = [j.model_dump() for j in judges]
-    return f
+    if not attrs:  # 負向但全無法歸類 → 單筆未歸因（pending_data）
+        f = _non_issue_finding(item, "negative", used_model)
+        f.judgment_stage = "pending_data"
+        f.confidence_tier = "needs_review"
+        f.needs_review = True
+        f.evidence_quote = text[:200]
+        return [f]
+    findings: list[TicketFinding] = []
+    for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同域去重
+        f = _attributed_finding(item, attr, used_model, enhanced=False)
+        f.finding_id = f"fd_{item_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
+        f.is_primary = i == 0  # 信心最高一條為主歸因
+        findings.append(f)
+    return findings

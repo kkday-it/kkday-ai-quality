@@ -130,7 +130,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       });
       rows.value = r.rows || [];
       total.value = r.total || 0;
-      expandedKeys.value = rows.value.map((x) => x.item_id); // 載入後預設全展開
+      // 1:N：expand 綁 group-head（首列 finding_id；span 合併展開操作欄故每 review 一個展開鈕）
+      expandedKeys.value = rows.value
+        .filter((x) => (x._rowspan ?? 1) > 0)
+        .map((x) => String(x.finding_id)); // 載入後預設全展開
     } catch (e: any) {
       error.value = '載入失敗：' + (e?.message || e);
     } finally {
@@ -138,9 +141,15 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     }
   };
   /** 一鍵收合 / 展開全部：依當前是否已全展開切換。 */
-  const allExpanded = computed(() => rows.value.length > 0 && expandedKeys.value.length >= rows.value.length);
+  // group-head＝各 review 首列（_rowspan>0）；展開/全展開以其 finding_id 為鍵
+  const groupHeads = computed(() => rows.value.filter((x) => (x._rowspan ?? 1) > 0));
+  const allExpanded = computed(
+    () => groupHeads.value.length > 0 && expandedKeys.value.length >= groupHeads.value.length,
+  );
   const toggleExpandAll = () => {
-    expandedKeys.value = allExpanded.value ? [] : rows.value.map((x) => x.item_id);
+    expandedKeys.value = allExpanded.value
+      ? []
+      : groupHeads.value.map((x) => String(x.finding_id));
   };
   /** Arco 表頭點擊排序變更 → 映射後端 sort_by/sort_dir；清除排序（direction 空）回預設評論時間新→舊。 */
   const onSortChange = (dataIndex: string, direction: string) => {
@@ -216,10 +225,37 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadUnjudged();
   };
 
-  // ── 選取（跨頁累積；row-key=item_id）──
-  const selectedKeys = ref<string[]>([]);
-  const runCount = computed(() => selectedKeys.value.length);
+  // ── 選取（跨頁累積；selectedKeys＝item_id 業務身分，doRun/export/selectPages 直接用；
+  //   表格 rowKey=finding_id 另經 selectedRowKeys/onSelectionChange 映射，因 1:N 一 review 多列）──
+  const selectedKeys = ref<string[]>([]); // item_id
+  const runCount = computed(() => selectedKeys.value.length); // 已選 review 數
   const clearSelection = () => (selectedKeys.value = []);
+  /** finding_id → 所屬 item_id（`fd_{item_id}__{域}` / `fd_{item_id}` / 未判列＝item_id）。 */
+  const itemIdOf = (key: string): string => {
+    const s = String(key);
+    if (!s.startsWith('fd_')) return s; // 未判列 rowKey＝item_id
+    const body = s.slice(3);
+    const i = body.lastIndexOf('__');
+    return i >= 0 ? body.slice(0, i) : body;
+  };
+  /** 表格 selectedRowKeys（當前頁 finding_id）：由業務 selectedKeys(item_id) 反推供 checkbox 勾選狀態。 */
+  const selectedRowKeys = computed(() => {
+    const set = new Set(selectedKeys.value);
+    return rows.value
+      .filter((r) => set.has(String(r._group ?? itemIdOf(String(r.finding_id)))))
+      .map((r) => String(r.finding_id));
+  });
+  /** 表格勾選變更（finding_id）→ 映射回 item_id；合併保留非本頁既有選取（跨頁）。 */
+  const onSelectionChange = (keys: (string | number)[]) => {
+    const pageItems = new Set(
+      rows.value.map((r) => String(r._group ?? itemIdOf(String(r.finding_id)))),
+    );
+    const picked = new Set(keys.map((k) => itemIdOf(String(k))));
+    selectedKeys.value = [
+      ...selectedKeys.value.filter((id) => !pageItems.has(id)), // 保留非本頁選取
+      ...picked, // 本頁已勾
+    ];
+  };
   const pageSpec = ref('');
   /** 分頁選取（1,2,3,5 / 1~200）：依後端分頁抓對應頁的 item_id 加入選取。 */
   const selectPages = async () => {
@@ -432,7 +468,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     });
   };
 
-  /** 導出 CSV（POST 全量；有勾選→只導已選，否則導符合目前篩選全部）→ blob 下載。 */
+  /** 導出美化 xlsx（POST 全量；有勾選→只導已選 review，否則導符合目前篩選全部；1:N 每條歸因一列）→ blob 下載。 */
   const exportCsv = async () => {
     try {
       const blob = await exportProblems({
@@ -447,10 +483,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = exportName(`歸因列表_${toValue(source)}`, 'csv');
+      a.download = exportName(`歸因列表_${toValue(source)}`, 'xlsx');
       a.click();
       URL.revokeObjectURL(url);
-      Message.success('已導出 CSV');
+      Message.success('已導出 Excel');
     } catch (e: any) {
       Message.error('導出失敗：' + (e?.message || e));
     }
@@ -488,6 +524,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadPage,
     // 選取
     selectedKeys,
+    selectedRowKeys,
+    onSelectionChange,
     runCount,
     clearSelection,
     pageSpec,
