@@ -3,7 +3,7 @@
   "$id": "https://kkday.com/ai-quality/schema/rule.schema.json",
   "$comment": "AI 法官問題分類規則樹標準 v1.0（JSON Schema draft 2020-12）。配對資料檔：data/rule.json。",
   "title": "問題分類規則樹（rule.json）標準 v1.0",
-  "description": "AI 法官三層歸因分類樹的結構與規則唯一驗證標準。L1 歸因域 › L2 面向 › L3 細項；遞迴 children + 非補零 C-code（materialized path / SKOS notation）。每個 L3 葉節點扛完整判準（canon／正反例／鐵則）。欄位語義對齊 W3C SKOS（不引入 RDF）。",
+  "description": "AI 法官三層歸因分類樹的結構與規則唯一驗證標準。L1 歸因域 › L2 面向 › L3 細項；遞迴 children + 非補零 C-code（materialized path / SKOS notation）。每個葉節點扛判準四欄（meaning／canon／allow／forbid，正反例已通用化併入 allow／forbid）。欄位語義對齊 W3C SKOS（不引入 RDF）。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -92,14 +92,11 @@
       "description": "任意層葉節點（無 children）須帶的完整判準；供 l1/l2/l3 共用語意。",
       "type": "object",
       "properties": {
-        "meaning": { "type": "string", "description": "SKOS scopeNote：對旅客的價值／為何重要。" },
-        "rule": { "type": "string", "description": "法典條文 ID（R*/E*/T*），可空。" },
-        "canon": { "type": "string", "description": "SKOS definition：唯一判準。" },
-        "allow": { "$ref": "#/$defs/strList", "description": "✅ 合規寫法。" },
-        "forbid": { "$ref": "#/$defs/strList", "description": "❌ 違規寫法。" },
-        "positive_cases": { "$ref": "#/$defs/strList", "description": "好範例（應判 Pass）。" },
-        "negative_cases": { "$ref": "#/$defs/strList", "description": "壞範例（Red Flag）。" },
-        "machine_clues": { "$ref": "#/$defs/strList", "description": "可程式檢查訊號。" }
+        "canon": { "type": "string", "description": "SKOS definition：唯一判準（一句簡述）。" },
+        "allow": { "$ref": "#/$defs/strList", "description": "✅ 合規寫法／正面邊界。" },
+        "forbid": { "$ref": "#/$defs/strList", "description": "❌ 違規寫法／負面邊界（含跨類「情境 → 歸 X」）。" },
+        "positive_cases": { "$ref": "#/$defs/strList", "description": "好範例（few-shot：清楚屬本類的典型例）。" },
+        "negative_cases": { "$ref": "#/$defs/strList", "description": "壞範例（few-shot：看似屬本類實則他類，「『例』看似X實為Y → 歸 Z」）。" }
       }
     },
     "l1": {
@@ -145,18 +142,15 @@
           "items": { "$ref": "#/$defs/l2" },
           "description": "L2 面向節點清單（分支時）。"
         },
-        "meaning": { "type": "string" },
-        "rule": { "type": "string" },
         "canon": { "type": "string" },
         "allow": { "$ref": "#/$defs/strList" },
         "forbid": { "$ref": "#/$defs/strList" },
         "positive_cases": { "$ref": "#/$defs/strList" },
-        "negative_cases": { "$ref": "#/$defs/strList" },
-        "machine_clues": { "$ref": "#/$defs/strList" }
+        "negative_cases": { "$ref": "#/$defs/strList" }
       },
       "allOf": [
         { "$comment": "分支：有 children 則不得帶判準", "if": { "required": ["children"] }, "then": { "not": { "required": ["canon"] } } },
-        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["meaning", "rule", "canon", "allow", "forbid", "positive_cases", "negative_cases", "machine_clues"] } }
+        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
       ]
     },
     "l2": {
@@ -189,37 +183,31 @@
           "items": { "$ref": "#/$defs/l3" },
           "description": "L3 細項節點清單（分支時）。"
         },
-        "meaning": { "type": "string" },
-        "rule": { "type": "string" },
         "canon": { "type": "string" },
         "allow": { "$ref": "#/$defs/strList" },
         "forbid": { "$ref": "#/$defs/strList" },
         "positive_cases": { "$ref": "#/$defs/strList" },
-        "negative_cases": { "$ref": "#/$defs/strList" },
-        "machine_clues": { "$ref": "#/$defs/strList" }
+        "negative_cases": { "$ref": "#/$defs/strList" }
       },
       "allOf": [
         { "$comment": "分支：有 children 則不得帶判準", "if": { "required": ["children"] }, "then": { "not": { "required": ["canon"] } } },
-        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["meaning", "rule", "canon", "allow", "forbid", "positive_cases", "negative_cases", "machine_clues"] } }
+        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
       ]
     },
     "l3": {
       "title": "L3 細項節點（葉）",
-      "description": "leaf；扛完整判準。分類元數據（meaning/rule）+ 判準本體（canon/允許禁止/正反例/機器規則）。",
+      "description": "leaf；扛判準四欄。分類元數據（meaning）+ 判準本體（canon/允許/禁止，正反例已通用化併入允許/禁止）。",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "code",
         "level",
         "label",
-        "meaning",
-        "rule",
         "canon",
         "allow",
         "forbid",
         "positive_cases",
-        "negative_cases",
-        "machine_clues"
+        "negative_cases"
       ],
       "properties": {
         "code": {
@@ -237,43 +225,25 @@
         "label": {
           "$ref": "#/$defs/label"
         },
-        "meaning": {
-          "type": "string",
-          "description": "SKOS scopeNote：這細項對旅客的價值／為何重要（動機，非判準；已剝離跨域根因標註）。",
-          "examples": [
-            "快速掃描差異價值"
-          ]
-        },
-        "rule": {
-          "type": "string",
-          "description": "法典條文 ID（R*/E*/T*），溯源內容治理法典；可空。",
-          "examples": [
-            "R5"
-          ]
-        },
         "canon": {
           "type": "string",
           "description": "SKOS definition：唯一判準（§1 法典條文，arbiter L3 主依據）。空字串＝待 M1/M3 補。"
         },
         "allow": {
           "$ref": "#/$defs/strList",
-          "description": "✅ 合規寫法（§2 正面邊界）。"
+          "description": "✅ 合規寫法／正面邊界（§2；好範例已通用化併入）。"
         },
         "forbid": {
           "$ref": "#/$defs/strList",
-          "description": "❌ 違規寫法（§2 負面邊界）。"
+          "description": "❌ 違規寫法／負面邊界（§2；含跨類「情境 → 歸 X」）。"
         },
         "positive_cases": {
           "$ref": "#/$defs/strList",
-          "description": "好範例（§3 應判 Pass，SKOS example）。"
+          "description": "好範例（§3 few-shot：清楚屬本類的典型例，SKOS example）。"
         },
         "negative_cases": {
           "$ref": "#/$defs/strList",
-          "description": "壞範例（§4 Red Flag，應判 Flag）。"
-        },
-        "machine_clues": {
-          "$ref": "#/$defs/strList",
-          "description": "可程式檢查訊號（§5，字典／格式比對）。"
+          "description": "壞範例（§4 few-shot：看似屬本類實則他類，「『例』看似X實為Y → 歸 Z」）。"
         }
       }
     }

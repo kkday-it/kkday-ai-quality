@@ -3,3 +3,4 @@ export * from './finding.util';
 export * from './reportPdf';
 export * from './attributionCharts';
 export * from './ruleVersion.util';
+export * from './exportName.util';

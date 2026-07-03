@@ -6,6 +6,7 @@ import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import VChart from 'vue-echarts';
 import { exportBlocksToPdf } from '@/features/judge/utils/reportPdf';
+import { exportName } from '@/features/judge/utils';
 import { buildOption } from '../registry/chartRegistry';
 import type { ChartSpec, GaugeData, BarData } from '../dashboard.types';
 import type { TrendData, IntakeBreakdown, ReviewFunnel, CategoryCoverageRow } from '../types';
@@ -76,7 +77,7 @@ const onExport = async () => {
   try {
     const now = new Date();
     const stamp = now.toLocaleString('zh-TW', { hour12: false });
-    await exportBlocksToPdf([blockRef.value], { title: props.spec.title, generatedAt: stamp, filters: [] }, `${props.spec.id}.pdf`);
+    await exportBlocksToPdf([blockRef.value], { title: props.spec.title, generatedAt: stamp, filters: [] }, exportName(props.spec.id, 'pdf'));
   } catch (e: any) {
     Message.error('匯出失敗：' + (e?.message || e));
   } finally {
