@@ -102,6 +102,7 @@ const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
   { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
   { title: '信心', dataIndex: 'confidence', sortable: { sortDirections: ['ascend', 'descend'] } },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
+  { title: '判決階段', dataIndex: 'judgment_stage', slotName: 'stage' },
 ];
 
 /**

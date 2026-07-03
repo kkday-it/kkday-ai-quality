@@ -1,6 +1,7 @@
 // 歸因列表資料與互動邏輯（分頁 / 篩選 / 選取 / 初判歸因批次 / CSV 導出）——由 AttributionList.vue 下沉，
 // 使頁面薄化為模板+綁定；來源切換時整組篩選按新 schema 清空殘留值。
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
+import judgment from '@config/ai_judge/judgment.json';
 import {
   cancelPrejudge,
   exportProblems,
@@ -309,6 +310,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     source?: string;
     scope?: string;
     product_verticals?: string[];
+    stages?: string[];
+    target_polarity?: string;
+    max_confidence?: number;
   }) => {
     if (running.value) return;
     running.value = true;
@@ -368,29 +372,64 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       Message.error('停止失敗：' + (e?.message || e));
     }
   };
-  // 二次確認彈窗：進行初判/全部未判皆先開彈窗，於其中選 model 配置再確認執行
+  // 初判歸因統一彈窗 + 目標選取（stage 驅動）：於彈窗選範圍/收斂/model 再確認執行
   const confirmOpen = ref(false);
-  const pendingScope = ref<'selected' | 'all'>('selected');
-  const runSelected = () => {
-    if (!selectedKeys.value.length) {
-      Message.warning('請先勾選/分頁選取要分析的列');
+  /** 目標模式：selected＝用勾選列；scope＝依判決階段選取。有勾選預設 selected，否則 scope。 */
+  const targetMode = ref<'selected' | 'scope'>('scope');
+  const targetStages = ref<string[]>(['unjudged']); // 預設只收未判
+  const targetPolarity = ref('negative'); // 再判傾向收斂（勾已判階段時生效）
+  const lowConfOnly = ref(true); // true＝僅低信心(<auto_accept)；false＝全部信心
+  const targetCount = ref(0); // 「將處理 N 筆」預覽
+  /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
+  const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
+
+  /** 依目標模式/條件算「將處理 N 筆」預覽（scope 模式逐階段查 getProblems total 加總；信心收斂無法由列表 API 精算，屬近似）。 */
+  const refreshTargetCount = async () => {
+    if (targetMode.value === 'selected') {
+      targetCount.value = selectedKeys.value.length;
       return;
     }
-    pendingScope.value = 'selected';
-    confirmOpen.value = true;
+    let total = 0;
+    for (const st of targetStages.value) {
+      const r = await getProblems({
+        source: toValue(source),
+        productVerticals: effVerticals.value,
+        limit: 1,
+        ...(st === 'unjudged'
+          ? { judged: false }
+          : { stage: st, ...(targetPolarity.value ? { polarity: targetPolarity.value } : {}) }),
+      });
+      total += r.total || 0;
+    }
+    targetCount.value = total;
   };
-  const runAll = () => {
-    pendingScope.value = 'all';
+
+  /** 開初判歸因彈窗：有勾選預設 selected 模式，否則 scope 模式。 */
+  const openPrejudge = () => {
+    targetMode.value = selectedKeys.value.length ? 'selected' : 'scope';
     confirmOpen.value = true;
+    void refreshTargetCount();
   };
-  /** 二次確認後執行：依 pendingScope 決定範圍，用彈窗內選定的 llmConfigId。 */
+
+  /** 二次確認後執行：selected→item_ids（帶 source，後端據此選對專表）；scope→stage 驅動目標選取。 */
   const doRun = () => {
     confirmOpen.value = false;
-    // selected 分支須帶 source：後端據此選對來源專表（product_reviews 拆表後 item_id 只在專表），
-    // 漏送則 get_items_by_ids 走 spec_for(None) 短路 fallback 查 intake_items → 撈 0 筆、LLM 不被呼叫。
-    if (pendingScope.value === 'selected')
+    if (targetMode.value === 'selected') {
       _run({ item_ids: selectedKeys.value, source: toValue(source) });
-    else _run({ source: toValue(source), scope: 'all', product_verticals: effVerticals.value });
+      return;
+    }
+    _run({
+      source: toValue(source),
+      scope: 'all',
+      product_verticals: effVerticals.value,
+      stages: targetStages.value,
+      ...(hasJudgedStage.value
+        ? {
+            target_polarity: targetPolarity.value || undefined,
+            max_confidence: lowConfOnly.value ? judgment.confidence_tiers.auto_accept : undefined,
+          }
+        : {}),
+    });
   };
 
   /** 導出 CSV（POST 全量；有勾選→只導已選，否則導符合目前篩選全部）→ blob 下載。 */
@@ -460,9 +499,14 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     progressPct,
     costText,
     confirmOpen,
-    pendingScope,
-    runSelected,
-    runAll,
+    openPrejudge,
+    targetMode,
+    targetStages,
+    targetPolarity,
+    lowConfOnly,
+    targetCount,
+    hasJudgedStage,
+    refreshTargetCount,
     doRun,
     pauseJob,
     resumeJob,

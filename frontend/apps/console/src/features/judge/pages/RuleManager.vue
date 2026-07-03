@@ -5,6 +5,7 @@
  */
 import { computed, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
+import { IconDownload } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { getRule, exportRulesXlsx } from '@/api/judgeRules.api';
@@ -118,7 +119,7 @@ async function doExport() {
     a.download = exportName('判決規則', 'xlsx');
     a.click();
     URL.revokeObjectURL(url);
-    Message.success('已導出 Excel');
+    Message.success('已導出規則');
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '導出失敗');
   } finally {
@@ -209,9 +210,13 @@ function doResetAll() {
           <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
         </span>
         <div class="flex-1" />
-        <a-button size="small" :loading="exporting" @click="doExport">導出 Excel</a-button>
-        <a-button size="small" @click="(historyOpen = true)">歷史</a-button>
-        <a-button size="small" @click="doReset">恢復默認</a-button>
+        <!-- 統一操作區：以 type/status 顏色區分主次語義（見 rules/frontend-vue.md 按鈕規範）-->
+        <a-button size="small" type="text" @click="(historyOpen = true)">歷史</a-button>
+        <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
+        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
+          <template #icon><icon-download /></template>
+          導出規則
+        </a-button>
         <a-button
           type="primary"
           size="small"

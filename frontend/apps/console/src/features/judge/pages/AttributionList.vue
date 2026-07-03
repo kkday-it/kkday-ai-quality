@@ -17,6 +17,7 @@ import {
   ALL_PAGINATION,
   POLARITY_LABELS,
   SOURCES,
+  STAGE_LABELS,
   TABLE_DEFAULTS,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
@@ -29,6 +30,15 @@ const POLARITY_COLOR: Record<string, string> = {
   negative: 'red',
   neutral: 'gray',
   unknown: 'orange',
+};
+
+/** 判決階段語義色（未判灰 / 已判決綠 / 待覆核橙 / 待數據補充藍 / 資訊不足灰）。 */
+const STAGE_COLOR: Record<string, string> = {
+  unjudged: 'gray',
+  judged: 'green',
+  pending_review: 'orange',
+  pending_data: 'arcoblue',
+  insufficient: 'gray',
 };
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
@@ -75,9 +85,14 @@ const {
   progressPct,
   costText,
   confirmOpen,
-  pendingScope,
-  runSelected,
-  runAll,
+  openPrejudge,
+  targetMode,
+  targetStages,
+  targetPolarity,
+  lowConfOnly,
+  targetCount,
+  hasJudgedStage,
+  refreshTargetCount,
   doRun,
   pauseJob,
   resumeJob,
@@ -129,15 +144,13 @@ onMounted(init);
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <a-button type="primary" size="small" :loading="running" @click="runSelected">
-        進行初判歸因（已選 {{ runCount }}）
+      <!-- 統一操作區：主行為 primary、次要 outline（見 rules/frontend-vue.md 按鈕規範）-->
+      <a-button type="primary" size="small" :loading="running" @click="openPrejudge">
+        初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <a-button size="small" :loading="running" @click="runAll">
-        全部未判（{{ unjudged }}）
-      </a-button>
-      <a-button size="small" @click="exportCsv">
+      <a-button size="small" type="outline" @click="exportCsv">
         <template #icon><icon-download /></template>
-        導出 CSV（{{ runCount ? `已選 ${runCount}` : '全部篩選' }}）
+        導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
     </div>
   </Teleport>
@@ -317,6 +330,16 @@ onMounted(init);
             }}</span>
             <span v-else class="text-gray-300">—</span>
           </template>
+          <template #stage="{ record }">
+            <a-tag
+              v-if="record.judgment_stage"
+              size="small"
+              :color="STAGE_COLOR[record.judgment_stage as string]"
+            >
+              {{ STAGE_LABELS[record.judgment_stage as string] || record.judgment_stage }}
+            </a-tag>
+            <span v-else class="text-gray-300">—</span>
+          </template>
           <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合 -->
           <template #expand-row="{ record }">
             <a-descriptions
@@ -367,13 +390,56 @@ onMounted(init);
       @ok="doRun"
     >
       <div class="flex flex-col gap-3">
+        <!-- 目標模式：有勾選列才提供「已選」；否則依判決階段選取 -->
+        <a-radio-group
+          v-if="runCount"
+          v-model="targetMode"
+          size="small"
+          @change="refreshTargetCount"
+        >
+          <a-radio value="selected">已選 {{ runCount }} 筆</a-radio>
+          <a-radio value="scope">依判決階段選取</a-radio>
+        </a-radio-group>
+
+        <template v-if="targetMode === 'scope'">
+          <div>
+            <div class="mb-1 text-xs text-gray-500">
+              目標判決階段（預設只判未判；加選已判階段＝再判）
+            </div>
+            <a-checkbox-group v-model="targetStages" @change="refreshTargetCount">
+              <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">
+                {{ lbl }}
+              </a-checkbox>
+            </a-checkbox-group>
+          </div>
+          <!-- 再判收斂：勾選任一已判階段才顯示（預設負向 + 僅低信心）-->
+          <div v-if="hasJudgedStage" class="flex items-center gap-4">
+            <span class="text-xs text-gray-500">再判收斂</span>
+            <a-select
+              v-model="targetPolarity"
+              size="small"
+              style="width: 110px"
+              allow-clear
+              placeholder="傾向"
+              :options="
+                Object.entries(POLARITY_LABELS)
+                  .filter(([k]) => k !== 'unknown')
+                  .map(([value, label]) => ({ value, label }))
+              "
+              @change="refreshTargetCount"
+            />
+            <a-radio-group v-model="lowConfOnly" size="small">
+              <a-radio :value="true">僅低信心</a-radio>
+              <a-radio :value="false">全部信心</a-radio>
+            </a-radio-group>
+          </div>
+        </template>
+
         <div class="text-sm text-[var(--color-text-1)]">
-          將對
-          <b class="text-[rgb(var(--primary-6))]">{{
-            pendingScope === 'all' ? `全部未判 ${unjudged}` : `已選 ${runCount}`
-          }}</b>
+          將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
           筆進行初判歸因（正向不分類，只有負向歸 L1→L3）。
         </div>
+
         <div>
           <div class="mb-1 text-xs text-gray-500">LLM 模型配置（同「設定 › LLM 模型連線」）</div>
           <a-select

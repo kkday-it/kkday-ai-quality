@@ -46,6 +46,11 @@ const canon = computed({
   get: () => props.node.canon ?? '',
   set: (v) => patch('canon', v),
 });
+// label 同 canon 走 computed v-model（統一綁定手法，取代手動 :model-value+@update）
+const label = computed({
+  get: () => props.node.label ?? '',
+  set: (v) => patch('label', v),
+});
 </script>
 
 <template>
@@ -55,29 +60,34 @@ const canon = computed({
     >
       {{ node.code }}
     </div>
-    <a-form-item label="名稱 label">
-      <a-input :model-value="node.label" @update:model-value="patch('label', $event)" />
+    <a-form-item field="label" label="名稱 label">
+      <a-input v-model="label" />
     </a-form-item>
-    <a-form-item label="法典條文 canon">
+    <a-form-item field="canon" label="法典條文 canon">
       <a-textarea v-model="canon" :auto-size="{ minRows: 2 }" />
     </a-form-item>
 
-    <a-form-item v-for="f in LIST_FIELDS" :key="String(f.key)" :label="f.label">
-      <div class="w-full space-y-1">
-        <div
-          v-for="(item, i) in (node[f.key] as string[]) ?? []"
-          :key="i"
-          class="flex items-center gap-1"
-        >
-          <a-input
-            :model-value="item"
-            size="small"
-            @update:model-value="setListItem(f.key, i, $event)"
-          />
-          <a-button size="mini" status="danger" @click="removeListItem(f.key, i)">−</a-button>
+    <!-- 判準清單左右兩欄：第一列 允許｜禁止、第二列 好範例｜壞範例（LIST_FIELDS 順序對應）-->
+    <div class="grid grid-cols-2 gap-x-4">
+      <a-form-item v-for="f in LIST_FIELDS" :key="String(f.key)" :field="String(f.key)" :label="f.label">
+        <div class="w-full space-y-1">
+          <div
+            v-for="(item, i) in (node[f.key] as string[]) ?? []"
+            :key="i"
+            class="flex items-start gap-1"
+          >
+            <!-- textarea 自動撐高：長條目換行完整顯示、不截斷 -->
+            <a-textarea
+              :model-value="item"
+              size="small"
+              :auto-size="{ minRows: 1 }"
+              @update:model-value="setListItem(f.key, i, $event)"
+            />
+            <a-button size="mini" status="danger" @click="removeListItem(f.key, i)">−</a-button>
+          </div>
+          <a-button size="mini" long @click="addListItem(f.key)">＋ 新增一條</a-button>
         </div>
-        <a-button size="mini" long @click="addListItem(f.key)">＋ 新增一條</a-button>
-      </div>
-    </a-form-item>
+      </a-form-item>
+    </div>
   </a-form>
 </template>

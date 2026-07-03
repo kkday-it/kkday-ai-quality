@@ -74,17 +74,23 @@ function setCodes(name: string, codes: string[]) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4 overflow-auto p-1">
-    <div class="flex items-center gap-2">
-      <a-input
-        v-model="newGroupName"
-        size="small"
-        style="width: 200px"
-        placeholder="新分組名（如 Tour）"
-        @press-enter="addGroup"
-      />
-      <a-button size="small" type="primary" @click="addGroup">＋ 新增分組</a-button>
-    </div>
+  <a-form
+    :model="model"
+    layout="vertical"
+    size="small"
+    class="flex h-full flex-col gap-4 overflow-auto p-1"
+  >
+    <a-form-item field="newGroupName" label="新增分組" class="mb-0">
+      <a-space>
+        <a-input
+          v-model="newGroupName"
+          style="width: 200px"
+          placeholder="新分組名（如 Tour）"
+          @press-enter="addGroup"
+        />
+        <a-button type="primary" @click="addGroup">＋ 新增分組</a-button>
+      </a-space>
+    </a-form-item>
 
     <a-empty v-if="!groupNames.length" description="尚無分組，於上方新增第一個分組" />
     <div v-else class="flex flex-col gap-3">
@@ -97,13 +103,14 @@ function setCodes(name: string, codes: string[]) {
             </a-popconfirm>
           </div>
         </template>
-        <a-input-tag
-          :model-value="model.groups[name]"
-          size="small"
-          placeholder="輸入 CATEGORY 代碼後 Enter（如 CATEGORY_019）"
-          @update:model-value="(v) => setCodes(name, v as string[])"
-        />
+        <a-form-item :field="`groups.${name}`" hide-label class="mb-0">
+          <a-input-tag
+            :model-value="model.groups[name]"
+            placeholder="輸入 CATEGORY 代碼後 Enter（如 CATEGORY_019）"
+            @update:model-value="(v) => setCodes(name, v as string[])"
+          />
+        </a-form-item>
       </a-card>
     </div>
-  </div>
+  </a-form>
 </template>

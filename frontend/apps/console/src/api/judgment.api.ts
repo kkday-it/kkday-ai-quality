@@ -6,6 +6,8 @@ export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
   polarity?: string;
+  /** 判決階段篩選（unjudged/judged/pending_review/pending_data/insufficient）。 */
+  stage?: string;
   /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
   scores?: number[];
   /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
@@ -32,6 +34,7 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   if (params.source) q.set('source', params.source);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity) q.set('polarity', params.polarity);
+  if (params.stage) q.set('stage', params.stage);
   if (params.scores?.length) q.set('scores', params.scores.join(','));
   if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
@@ -83,6 +86,10 @@ export const startPrejudge = (body: {
   scope?: string;
   llm_config_id?: string;
   product_verticals?: string[];
+  /** 目標選取（scope=all；stage 驅動）：階段清單/傾向收斂/信心上限。 */
+  stages?: string[];
+  target_polarity?: string;
+  max_confidence?: number;
 }) =>
   j(`${BASE}/v1/judgment/prejudge`, {
     method: 'POST',

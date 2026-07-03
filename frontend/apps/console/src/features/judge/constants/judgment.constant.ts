@@ -7,3 +7,6 @@ export const TIER_LABELS: Record<string, string> = judgment.tier_labels;
 
 /** 傾向 code → 繁中 label（positive / negative / neutral / unknown）。 */
 export const POLARITY_LABELS: Record<string, string> = judgment.polarity_labels;
+
+/** 判決階段 code → 繁中 label（unjudged / judged / pending_review / pending_data / insufficient）。 */
+export const STAGE_LABELS: Record<string, string> = judgment.stage_labels;
