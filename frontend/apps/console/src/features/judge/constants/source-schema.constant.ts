@@ -148,7 +148,8 @@ const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
       { key: 'prod_name', label: '商品名稱', span: 2 },
       { key: 'product_category_main', label: '商品分類', span: 1 },
       { key: 'pkg_oid', label: '方案OID', span: 1 },
-      { key: 'package_name', label: '方案名稱', span: 3 },
+      { key: 'package_name', label: '方案名稱', span: 2 },
+      { key: 'lang', label: '商品語系', span: 1 }, // lang_code＝商品語系（非導覽語系），歸商品資訊
     ],
   },
   {
@@ -159,25 +160,18 @@ const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
       { key: 'title', label: '評論標題', span: 1 },
       { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
       { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
-      { key: 'content', label: '評論內容', span: 4 },
+      // 評論內容 ‖ 問題摘要 並列：左＝完整原文、右＝主歸因標出的痛點片段（原判決資訊區的
+      // 依據/判決理由已移除——依據＝問題摘要複製、判決理由永遠空，見 prejudge 產出）。
+      { key: 'content', label: '評論內容', span: 2 },
+      { key: 'problem_summary', label: '問題摘要', span: 2 },
     ],
   },
   {
     title: '旅客資訊',
     column: 4,
     fields: [
-      { key: 'lang', label: '商品語系', span: 1 }, // lang_code 直接顯示，非導覽語系
-      { key: 'member_uuid', label: '會員UUID', span: 2 },
+      { key: 'member_uuid', label: '會員UUID', span: 3 },
       { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
-    ],
-  },
-  {
-    title: '判決資訊',
-    column: 4,
-    fields: [
-      { key: 'problem_summary', label: '問題摘要', span: 2 },
-      { key: 'evidence_quote', label: '判決依據', span: 2 },
-      { key: 'reason', label: '判決理由', span: 4 },
     ],
   },
 ];
@@ -208,9 +202,7 @@ const FALLBACK_EXPAND_GROUPS: ExpandGroupDef[] = [
     column: 1,
     fields: [
       { key: 'content', label: '內容全文' },
-      { key: 'problem_summary', label: '問題摘要' },
-      { key: 'evidence_quote', label: '判決依據' },
-      { key: 'reason', label: '判決理由' },
+      { key: 'problem_summary', label: '問題摘要' }, // 依據/判決理由已移除（重複/永遠空）
     ],
   },
 ];

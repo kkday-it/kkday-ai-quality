@@ -968,6 +968,7 @@ _EXPORT_COLS: list[tuple[str, str]] = [
     ("商品ID", "prod_oid"),
     ("商品名稱", "prod_name"),
     ("評論", "content"),
+    ("問題摘要", "problem_summary"),  # 緊接評論後：主歸因標出的痛點片段（依據/判決理由已移除）
     ("星等", "score"),
     ("評論時間", "occurred_at"),
     ("出發日", "go_date"),
@@ -979,8 +980,6 @@ _EXPORT_COLS: list[tuple[str, str]] = [
     ("信心", "confidence"),
     ("原始信心", "raw_confidence"),
     ("分層", "confidence_tier"),
-    ("問題摘要", "problem_summary"),
-    ("依據", "reason"),
 ]
 
 # 導出 xlsx 欄位（標題, 記錄鍵, 欄寬）：特徵 id（source_id）第一列取代 item_id、加判決階段；1:N 每條歸因一列
@@ -990,6 +989,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("商品ID", "prod_oid", 12),
     ("商品名稱", "prod_name", 28),
     ("評論", "content", 48),
+    ("問題摘要", "problem_summary", 40),  # 緊接評論後：主歸因標出的痛點片段（依據/判決理由已移除）
     ("星等", "score", 8),
     ("評論時間", "occurred_at", 20),
     ("出發日", "go_date", 14),
@@ -1001,8 +1001,6 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("信心", "confidence", 8),
     ("分層", "confidence_tier", 12),
     ("判決階段", "judgment_stage", 12),
-    ("問題摘要", "problem_summary", 40),
-    ("依據", "reason", 40),
 ]
 
 # 判決顯示 label + 信心閾值 SSOT＝config/ai_judge/judgment.json（前後端同讀）。
@@ -1138,9 +1136,10 @@ def export_problems_xlsx(
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
     ws.append([c[0] for c in _EXPORT_XLSX_COLS])
     # 歸因級欄（逐條歸因不同）vs review 級欄（同一 review 相同 → 合併儲存格）
+    # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級
     _attr_keys = {
         "l1_label", "l2_label", "l3_label", "confidence", "confidence_tier",
-        "judgment_stage", "problem_summary", "reason",
+        "judgment_stage", "problem_summary",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
