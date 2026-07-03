@@ -27,6 +27,21 @@ paths:
 - 需要圖表 → 用 `vue-echarts` 的 `<v-chart>`，不引入其他圖表庫
 - **元件薄**：只管渲染 + 互動，業務邏輯下沉 composable / util；function > 50 行或元件塞多職責 → 拆分
 
+## 按鈕與操作區（視覺區分主次 · 強制）
+
+同一操作區（toolbar / 卡片動作列 / 彈窗 footer）並排多顆按鈕時，**禁止整排同色同樣式**（全 default 或全同型），須以 Arco `type` / `status` 依語義區分主次，讓使用者一眼分辨主行為與破壞性操作：
+
+| 語義 | Arco 樣式 | 例 |
+|---|---|---|
+| **主行為**（該區唯一最重要、確認/提交） | `type="primary"` | 儲存、確認、送出 |
+| **次要行為**（並列可選動作） | `type="outline"` | 導出、匯入、複製 |
+| **破壞性/需謹慎**（重置、刪除、清空） | `type="outline" status="warning"`（刪除用 `status="danger"`） | 恢復默認、刪除 |
+| **純檢視/輕量**（開彈窗看、切換） | `type="text"` | 歷史、詳情 |
+
+- 主行為**每區至多一顆** primary；其餘不得搶佔主色。
+- 有明確語義的動作**配對應 icon**（導出→`icon-download`、新增→`icon-plus`、刷新→`icon-refresh`），icon 從 `@arco-design/web-vue/es/icon` 具名 import。
+- 破壞性操作除變色外，仍須二次確認（`a-modal` / `Modal.confirm`），顏色不替代確認。
+
 ## 懶加載 / Code-splitting（預設機制）
 
 首屏不需要的一律延遲載入，縮小初始 bundle（呼應 06 quality-targets：單路由 JS < 200KB gzip）：
