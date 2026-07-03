@@ -2,8 +2,8 @@
 """Rule 覆蓋率 + 品質稽核報表（Phase A · 純讀取，不改資料）。
 
 兩份報表:
-1. 靜態品質稽核 — 掃 config/ai_judge/rule_C-*.json 的 229 個 L3,對「厚判準」欄位
-   (canon/allow/forbid/positive_cases/negative_cases/machine_clues) 評完整度,產弱判準
+1. 靜態品質稽核 — 掃 config/ai_judge/rule_C-*.json 的葉節點,對判準欄位
+   (canon/allow/forbid/positive_cases/negative_cases) 評完整度,產弱判準
    優先補全清單。verdict / verdict_rules 屬正在移除的軸B,不列入評分(只在附註提示)。
 2. 命中覆蓋率 — 對現有 judgments 舊資料的 data JSON 聚合 l3_code 命中次數,交叉出:
    - 從未命中的 L3(rule 有、資料無)
@@ -31,15 +31,14 @@ _REPORTS_DIR = _ROOT / "data" / "reports"
 
 # canon 判準本體視為「過短」的字元門檻(短於此幾乎無法承載一條可判的法典條文)
 _CANON_MIN_LEN = 12
-# 厚判準欄位權重(canon 為判準本體,權重最高;正反例次之;機器線索輔助)
-# 刻意排除 verdict / verdict_rules —— 軸B 判決維度正在 Phase B 移除,不應計入品質分。
+# 判準欄位權重(canon 為判準本體,權重最高;allow/forbid 為分類邊界;好壞範例為 few-shot)。
+# 欄位＝canon/allow/forbid/positive_cases/negative_cases(移除 meaning/rule/machine_clues)。
 _FIELD_WEIGHTS: dict[str, float] = {
-    "canon": 0.35,
+    "canon": 0.4,
     "allow": 0.15,
     "forbid": 0.15,
     "positive_cases": 0.15,
-    "negative_cases": 0.12,
-    "machine_clues": 0.08,
+    "negative_cases": 0.15,
 }
 
 
@@ -78,13 +77,12 @@ def _flatten_l3(rule_file: Path) -> list[dict[str, Any]]:
                     "l2_label": l2_label,
                     "l3_label": l3.get("label", ""),
                     "thick_status": thick_status,
-                    # 厚判準原始值(供完整度評分)
+                    # 判準原始值(供完整度評分)
                     "canon": l3.get("canon", ""),
                     "allow": l3.get("allow", []),
                     "forbid": l3.get("forbid", []),
                     "positive_cases": l3.get("positive_cases", []),
                     "negative_cases": l3.get("negative_cases", []),
-                    "machine_clues": l3.get("machine_clues", []),
                 }
             )
     return out

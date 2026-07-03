@@ -1,7 +1,7 @@
 """從 config/ai_judge/rule_C-*.json 重生 data/問題分類層級結構.xlsx（每域一分頁，L3 判準逐列）。
 
-rebuild 後為 verdict-less 單軸：欄位＝L1 域 / L2 / L3 / 意義 / Rule / canon / allow / forbid /
-正反例 / 機器線索（無 verdict / 判決鐵則）。分頁名＝「C-N 域label」對齊規則管理 UI。
+判準精煉後三欄：欄位＝L1 域 / L2 / L3 / canon / allow / forbid（正反例已通用化併入 allow/forbid，
+移除 meaning/rule/機器線索）。分頁名＝「C-N 域label」對齊規則管理 UI。
 
 用法：python scripts/gen_taxonomy_xlsx.py
 """
@@ -20,17 +20,14 @@ HEADERS = [
     "L1 歸因域",
     "L2 面向／子因",
     "L3 細項",
-    "欄位意義",
-    "Rule",
     "法典條文 canon",
     "允許 allow",
     "禁止 forbid",
     "好範例 positive",
     "壞範例 negative",
-    "機器線索 clues",
 ]
 # 各欄寬（對齊 HEADERS 順序）
-WIDTHS = [14, 16, 16, 28, 8, 40, 32, 32, 32, 32, 24]
+WIDTHS = [14, 16, 16, 44, 36, 36, 36, 36]
 
 
 def _cell(v: object) -> str:
@@ -41,27 +38,28 @@ def _cell(v: object) -> str:
 
 
 def _collect(node: dict, l1_label: str, l2_label: str, out: list[list[str]]) -> None:
-    """遞迴走訪 L1›L2›L3；遇 L2 更新 l2_label，遇 L3 葉輸出一列判準。"""
+    """遞迴走訪；遇 L2 更新 l2_label，遇葉節點（無 children，支援變深度）輸出一列判準。"""
     label = node.get("label", "")
-    if node.get("level") == 2:
+    level = node.get("level") or 0
+    if level == 2:
         l2_label = label
-    if node.get("level") == 3:
+    children = node.get("children", [])
+    if not children:  # 葉節點（變深度：可能落在 L2 或 L3）
+        l3 = label if level >= 3 else ""
         out.append(
             [
                 l1_label,
                 l2_label,
-                label,
-                node.get("meaning", ""),
-                node.get("rule", ""),
+                l3,
                 node.get("canon", ""),
                 _cell(node.get("allow")),
                 _cell(node.get("forbid")),
                 _cell(node.get("positive_cases")),
                 _cell(node.get("negative_cases")),
-                _cell(node.get("machine_clues")),
             ]
         )
-    for child in node.get("children", []):
+        return
+    for child in children:
         _collect(child, l1_label, l2_label, out)
 
 
