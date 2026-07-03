@@ -1,26 +1,31 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores';
-import { Message } from '@arco-design/web-vue';
-import { ref } from 'vue';
+import { Message, type FormInstance } from '@arco-design/web-vue';
+import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
 const auth = useAuthStore();
 
 const mode = ref<'login' | 'register'>('login');
-const email = ref('');
-const password = ref('');
+// 穩定 reactive model（取代 :model={email,password} 字面量，Arco 才追得到欄位路徑）
+const form = reactive({ email: '', password: '' });
+const formRef = ref<FormInstance>();
+const rules = {
+  email: [{ required: true, message: '請輸入 Email' }],
+  password: [
+    { required: true, message: '請輸入密碼' },
+    { minLength: 6, message: '密碼至少 6 碼' },
+  ],
+};
 const submitting = ref(false);
 
 const submit = async () => {
-  if (!email.value.trim() || !password.value) {
-    Message.warning('請輸入 email 與密碼');
-    return;
-  }
+  if (await formRef.value?.validate()) return; // 有錯 → 行內顯示、不送出
   submitting.value = true;
   try {
-    if (mode.value === 'login') await auth.login(email.value.trim(), password.value);
-    else await auth.register(email.value.trim(), password.value);
+    if (mode.value === 'login') await auth.login(form.email.trim(), form.password);
+    else await auth.register(form.email.trim(), form.password);
     Message.success(mode.value === 'login' ? '登入成功' : '註冊成功');
     router.push('/');
   } catch (e: any) {
@@ -38,18 +43,18 @@ const submit = async () => {
       <div class="mb-[18px] mt-1 text-[13px] text-[#86909c]">
         {{ mode === 'login' ? '登入以繼續' : '註冊新帳號' }}
       </div>
-      <a-form :model="{ email, password }" layout="vertical" @submit.prevent>
-        <a-form-item label="Email">
+      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical" @submit.prevent>
+        <a-form-item field="email" label="Email">
           <a-input
-            v-model="email"
+            v-model="form.email"
             placeholder="you@example.com"
             allow-clear
             @keyup.enter="submit"
           />
         </a-form-item>
-        <a-form-item label="密碼（至少 6 碼）">
+        <a-form-item field="password" label="密碼（至少 6 碼）">
           <a-input-password
-            v-model="password"
+            v-model="form.password"
             placeholder="密碼"
             allow-clear
             @keyup.enter="submit"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { isNil } from 'lodash-es';
-import { Message } from '@arco-design/web-vue';
+import { Message, type FormInstance } from '@arco-design/web-vue';
 import { testLlm } from '@/api';
 import { Terminal } from '@/components';
 import { MODEL_MIN_VERSION, PROVIDERS, REASONING } from '../constants';
@@ -80,11 +80,14 @@ const buildConfig = (): LlmConfig => ({
   reasoning_effort: form.value.reasoning_effort,
 });
 
-const onSave = () => {
-  if (!form.value.model) {
-    Message.warning('請選擇或輸入 Model');
-    return;
-  }
+// Arco 宣告式驗證：Model 必填走 rules + formRef.validate()（取代手寫 Message.warning）
+const formRef = ref<FormInstance>();
+const rules = {
+  model: [{ required: true, message: '請選擇或輸入 Model' }],
+};
+
+const onSave = async () => {
+  if (await formRef.value?.validate()) return; // 有錯 → 行內顯示、不送出
   saving.value = true;
   const tokenPatch =
     tokenDirty.value && form.value.api_token
@@ -159,8 +162,8 @@ watch(testResult, async (r) => {
 </script>
 
 <template>
-  <a-form :model="form" layout="vertical">
-    <a-form-item label="供應商">
+  <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
+    <a-form-item field="provider" label="供應商">
       <a-select
         :model-value="selectedProvider"
         placeholder="選擇供應商，自動帶入 base_url 與 model 清單"
@@ -170,7 +173,7 @@ watch(testResult, async (r) => {
       </a-select>
     </a-form-item>
 
-    <a-form-item label="API Token">
+    <a-form-item field="api_token" label="API Token">
       <a-input-password
         v-model="form.api_token"
         :placeholder="hasToken ? '已設定（留空不變更）' : '請輸入 token（sk-... / Gemini key）'"
@@ -184,7 +187,7 @@ watch(testResult, async (r) => {
       </template>
     </a-form-item>
 
-    <a-form-item label="Model">
+    <a-form-item field="model" label="Model">
       <a-select
         v-model="form.model"
         allow-create
@@ -198,13 +201,13 @@ watch(testResult, async (r) => {
       </a-select>
     </a-form-item>
 
-    <a-form-item label="Base URL">
+    <a-form-item field="base_url" label="Base URL">
       <a-input v-model="form.base_url" placeholder="空＝OpenAI 預設端點" allow-clear />
     </a-form-item>
 
     <a-row :gutter="12">
       <a-col :span="16">
-        <a-form-item label="Temperature">
+        <a-form-item field="temperature" label="Temperature">
           <a-space>
             <a-switch v-model="useTemp" />
             <span class="text-xs text-[#86909c]">{{
@@ -223,7 +226,7 @@ watch(testResult, async (r) => {
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="思考模式 Thinking">
+        <a-form-item field="thinking" label="思考模式 Thinking">
           <a-space>
             <a-switch v-model="form.thinking" checked-value="on" unchecked-value="off" />
             <span class="text-xs text-[#86909c]">{{ form.thinking === 'on' ? '開啟' : '關閉' }}</span>
@@ -232,7 +235,7 @@ watch(testResult, async (r) => {
       </a-col>
     </a-row>
 
-    <a-form-item label="Reasoning effort">
+    <a-form-item field="reasoning_effort" label="Reasoning effort">
       <a-radio-group v-model="form.reasoning_effort" type="button" size="small">
         <a-radio v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-radio>
       </a-radio-group>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { Message } from '@arco-design/web-vue';
+import { Message, type FormInstance } from '@arco-design/web-vue';
 import qcDefaults from '@config/global/qc_db.json';
 import { testQcDb } from '@/api';
 import type { QcDbTestResult } from '@/api';
@@ -76,7 +76,15 @@ const buildConfig = (): QcConfig => ({
   schemas: form.value.schemas,
 });
 
-const onSave = () => {
+// Arco 宣告式驗證：required 欄走 rules + formRef.validate()（取代散落的手寫 Message.warning）
+const formRef = ref<FormInstance>();
+const rules = {
+  host: [{ required: true, message: '請輸入 Host' }],
+  user: [{ required: true, message: '請輸入 User' }],
+};
+
+const onSave = async () => {
+  if (await formRef.value?.validate()) return; // 有錯 → 行內顯示、不送出
   if (!form.value.names.length) {
     Message.warning('請先「測試連線」並選擇至少一個資料庫');
     return;
@@ -144,12 +152,12 @@ watch(testResult, async (r) => {
 </script>
 
 <template>
-  <a-form :model="form" layout="vertical">
-    <a-form-item label="連線名稱">
+  <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
+    <a-form-item field="label" label="連線名稱">
       <a-input v-model="form.label" placeholder="可自訂名稱（預設 QC DB + 時間戳）" allow-clear />
     </a-form-item>
 
-    <a-form-item label="環境">
+    <a-form-item field="env" label="環境">
       <a-radio-group v-model="form.env" type="button" @change="onEnvChange">
         <a-radio v-for="e in ENVS" :key="e.id" :value="e.id">{{ e.label }}</a-radio>
       </a-radio-group>
@@ -157,12 +165,12 @@ watch(testResult, async (r) => {
 
     <a-row :gutter="12">
       <a-col :span="16">
-        <a-form-item label="Host">
+        <a-form-item field="host" label="Host">
           <a-input v-model="form.host" :placeholder="envOf(form.env).host" allow-clear />
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="Port">
+        <a-form-item field="port" label="Port">
           <a-input-number
             v-model="form.port"
             :min="1"
@@ -176,12 +184,12 @@ watch(testResult, async (r) => {
 
     <a-row :gutter="12">
       <a-col :span="12">
-        <a-form-item label="User">
+        <a-form-item field="user" label="User">
           <a-input v-model="form.user" placeholder="資料庫帳號" allow-clear />
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="Password">
+        <a-form-item field="password" label="Password">
           <a-input-password
             v-model="form.password"
             :placeholder="hasPassword ? '已設定（留空不變更）' : '請輸入密碼'"
@@ -206,7 +214,7 @@ watch(testResult, async (r) => {
       </a-alert>
       <a-row :gutter="12">
         <a-col :span="12">
-          <a-form-item label="Database（可多選）">
+          <a-form-item field="names" label="Database（可多選）">
             <a-select
               v-model="form.names"
               multiple
@@ -219,7 +227,7 @@ watch(testResult, async (r) => {
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="Schema（可多選）">
+          <a-form-item field="schemas" label="Schema（可多選）">
             <a-select
               v-model="form.schemas"
               multiple
