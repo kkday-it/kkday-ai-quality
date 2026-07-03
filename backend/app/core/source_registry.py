@@ -28,14 +28,43 @@ class SourceSpec:
     date_col: str = "occurred_at"  # 預設日期篩選欄（date_field='occurred_at' 對應）
 
 
-# 已拆表來源登記（value=source code → SourceSpec）。
+# 5 反饋來源登記（value=source code → SourceSpec）。各表對齊源 schema、PK=特徵 id；
+# canonical 顯示欄映射走 config/ai_judge/source_mapping.json 的 field_map（源欄→canonical）。
+# score_col/category_col/date_col 為「該來源實際源欄名」（供 list score 篩選 / vertical 篩選 / 日期排序）。
 _REGISTRY: dict[str, SourceSpec] = {
     "product_reviews": SourceSpec(
         source="product_reviews",
         table=T.product_reviews,
-        natural_key="source_record_id",
+        natural_key="rec_oid",
+        score_col="rec_scores",
+        category_col="product_category",
+        date_col="create_date",
+    ),
+    "conversations": SourceSpec(
+        source="conversations",
+        table=T.conversations,
+        natural_key="session_oid",
+        date_col="session_create_date",
+    ),
+    "freshdesk_tickets": SourceSpec(
+        source="freshdesk_tickets",
+        table=T.freshdesk_tickets,
+        natural_key="id",
+        score_col="st_survey_rating",
+        date_col="created_at",
+    ),
+    "app_feedback": SourceSpec(
+        source="app_feedback",
+        table=T.app_feedback,
+        natural_key="oid",
         score_col="score",
-        category_col="product_category_main",
+        date_col="created_datetime",
+    ),
+    "mixpanel_tracker": SourceSpec(
+        source="mixpanel_tracker",
+        table=T.mixpanel_tracker,
+        natural_key="insert_id",
+        date_col="time",
     ),
 }
 

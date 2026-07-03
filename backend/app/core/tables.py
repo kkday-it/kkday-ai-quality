@@ -54,7 +54,12 @@ judgments = Table(
     "judgments",
     metadata,
     Column("finding_id", Text, primary_key=True),
-    Column("item_id", Text),
+    # ── 來源複合鍵 (source, source_id)：關聯回來源表（source 定表、source_id 對該表特徵 id）──
+    # 取代舊 item_id 複合字串（`{source}-{natural_id}`）。source_id 存特徵 id 原值
+    # （product_reviews→rec_oid / conversations→session_oid / freshdesk_tickets→id /
+    #  app_feedback→oid / mixpanel_tracker→insert_id）。
+    Column("source", Text),
+    Column("source_id", Text),
     Column("prod_oid", Text),
     Column("pkg_oid", Text),
     Column("dimension", Text),
@@ -69,46 +74,125 @@ judgments = Table(
     Column("data", Text),
     Column("status", Text),
     Column("created_at", Text),
-    # 反饋來源標記（product_reviews 拆表後，判決結果須知道 item_id 屬哪個來源表才能正確 join 回原始列）
-    Column("source", Text),
     Index("idx_judgments_source", "source"),
-    # item_id 是所有歸因查詢（list_problems / overview / breakdown / unjudged）與 intake/專表
-    # outerjoin 的鍵；缺此索引時對 8 萬列做 nested-loop/seq-scan → 列表與縱覽載入緩慢。加索引消除瓶頸。
-    Index("idx_judgments_item_id", "item_id"),
+    # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件（取代舊 idx_judgments_item_id）
+    Index("idx_judgments_source_id", "source", "source_id"),
 )
 
-# product_reviews：從 intake_items 拆出的獨立實體表（5 反饋來源中唯一已拆分者；
-# 其餘 4 來源仍沿用 intake_items 通用表，見 source_registry.py 的選表邏輯）。
-# PK 刻意命名 xid（非 id/oid）：避開來源自身 rec_oid / order_oid 等欄位撞名造成混淆。
+# ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────
+# 統一經 source_registry（table + natural_key）+ config/ai_judge/source_mapping.json（源欄→canonical）
+# 產出顯示層 canonical 欄（content/score/occurred_at…）。欄位一律 Text（忠實 raw；巢狀 JSON 於
+# _enrich 端解析，如 product_reviews.order_snap_json → prod_name）。
 product_reviews = Table(
     "product_reviews",
     metadata,
-    Column("xid", BigInteger, primary_key=True, autoincrement=True),
-    Column("source_record_id", Text, unique=True),  # 自然鍵：CSV 原始 rec_oid
-    Column("item_id", Text, unique=True),  # 決定性生成：f"product_reviews-{rec_oid}"
+    Column("rec_oid", Text, primary_key=True),  # 特徵 id
     Column("member_uuid", Text),
+    Column("create_date", Text),  # canonical occurred_at
+    Column("rec_title", Text),  # canonical title
+    Column("rec_desc", Text),  # canonical content（判決主輸入）
+    Column("rec_scores", Text),  # canonical score
     Column("traveller_type", Text),
-    Column("lang", Text),
-    Column("occurred_at", Text),  # 評論時間（排序/分頁用）
-    Column("title", Text),
-    Column("content", Text),  # 判決主輸入
-    Column("score", Integer),
+    Column("lang_code", Text),  # canonical lang
     Column("prod_oid", Text),
     Column("pkg_oid", Text),
     Column("order_oid", Text),
     Column("order_mid", Text),  # ⚠️ 會員 id（個資）
     Column("supplier_oid", Text),
-    Column("product_category_main", Text),  # 商品分類主碼（如 CATEGORY_082）
-    Column("product_category_sub", JSONB),  # 子分類清單
-    Column("go_date", Text),  # 出發日
-    Column("prod_name_snapshot", JSONB),  # 多語商品名快照（展開行用）
-    Column("status", Text),
-    Column("created_at", Text),
-    Column("raw", Text),  # 兜底：field_map 未涵蓋的原始欄
-    Index("idx_product_reviews_score", "score"),
-    Index("idx_product_reviews_category_main", "product_category_main"),
-    Index("idx_product_reviews_occurred_at", "occurred_at"),
+    Column("order_snap_json", Text),  # 多語商品名快照 JSON（enrich 解析 prod_name/package_name）
+    Column("lst_dt_go", Text),  # canonical go_date（出發日）
+    Column("product_category", Text),  # 商品分類（enrich 解析 main/sub）
+    Index("idx_product_reviews_create_date", "create_date"),
     Index("idx_product_reviews_prod_oid", "prod_oid"),
+    Index("idx_product_reviews_product_category", "product_category"),
+)
+
+conversations = Table(
+    "conversations",
+    metadata,
+    Column("session_oid", Text, primary_key=True),  # 特徵 id
+    Column("zendesk_ticket_id", Text),
+    Column("session_create_date", Text),  # canonical occurred_at
+    Column("order_oid", Text),
+    Column("order_mid", Text),
+    Column("sessionable_type", Text),  # canonical channel
+    Column("sessionable_id", Text),
+    Column("prod_oid", Text),
+    Column("session_direction", Text),
+    Column("supplier_oid", Text),
+    Column("msg_handler", Text),
+    Column("aggregated_messages", Text),  # canonical content
+    Column("prod_bd_tag_note", Text),
+    Column("prod_name_zh_tw", Text),
+    Column("order_profit", Text),
+    Index("idx_conversations_create_date", "session_create_date"),
+    Index("idx_conversations_prod_oid", "prod_oid"),
+)
+
+freshdesk_tickets = Table(
+    "freshdesk_tickets",
+    metadata,
+    Column("id", Text, primary_key=True),  # 特徵 id
+    Column("display_id", Text),
+    Column("ticket_type", Text),
+    Column("subject", Text),  # canonical title
+    Column("description", Text),  # canonical content
+    Column("notes", Text),
+    Column("attachments", Text),
+    Column("st_survey_rating", Text),  # canonical score
+    Column("product_id", Text),  # canonical prod_oid
+    Column("custom_field", Text),
+    Column("tags", Text),
+    Column("status_name", Text),
+    Column("priority_name", Text),
+    Column("source_name", Text),  # canonical channel
+    Column("created_at", Text),  # canonical occurred_at
+    Column("updated_at", Text),
+    Column("requester_id", Text),
+    Column("parent_ticket_id", Text),
+    Index("idx_freshdesk_created_at", "created_at"),
+    Index("idx_freshdesk_product_id", "product_id"),
+)
+
+app_feedback = Table(
+    "app_feedback",
+    metadata,
+    Column("oid", Text, primary_key=True),  # 特徵 id
+    Column("created_datetime", Text),  # canonical occurred_at
+    Column("comment", Text),  # canonical content
+    Column("score", Text),  # canonical score
+    Column("source", Text),  # 來源渠道（app 端，與 judgments.source 不同語意）
+    Column("lang_code", Text),  # canonical lang
+    Column("version", Text),
+    Index("idx_app_feedback_created", "created_datetime"),
+)
+
+mixpanel_tracker = Table(
+    "mixpanel_tracker",
+    metadata,
+    Column("insert_id", Text, primary_key=True),  # 特徵 id（源 $insert_id 淨化）
+    Column("event", Text),  # canonical channel
+    Column("time", Text),  # canonical occurred_at
+    Column("distinct_id", Text),  # 源 $distinct_id 淨化
+    Column("feedback_signal", Text),
+    Column("negative_items", Text),  # canonical content
+    Column("display_style", Text),
+    Column("order_mid", Text),
+    Column("order_status", Text),
+    Column("order_master_mid", Text),
+    Column("is_marketplace", Text),
+    Column("prod_mid", Text),  # canonical prod_oid
+    Column("pkg_oid", Text),
+    Column("prod_city_code", Text),
+    Column("prod_country_code", Text),
+    Column("prod_info", Text),
+    Column("bd_tag", Text),
+    Column("msg_handler", Text),
+    Column("current_url", Text),  # 源 $current_url 淨化
+    Column("platform", Text),  # 源 Platform 淨化
+    Column("mp_country_code", Text),
+    Column("os", Text),  # 源 $os 淨化
+    Index("idx_mixpanel_time", "time"),
 )
 
 batches = Table(

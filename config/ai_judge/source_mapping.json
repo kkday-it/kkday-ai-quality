@@ -85,7 +85,7 @@
     "mixpanel_tracker": {
       "required_headers": ["event", "feedback_signal"],
       "field_map": {
-        "$insert_id": "source_record_id",
+        "insert_id": "source_record_id",
         "time": "occurred_at",
         "negative_items": "content",
         "event": "channel",
