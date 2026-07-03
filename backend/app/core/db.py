@@ -1057,6 +1057,15 @@ def _export_cell(key: str, value) -> str:
     return value
 
 
+# openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
+_XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _xlsx_safe(value):
+    """xlsx 格值清洗：str 剔除 openpyxl 非法控制字元（否則 IllegalCharacterError）；非 str 原樣。"""
+    return _XLSX_ILLEGAL_RE.sub("", value) if isinstance(value, str) else value
+
+
 def export_problems_xlsx(
     source: str | None = None,
     polarity: str | None = None,
@@ -1120,7 +1129,7 @@ def export_problems_xlsx(
             line = []
             for _title, key, _w in _EXPORT_XLSX_COLS:
                 src_val = a.get(key, "") if key in _attr_keys else r.get(key, "")
-                line.append(_export_cell(key, src_val))
+                line.append(_xlsx_safe(_export_cell(key, src_val)))
             ws.append(line)
         merges.append((r_excel, n))
         r_excel += n
