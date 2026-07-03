@@ -488,11 +488,17 @@ onMounted(init);
   word-break: break-word;
 }
 /* 展開明細背景與表格列一致：移除 bordered 版 label 灰底(--color-fill-1)、value 底色 → descriptions
-   全透明，讓下層展開 td 背景透出。預設白；hover 時沿用 Arco 展開列原生 hover(td→--color-fill-1)，
-   整區統一轉灰（不再 label 灰/value 白 的斑塊），與表格資料列 hover 行為一致。 */
-:deep(.attr-expand .arco-descriptions-item-label-block),
-:deep(.attr-expand .arco-descriptions-item-value-block) {
+   全透明，讓下層展開 td 背景透出。預設白；hover 時整區統一轉灰(--color-fill-1)，與表格資料列 hover
+   行為一致。用 .arco-descriptions-border 同鏈提高特異度，穩壓 Arco 原生 label 灰底規則。 */
+:deep(.attr-expand.arco-descriptions-border .arco-descriptions-item-label-block),
+:deep(.attr-expand.arco-descriptions-border .arco-descriptions-item-value-block) {
   background-color: transparent;
+}
+/* 展開列預設底色＝表格資料列白(--color-bg-2)：Arco 給展開 td 上了 --color-fill-1 淡灰(247,248,250)做
+   區隔，覆寫為白 → 與資料列一致（descriptions cell 已透明，白會透出）；hover 時 Arco 原生高特異度
+   hover 規則仍蓋成 --color-fill-1 灰，達成「預設白、hover 統一灰」與表格資料列行為一致。 */
+:deep(.arco-table-tr-expand > .arco-table-td) {
+  background-color: var(--color-bg-2);
 }
 /* 分組標題：預設偏大偏深，調小 + 轉次級文字色，作為分區標籤不搶眼。 */
 :deep(.attr-expand .arco-descriptions-title) {
