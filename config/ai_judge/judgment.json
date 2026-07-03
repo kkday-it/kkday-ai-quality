@@ -29,11 +29,12 @@
     "insufficient": "資訊不足"
   },
   "prejudge": {
-    "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞。",
+    "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（product_reviews 專用）一則評論最多輸出幾條獨立違規歸因，防過度歸因（硬上限 3）。",
     "stage1_model": "gpt-5-nano",
     "enable_stage0_skip": true,
     "stage0_max_comment_len": 8,
     "enable_adaptive_rejudge": true,
+    "max_attributions": 2,
     "neg_keywords": ["退款", "退費", "沒有", "錯", "誤導", "差", "爛", "騙", "找不到", "遲到", "取消", "沒收到", "客訴", "抱怨", "失望", "糟", "貴", "拒絕", "無法", "不符"]
   }
 }

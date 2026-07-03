@@ -200,6 +200,10 @@ class TicketFinding(BaseModel):
     judgment_stage: str = ""
     model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
     judged_at: str = ""  # 判決時間（ISO）
+    # 多歸因（全 5 來源）：一則進線同時違反多規則的完整違規線清單（各 ReviewJudge.model_dump()）。
+    # 單值 l1/l2/l3 欄＝primary（信心最高一條）供舊單歸因讀取相容；judges 為完整陣列供新多標籤渲染。
+    # 未拆表 4 來源經 insert_finding 隨 data JSON 落 judgments；product_reviews 另存自表 judges 欄。
+    judges: list[dict] = Field(default_factory=list)
 
 
 class InboundItem(BaseModel):

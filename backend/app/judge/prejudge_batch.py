@@ -91,10 +91,14 @@ def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
 
 
 def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
-    """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。"""
+    """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
+
+    全 5 來源統一走 to_finding_multi（多歸因；一則進線可同時違反多規則，judges 陣列內嵌 data JSON
+    隨 insert_finding 落 judgments，primary 填單值欄相容舊讀取）。
+    """
     with _sem:
         try:
-            f = prejudge.to_finding(_normalize_raw(item), model=model)
+            f = prejudge.to_finding_multi(_normalize_raw(item), model=model)
             db.insert_finding(f, source or item.get("source") or "")
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批

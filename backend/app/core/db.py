@@ -727,9 +727,6 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "package_name": _extract_package_name({"order_snap_json": row.get("prod_name_snapshot")}),
             "member_uuid": row.get("member_uuid"),
             "traveller_type": row.get("traveller_type"),
-            # 多歸因判決陣列（product_reviews 自帶欄；供前端渲染多標籤。P1 additive——
-            # 攤平單值欄仍由下方 finding(jg_data) 提供，P3 才切換讀取源，過渡期兩者並存不衝突）。
-            "judges": row.get("judges") or [],
         }
     else:
         from app.core import source_mapping as _srcmap
@@ -781,6 +778,8 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "l3_code": finding.get("l3_code"),
             "l3_label": finding.get("l3_label"),
             "l3_candidates": finding.get("l3_candidates") or [],  # top-3 符合度（透明檢視）
+            # 多歸因判決陣列（全 5 來源統一存 data.judges；供前端渲染多標籤。primary 單值欄同上，兩者並存）。
+            "judges": finding.get("judges") or [],
             "confidence_tier": finding.get("confidence_tier"),
             "judgment_stage": _stage_of(row, finding),
             "recommended_action": finding.get("recommended_action"),

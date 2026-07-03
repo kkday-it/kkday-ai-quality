@@ -22,7 +22,7 @@ from typing import Any, get_args
 
 from app.core import ai_judge, global_rule
 from app.core.paths import AI_JUDGE_DIR
-from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
+from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, ReviewJudge, TicketFinding
 from app.judge.llm import client
 
 # ── config（judgment.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
@@ -79,8 +79,8 @@ def _now_iso() -> str:
 
 
 def _text_of(item: dict) -> str:
-    """取判決主輸入文字：優先 comment，回退 raw 內常見文字欄。"""
-    txt = (item.get("comment") or "").strip()
+    """取判決主輸入文字：優先 comment（intake_items）/ content（product_reviews 專表頂層欄），回退 raw 內常見文字欄。"""
+    txt = (item.get("comment") or item.get("content") or "").strip()
     if txt:
         return txt
     raw = item.get("raw") or {}
@@ -662,3 +662,243 @@ def to_finding(item: dict, *, model: str) -> TicketFinding:
             return _attributed_finding(item, enhanced, used_model, enhanced=True)
 
     return _attributed_finding(item, attr, used_model, enhanced=False)
+
+
+# ── 多歸因（product_reviews 專用）：一則負向評論同時違反多規則 → list[ReviewJudge] ──────
+# 與 to_finding（單歸因，其餘 4 來源）平行並存、刻意不改 to_finding 與既有 helper（零回歸）；
+# 復用純函式 _skip0/_stage1_polarity/_stage_b/_finalize_attr/_action_for/_tier_for/_derive_stage。
+def _max_attributions() -> int:
+    """一則評論最多輸出幾條獨立違規歸因（config；防過度歸因，硬上限 3、下限 1）。"""
+    n = int(_prejudge_cfg().get("max_attributions", 2) or 2)
+    return max(1, min(n, 3))
+
+
+def _attr_schema_multi(candidate_codes: frozenset[str], max_n: int) -> dict:
+    """Stage2 多歸因輸出 schema：attributions 陣列（≤max_n），每條一個候選白名單 l3_code（含空 abstain）。"""
+    l3_enum = [*sorted(candidate_codes), ""]
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["attributions"],
+        "properties": {
+            "attributions": {
+                "type": "array",
+                "maxItems": max_n,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["l3_code", "confidence", "evidence_quote"],
+                    "properties": {
+                        "l3_code": {"type": "string", "enum": l3_enum},
+                        "confidence": {"type": "number"},
+                        "evidence_quote": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+
+def _attr_system_multi(catalog: str, max_n: int) -> str:
+    """Stage2 多歸因 system prompt：判官指引 + L3 目錄 + 多條輸出格式（靜態前綴，命中 prompt caching）。"""
+    return (
+        f"{_ATTR_SYS}\n\n"
+        f"問題分類 L3 目錄（只能從中選 code）：\n{catalog}\n\n"
+        f"這則負向評論可能同時違反多條規則。列出所有『明確且互相獨立』的問題歸因（最多 {max_n} 條，"
+        "每條一個 code）：不同問題各歸一條、同一問題勿拆多條、勿為湊數硬加、寧缺勿濫；無法歸類回空陣列。\n"
+        "輸出 JSON：{\"attributions\":[{\"l3_code\":\"code\",\"confidence\":0~1 浮點,"
+        "\"evidence_quote\":\"進線中最能佐證的原文片段\"},...]}"
+    )
+
+
+def _stage2_attribute_multi(item: dict, text: str, model: str, max_n: int) -> list[dict]:
+    """Stage2 多歸因（負向·單次呼叫全域目錄吐多條）→ 淨化後 attr dict 清單（各條逐一過 _finalize_attr）。"""
+    domains = ai_judge.selectable_domains()
+    candidate_codes = frozenset(
+        n["code"] for n in ai_judge.l3_nodes_for_domains([d["code"] for d in domains])
+    )
+    out = _call(
+        _attr_system_multi(_l3_catalog(domains), max_n), _attr_user(text), "attribute", model,
+        schema=_attr_schema_multi(candidate_codes, max_n),
+    )
+    return [
+        _finalize_attr(item, text, a, candidate_codes)
+        for a in (out.get("attributions") or [])[:max_n]
+        if isinstance(a, dict)
+    ]
+
+
+def _stage_a_schema_multi(domain_values: list[str], max_n: int) -> dict:
+    """Stage A 多域 schema：domains 陣列（≤max_n），元素限 6 域機器值。"""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["domains"],
+        "properties": {
+            "domains": {
+                "type": "array",
+                "maxItems": max_n,
+                "items": {"type": "string", "enum": sorted(domain_values)},
+            }
+        },
+    }
+
+
+def _stage_a_system_multi(max_n: int) -> str:
+    """Stage A 多域分類 system：決策樹 + 跨域界線 + 多域輸出格式（gate/bound 建法同 _stage_a_system）。"""
+    dt = global_rule.decision_tree()
+    gate_lines = "\n".join(
+        f"- {g.get('domain', '')}：{g.get('core', '')}（需證據：{g.get('need', '')}）"
+        for g in dt.get("gates", [])
+    )
+    bound_lines = "\n".join(f"- {b}" for b in global_rule.global_boundaries())
+    return (
+        "你是 KKday 旅遊商品客訴『歸因域分類器』。這是負向評論，可能同時涉及多個歸因域。\n"
+        "決策樹（依優先序，先排除商品頁問題再往履約／現場／客服／客人）：\n" + gate_lines + "\n"
+        "跨域界線：\n" + bound_lines + "\n"
+        f"列出所有『明確涉及』的 domain（最多 {max_n} 個、各不重複、勿湊數）；負向至少一個、不得空。"
+        "輸出 JSON：{\"domains\":[\"域機器值\",...]}"
+    )
+
+
+def _stage_a_domains_multi(text: str, model: str, max_n: int) -> list[str]:
+    """Stage A 多域：判涉及的多個 L1 歸因域（machine value）；負向強制 ≥1 域；multi 模式停用 self-consistency。"""
+    domain_values = [d["code"] for d in ai_judge.selectable_domains()]
+    if not domain_values:
+        return []
+    casc = global_rule.cascade().get("stageA_l1", {})
+    sa_model = casc.get("model") or _stage1_model(model)  # 域分類用便宜模型（nano）
+    out = _call(
+        _stage_a_system_multi(max_n), _stage_a_user(text), "domain", sa_model,
+        schema=_stage_a_schema_multi(domain_values, max_n),
+    )
+    seen: set[str] = set()
+    doms: list[str] = []
+    for d in out.get("domains") or []:
+        d = str(d).strip()
+        if d in domain_values and d not in seen:
+            seen.add(d)
+            doms.append(d)
+    return doms[:max_n] if doms else [domain_values[0]]  # 逃生：負向必歸 ≥1 域
+
+
+def _resolve_attrs_multi(item: dict, text: str, model: str, max_n: int) -> list[dict]:
+    """負向評論 → 多條淨化 attr dict：cascade 開走 Stage A 多域→逐域 Stage B；否則單次多歸因。
+
+    去重（同 L1 域保留信心最高，因 action/owner 為域級）+ 過濾全 abstain（無域）+ 依 confidence 降冪 + cap。
+    """
+    if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
+        return []
+    if global_rule.cascade().get("enabled", False):
+        attrs = [_stage_b(item, text, d, model) for d in _stage_a_domains_multi(text, model, max_n)]
+    else:
+        attrs = _stage2_attribute_multi(item, text, model, max_n)
+    by_domain: dict[str, dict] = {}
+    for a in attrs:
+        dom = a.get("l1_domain_code", "")
+        if not dom:
+            continue  # 全 abstain（無域）→ 不成一條違規線
+        if dom not in by_domain or a.get("confidence", 0.0) > by_domain[dom].get("confidence", 0.0):
+            by_domain[dom] = a
+    ranked = sorted(by_domain.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
+    return ranked[:max_n]
+
+
+def _attrs_to_judges(attrs: list[dict], model: str) -> list[ReviewJudge]:
+    """多條 attr dict → list[ReviewJudge]（各自 tier/action/stage；index 0＝信心最高標 is_primary）。"""
+    now = _now_iso()
+    judges: list[ReviewJudge] = []
+    for i, a in enumerate(attrs):
+        conf = a["confidence"]
+        tier = _tier_for(conf)
+        dom = a.get("l1_domain_code", "")
+        judges.append(
+            ReviewJudge(
+                judge_id=dom,  # 冪等鍵＝L1 域（同域重判替換）
+                l1_domain_code=dom,
+                l1_label=a.get("l1_label", ""),
+                l2_code=a.get("l2_code", ""),
+                l2_label=a.get("l2_label", ""),
+                l3_code=a.get("l3_code", ""),
+                l3_label=a.get("l3_label", ""),
+                confidence=conf,
+                raw_confidence=a.get("raw_confidence", conf),
+                confidence_tier=tier,
+                judgment_stage=_derive_stage("negative", a.get("l3_code", ""), tier, a.get("evidence_capped", False)),
+                recommended_action=_action_for(dom),
+                owner="",  # 負責單位：P4 接 rule _meta.owner_role（值待業務提供，禁自創）
+                evidence_quote=a.get("evidence_quote", "")[:300],
+                problem_summary=a.get("evidence_quote", "")[:200],
+                is_primary=(i == 0),
+                is_enhanced=False,
+                model_used=model,
+                judged_at=now,
+            )
+        )
+    return judges
+
+
+def to_review_judges(item: dict, *, model: str) -> tuple[str, list[ReviewJudge]]:
+    """一則商品評論 → (review_polarity, list[ReviewJudge])（多歸因；product_reviews 專用入口）。
+
+    與 to_finding 平行：Stage0/1 復用（正向/中性 → 空 judges）；負向走多歸因 Stage2。
+    review_polarity 為整則評論一次判定（頂層欄）；judges 為各違規線（可空＝負向但無法歸類，pending_data）。
+
+    Args:
+        item: product_reviews 列 dict（item_id/content/score/order_oid/raw…）。
+        model: 主判決模型；stub 模式走啟發式極性、judges 回空。
+
+    Returns:
+        (review_polarity, judges)：polarity ∈ positive/negative/neutral/unknown。
+    """
+    used_model = "stub" if client.is_stub() else model
+    text = _text_of(item)
+
+    if _skip0(item, text):
+        return "positive", []
+    polarity = _stage1_polarity(item, text, model)
+    if polarity != "negative":
+        return polarity, []
+
+    attrs = _resolve_attrs_multi(item, text, model, _max_attributions())
+    return "negative", _attrs_to_judges(attrs, used_model)
+
+
+_EMPTY_ATTR_KEYS = ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
+
+
+def to_finding_multi(item: dict, *, model: str) -> TicketFinding:
+    """一條進線 → 單一 TicketFinding，帶多歸因 `judges` 陣列（全 5 來源統一入口）。
+
+    多歸因走 to_review_judges 的引擎；primary（信心最高一條）映射到單值 l1/l2/l3/action/confidence 欄
+    供既有單歸因讀取（list_problems/overview）過渡期相容，完整 `judges` 陣列內嵌隨 insert_finding 落
+    judgments.data。正向/中性/純好評 → judges 空、走 non_issue 單值。負向但全無法歸類 → primary 空
+    （pending_data）、judges 空。
+
+    Args:
+        item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
+        model: 主判決模型；stub 走啟發式極性、judges 空。
+
+    Returns:
+        單一 TicketFinding（primary 單值欄 + judges 陣列）。
+    """
+    used_model = "stub" if client.is_stub() else model
+    text = _text_of(item)
+
+    if _skip0(item, text):
+        return _non_issue_finding(item, "positive", "heuristic")
+    polarity = _stage1_polarity(item, text, model)
+    if polarity != "negative":
+        return _non_issue_finding(item, polarity, used_model)
+
+    attrs = _resolve_attrs_multi(item, text, model, _max_attributions())
+    judges = _attrs_to_judges(attrs, used_model)
+    # primary＝信心最高的 attr（attrs 已降冪）；全 abstain 時給空 attr（→ pending_data）
+    primary_attr = attrs[0] if attrs else {
+        **{k: "" for k in _EMPTY_ATTR_KEYS},
+        "confidence": 0.5, "raw_confidence": 0.5,
+        "evidence_quote": text[:200], "l3_candidates": [], "evidence_capped": False,
+    }
+    f = _attributed_finding(item, primary_attr, used_model, enhanced=False)
+    f.judges = [j.model_dump() for j in judges]
+    return f
