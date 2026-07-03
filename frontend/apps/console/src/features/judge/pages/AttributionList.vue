@@ -43,9 +43,6 @@ const STAGE_COLOR: Record<string, string> = {
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
-/** 依傾向給整列一個 class，用背景色一眼區分正負中性/傾向不明（未判無色）。 */
-const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
-
 const source = ref('product_reviews');
 
 const {
@@ -284,7 +281,6 @@ onMounted(init);
           :pagination="{ ...ALL_PAGINATION, current: page, pageSize, total }"
           :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
           :expandable="{}"
-          :row-class="rowClass"
           class="min-h-0 flex-1"
           row-key="_group"
           :scroll="{ y: '100%' }"
@@ -352,10 +348,8 @@ onMounted(init);
             </template>
             <span v-else class="text-gray-300">—</span>
           </template>
-          <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合。
-               外層依傾向套同色淡底，讓「主列＋展開」整則評論同底不斷色（Arco 不會自動把 row-class 帶到展開列）。-->
+          <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合 -->
           <template #expand-row="{ record }">
-            <div :class="record.polarity ? `pol-expand-${record.polarity}` : ''" class="p-2">
             <a-descriptions
               v-for="(g, gi) in schema.expandGroups"
               :key="gi"
@@ -389,7 +383,6 @@ onMounted(init);
                 <template v-else>{{ expandFieldText(record, f.key, f.format) }}</template>
               </a-descriptions-item>
             </a-descriptions>
-            </div>
           </template>
         </a-table>
       </StateGuard>
@@ -471,41 +464,6 @@ onMounted(init);
 </template>
 
 <style scoped>
-/* 傾向背景色（一眼區分正負中性/傾向不明）：row-class 由 rowClass() 給出，
-   Arco 內部 tr/td 無法用 utility 觸及，故用 :deep + Arco 色階 token（非 --kk- DS token）。
-   用 base 色(--x-6) 低透明度而非 --x-1 實色：更淺、且主列與展開區(pol-expand-*)同一疊色不斷色。 */
-:deep(.arco-table-tr.pol-row-negative > .arco-table-td) {
-  background-color: rgba(var(--red-6), 0.06);
-}
-:deep(.arco-table-tr.pol-row-positive > .arco-table-td) {
-  background-color: rgba(var(--green-6), 0.06);
-}
-:deep(.arco-table-tr.pol-row-neutral > .arco-table-td) {
-  background-color: rgba(var(--gray-6), 0.06);
-}
-:deep(.arco-table-tr.pol-row-unknown > .arco-table-td) {
-  background-color: rgba(var(--orange-6), 0.06);
-}
-
-/* 展開列淡底：Arco 展開列不繼承 row-class，於 #expand-row 外層 div 依傾向補同色，
-   使「主列＋展開明細」整則評論同底連續（消除展開區白底斷色）。同色同透明度＝視覺一致。
-   先清零展開 td 的 padding，讓外層 div 貼邊填滿整格（否則四周留白框、色仍斷）。 */
-:deep(.arco-table-tr-expand > .arco-table-td) {
-  padding: 0;
-}
-:deep(.pol-expand-negative) {
-  background-color: rgba(var(--red-6), 0.06);
-}
-:deep(.pol-expand-positive) {
-  background-color: rgba(var(--green-6), 0.06);
-}
-:deep(.pol-expand-neutral) {
-  background-color: rgba(var(--gray-6), 0.06);
-}
-:deep(.pol-expand-unknown) {
-  background-color: rgba(var(--orange-6), 0.06);
-}
-
 /* 一列一 review 內多歸因堆疊塊：每塊等高（min-height）→ 歸因/信心/分層/階段四欄同一條歸因
    水平對齊；塊間細分隔線區隔各歸因。utility 無法表達「跨欄等高 + last 去邊」故用 scoped class。 */
 .attr-blk {
