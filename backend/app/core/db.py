@@ -1066,6 +1066,30 @@ def _xlsx_safe(value):
     return _XLSX_ILLEGAL_RE.sub("", value) if isinstance(value, str) else value
 
 
+def _export_sheet_title(source: str | None, rows: list[dict], date_from: str | None, date_to: str | None) -> str:
+    """工作表名＝來源 label + 時間區間（如「商品評論 20260601~20260701」）。
+
+    時間區間優先取日期篩選 date_from/date_to；未篩選則由匯出資料的 occurred_at 最小/最大值推導。
+    Excel 工作表名限制：≤31 字、禁用 : \\ / ? * [ ]（超限/含禁字元會存檔失敗 → 清洗截斷）。
+    """
+    from app.core import sources as _sources
+
+    label = _sources.label_for(source) if source else "全部來源"
+
+    def _compact(s) -> str:
+        """時間字串取前 8 位數字（YYYYMMDD）；無效回空。"""
+        d = re.sub(r"\D", "", str(s or ""))
+        return d[:8] if len(d) >= 8 else ""
+
+    d1, d2 = _compact(date_from), _compact(date_to)
+    if not (d1 and d2):  # 無日期篩選 → 由資料 occurred_at 推區間
+        occ = sorted(o for o in (_compact(r.get("occurred_at")) for r in rows) if o)
+        if occ:
+            d1, d2 = d1 or occ[0], d2 or occ[-1]
+    title = f"{label} {d1}~{d2}" if (d1 and d2) else label
+    return re.sub(r"[:\\/?*\[\]]", "", title)[:31]
+
+
 def export_problems_xlsx(
     source: str | None = None,
     polarity: str | None = None,
@@ -1111,7 +1135,7 @@ def export_problems_xlsx(
         rows = [r for r in rows if r.get("_group") in idset]
     wb = Workbook()
     ws = wb.active
-    ws.title = "歸因列表"
+    ws.title = _export_sheet_title(source, rows, date_from, date_to)
     ws.append([c[0] for c in _EXPORT_XLSX_COLS])
     # 歸因級欄（逐條歸因不同）vs review 級欄（同一 review 相同 → 合併儲存格）
     _attr_keys = {

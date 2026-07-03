@@ -460,7 +460,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = exportName(`歸因列表_${toValue(source)}`, 'xlsx');
+      a.download = exportName('歸因列表', 'xlsx');
       a.click();
       URL.revokeObjectURL(url);
       Message.success('已導出 Excel');
