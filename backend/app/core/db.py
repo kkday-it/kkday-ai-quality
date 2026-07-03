@@ -1237,6 +1237,17 @@ def unjudged_item_ids(
 # ── 歸因縱覽聚合（縱覽頁專用；problems_summary 的進階版，多 polarity/L1-code/星等/月趨勢）────
 
 
+def _judges_of(data_json: str | None) -> list[dict]:
+    """從 judgments.data JSON 字串取 judges 多歸因陣列（Design A-embed）；解析失敗 / 無欄回 []。"""
+    if not data_json:
+        return []
+    try:
+        d = json.loads(data_json)
+    except (ValueError, TypeError):
+        return []
+    return (d.get("judges") or []) if isinstance(d, dict) else []
+
+
 def attribution_overview(
     source: str | None = None,
     date_from: str | None = None,
@@ -1276,8 +1287,7 @@ def attribution_overview(
     tiers = _CONFIDENCE_TIERS
     # judgments.data JSON 內的歸因欄（JSONB 抽出，供 GROUP BY / FILTER）
     pol = sa_cast(jg.c.data, JSONB)["polarity"].astext
-    l1c = sa_cast(jg.c.data, JSONB)["l1_domain_code"].astext
-    l1l = sa_cast(jg.c.data, JSONB)["l1_label"].astext
+    l1c = sa_cast(jg.c.data, JSONB)["l1_domain_code"].astext  # primary 域（attributed 評論數用）
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
 
     # 趨勢粒度 → occurred_at 前綴長度（年 YYYY / 月 YYYY-MM / 日 YYYY-MM-DD）
@@ -1329,19 +1339,6 @@ def attribution_overview(
             .mappings()
             .all()
         )
-        by_l1_raw = (
-            c.execute(
-                _src(
-                    select(l1c.label("code"), l1l.label("label"), cnt)
-                    .select_from(j)
-                    .where(l1c.isnot(None), l1c != "")
-                    .group_by(l1c, l1l)
-                    .order_by(cnt.desc())
-                )
-            )
-            .mappings()
-            .all()
-        )
         # 星等：全量 intake（不限已判），呈現整體品質健康（score_col 依 spec 動態決定，見上方）
         by_score_raw = (
             c.execute(
@@ -1356,18 +1353,25 @@ def attribution_overview(
             .mappings()
             .all()
         )
-        # 信心分層：Python 即時聚合（與 problems_summary 同閾值口徑）
+        # by_l1 + by_tier：**fan-out**（unnest data.judges，一則評論命中多域各 +1＝歸因次數，非評論數）。
+        # Python 側聚合（資料量小，沿用原 by_tier Python 聚合口徑）；單一歸因資料每則 1 judge，數值與改前一致。
+        _l1_fan: dict[str, list] = {}  # code -> [label, n]
         by_tier = {"auto_accept": 0, "jury": 0, "needs_review": 0}
         for r in c.execute(
-            _src(select(jg.c.confidence).select_from(j).where(jg.c.confidence.isnot(None)))
+            _src(select(jg.c.data).select_from(j).where(jg.c.finding_id.isnot(None)))
         ).mappings():
-            conf = r["confidence"]
-            if conf >= tiers["auto_accept"]:
-                by_tier["auto_accept"] += 1
-            elif conf >= tiers["jury_low"]:
-                by_tier["jury"] += 1
-            else:
-                by_tier["needs_review"] += 1
+            for jd in _judges_of(r["data"]):
+                code = jd.get("l1_domain_code") or ""
+                if not code:
+                    continue
+                e = _l1_fan.setdefault(code, [jd.get("l1_label") or code, 0])
+                e[1] += 1
+                # tier 優先取 judge 存的 confidence_tier；缺則由 confidence 即時分層（相容舊資料）
+                t = jd.get("confidence_tier")
+                if t not in by_tier:
+                    conf = jd.get("confidence") or 0.0
+                    t = "auto_accept" if conf >= tiers["auto_accept"] else ("jury" if conf >= tiers["jury_low"] else "needs_review")
+                by_tier[t] += 1
         # 趨勢：occurred_at 前 glen 字（依 granularity）→ 已判數 / 負向數
         ym = func.substr(ii.c.occurred_at, 1, glen).label("ym")
         trend_rows = (
@@ -1400,7 +1404,13 @@ def attribution_overview(
         }
         for r in by_polarity_raw
     ]
-    by_l1 = [{"code": r["code"], "label": r["label"] or r["code"], "n": r["n"]} for r in by_l1_raw]
+    # by_l1＝歸因次數（fan-out）；unit 標明供前端/PM 別於 attributed（評論數）
+    by_l1 = sorted(
+        ({"code": k, "label": v[0], "n": v[1]} for k, v in _l1_fan.items()),
+        key=lambda x: x["n"],
+        reverse=True,
+    )
+    attribution_total = sum(x["n"] for x in by_l1)
     by_score = [{"score": r["score"], "n": r["n"]} for r in by_score_raw]
     trend = {
         "months": [r["ym"] for r in trend_rows],
@@ -1408,9 +1418,11 @@ def attribution_overview(
         "negative": [r["negative"] for r in trend_rows],
     }
     return {
-        "total_intake": total_intake,
-        "judged": judged,
-        "attributed": attributed,
+        "total_intake": total_intake,  # 進線總數（評論數）
+        "judged": judged,  # 已判評論數
+        "attributed": attributed,  # 有歸因的評論數（distinct item；primary 非空）
+        "attribution_total": attribution_total,  # 歸因總次數（fan-out；一則多域各計；≥ attributed）
+        "attribution_unit": "attribution",  # 標明 by_l1/by_tier 的 n 為「歸因次數」非「評論數」
         "by_polarity": by_polarity,
         "by_l1": by_l1,
         "by_tier": by_tier,
@@ -1445,22 +1457,13 @@ def attribution_breakdown(
     spec = _vertical_scoped_spec(source, product_vertical)
     ii = spec.table if spec is not None else T.intake_items
     jg = T.judgments
-    cnt = func.count().label("n")
-    d = sa_cast(jg.c.data, JSONB)
-    l1c, l1l = d["l1_domain_code"].astext, d["l1_label"].astext
-    l2c, l2l = d["l2_code"].astext, d["l2_label"].astext
-    l3c, l3l = d["l3_code"].astext, d["l3_label"].astext
     j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
     # 全局商品垂直分類 codes（僅 spec.category_col 存在的來源可套）
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
 
-    def _level(code_col, label_col):
-        """組某層（L2/L3）的 GROUP BY 查詢：限定 L1 域 + 非空 code，依筆數降序。"""
-        stmt = (
-            select(code_col.label("code"), label_col.label("label"), cnt)
-            .select_from(j)
-            .where(l1c == l1, code_col.isnot(None), code_col != "")
-        )
+    def _filters(stmt):
+        """套已判 + source + 日期區間 + 商品垂直分類過濾（row 級；judge 級 l1 過濾於 Python fan-out）。"""
+        stmt = stmt.where(jg.c.finding_id.isnot(None))
         if source and spec is None:
             stmt = stmt.where(ii.c.source == source)
         if date_from:
@@ -1469,15 +1472,36 @@ def attribution_breakdown(
             stmt = stmt.where(func.substr(ii.c.occurred_at, 1, 10) <= date_to)
         if _v_codes:
             stmt = stmt.where(ii.c[spec.category_col].in_(_v_codes))
-        return stmt.group_by(code_col, label_col).order_by(cnt.desc())
+        return stmt
 
+    # by_l2/by_l3 **fan-out**：unnest data.judges，只計 l1_domain_code==l1 的 judge（歸因次數）。
+    # 一則評論的 primary 在別域、但有一條 secondary judge 落在 l1 域者，亦計入此域下鑽（正確 fan-out）。
+    l2_fan: dict[str, list] = {}  # code -> [label, n]
+    l3_fan: dict[str, list] = {}
+    l1_label = l1
     with T.get_engine().connect() as c:
-        l1_label = (
-            c.execute(
-                select(l1l).select_from(j).where(l1c == l1, l1l.isnot(None)).limit(1)
-            ).scalar()
-            or l1
-        )
-        by_l2 = [dict(r) for r in c.execute(_level(l2c, l2l)).mappings()]
-        by_l3 = [dict(r) for r in c.execute(_level(l3c, l3l)).mappings()]
+        for r in c.execute(_filters(select(jg.c.data).select_from(j))).mappings():
+            for jd in _judges_of(r["data"]):
+                if (jd.get("l1_domain_code") or "") != l1:
+                    continue
+                if l1_label == l1 and jd.get("l1_label"):
+                    l1_label = jd["l1_label"]
+                l2 = jd.get("l2_code") or ""
+                if l2:
+                    e = l2_fan.setdefault(l2, [jd.get("l2_label") or l2, 0])
+                    e[1] += 1
+                l3 = jd.get("l3_code") or ""
+                if l3:
+                    e = l3_fan.setdefault(l3, [jd.get("l3_label") or l3, 0])
+                    e[1] += 1
+    by_l2 = sorted(
+        ({"code": k, "label": v[0], "n": v[1]} for k, v in l2_fan.items()),
+        key=lambda x: x["n"],
+        reverse=True,
+    )
+    by_l3 = sorted(
+        ({"code": k, "label": v[0], "n": v[1]} for k, v in l3_fan.items()),
+        key=lambda x: x["n"],
+        reverse=True,
+    )
     return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2, "by_l3": by_l3}
