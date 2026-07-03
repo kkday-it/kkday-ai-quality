@@ -1,18 +1,15 @@
 <script setup lang="ts">
-/** L3 判準節點表單：編 label/meaning/rule + 厚判準（canon + 5 個字串清單）。 */
+/** 判準節點表單：編 label + 判準五欄（canon + allow/forbid + 好範例/壞範例 few-shot）。 */
 import { computed } from 'vue';
 
 interface L3Node {
   code: string;
   label: string;
-  meaning?: string;
-  rule?: string;
   canon?: string;
   allow?: string[];
   forbid?: string[];
   positive_cases?: string[];
   negative_cases?: string[];
-  machine_clues?: string[];
   [k: string]: unknown;
 }
 
@@ -24,7 +21,6 @@ const LIST_FIELDS: { key: keyof L3Node; label: string }[] = [
   { key: 'forbid', label: '禁止 forbid ❌' },
   { key: 'positive_cases', label: '好範例 positive_cases' },
   { key: 'negative_cases', label: '壞範例 negative_cases' },
-  { key: 'machine_clues', label: '機器線索 machine_clues' },
 ];
 
 /** 改某欄位 → emit 整個節點（淺拷貝，父層持有深層 model）。 */
@@ -61,16 +57,6 @@ const canon = computed({
     </div>
     <a-form-item label="名稱 label">
       <a-input :model-value="node.label" @update:model-value="patch('label', $event)" />
-    </a-form-item>
-    <a-form-item label="意義 meaning">
-      <a-textarea
-        :model-value="node.meaning ?? ''"
-        :auto-size="{ minRows: 1 }"
-        @update:model-value="patch('meaning', $event)"
-      />
-    </a-form-item>
-    <a-form-item label="規則編號 rule ID" class="w-32">
-      <a-input :model-value="node.rule ?? ''" @update:model-value="patch('rule', $event)" />
     </a-form-item>
     <a-form-item label="法典條文 canon">
       <a-textarea v-model="canon" :auto-size="{ minRows: 2 }" />

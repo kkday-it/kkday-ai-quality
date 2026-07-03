@@ -14,6 +14,7 @@ import {
 import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
 import { schemaFor, type ProblemRow } from '../constants';
+import { exportName } from '../utils';
 
 /** LLM 模型配置選項（同「設定 › LLM 模型連線」）。 */
 interface LlmConfigOpt {
@@ -385,7 +386,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 二次確認後執行：依 pendingScope 決定範圍，用彈窗內選定的 llmConfigId。 */
   const doRun = () => {
     confirmOpen.value = false;
-    if (pendingScope.value === 'selected') _run({ item_ids: selectedKeys.value });
+    // selected 分支須帶 source：後端據此選對來源專表（product_reviews 拆表後 item_id 只在專表），
+    // 漏送則 get_items_by_ids 走 spec_for(None) 短路 fallback 查 intake_items → 撈 0 筆、LLM 不被呼叫。
+    if (pendingScope.value === 'selected')
+      _run({ item_ids: selectedKeys.value, source: toValue(source) });
     else _run({ source: toValue(source), scope: 'all', product_verticals: effVerticals.value });
   };
 
@@ -404,7 +408,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `歸因列表_${toValue(source)}_${selectedKeys.value.length || total.value}列.csv`;
+      a.download = exportName(`歸因列表_${toValue(source)}`, 'csv');
       a.click();
       URL.revokeObjectURL(url);
       Message.success('已導出 CSV');

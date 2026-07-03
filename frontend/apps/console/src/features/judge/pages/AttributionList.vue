@@ -4,7 +4,7 @@
  *
  * 分頁/篩選/排序皆走後端（/api/problems limit-offset；occurred_at DESC 穩定）；表頭固定、表身內滾動、
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
- * 正向/中性/數據不足 不歸因，只有負向才有 L1→L3。
+ * 正向/中性/傾向不明 不歸因，只有負向才有 L1→L3。
  *
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
@@ -33,7 +33,7 @@ const POLARITY_COLOR: Record<string, string> = {
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
-/** 依傾向給整列一個 class，用背景色一眼區分正負中性/數據不足（未判無色）。 */
+/** 依傾向給整列一個 class，用背景色一眼區分正負中性/傾向不明（未判無色）。 */
 const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
 
 const source = ref('product_reviews');
@@ -117,7 +117,7 @@ onMounted(init);
         :options="SOURCE_OPTS"
         @change="onFilterChange"
       />
-      <!-- 商品垂直分類複選（全局 SSOT；預設全選，剩 1 不可移除，子集生成新列表）-->
+      <!-- 商品垂直分類複選（全局 SSOT；預設全選，剩 1 不可移除；即使全選也嚴格限制在所選分類內）-->
       <span class="text-sm text-gray-500">商品垂直分類</span>
       <a-select
         :model-value="verticalGroups"
@@ -390,7 +390,7 @@ onMounted(init);
 </template>
 
 <style scoped>
-/* 傾向背景色（一眼區分正負中性/數據不足）：row-class 由 rowClass() 給出，
+/* 傾向背景色（一眼區分正負中性/傾向不明）：row-class 由 rowClass() 給出，
    Arco 內部 tr/td 無法用 utility 觸及，故用 :deep + Arco 色階 token（非 --kk- DS token）。 */
 :deep(.arco-table-tr.pol-row-negative > .arco-table-td) {
   background-color: rgb(var(--red-1));

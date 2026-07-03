@@ -24,7 +24,7 @@ export interface DateRangeFilterDef {
   label: string;
 }
 
-/** 傾向篩選（正向/負向/中性/數據不足；沿用既有「僅看問題」與下拉互動）。 */
+/** 傾向篩選（正向/負向/中性/傾向不明；沿用既有「僅看問題」與下拉互動）。 */
 export interface PolarityFilterDef {
   type: 'polarity';
 }

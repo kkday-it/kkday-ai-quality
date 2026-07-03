@@ -98,7 +98,7 @@ const {
       <a-radio-group v-model="view" type="button" size="small">
         <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ viewLabel(v) }}</a-radio>
       </a-radio-group>
-      <!-- 商品垂直分類複選（與歸因列表同一 SSOT；限定縱覽數據範圍，全選＝不篩選）-->
+      <!-- 商品垂直分類複選（與歸因列表同一 SSOT；嚴格限定縱覽數據範圍在所選分類內，含分類的來源才計入）-->
       <a-select
         :model-value="verticalGroups"
         multiple
@@ -153,7 +153,7 @@ const {
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="傾向分布" hint="正向 / 負向 / 中性 / 數據不足 占比">
+          <CardSection title="傾向分布" hint="正向 / 負向 / 中性 / 傾向不明 占比">
             <v-chart :option="polarityDonut" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>

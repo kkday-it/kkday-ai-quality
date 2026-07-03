@@ -7,12 +7,12 @@ import { computed, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
-import { getRule } from '@/api/judgeRules.api';
+import { getRule, exportRulesXlsx } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryModal from '../components/RuleHistoryModal.vue';
-import { versionLabel } from '../utils';
+import { versionLabel, exportName } from '../utils';
 
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
@@ -34,6 +34,7 @@ const historyOpen = ref(false);
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
+const exporting = ref(false);
 
 // schema content（給 JSON 模式即時驗證；編輯 schema 自身時不套）
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
@@ -106,18 +107,37 @@ function doReset() {
   });
 }
 
-/** 恢復所有歸因分類（C-N）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
+/** 導出全部判決規則為 Excel（C-N 各一分頁 + global 判決總規範；DB active 版本）→ blob 下載。 */
+async function doExport() {
+  exporting.value = true;
+  try {
+    const blob = await exportRulesXlsx();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportName('判決規則', 'xlsx');
+    a.click();
+    URL.revokeObjectURL(url);
+    Message.success('已導出 Excel');
+  } catch (e) {
+    Message.error(e instanceof Error ? e.message : '導出失敗');
+  } finally {
+    exporting.value = false;
+  }
+}
+
+/** 恢復規則配置頁所有規則（schema + 整體規則 + C-N）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
 function doResetAll() {
   Modal.confirm({
-    title: '恢復所有分類為默認',
-    content: '確定將所有歸因分類恢復為檔案默認？各分類將新增一個版本覆蓋當前（保留歷史）。',
+    title: '恢復所有規則為默認',
+    content: '確定將規則配置頁所有規則（schema / 整體規則 / 歸因分類 C-N）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {
       try {
         const res = await store.resetAllDefault();
         const skip = res.skipped?.length ? `，略過 ${res.skipped.join('、')}（無默認檔）` : '';
-        Message.success(`已恢復 ${res.reset.length} 個歸因分類為默認（各新增版本）${skip}`);
+        Message.success(`已恢復 ${res.reset.length} 條規則為默認（各新增版本）${skip}`);
       } catch (e) {
         Message.error(e instanceof Error ? e.message : '恢復失敗');
       }
@@ -189,6 +209,7 @@ function doResetAll() {
           <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
         </span>
         <div class="flex-1" />
+        <a-button size="small" :loading="exporting" @click="doExport">導出 Excel</a-button>
         <a-button size="small" @click="(historyOpen = true)">歷史</a-button>
         <a-button size="small" @click="doReset">恢復默認</a-button>
         <a-button

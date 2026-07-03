@@ -48,11 +48,11 @@ watch(
   { immediate: true },
 );
 
-/** content.tree → a-tree data（code 當 key；title 前綴層級+code：如「L1 C-1 商品內容」，一眼可辨位置）。 */
+/** content.tree → a-tree data（code 當 key；title＝code+名稱，如「C-1 商品內容」；層級由樹縮排表達，不加 L 前綴）。 */
 function toTree(nodes: Node[]): TreeNodeData[] {
   return nodes.map((n) => ({
     key: n.code,
-    title: `L${n.level} ${n.code} ${n.label}`,
+    title: `${n.code} ${n.label}`,
     children: n.children ? toTree(n.children) : undefined,
   }));
 }
