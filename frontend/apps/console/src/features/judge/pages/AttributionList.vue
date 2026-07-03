@@ -487,6 +487,13 @@ onMounted(init);
 :deep(.attr-expand .arco-descriptions-item-value) {
   word-break: break-word;
 }
+/* 展開明細背景與表格列一致：移除 bordered 版 label 灰底(--color-fill-1)、value 底色 → descriptions
+   全透明，讓下層展開 td 背景透出。預設白；hover 時沿用 Arco 展開列原生 hover(td→--color-fill-1)，
+   整區統一轉灰（不再 label 灰/value 白 的斑塊），與表格資料列 hover 行為一致。 */
+:deep(.attr-expand .arco-descriptions-item-label-block),
+:deep(.attr-expand .arco-descriptions-item-value-block) {
+  background-color: transparent;
+}
 /* 分組標題：預設偏大偏深，調小 + 轉次級文字色，作為分區標籤不搶眼。 */
 :deep(.attr-expand .arco-descriptions-title) {
   font-size: 13px;
