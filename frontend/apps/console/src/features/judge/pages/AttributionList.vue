@@ -10,7 +10,6 @@
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
 import { computed, onMounted, ref } from 'vue';
-import type { TableData } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
@@ -46,19 +45,6 @@ const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
 /** 依傾向給整列一個 class，用背景色一眼區分正負中性/傾向不明（未判無色）。 */
 const rowClass = (record: ProblemRow) => (record.polarity ? `pol-row-${record.polarity}` : '');
-
-/**
- * Arco span-method（1:N 儲存格合併）：歸因欄逐列顯示；其餘 review 級欄（序號/訂單/評論時間/傾向）
- * 與操作欄（勾選/展開，span-all 納入）依 `_rowspan` 合併——首列 rowspan=N、續列 rowspan/colspan=0（隱藏）。
- */
-const ATTR_COLS = new Set(['attr', 'confidence', 'confidence_tier', 'judgment_stage']);
-const spanMethod = (data: { record: TableData; column: object }) => {
-  // 操作欄（勾選/展開）無 dataIndex → 視為 review 級合併；歸因欄有 dataIndex 且在 ATTR_COLS → 逐列不合併
-  const dataIndex = (data.column as { dataIndex?: string | number }).dataIndex;
-  if (dataIndex && ATTR_COLS.has(String(dataIndex))) return;
-  const rs = Number((data.record as ProblemRow)._rowspan ?? 1);
-  return { rowspan: rs, colspan: rs > 0 ? 1 : 0 };
-};
 
 const source = ref('product_reviews');
 
@@ -299,10 +285,8 @@ onMounted(init);
           :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
           :expandable="{}"
           :row-class="rowClass"
-          :span-method="spanMethod"
-          span-all
           class="min-h-0 flex-1"
-          row-key="finding_id"
+          row-key="_group"
           :scroll="{ y: '100%' }"
           @page-change="
             (p: number) => {
@@ -329,33 +313,43 @@ onMounted(init);
             </a-tag>
             <span v-else class="text-gray-300">未判</span>
           </template>
-          <!-- 每行＝一條獨立歸因分類（1:N；一個問題多條歸因各自一行，各帶 L1-L3/信心/分層/階段）-->
+          <!-- 一列一 review：多條歸因收進 record.attributions，右側四欄（歸因/信心/分層/階段）
+               各自從上至下堆疊，每條歸因等高（.attr-blk min-height 對齊）→ 同一條歸因跨欄水平對齊。-->
           <template #attr="{ record }">
-            <div v-if="record.l1_label || record.l3_label" class="text-xs leading-relaxed">
-              <div><span class="text-gray-400">L1</span> {{ record.l1_label }}</div>
-              <div v-if="record.l2_label">
-                <span class="text-gray-400">L2</span> {{ record.l2_label }}
+            <template v-if="record.attributions && record.attributions.length">
+              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs leading-relaxed">
+                <div><span class="text-gray-400">L1</span> {{ a.l1_label || '—' }}</div>
+                <div v-if="a.l2_label"><span class="text-gray-400">L2</span> {{ a.l2_label }}</div>
+                <div v-if="a.l3_label"><span class="text-gray-400">L3</span> {{ a.l3_label }}</div>
               </div>
-              <div v-if="record.l3_label">
-                <span class="text-gray-400">L3</span> {{ record.l3_label }}
+            </template>
+            <span v-else class="text-gray-300">—</span>
+          </template>
+          <template #conf="{ record }">
+            <template v-if="record.attributions && record.attributions.length">
+              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs">
+                {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }}
               </div>
-            </div>
+            </template>
             <span v-else class="text-gray-300">—</span>
           </template>
           <template #tier="{ record }">
-            <span v-if="record.confidence_tier">{{
-              TIER_LABELS[record.confidence_tier] || record.confidence_tier
-            }}</span>
+            <template v-if="record.attributions && record.attributions.length">
+              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs">
+                {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
+              </div>
+            </template>
             <span v-else class="text-gray-300">—</span>
           </template>
           <template #stage="{ record }">
-            <a-tag
-              v-if="record.judgment_stage"
-              size="small"
-              :color="STAGE_COLOR[record.judgment_stage as string]"
-            >
-              {{ STAGE_LABELS[record.judgment_stage as string] || record.judgment_stage }}
-            </a-tag>
+            <template v-if="record.attributions && record.attributions.length">
+              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk">
+                <a-tag v-if="a.judgment_stage" size="small" :color="STAGE_COLOR[a.judgment_stage]">
+                  {{ STAGE_LABELS[a.judgment_stage] || a.judgment_stage }}
+                </a-tag>
+                <span v-else class="text-gray-300">—</span>
+              </div>
+            </template>
             <span v-else class="text-gray-300">—</span>
           </template>
           <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合 -->
@@ -487,6 +481,21 @@ onMounted(init);
 }
 :deep(.arco-table-tr.pol-row-unknown > .arco-table-td) {
   background-color: rgb(var(--orange-1));
+}
+
+/* 一列一 review 內多歸因堆疊塊：每塊等高（min-height）→ 歸因/信心/分層/階段四欄同一條歸因
+   水平對齊；塊間細分隔線區隔各歸因。utility 無法表達「跨欄等高 + last 去邊」故用 scoped class。 */
+.attr-blk {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* 4.2rem：容 3 行 L1-L3（text-xs leading-relaxed ≈3.66rem）+ 上下 padding，避免溢出撐高單塊而跨欄錯位 */
+  min-height: 4.2rem;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--color-neutral-3);
+}
+.attr-blk:last-child {
+  border-bottom: none;
 }
 
 /* 展開明細固定欄寬：Arco a-descriptions 內部為 table，預設依內容自動撐欄→每列寬度不一。

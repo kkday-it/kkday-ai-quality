@@ -707,6 +707,31 @@ def _stage_of(row: dict, finding: dict) -> str:
     return "judged" if finding.get("confidence_tier") == "auto_accept" else "pending_review"
 
 
+def _attribution_of(r: dict) -> dict:
+    """單筆 judgments join 列 → 一條歸因顯示 dict（供列表右側堆疊 / 導出 fan-out；欄名對齊前端）。"""
+    try:
+        f = json.loads(r.get("jg_data") or "{}")
+    except (ValueError, TypeError):
+        f = {}
+    return {
+        "finding_id": r.get("jg_finding_id"),
+        "l1_domain": f.get("l1_domain_code"),
+        "l1_label": f.get("l1_label"),
+        "l2_code": f.get("l2_code"),
+        "l2_label": f.get("l2_label"),
+        "l3_code": f.get("l3_code"),
+        "l3_label": f.get("l3_label"),
+        "confidence": r.get("jg_confidence"),
+        "confidence_tier": f.get("confidence_tier"),
+        "judgment_stage": f.get("judgment_stage"),
+        "recommended_action": f.get("recommended_action"),
+        "polarity": f.get("polarity"),
+        "problem_summary": f.get("problem_summary"),
+        "reason": f.get("reason") or f.get("evidence_quote"),
+        "is_primary": f.get("is_primary"),
+    }
+
+
 def _jg_join_cond(spec):
     """judgments 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。"""
     jg = T.judgments
@@ -765,7 +790,8 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
             .order_by(order_item, nk.asc(), jg.c.finding_id.asc().nullslast())
         )
         raw = [dict(r) for r in c.execute(fan).mappings()]
-    # 依連續相同特徵 id 分組 → 每組首列帶 _rowspan=N（span 合併 review 級欄）、其餘 0；_seq＝review 序號
+    # 依連續相同特徵 id 分組 → **每 review 一列**（review 級欄取首列）+ attributions 陣列（該 review 全部歸因）；
+    # _seq＝review 序號。前端右側歸因欄由上至下堆疊 attributions；導出時 fan-out 各歸因並合併 review 級欄。
     rows: list[dict] = []
     i, seq = 0, offset
     while i < len(raw):
@@ -774,13 +800,11 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         while k < len(raw) and raw[k].get(spec.natural_key) == sid:
             k += 1
         seq += 1
-        for gi, r in enumerate(raw[i:k]):
-            row = _enrich_problem(r, src)
-            row["finding_id"] = r.get("jg_finding_id") or str(sid)  # 前端 rowKey（每歸因列唯一；未判用 source_id）
-            row["_group"] = sid  # 分組鍵＝特徵 id（前端選取用）
-            row["_rowspan"] = (k - i) if gi == 0 else 0
-            row["_seq"] = seq
-            rows.append(row)
+        row = _enrich_problem(raw[i], src)  # review 級 + primary 歸因相容欄（取首列）
+        row["_group"] = sid
+        row["_seq"] = seq
+        row["attributions"] = [_attribution_of(r) for r in raw[i:k] if r.get("jg_finding_id")]
+        rows.append(row)
         i = k
     return {"rows": rows, "total": total}
 
@@ -1080,12 +1104,32 @@ def export_problems_xlsx(
     ws = wb.active
     ws.title = "歸因列表"
     ws.append([c[0] for c in _EXPORT_XLSX_COLS])
+    # 歸因級欄（逐條歸因不同）vs review 級欄（同一 review 相同 → 合併儲存格）
+    _attr_keys = {
+        "l1_label", "l2_label", "l3_label", "confidence", "confidence_tier",
+        "judgment_stage", "problem_summary", "reason",
+    }
+    review_col_idx = [ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys]
+    merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
+    r_excel = 2  # 資料起始列（表頭列 1）
     for r in rows:
-        line = []
-        for _title, key, _w in _EXPORT_XLSX_COLS:
-            line.append(_export_cell(key, r.get(key, "")))
-        ws.append(line)
-    _style_header(ws, [c[2] for c in _EXPORT_XLSX_COLS], freeze_cols=1)  # 凍結表頭 + xid 首欄
+        attrs = r.get("attributions") or []
+        n = max(1, len(attrs))
+        for j in range(n):
+            a = attrs[j] if j < len(attrs) else {}
+            line = []
+            for _title, key, _w in _EXPORT_XLSX_COLS:
+                src_val = a.get(key, "") if key in _attr_keys else r.get(key, "")
+                line.append(_export_cell(key, src_val))
+            ws.append(line)
+        merges.append((r_excel, n))
+        r_excel += n
+    _style_header(ws, [c[2] for c in _EXPORT_XLSX_COLS], freeze_cols=1)  # 凍結表頭 + 編號首欄
+    # style 後再合併同一 review 的 review 級欄（避免 MergedCell 樣式設定問題）
+    for sr, n in merges:
+        if n > 1:
+            for ci in review_col_idx:
+                ws.merge_cells(start_row=sr, start_column=ci, end_row=sr + n - 1, end_column=ci)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

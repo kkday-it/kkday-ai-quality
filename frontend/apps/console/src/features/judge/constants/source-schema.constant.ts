@@ -71,6 +71,25 @@ export interface L3Candidate {
   score?: number;
 }
 
+/** 單條歸因分類（後端 `_attribution_of`：一則評論 1:N 多歸因，各帶 L1-L3/信心/分層/階段）。 */
+export interface Attribution {
+  finding_id?: string;
+  l1_domain?: string;
+  l1_label?: string;
+  l2_code?: string;
+  l2_label?: string;
+  l3_code?: string;
+  l3_label?: string;
+  confidence?: number;
+  confidence_tier?: string;
+  judgment_stage?: string;
+  recommended_action?: string;
+  polarity?: string;
+  problem_summary?: string;
+  reason?: string;
+  is_primary?: boolean;
+}
+
 
 /**
  * 歸因列表單列（`_enrich_problem` 回傳）。常用欄位具名、其餘走 index signature——
@@ -83,11 +102,10 @@ export interface ProblemRow {
   confidence_tier?: string;
   l3_candidates?: L3Candidate[];
   source_id?: string; // 該來源特徵 id（product_reviews→rec_oid…；選取/導出業務身分）
-  // ── 1:N fan-out 欄（後端 _paged_fanout 附）：一則評論多條歸因各一列，靠 span 合併 review 級欄 ──
-  finding_id?: string; // 每歸因列唯一（前端 rowKey；未判＝source_id）
-  _group?: string; // 所屬 review 的特徵 id（source_id；同組連續）
-  _rowspan?: number; // 該組首列＝歸因數 N（span 合併 review 級欄）、其餘＝0
-  _seq?: number; // review 在本頁的序號（#seq 合併格顯示）
+  // ── 一列一 review（後端 _paged_fanout 附）：多歸因收進 attributions 陣列，右側單欄堆疊呈現 ──
+  _group?: string; // 該 review 的特徵 id（source_id；前端 rowKey / expand key）
+  _seq?: number; // review 在本頁的序號（#seq 顯示）
+  attributions?: Attribution[]; // 該 review 的多條歸因（0＝未判，右欄顯示「—」）
   [key: string]: unknown;
 }
 
@@ -107,7 +125,12 @@ const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
   },
   { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
   { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
-  { title: '信心', dataIndex: 'confidence', sortable: { sortDirections: ['ascend', 'descend'] } },
+  {
+    title: '信心',
+    dataIndex: 'confidence',
+    slotName: 'conf',
+    sortable: { sortDirections: ['ascend', 'descend'] },
+  },
   { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
   { title: '判決階段', dataIndex: 'judgment_stage', slotName: 'stage' },
 ];

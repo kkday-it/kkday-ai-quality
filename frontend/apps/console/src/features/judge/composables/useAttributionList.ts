@@ -130,26 +130,20 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       });
       rows.value = r.rows || [];
       total.value = r.total || 0;
-      // 1:N：expand 綁 group-head（首列 finding_id；span 合併展開操作欄故每 review 一個展開鈕）
-      expandedKeys.value = rows.value
-        .filter((x) => (x._rowspan ?? 1) > 0)
-        .map((x) => String(x.finding_id)); // 載入後預設全展開
+      // 一列一 review（多歸因收進 row.attributions 陣列）；expand/rowKey 皆綁 _group（source_id）
+      expandedKeys.value = rows.value.map((x) => String(x._group)); // 載入後預設全展開
     } catch (e: any) {
       error.value = '載入失敗：' + (e?.message || e);
     } finally {
       loading.value = false;
     }
   };
-  /** 一鍵收合 / 展開全部：依當前是否已全展開切換。 */
-  // group-head＝各 review 首列（_rowspan>0）；展開/全展開以其 finding_id 為鍵
-  const groupHeads = computed(() => rows.value.filter((x) => (x._rowspan ?? 1) > 0));
+  /** 一鍵收合 / 展開全部：依當前是否已全展開切換（一列一 review，key＝_group）。 */
   const allExpanded = computed(
-    () => groupHeads.value.length > 0 && expandedKeys.value.length >= groupHeads.value.length,
+    () => rows.value.length > 0 && expandedKeys.value.length >= rows.value.length,
   );
   const toggleExpandAll = () => {
-    expandedKeys.value = allExpanded.value
-      ? []
-      : groupHeads.value.map((x) => String(x.finding_id));
+    expandedKeys.value = allExpanded.value ? [] : rows.value.map((x) => String(x._group));
   };
   /** Arco 表頭點擊排序變更 → 映射後端 sort_by/sort_dir；清除排序（direction 空）回預設評論時間新→舊。 */
   const onSortChange = (dataIndex: string, direction: string) => {
@@ -225,29 +219,18 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadUnjudged();
   };
 
-  // ── 選取（跨頁累積；selectedKeys＝source_id 業務身分，doRun/export/selectPages 直接用；
-  //   表格 rowKey=finding_id 另經 selectedRowKeys/onSelectionChange 映射，因 1:N 一 review 多列）──
+  // ── 選取（跨頁累積；rowKey=source_id → selectedKeys 即勾選 key，doRun/export/selectPages 直接用）──
   const selectedKeys = ref<string[]>([]); // source_id（該來源特徵 id）
   const runCount = computed(() => selectedKeys.value.length); // 已選 review 數
   const clearSelection = () => (selectedKeys.value = []);
-  /** 當前頁 finding_id → 所屬 review 特徵 id（_group=source_id）；表格勾選 ⇄ 業務身分映射（不再字串反解）。 */
-  const findingToGroup = computed(() => {
-    const m = new Map<string, string>();
-    rows.value.forEach((r) => m.set(String(r.finding_id), String(r._group)));
-    return m;
-  });
-  /** 表格 selectedRowKeys（當前頁 finding_id）：由業務 selectedKeys(source_id) 反推供 checkbox 勾選狀態。 */
-  const selectedRowKeys = computed(() => {
-    const set = new Set(selectedKeys.value);
-    return rows.value.filter((r) => set.has(String(r._group))).map((r) => String(r.finding_id));
-  });
-  /** 表格勾選變更（finding_id）→ 映射回 source_id；合併保留非本頁既有選取（跨頁）。 */
+  /** 表格 selectedRowKeys＝業務 selectedKeys（rowKey=source_id，一列一 review，無需映射）。 */
+  const selectedRowKeys = selectedKeys;
+  /** 表格勾選變更（rowKey=source_id）：合併保留非本頁既有選取（跨頁）。 */
   const onSelectionChange = (keys: (string | number)[]) => {
     const pageGroups = new Set(rows.value.map((r) => String(r._group)));
-    const picked = new Set(keys.map((k) => findingToGroup.value.get(String(k)) ?? String(k)));
     selectedKeys.value = [
       ...selectedKeys.value.filter((id) => !pageGroups.has(id)), // 保留非本頁選取
-      ...picked, // 本頁已勾
+      ...keys.map((k) => String(k)), // 本頁已勾（key 即 source_id）
     ];
   };
   const pageSpec = ref('');
