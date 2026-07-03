@@ -500,6 +500,12 @@ onMounted(init);
 :deep(.arco-table-tr-expand > .arco-table-td) {
   background-color: var(--color-bg-2);
 }
+/* 主列 ⇄ 展開列 hover 完全同步：兩者為獨立 <tr>，Arco 原生只各自 hover。用相鄰選擇器 + :has 互相連動，
+   使滑鼠移到「主列或展開列任一」時，整則評論（主列 td + 展開列 td）同時上灰(--color-fill-1)，底色完全同步。 */
+:deep(.arco-table-tr:hover + .arco-table-tr-expand > .arco-table-td),
+:deep(.arco-table-tr:has(+ .arco-table-tr-expand:hover) > .arco-table-td) {
+  background-color: var(--color-fill-1);
+}
 /* 分組標題：預設偏大偏深，調小 + 轉次級文字色，作為分區標籤不搶眼。 */
 :deep(.attr-expand .arco-descriptions-title) {
   font-size: 13px;
