@@ -26,6 +26,9 @@ class SourceSpec:
     score_col: str | None = None  # 星等/評分欄名（list_problems score 篩選用）
     category_col: str | None = None  # 商品分類欄名（product_vertical 篩選用）
     date_col: str = "occurred_at"  # 預設日期篩選欄（date_field='occurred_at' 對應）
+    # 該來源專表自帶多歸因判決 JSONB 欄名；None＝判決走 judgments 表舊路（其餘 4 來源）。
+    # 有值時判決讀寫改對本欄操作（見 db.upsert_review_judges / _list_problems_spec 分支）。
+    judges_col: str | None = None
 
 
 # 已拆表來源登記（value=source code → SourceSpec）。
@@ -36,6 +39,7 @@ _REGISTRY: dict[str, SourceSpec] = {
         natural_key="source_record_id",
         score_col="score",
         category_col="product_category_main",
+        judges_col="judges",
     ),
 }
 

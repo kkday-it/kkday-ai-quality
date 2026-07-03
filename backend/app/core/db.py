@@ -300,6 +300,11 @@ def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
 
 # ── product_reviews 專表（拆自 intake_items；見 tables.py 註解）───────────────
 
+# 判決專屬欄：由判決引擎（prejudge → upsert_review_judges）獨立寫入，**不**受 CSV 重上傳
+# 覆蓋——ingest 路徑（insert_product_reviews_batch）從 INSERT/UPDATE 欄集雙雙排除，否則
+# row_to_product_review 無此鍵 → 重上傳把已判結果寫回 NULL/清空（見 upsert_review_judges）。
+_PR_JUDGE_COLS = ("judges", "review_polarity", "judged_at")
+
 
 def insert_product_reviews_batch(rows: list[dict], errors: list[str] | None = None) -> int:
     """批量 upsert product_reviews 列（衝突鍵 source_record_id，覆蓋業務欄位、保留 xid）。
@@ -321,7 +326,11 @@ def insert_product_reviews_batch(rows: list[dict], errors: list[str] | None = No
     if not rows:
         return 0
     pr = T.product_reviews
-    business_cols = [c.name for c in pr.columns if c.name not in ("xid", "source_record_id")]
+    business_cols = [
+        c.name
+        for c in pr.columns
+        if c.name not in ("xid", "source_record_id", *_PR_JUDGE_COLS)
+    ]
     # 過濾無自然鍵 + 批內去重（同 source_record_id 留最後一筆）：避免 executemany 的 ON CONFLICT
     # 在單一語句內同鍵重複影響（PG 會報 "cannot affect row a second time"）；冪等語義＝後者覆蓋前者。
     dedup: dict[str, dict] = {}
@@ -333,8 +342,10 @@ def insert_product_reviews_batch(rows: list[dict], errors: list[str] | None = No
     clean = list(dedup.values())
     if not clean:
         return 0
-    # executemany 要求每列同鍵：以固定欄位集（除 xid 自增）補齊，缺值填 None。
-    cols = [c.name for c in pr.columns if c.name != "xid"]
+    # executemany 要求每列同鍵：以固定欄位集（除 xid 自增 + 判決專屬欄）補齊，缺值填 None。
+    # 判決欄排除：judges NOT NULL DEFAULT '[]'，INSERT 傳 None 會違反約束；且新列本就無判決，
+    # 交由 DB default（judges='[]'、review_polarity/judged_at NULL），ingest 一律不碰判決欄。
+    cols = [c.name for c in pr.columns if c.name not in ("xid", *_PR_JUDGE_COLS)]
     base = _pg_insert(pr)
     stmt = base.on_conflict_do_update(
         index_elements=["source_record_id"], set_={c: base.excluded[c] for c in business_cols}
@@ -358,6 +369,39 @@ def insert_product_reviews_batch(rows: list[dict], errors: list[str] | None = No
                     if errors is not None and len(errors) < 10:
                         errors.append(f"{p.get('source_record_id')}: {type(ex).__name__}: {str(ex)[:160]}")
     return inserted
+
+
+def upsert_review_judges(
+    item_id: str,
+    judges: list[dict],
+    *,
+    review_polarity: str,
+    judged_at: str,
+) -> bool:
+    """整欄覆寫 product_reviews 判決三欄（judges/review_polarity/judged_at），不動業務欄。
+
+    判決引擎對 product_reviews 來源的唯一落庫口（prejudge_batch._work_one 依 spec.judges_col
+    分流至此），取代 insert_finding→judgments；其餘 4 未拆表來源仍走 insert_finding。整欄覆寫
+    ＝冪等：重判以最新結果整包取代舊 judges 陣列（多歸因去重 / is_primary 標記於 prejudge 端完成）。
+
+    judges 傳原生 list[dict]（JSONB 欄自動適配，比照 product_category_sub 慣例，不 json.dumps）。
+
+    Args:
+        item_id: 目標評論 item_id（product_reviews.item_id，唯一）。
+        judges: ReviewJudge.model_dump() 清單（可空＝負向但無法歸類，對應 pending_data）。
+        review_polarity: 整則評論傾向（positive/negative/neutral/unknown）。
+        judged_at: 判決時間（ISO）。
+
+    Returns:
+        是否命中該 item_id（False＝查無此評論，未寫入）。
+    """
+    stmt = (
+        sa_update(T.product_reviews)
+        .where(T.product_reviews.c.item_id == item_id)
+        .values(judges=judges, review_polarity=review_polarity, judged_at=judged_at)
+    )
+    with T.get_engine().begin() as c:
+        return c.execute(stmt).rowcount > 0
 
 
 # ── 帳號系統（users）+ per-user 設定（user_settings）─────────────────────
@@ -683,6 +727,9 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "package_name": _extract_package_name({"order_snap_json": row.get("prod_name_snapshot")}),
             "member_uuid": row.get("member_uuid"),
             "traveller_type": row.get("traveller_type"),
+            # 多歸因判決陣列（product_reviews 自帶欄；供前端渲染多標籤。P1 additive——
+            # 攤平單值欄仍由下方 finding(jg_data) 提供，P3 才切換讀取源，過渡期兩者並存不衝突）。
+            "judges": row.get("judges") or [],
         }
     else:
         from app.core import source_mapping as _srcmap

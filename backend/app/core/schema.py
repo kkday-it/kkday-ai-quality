@@ -224,3 +224,34 @@ class InboundItem(BaseModel):
     symptom_tag3: str = ""
     root_cause_candidates: list[str] = Field(default_factory=list)
     evidence_level: str = "symptom_only"
+
+
+class ReviewJudge(BaseModel):
+    """product_reviews.judges 陣列單一元素：一條違規線的隔離判決。
+
+    一則評論可有 0..N 條（同時違反多規則各自獨立輸出 action / 負責單位）；取代
+    TicketFinding「一評論一 finding」的 1:1 模型。polarity 不進此元素——升格為
+    product_reviews.review_polarity 頂層欄（整則評論一次判定，非逐違規）。同域重判以
+    judge_id 原子替換（先刪同鍵元素再插入），非疊加，保持冪等。
+    """
+
+    judge_id: str = ""  # 冪等鍵（＝l1_domain_code）：同域重判替換用
+    l1_domain_code: str = ""  # L1 域機器碼（content/product_quality…）
+    l1_label: str = ""
+    l2_code: str = ""  # L2 面向 C-code（C-x-y）
+    l2_label: str = ""
+    l3_code: str = ""  # L3 細項 C-code（C-x-y-z；config/ai_judge 白名單）
+    l3_label: str = ""
+    confidence: float = 0.0  # 最終信心（raw → cap 封頂後）
+    raw_confidence: float = 0.0  # LLM 原始信心
+    confidence_tier: str = ""  # auto_accept / jury / needs_review
+    judgment_stage: str = ""  # judged / pending_review / pending_data
+    recommended_action: str = ""  # 域級 action（schema.RecommendedAction 8 值）
+    owner: str = ""  # 負責單位（AM / 客服…；值域待業務定義，比照 owner_role，禁自創）
+    evidence_quote: str = ""  # 命中違規的評論原文段（逐字反查）
+    problem_summary: str = ""
+    is_primary: bool = False  # 該評論最核心一條（信心最高；index 0）
+    is_enhanced: bool = False  # 是否經 Stage2b 灰度複判
+    enhance_model: str = ""  # 複判使用模型（空＝未複判）
+    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
+    judged_at: str = ""  # 判決時間（ISO）
