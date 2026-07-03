@@ -49,11 +49,12 @@ def _collect(node: dict, l1_label: str, l2_label: str, out: list[list[str]]) -> 
     """
     label = node.get("label", "")
     level = node.get("level") or 0
+    disp = f"{node.get('code', '')} {label}".strip()  # 各級 cell 帶 code（如「C-2-1 網路品質」）
     children = node.get("children", [])
     if level == 2:
-        l2_label = label
+        l2_label = disp
     if not children:  # 葉節點：輸出判準列
-        l3 = label if level >= 3 else ""
+        l3 = disp if level >= 3 else ""
         out.append(
             [
                 l1_label,
@@ -71,20 +72,36 @@ def _collect(node: dict, l1_label: str, l2_label: str, out: list[list[str]]) -> 
         _collect(child, l1_label, l2_label, out)
 
 
-def _style_header(ws, widths: list[int]) -> None:
-    """表頭樣式（粗體 + 底色）＋ 凍結首列 ＋ 欄寬 ＋ 內容自動換行（對齊 gen_taxonomy_xlsx 視覺）。"""
-    from openpyxl.styles import Alignment, Font, PatternFill
+def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
+    """統一導出美化樣式：表頭品牌綠底白字 ＋ 凍結首列(+前 freeze_cols code 欄) ＋ 篩選箭頭
+    ＋ 全表細邊框 ＋ 資料列斑馬紋 ＋ 欄寬 ＋ 內容自動換行頂對齊。所有導出共用此 helper 確保視覺一致。"""
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    for c in ws[1]:
-        c.font = Font(bold=True)
-        c.fill = PatternFill("solid", fgColor="F2F3F5")
-        c.alignment = Alignment(vertical="center")
-    ws.freeze_panes = "A2"
+    thin = Side(style="thin", color="E5E6EB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    head_fill = PatternFill("solid", fgColor="2E7D5B")  # 品牌綠表頭
+    zebra = PatternFill("solid", fgColor="F7F8FA")  # 偶數資料列淡底（斑馬紋）
+
+    for c in ws[1]:  # 表頭
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border
+    ws.row_dimensions[1].height = 24
+
+    # 凍結首列 + 前 freeze_cols 欄（code 欄橫捲時固定）；表頭加篩選箭頭
+    ws.freeze_panes = f"{chr(65 + freeze_cols)}2"
+    ws.auto_filter.ref = ws.dimensions
+
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + i)].width = w
-    for row in ws.iter_rows(min_row=2):
+
+    for r, row in enumerate(ws.iter_rows(min_row=2), start=2):  # 資料列
         for c in row:
             c.alignment = Alignment(wrap_text=True, vertical="top")
+            c.border = border
+            if r % 2 == 0:
+                c.fill = zebra
 
 
 def build_rules_workbook_bytes() -> bytes:
@@ -112,13 +129,13 @@ def build_rules_workbook_bytes() -> bytes:
         # 域名優先取 _meta.label（＝規則管理 UI 左選單顯示名，SSOT），與使用者所見一致；缺則退樹根 label。
         l1_label = (content.get("_meta") or {}).get("label") or l1.get("label", "")
         rows: list[list[str]] = []
-        _collect(l1, l1_label, "", rows)
+        _collect(l1, f"{code} {l1_label}".strip(), "", rows)  # L1 cell 帶 C-N code
         title = f"{code} {l1_label}".strip()[:31]  # 分頁名上限 31 字
         ws = wb.create_sheet(title)
         ws.append(_TREE_HEADERS)
         for r in rows:
             ws.append(r)
-        _style_header(ws, _TREE_WIDTHS)
+        _style_header(ws, _TREE_WIDTHS, freeze_cols=3)  # 凍結 L1/L2/L3 三 code 欄
 
     # global 判決總規範（區塊/項目/內容 扁平化；跳過 $schema/_meta 中繼欄）
     gcontent = db.get_rule_active("global_rule")
@@ -136,7 +153,7 @@ def build_rules_workbook_bytes() -> bytes:
         gws.append(_GLOBAL_HEADERS)
         for r in grows:
             gws.append(r)
-        _style_header(gws, _GLOBAL_WIDTHS)
+        _style_header(gws, _GLOBAL_WIDTHS, freeze_cols=1)  # 凍結「區塊」欄
 
     buf = io.BytesIO()
     wb.save(buf)

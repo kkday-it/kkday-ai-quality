@@ -138,16 +138,42 @@ def _in_jury_band(conf: float) -> bool:
     return t.get("jury_low", 0.5) <= conf < t.get("jury_high", 0.7)
 
 
+def _evidence_capped(l1_domain: str, item: dict) -> bool:
+    """是否因缺外部佐證觸發證據封頂（現行：供應商域缺 order_oid）。
+
+    Phase B 會改讀 global_rule.evidence_policy().caps 使多域可配置（如 content 域缺商品頁快照）。
+    判決階段派生用此旗標把「需外部資料才能定論」的案子導向 pending_data（待數據補充）。
+    """
+    has_order = bool(item.get("order_oid") or (item.get("raw") or {}).get("order_oid"))
+    return l1_domain == "supplier" and not has_order
+
+
 def _evidence_cap(l1_domain: str, item: dict, raw_conf: float) -> float:
     """證據封頂：無訂單證據不得高信心判供應商履約（供應商域需訂單佐證）。
 
     對齊 SSOT「evidence-gated」：進線多為 symptom_only（評論無訂單），故 supplier 域在缺
     order_oid 時封頂至 jury_high 以下，逼入評審/人審而非自動採信。
     """
-    has_order = bool(item.get("order_oid") or (item.get("raw") or {}).get("order_oid"))
-    if l1_domain == "supplier" and not has_order:
+    if _evidence_capped(l1_domain, item):
         return min(raw_conf, _tiers().get("jury_high", 0.7) - 0.01)
     return raw_conf
+
+
+def _derive_stage(polarity: str, l3_code: str, tier: str, evidence_capped: bool) -> str:
+    """判決階段派生（單一真相；未判＝無 finding 於 db enrich 層補 "unjudged"）。
+
+    - insufficient 資訊不足：連傾向都判不出（unknown），評論本身太少，外部資料救不了。
+    - judged 已判決：非負向(non_issue) 或 負向+歸到 L3+高信心+未觸 cap。
+    - pending_data 待數據補充：負向但 L3 空(abstain) 或 evidence-cap 觸發(缺訂單/商品頁)——需外部佐證、能救。
+    - pending_review 待覆核：負向+有 L3+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
+    """
+    if polarity == "unknown":
+        return "insufficient"
+    if polarity != "negative":  # positive / neutral → non_issue
+        return "judged"
+    if evidence_capped or not l3_code:
+        return "pending_data"
+    return "judged" if tier == "auto_accept" else "pending_review"
 
 
 # ── 分模型呼叫（Stage1 便宜 / Stage2 主模型）；覆寫 contextvar model，不改 client.py ──
@@ -371,6 +397,7 @@ def _non_issue_finding(item: dict, polarity: str, model: str) -> TicketFinding:
         confidence=conf,
         raw_confidence=conf,
         confidence_tier="auto_accept" if polarity != "unknown" else "needs_review",
+        judgment_stage="insufficient" if polarity == "unknown" else "judged",
         model_used=model,
     )
 
@@ -379,6 +406,7 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
     """負向歸因 finding（Stage2/2b 產出 → TicketFinding）。attr 為淨化後 dict。"""
     conf = attr["confidence"]
     tier = _tier_for(conf)
+    stage = _derive_stage("negative", attr["l3_code"], tier, attr.get("evidence_capped", False))
     return TicketFinding(
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
@@ -389,6 +417,7 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
         confidence=conf,
         raw_confidence=attr.get("raw_confidence", conf),
         confidence_tier=tier,
+        judgment_stage=stage,
         needs_review=tier == "needs_review",
         is_enhanced=enhanced,
         enhance_model=model if enhanced else "",
@@ -465,7 +494,8 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
         resolved = {**resolved, "l3_code": "", "l3_label": ""}
         conf = min(conf, l3_min - 0.01)
     return {**resolved, "confidence": conf, "raw_confidence": raw_conf,
-            "evidence_quote": evidence, "l3_candidates": cands}
+            "evidence_quote": evidence, "l3_candidates": cands,
+            "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item)}
 
 
 def _stage2_attribute(item: dict, text: str, model: str) -> dict:

@@ -21,6 +21,13 @@
     "neutral": "中性",
     "unknown": "傾向不明"
   },
+  "stage_labels": {
+    "unjudged": "未判",
+    "judged": "已判決",
+    "pending_review": "待覆核",
+    "pending_data": "待數據補充",
+    "insufficient": "資訊不足"
+  },
   "prejudge": {
     "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞。",
     "stage1_model": "gpt-5-nano",

@@ -41,11 +41,12 @@ def _collect(node: dict, l1_label: str, l2_label: str, out: list[list[str]]) -> 
     """遞迴走訪；遇 L2 更新 l2_label，遇葉節點（無 children，支援變深度）輸出一列判準。"""
     label = node.get("label", "")
     level = node.get("level") or 0
+    disp = f"{node.get('code', '')} {label}".strip()  # 各級 cell 帶 code（如「C-2-1 網路品質」）
     if level == 2:
-        l2_label = label
+        l2_label = disp
     children = node.get("children", [])
     if not children:  # 葉節點（變深度：可能落在 L2 或 L3）
-        l3 = label if level >= 3 else ""
+        l3 = disp if level >= 3 else ""
         out.append(
             [
                 l1_label,
@@ -74,11 +75,11 @@ def main() -> int:
         data = json.loads(f.read_text(encoding="utf-8"))
         l1 = data["tree"][0]
         l1_label = l1.get("label", "")
-        rows: list[list[str]] = []
-        _collect(l1, l1_label, l1_label, rows)
-
         # code 由檔名推導（rule_C-2 → C-2）：_meta.code 於 rebuild 中被清空，檔名最穩
         code = f.stem.replace("rule_", "")
+        rows: list[list[str]] = []
+        _collect(l1, f"{code} {l1_label}".strip(), "", rows)  # L1 cell 帶 C-N code
+
         title = f"{code} {l1_label}".strip()[:31]  # 分頁名上限 31
         ws = wb.create_sheet(title)
         ws.append(HEADERS)

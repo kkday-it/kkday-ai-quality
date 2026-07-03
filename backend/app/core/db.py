@@ -735,6 +735,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "l3_label": finding.get("l3_label"),
             "l3_candidates": finding.get("l3_candidates") or [],  # top-3 符合度（透明檢視）
             "confidence_tier": finding.get("confidence_tier"),
+            "judgment_stage": _stage_of(row, finding),
             "recommended_action": finding.get("recommended_action"),
             "root_cause_domain": finding.get("root_cause_domain"),
             "sub_cause": finding.get("sub_cause"),
@@ -747,10 +748,29 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
     return base
 
 
+def _stage_of(row: dict, finding: dict) -> str:
+    """判決階段顯示值：無 finding→未判(unjudged)；有存 judgment_stage 直接用；
+    舊資料(prejudge 加欄前)無此欄則即時派生（不含 evidence_capped，供列表相容顯示）。"""
+    if not row.get("jg_finding_id"):
+        return "unjudged"
+    st = finding.get("judgment_stage")
+    if st:
+        return st
+    pol = finding.get("polarity")
+    if pol == "unknown":
+        return "insufficient"
+    if pol != "negative":
+        return "judged"
+    if not finding.get("l3_code"):
+        return "pending_data"
+    return "judged" if finding.get("confidence_tier") == "auto_accept" else "pending_review"
+
+
 def list_problems(
     source: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
+    stage: str | None = None,
     limit: int = 100,
     offset: int = 0,
     score: list[int] | None = None,
@@ -785,7 +805,7 @@ def list_problems(
     spec = source_registry.spec_for(source)
     if spec is not None:
         return _list_problems_spec(
-            spec, judged, polarity, limit, offset, score, product_vertical, date_from, date_to,
+            spec, judged, polarity, stage, limit, offset, score, product_vertical, date_from, date_to,
             date_field, prod_oid, order_oid, sort_by, sort_dir,
         )
 
@@ -809,6 +829,10 @@ def list_problems(
     if polarity:
         # polarity 存 judgments.data JSON → 以 jsonb 抽出過濾（未判 data 為 null 自然排除）
         sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
+    if stage == "unjudged":  # 判決階段：未判＝無 finding
+        sel = sel.where(jg.c.finding_id.is_(None))
+    elif stage:  # 其餘階段存 judgments.data.judgment_stage（jsonb 抽出過濾）
+        sel = sel.where(sa_cast(jg.c.data, JSONB)["judgment_stage"].astext == stage)
     if prod_oid:
         sel = sel.where(ii.c.prod_oid == prod_oid)
     count_stmt = select(func.count()).select_from(sel.subquery())
@@ -862,6 +886,7 @@ def _list_problems_spec(
     spec: source_registry.SourceSpec,
     judged: bool | None,
     polarity: str | None,
+    stage: str | None,
     limit: int,
     offset: int,
     score: list[int] | None,
@@ -897,6 +922,10 @@ def _list_problems_spec(
         sel = sel.where(jg.c.finding_id.is_(None))
     if polarity:
         sel = sel.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity)
+    if stage == "unjudged":
+        sel = sel.where(jg.c.finding_id.is_(None))
+    elif stage:
+        sel = sel.where(sa_cast(jg.c.data, JSONB)["judgment_stage"].astext == stage)
     if score and spec.score_col:
         sel = sel.where(tbl.c[spec.score_col].in_(score))
     if spec.category_col:
@@ -1088,42 +1117,75 @@ def problems_summary() -> dict:
 # ── 信心度校準參數（confidence_calibration；Cleanlab/Platt 離線擬合 → 線上套用）──────
 
 
+def prejudge_target_ids(
+    source: str | None = None,
+    product_vertical: str | list[str] | None = None,
+    stages: list[str] | None = None,
+    target_polarity: str | None = None,
+    max_confidence: float | None = None,
+) -> list[str]:
+    """初判歸因「目標選取」的 item_id 清單（scope=all；stage 驅動）。
+
+    只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake 做 source_mapping 還原的無謂開銷；
+    供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry（product_reviews）
+    查專表，否則 fallback intake_items。
+
+    選取邏輯（兩分支聯集去重）：
+    - stages 含 'unjudged' → 收「無 finding 列」item_ids（首判，原 unjudged_item_ids 語義）。
+    - stages 含已判階段（judged/pending_review/pending_data/insufficient）→ 收
+      judgments.data.judgment_stage ∈ 該些階段（JSONB 抽取，複用 list_problems pattern），並可再收斂
+      target_polarity（judgments.data.polarity）與 max_confidence（judgments.confidence 結構化欄 < 上限）
+      ——供「只重判已判中負向且低信心」等再收斂場景，避免浪費 token 重判已確定的正向/高信心。
+
+    Args:
+        source: 來源 code（None＝全部；未拆表來源沿用 intake_items，無分類欄故不套 vertical）。
+        product_vertical: 商品垂直分類分組（僅 spec.category_col 存在的來源生效）。
+        stages: 目標判決階段清單（預設 ["unjudged"]）。
+        target_polarity: 已判分支的傾向收斂（如 "negative"；None＝不收斂）。
+        max_confidence: 已判分支的信心上限（confidence < 此值才收；None＝不收斂）。
+
+    Returns:
+        目標 item_id 清單（去重；順序不保證，批量判決不依賴順序）。
+    """
+    stages = stages or ["unjudged"]
+    want_unjudged = "unjudged" in stages
+    judged_stages = [s for s in stages if s != "unjudged"]
+    spec = source_registry.spec_for(source)
+    tbl = spec.table if spec is not None else T.intake_items
+    jg = T.judgments
+    j = tbl.outerjoin(jg, tbl.c.item_id == jg.c.item_id)
+
+    def _scope(stmt):
+        """套 source（intake fallback）/ 商品垂直分類（有分類欄的來源）過濾。"""
+        if spec is None and source:
+            stmt = stmt.where(tbl.c.source == source)
+        if spec is not None and spec.category_col:
+            codes = _vertical_codes(product_vertical)
+            if codes:
+                stmt = stmt.where(tbl.c[spec.category_col].in_(codes))
+        return stmt
+
+    ids: set[str] = set()
+    with T.get_engine().connect() as c:
+        if want_unjudged:
+            s = _scope(select(tbl.c.item_id).select_from(j).where(jg.c.finding_id.is_(None)))
+            ids.update(r[0] for r in c.execute(s))
+        if judged_stages:
+            s = select(tbl.c.item_id).select_from(j).where(jg.c.finding_id.isnot(None))
+            s = s.where(sa_cast(jg.c.data, JSONB)["judgment_stage"].astext.in_(judged_stages))
+            if target_polarity:
+                s = s.where(sa_cast(jg.c.data, JSONB)["polarity"].astext == target_polarity)
+            if max_confidence is not None:
+                s = s.where(jg.c.confidence < max_confidence)
+            ids.update(r[0] for r in c.execute(_scope(s)))
+    return list(ids)
+
+
 def unjudged_item_ids(
     source: str | None = None, product_vertical: str | list[str] | None = None
 ) -> list[str]:
-    """取未歸因（judgments 無對應 finding）的 item_id 清單（初判歸因 scope=all 標的）。
-
-    只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake（~8 萬列）做 source_mapping
-    還原的無謂開銷；供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry
-    （product_reviews）時改查該專表，否則 fallback intake_items 舊邏輯。
-
-    Args:
-        source: 來源 code 過濾（None＝全部來源；未拆表來源沿用 intake_items）。
-        product_vertical: 商品垂直分類分組（全局篩選；僅 spec.category_col 存在的來源生效，
-            intake_items fallback 無分類欄故不套——結構性限制）。
-
-    Returns:
-        未判 item_id 清單（順序不保證，批量判決不依賴順序）。
-    """
-    spec = source_registry.spec_for(source)
-    if spec is not None:
-        tbl = T.judgments
-        j = spec.table.outerjoin(tbl, spec.table.c.item_id == tbl.c.item_id)
-        stmt = select(spec.table.c.item_id).select_from(j).where(tbl.c.finding_id.is_(None))
-        if spec.category_col:
-            codes = _vertical_codes(product_vertical)
-            if codes:
-                stmt = stmt.where(spec.table.c[spec.category_col].in_(codes))
-        with T.get_engine().connect() as c:
-            return [r[0] for r in c.execute(stmt)]
-
-    ii, jg = T.intake_items, T.judgments
-    j = ii.outerjoin(jg, ii.c.item_id == jg.c.item_id)
-    stmt = select(ii.c.item_id).select_from(j).where(jg.c.finding_id.is_(None))
-    if source:
-        stmt = stmt.where(ii.c.source == source)
-    with T.get_engine().connect() as c:
-        return [r[0] for r in c.execute(stmt)]
+    """未歸因 item_id 清單（薄封裝 prejudge_target_ids(stages=["unjudged"])；相容既有呼叫）。"""
+    return prejudge_target_ids(source, product_vertical, stages=["unjudged"])
 
 
 # ── 歸因縱覽聚合（縱覽頁專用；problems_summary 的進階版，多 polarity/L1-code/星等/月趨勢）────

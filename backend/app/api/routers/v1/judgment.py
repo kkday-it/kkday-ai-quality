@@ -25,9 +25,13 @@ class PrejudgeIn(BaseModel):
 
     item_ids: list[str] | None = None
     source: str | None = None
-    scope: str | None = None  # "all"＝全部未判（item_ids 未給時生效）
+    scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
+    # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
+    stages: list[str] | None = None  # 預設 ["unjudged"]
+    target_polarity: str | None = None  # 已判分支傾向收斂（如 "negative"）
+    max_confidence: float | None = None  # 已判分支信心上限（confidence < 此值才收）
 
 
 @router.post("/prejudge")
@@ -44,7 +48,11 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     if body.item_ids:
         item_ids = body.item_ids
     elif body.scope == "all":
-        item_ids = db.unjudged_item_ids(body.source, body.product_verticals)
+        item_ids = db.prejudge_target_ids(
+            body.source, body.product_verticals,
+            stages=body.stages, target_polarity=body.target_polarity,
+            max_confidence=body.max_confidence,
+        )
     else:
         item_ids = []
 
