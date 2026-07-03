@@ -146,10 +146,10 @@ const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
     fields: [
       { key: 'prod_oid', label: '商品OID', span: 1 },
       { key: 'prod_name', label: '商品名稱', span: 2 },
-      { key: 'product_category_main', label: '商品分類', span: 1 },
+      { key: 'lang', label: '商品語系', span: 1 }, // lang_code＝商品語系（非導覽），與商品OID同列
       { key: 'pkg_oid', label: '方案OID', span: 1 },
       { key: 'package_name', label: '方案名稱', span: 2 },
-      { key: 'lang', label: '商品語系', span: 1 }, // lang_code＝商品語系（非導覽語系），歸商品資訊
+      { key: 'product_category_main', label: '商品分類', span: 1 },
     ],
   },
   {
@@ -170,8 +170,8 @@ const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
     title: '旅客資訊',
     column: 4,
     fields: [
-      { key: 'member_uuid', label: '會員UUID', span: 3 },
-      { key: 'traveller_type', label: '旅客類型', span: 1, kind: 'traveller' },
+      { key: 'member_uuid', label: '會員UUID', span: 2 }, // 與旅客類型左右均分
+      { key: 'traveller_type', label: '旅客類型', span: 2, kind: 'traveller' },
     ],
   },
 ];

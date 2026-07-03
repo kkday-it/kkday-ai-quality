@@ -19,3 +19,6 @@ backend/fixtures/intake/*.csv
 
 # config 線上編輯的 working-copy 備份（git 本身即版本歷史）
 config/taxonomy/.backups/
+
+# DB 遷移前全庫備份（本地 pg_dump·數百 MB·含真實資料，禁止 commit）
+backend/backups/
