@@ -225,34 +225,28 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadUnjudged();
   };
 
-  // ── 選取（跨頁累積；selectedKeys＝item_id 業務身分，doRun/export/selectPages 直接用；
+  // ── 選取（跨頁累積；selectedKeys＝source_id 業務身分，doRun/export/selectPages 直接用；
   //   表格 rowKey=finding_id 另經 selectedRowKeys/onSelectionChange 映射，因 1:N 一 review 多列）──
-  const selectedKeys = ref<string[]>([]); // item_id
+  const selectedKeys = ref<string[]>([]); // source_id（該來源特徵 id）
   const runCount = computed(() => selectedKeys.value.length); // 已選 review 數
   const clearSelection = () => (selectedKeys.value = []);
-  /** finding_id → 所屬 item_id（`fd_{item_id}__{域}` / `fd_{item_id}` / 未判列＝item_id）。 */
-  const itemIdOf = (key: string): string => {
-    const s = String(key);
-    if (!s.startsWith('fd_')) return s; // 未判列 rowKey＝item_id
-    const body = s.slice(3);
-    const i = body.lastIndexOf('__');
-    return i >= 0 ? body.slice(0, i) : body;
-  };
-  /** 表格 selectedRowKeys（當前頁 finding_id）：由業務 selectedKeys(item_id) 反推供 checkbox 勾選狀態。 */
+  /** 當前頁 finding_id → 所屬 review 特徵 id（_group=source_id）；表格勾選 ⇄ 業務身分映射（不再字串反解）。 */
+  const findingToGroup = computed(() => {
+    const m = new Map<string, string>();
+    rows.value.forEach((r) => m.set(String(r.finding_id), String(r._group)));
+    return m;
+  });
+  /** 表格 selectedRowKeys（當前頁 finding_id）：由業務 selectedKeys(source_id) 反推供 checkbox 勾選狀態。 */
   const selectedRowKeys = computed(() => {
     const set = new Set(selectedKeys.value);
-    return rows.value
-      .filter((r) => set.has(String(r._group ?? itemIdOf(String(r.finding_id)))))
-      .map((r) => String(r.finding_id));
+    return rows.value.filter((r) => set.has(String(r._group))).map((r) => String(r.finding_id));
   });
-  /** 表格勾選變更（finding_id）→ 映射回 item_id；合併保留非本頁既有選取（跨頁）。 */
+  /** 表格勾選變更（finding_id）→ 映射回 source_id；合併保留非本頁既有選取（跨頁）。 */
   const onSelectionChange = (keys: (string | number)[]) => {
-    const pageItems = new Set(
-      rows.value.map((r) => String(r._group ?? itemIdOf(String(r.finding_id)))),
-    );
-    const picked = new Set(keys.map((k) => itemIdOf(String(k))));
+    const pageGroups = new Set(rows.value.map((r) => String(r._group)));
+    const picked = new Set(keys.map((k) => findingToGroup.value.get(String(k)) ?? String(k)));
     selectedKeys.value = [
-      ...selectedKeys.value.filter((id) => !pageItems.has(id)), // 保留非本頁選取
+      ...selectedKeys.value.filter((id) => !pageGroups.has(id)), // 保留非本頁選取
       ...picked, // 本頁已勾
     ];
   };
@@ -295,7 +289,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const ids: string[] = [];
       (r.rows || []).forEach((row: ProblemRow, idx: number) => {
         const gp = lo + Math.floor(idx / ps); // 該列的全域分頁號
-        if (pages.has(gp)) ids.push(row.item_id);
+        if (pages.has(gp)) ids.push(String(row._group)); // 特徵 id（source_id）
       });
       selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...ids]));
       Message.success(`已選取 ${ids.length} 列（分頁 ${spec}）`);

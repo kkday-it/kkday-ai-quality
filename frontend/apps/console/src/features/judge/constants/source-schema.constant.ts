@@ -82,9 +82,10 @@ export interface ProblemRow {
   polarity?: string;
   confidence_tier?: string;
   l3_candidates?: L3Candidate[];
+  source_id?: string; // 該來源特徵 id（product_reviews→rec_oid…；選取/導出業務身分）
   // ── 1:N fan-out 欄（後端 _paged_fanout 附）：一則評論多條歸因各一列，靠 span 合併 review 級欄 ──
-  finding_id?: string; // 每歸因列唯一（前端 rowKey；未判＝item_id）
-  _group?: string; // 所屬 review 的 item_id（同組連續）
+  finding_id?: string; // 每歸因列唯一（前端 rowKey；未判＝source_id）
+  _group?: string; // 所屬 review 的特徵 id（source_id；同組連續）
   _rowspan?: number; // 該組首列＝歸因數 N（span 合併 review 級欄）、其餘＝0
   _seq?: number; // review 在本頁的序號（#seq 合併格顯示）
   [key: string]: unknown;
