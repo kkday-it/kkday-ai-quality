@@ -14,7 +14,6 @@ import uuid
 from app.core import db
 from app.core import source_mapping as srcmap
 from app.judge.ingest import entry
-from app.judge.ingest import product_reviews as product_reviews_ingest
 
 _log = logging.getLogger(__name__)
 
@@ -58,54 +57,34 @@ def _append_errors(job_id: str, idx: int, errs: list[str]) -> None:
         cur.extend(errs[: max(0, 10 - len(cur))])
 
 
-def _process_product_reviews(job_id: str, idx: int, rows: list[dict]) -> int:
-    """product_reviews：分塊 transform + upsert 專表；逐塊回報進度。回 inserted 總數。"""
+# mixpanel $ / 大寫欄名 → 淨化為合法 SQL 欄名（對齊來源表定義；其餘來源不需）
+_MIX_SANITIZE = {
+    "$insert_id": "insert_id",
+    "$distinct_id": "distinct_id",
+    "$current_url": "current_url",
+    "$os": "os",
+    "Platform": "platform",
+}
+
+
+def _sanitize_row(source: str, row: dict) -> dict:
+    """mixpanel_tracker：源列的 $ / 大寫 key 淨化為合法欄名；其餘來源原樣。"""
+    if source != "mixpanel_tracker":
+        return row
+    return {_MIX_SANITIZE.get(k, k): v for k, v in row.items()}
+
+
+def _process_source(job_id: str, idx: int, source: str, rows: list[dict]) -> int:
+    """5 來源統一：分塊把原始源列（$ 淨化）直接 upsert 各自來源表；逐塊回報進度。回 inserted 總數。"""
     total = 0
     for start in range(0, len(rows), _CHUNK):
-        chunk = rows[start : start + _CHUNK]
+        chunk = [_sanitize_row(source, r) for r in rows[start : start + _CHUNK]]
         errs: list[str] = []
-        pr_rows = []
-        for row in chunk:
-            try:
-                pr_rows.append(
-                    product_reviews_ingest.row_to_product_review(
-                        srcmap.normalize_row("product_reviews", row), row
-                    )
-                )
-            except Exception as ex:  # noqa: BLE001 — 單列轉換失敗只跳過該列並記因
-                errs.append(f"transform: {type(ex).__name__}: {str(ex)[:120]}")
-        inserted = db.insert_product_reviews_batch(pr_rows, errors=errs)
+        inserted = db.insert_source_batch(source, chunk, errors=errs)
         total += inserted
         _bump_sheet(
             job_id, idx,
             add={"processed": len(chunk), "inserted": inserted, "failed": len(chunk) - inserted},
-        )
-        _append_errors(job_id, idx, errs)
-    return total
-
-
-def _process_generic(job_id: str, idx: int, source: str, rows: list[dict], batch_id: str) -> int:
-    """其餘來源：分塊 item_from_canonical + insert_inbound_batch（intake_items）；逐塊回報。回 inserted 總數。"""
-    total = 0
-    for start in range(0, len(rows), _CHUNK):
-        chunk = rows[start : start + _CHUNK]
-        items = []
-        failed = 0
-        errs: list[str] = []
-        for row in chunk:
-            try:
-                it = entry.item_from_canonical(srcmap.normalize_row(source, row), row)
-                it.batch_id = batch_id
-                items.append(it)
-            except Exception as ex:  # noqa: BLE001
-                failed += 1
-                if len(errs) < 5:
-                    errs.append(f"transform: {type(ex).__name__}: {str(ex)[:120]}")
-        inserted = db.insert_inbound_batch(items)
-        total += inserted
-        _bump_sheet(
-            job_id, idx,
-            add={"processed": len(chunk), "inserted": inserted, "failed": failed + (len(items) - inserted)},
         )
         _append_errors(job_id, idx, errs)
     return total
@@ -118,14 +97,9 @@ def _run(job_id: str, filename: str, sheets_data: list[dict]) -> None:
             source, label, name, rows = sd["source"], sd["label"], sd["sheet_name"], sd["rows"]
             _bump_sheet(job_id, idx, set_={"status": "running"})
             try:
-                if source == "product_reviews":
-                    inserted = _process_product_reviews(job_id, idx, rows)
-                    batch = db.create_batch(source, label, f"{filename}::{name}", len(rows), inserted)
-                else:
-                    # generic 需先有 batch_id 才能標記各列所屬批次；處理後回填實際筆數
-                    batch = db.create_batch(source, label, f"{filename}::{name}", len(rows), 0)
-                    inserted = _process_generic(job_id, idx, source, rows, batch["batch_id"])
-                    db.update_batch_inserted(batch["batch_id"], inserted)
+                # 5 來源統一：原始源列（$ 淨化）直接 upsert 各自來源表（衝突鍵＝特徵 id）
+                inserted = _process_source(job_id, idx, source, rows)
+                batch = db.create_batch(source, label, f"{filename}::{name}", len(rows), inserted)
                 _bump_sheet(job_id, idx, set_={"status": "done", "batch_id": batch["batch_id"]})
             except Exception:  # noqa: BLE001 — 單表失敗隔離，不阻斷其餘表
                 _log.exception("上傳單表失敗 job=%s sheet=%s", job_id, name)

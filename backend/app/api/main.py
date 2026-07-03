@@ -242,20 +242,6 @@ async def upload_inbound_stream(job_id: str) -> StreamingResponse:
     )
 
 
-@app.post("/api/inbound")
-def add_inbound(body: SingleEntryIn) -> dict:
-    """單個新增 → 存 SQLite。"""
-    item = entry.single_entry(body.prod_oid, body.comment, body.rating, body.pkg_oid)
-    db.insert_inbound(item)
-    return item.model_dump()
-
-
-@app.get("/api/inbound")
-def get_inbound(status: str | None = None) -> list[dict]:
-    """列出錄入標的（可依 status 過濾），新到舊。"""
-    return db.list_inbound(status)
-
-
 @app.get("/api/batches")
 def get_batches() -> list[dict]:
     """上傳批次清單（新到舊）。"""
@@ -264,19 +250,8 @@ def get_batches() -> list[dict]:
 
 @app.get("/api/batches/{batch_id}/items")
 def get_batch_items(batch_id: str) -> list[dict]:
-    """某批次的錄入明細（點擊表格展示用）。"""
-    return db.list_inbound(batch_id=batch_id)
-
-
-@app.get("/api/batches/{batch_id}/export")
-def export_batch(batch_id: str) -> Response:
-    """匯出批次明細為 CSV 下載。"""
-    csv_bytes = db.export_inbound_csv(batch_id)
-    return Response(
-        content=csv_bytes,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{batch_id}.csv"'},
-    )
+    """某批次錄入明細（5 來源拆表後源表不帶 batch_id，故不再逐批次列出，回空）。"""
+    return []
 
 
 # ── L2–L4 判決層已移除（2026-06-29 清理，待依新 config/taxonomy 重建）──

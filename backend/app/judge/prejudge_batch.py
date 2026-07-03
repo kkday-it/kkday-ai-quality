@@ -93,16 +93,28 @@ def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
 def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
-    全 5 來源統一走 to_findings（1:N 多歸因；一個問題可判出多條獨立歸因，各自一筆 judgments 列），
-    以 replace_item_findings 整組替換該 item 的舊列（重判冪等、保留 true_label）。
+    item 為來源表列（源欄名）。先注入 canonical content + source_id + source（供 prejudge 引擎），
+    全 5 來源統一走 to_findings（1:N 多歸因），以 replace_source_findings 整組替換 (source, source_id)
+    舊列（重判冪等、保留 true_label）。
     """
+    from app.core import source_mapping as _srcmap
+    from app.core import source_registry as _reg
+
     with _sem:
         try:
-            norm = _normalize_raw(item)
+            src = source or ""
+            spec = _reg.spec_for(src)
+            canon = _srcmap.normalize_row(src, item) if src in _srcmap.sources() else {}
+            source_id = str(item.get(spec.natural_key) or "") if spec else ""
+            norm = dict(item)
+            norm["source"] = src
+            norm["source_id"] = source_id
+            norm["content"] = canon.get("content") or ""  # 判決主輸入（各來源源欄→canonical）
+            norm["prod_oid"] = canon.get("prod_oid") or ""
+            norm["order_oid"] = canon.get("order_oid") or ""
+            norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
             findings = prejudge.to_findings(norm, model=model)
-            db.replace_item_findings(
-                norm.get("item_id") or "", findings, source or item.get("source") or ""
-            )
+            db.replace_source_findings(src, source_id, findings)
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
             _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item.get("item_id"))

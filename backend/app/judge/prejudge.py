@@ -371,12 +371,13 @@ def _sanitize_l3(l3_code: str, candidate_codes: frozenset[str]) -> dict[str, str
 
 # ── finding 組裝 ────────────────────────────────────────────────────────────
 def _base_kwargs(item: dict) -> dict:
-    """TicketFinding 共用簿記欄（id/來源/時間/oid）。"""
-    item_id = item.get("item_id", "")
+    """TicketFinding 共用簿記欄（id/來源/時間/oid）。ticket_id 存特徵 id（source_id），供 db 落 judgments.source_id。"""
+    source = item.get("source", "")
+    source_id = item.get("source_id", "")
     now = _now_iso()
     return {
-        "finding_id": f"fd_{item_id}",  # 冪等：重判 upsert 覆蓋
-        "ticket_id": item_id,
+        "finding_id": f"fd_{source}_{source_id}",  # 冪等：重判整組替換（見 db.replace_source_findings）
+        "ticket_id": source_id,  # ＝特徵 id（product_reviews→rec_oid…）
         "prod_oid": item.get("prod_oid", "") or "",
         "pkg_oid": item.get("pkg_oid", "") or "",
         "order_oid": item.get("order_oid", "") or "",
@@ -824,7 +825,8 @@ def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     """
     used_model = "stub" if client.is_stub() else model
     text = _text_of(item)
-    item_id = item.get("item_id", "")
+    src = item.get("source", "")
+    source_id = item.get("source_id", "")
 
     if _skip0(item, text):
         return [_non_issue_finding(item, "positive", "heuristic")]
@@ -843,7 +845,7 @@ def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     findings: list[TicketFinding] = []
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同域去重
         f = _attributed_finding(item, attr, used_model, enhanced=False)
-        f.finding_id = f"fd_{item_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
+        f.finding_id = f"fd_{src}_{source_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
         f.is_primary = i == 0  # 信心最高一條為主歸因
         findings.append(f)
     return findings
