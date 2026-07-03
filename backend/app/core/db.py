@@ -448,8 +448,9 @@ def _jrv():  # 縮寫
 def list_rule_meta() -> list[dict]:
     """列所有 rule 的 active 版 meta（rule_code/version/author/note/created_at/label），無 active 者略。
 
-    label 自 content._meta.label（JSONB 路徑抽出，避免拉整份 content）；schema 等無 _meta.label 者回 None，
-    由前端 fallback 補顯示名。此為 L1 域中文名的唯一真相源（取代前端 RULE_LABELS 各寫一份而漂移）。
+    label 優先取 `tree[0].label`（＝L1 域節點名，也是 AI 判決 l1_label 與歸因列表顯示名），使左側菜單
+    與樹/判決/歸因列表**單一真相源、不漂移**；無 tree 的 rule（schema/global_rule/product_vertical）
+    回退 `_meta.label`，再無則 None 由前端 fallback 補（JSONB 路徑抽出，避免拉整份 content）。
     """
     j = _jrv()
     stmt = (
@@ -459,7 +460,10 @@ def list_rule_meta() -> list[dict]:
             j.c.author,
             j.c.note,
             j.c.created_at,
-            j.c.content["_meta"]["label"].astext.label("label"),
+            func.coalesce(
+                j.c.content["tree"][0]["label"].astext,
+                j.c.content["_meta"]["label"].astext,
+            ).label("label"),
         )
         .where(j.c.is_active.is_(True))
         .order_by(j.c.rule_code)
@@ -536,9 +540,10 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復所有歸因分類（C-N，排除 schema / product_vertical）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復規則配置頁所有規則（schema + global_rule + C-N）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    schema 屬結構規格、product_vertical 屬商品垂直分類、global_rule 屬整體規則，皆非歸因分類，不在此批次。
+    範圍＝規則配置頁顯示的全部（schema 結構規格 + global_rule 整體規則 + C-N 歸因分類）；
+    product_vertical（商品垂直分類）於設定抽屜獨立管理、不在規則配置頁，故排除。
     缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
@@ -547,12 +552,12 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     done: list[dict] = []
     skipped: list[str] = []
     for code in RULE_CODES:
-        if code in ("schema", "product_vertical", "global_rule"):
+        if code == "product_vertical":  # 商品垂直分類獨立於設定抽屜，不在規則配置頁 reset-all 範圍
             continue
         try:
             done.append(reset_rule_default(code, author=author))
         except FileNotFoundError:
-            skipped.append(code)  # 該分類無默認檔 → 跳過
+            skipped.append(code)  # 該 rule 無默認檔 → 跳過
     return {"reset": done, "skipped": skipped}
 
 
@@ -834,6 +839,23 @@ def _vertical_codes(product_vertical: str | list[str] | None) -> list[str]:
     for g in groups:
         codes.extend(_product_vertical.codes_for_group(g))
     return codes
+
+
+def _vertical_scoped_spec(
+    source: str | None, product_vertical: str | list[str] | None
+) -> source_registry.SourceSpec | None:
+    """歸因聚合（overview/breakdown）選表：source 命中拆表來源用其 spec；否則 source=None（縱覽全部）
+    但帶商品垂直分類篩選時，改走唯一具分類欄的 product_reviews。
+
+    縱覽走 intake_items（全部來源）本身無商品分類欄，結構上無法套垂直分類過濾；為使「嚴格限制在
+    商品垂直分類內」在縱覽亦生效（用戶要求），有篩選時改由 product_reviews 專表聚合——即縱覽套分類
+    時只統計「有分類且落在所選分類」的資料，無分類來源（進線/工單）在有篩選時排除。無篩選則回 None，
+    呼叫端 fallback intake_items 維持「全部來源」語義不變。
+    """
+    spec = source_registry.spec_for(source)
+    if spec is None and _vertical_codes(product_vertical):
+        spec = source_registry.spec_for("product_reviews")
+    return spec
 
 
 def _list_problems_spec(
@@ -1137,7 +1159,8 @@ def attribution_overview(
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
         attributed＝已判且 data.l1_domain_code 非空（即負向，走過 L1→L3 歸因）。
     """
-    spec = source_registry.spec_for(source)
+    # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
+    spec = _vertical_scoped_spec(source, product_vertical)
     ii = spec.table if spec is not None else T.intake_items
     score_col = ii.c[spec.score_col] if (spec is not None and spec.score_col) else ii.c.rating
     jg = T.judgments
@@ -1310,7 +1333,8 @@ def attribution_breakdown(
     Returns:
         {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n}]。
     """
-    spec = source_registry.spec_for(source)
+    # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
+    spec = _vertical_scoped_spec(source, product_vertical)
     ii = spec.table if spec is not None else T.intake_items
     jg = T.judgments
     cnt = func.count().label("n")

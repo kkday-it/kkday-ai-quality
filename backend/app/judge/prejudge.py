@@ -6,7 +6,7 @@ accuracy/token 最優管線（真實 83k 筆精算，見 plans/toasty-churning-s
 - Stage 2 歸因（負向；單次呼叫 + 候選域 L3 catalog 聚焦）：選 l3_code + 信心。
 - Stage 2b 自適應複判（僅信心落 jury 帶）：注入該 L2 完整 canon 再判一次，取信心較高者。
 
-判準來源一律 core/ai_judge（rule_C-*.json 的 canon/allow/forbid/正反例），禁在此自寫判準。
+判準來源一律 core/ai_judge（rule_C-*.json 的 canon/allow/forbid/好壞範例），禁在此自寫判準。
 finding 為純歸因（軸A）：polarity + L1/L2/L3 + confidence + recommended_action；verdict（軸B）已自
 schema.TicketFinding 移除，本引擎不產 verdict，recommended_action 由歸因域推導。
 無 token（client.is_stub）→ 全程啟發式，model_used="stub"，讓零 key 也跑通閉環。
@@ -239,19 +239,19 @@ _ATTR_SYS = (
 
 
 def _l3_catalog(domains: list[dict]) -> str:
-    """候選域的 L3 精簡目錄（code | 域›面向›細項 | 意義≤40字）；Stage2 單次呼叫注入。"""
+    """候選域的 L3 精簡目錄（code | 域›面向›細項 | 判準≤40字）；Stage2 單次呼叫注入。"""
     lines: list[str] = []
     codes = [d["code"] for d in domains]
     for n in ai_judge.l3_nodes_for_domains(codes):
-        meaning = (n.get("meaning") or "")[:40]
+        desc = (n.get("canon") or "")[:40]  # 原用 meaning，欄位精煉後改取 canon 首段當短描述
         # 變深度：路徑動態串接（L2 葉無 l3_label → 只印 域›面向），省略空層
         path = "›".join(p for p in (n.get("l1_label", ""), n.get("l2_label", ""), n.get("l3_label", "")) if p)
-        lines.append(f"{n['code']} | {path} | {meaning}")
+        lines.append(f"{n['code']} | {path} | {desc}")
     return "\n".join(lines)
 
 
 def _l2_canon_block(l2_code: str) -> str:
-    """某 L2 面向下所有 L3 的完整厚判準（canon/allow/forbid/正反例）；Stage2b 聚焦複判注入。"""
+    """某 L2 面向下所有 L3 的判準（canon/allow/forbid + 好壞範例 few-shot）；Stage2b 聚焦複判注入。"""
     lines: list[str] = []
     for n in ai_judge.l3_nodes_for_domains([]):  # 全量後過濾該 L2（節點帶 l2_code）
         if n.get("l2_code") != l2_code:
@@ -261,8 +261,8 @@ def _l2_canon_block(l2_code: str) -> str:
             f"  canon: {n.get('canon', '')}\n"
             f"  允許: {'；'.join(n.get('allow', []))}\n"
             f"  禁止: {'；'.join(n.get('forbid', []))}\n"
-            f"  正例: {'；'.join(n.get('positive_cases', []))}\n"
-            f"  反例: {'；'.join(n.get('negative_cases', []))}"
+            f"  好範例: {'；'.join(n.get('positive_cases', []))}\n"
+            f"  壞範例: {'；'.join(n.get('negative_cases', []))}"
         )
     return "\n".join(lines)
 

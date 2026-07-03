@@ -72,6 +72,9 @@ judgments = Table(
     # 反饋來源標記（product_reviews 拆表後，判決結果須知道 item_id 屬哪個來源表才能正確 join 回原始列）
     Column("source", Text),
     Index("idx_judgments_source", "source"),
+    # item_id 是所有歸因查詢（list_problems / overview / breakdown / unjudged）與 intake/專表
+    # outerjoin 的鍵；缺此索引時對 8 萬列做 nested-loop/seq-scan → 列表與縱覽載入緩慢。加索引消除瓶頸。
+    Index("idx_judgments_item_id", "item_id"),
 )
 
 # product_reviews：從 intake_items 拆出的獨立實體表（5 反饋來源中唯一已拆分者；

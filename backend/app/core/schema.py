@@ -193,7 +193,7 @@ class TicketFinding(BaseModel):
     l3_code: str = ""  # L3 細項 C-code（C-x-y-z；config/ai_judge 白名單）
     l3_label: str = ""  # L3 細項中文名
     l3_candidates: list[dict] = Field(default_factory=list)  # top-3 符合度 [{code,label,score}]（透明檢視）
-    polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral / unknown(數據不足)
+    polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral / unknown(傾向不明)
     confidence_tier: str = ""  # 信心分層：auto_accept / jury / needs_review
     model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
     judged_at: str = ""  # 判決時間（ISO）

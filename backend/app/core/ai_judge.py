@@ -41,13 +41,11 @@ def _leaf_record(
         "l2_code": l2_code,
         "l2_label": l2_label,
         "l3_label": l3_label,
-        "meaning": node.get("meaning", ""),
         "canon": node.get("canon", ""),
         "allow": node.get("allow", []),
         "forbid": node.get("forbid", []),
         "positive_cases": node.get("positive_cases", []),
         "negative_cases": node.get("negative_cases", []),
-        "rule": node.get("rule", ""),
     }
 
 
