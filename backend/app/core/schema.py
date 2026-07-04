@@ -202,27 +202,3 @@ class TicketFinding(BaseModel):
     judged_at: str = ""  # 判決時間（ISO）
 
 
-class InboundItem(BaseModel):
-    """待判決標的（人工錄入：CSV/Excel 批量 或 單個新增）。存本地 SQLite，供 L2–L4 判決。"""
-
-    item_id: str = ""  # 冪等鍵（source + prod_oid + comment hash）
-    source: str = "manual"  # 來源標記（review/ticket/conversations/manual…，種類會擴張故用 str）
-    batch_id: str = ""  # 所屬上傳批次（upload_batches.batch_id）
-    source_channel: str = ""  # 感知層管道：A_platform | B_customer | C_supplier | unknown
-    prod_oid: str = ""
-    pkg_oid: str = ""
-    rating: int | None = None  # 評分/星等（嚴重度訊號）
-    comment: str = ""  # 客訴/差評文字（判決主輸入）
-    raw: dict = Field(default_factory=dict)  # 原始列（audit）
-    status: Literal["pending", "diagnosed", "failed", "pending_evidence"] = "pending"
-    created_at: str = ""
-    occurred_at: str = ""  # 原始事件時間（評論 create_date 等）；列表分頁排序鍵
-    order_oid: str = ""  # 訂單編號（選填，B 客人進線管道）
-    # ── 軸A 預判 intake_vector（批量錄入可預先帶；缺則由 intaker 補）──
-    symptom_tag1: str = ""
-    symptom_tag2: str = ""
-    symptom_tag3: str = ""
-    root_cause_candidates: list[str] = Field(default_factory=list)
-    evidence_level: str = "symptom_only"
-
-

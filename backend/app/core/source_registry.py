@@ -1,10 +1,9 @@
-"""反饋來源 → 實體表 registry（product_reviews 拆表後的選表 SSOT）。
+"""反饋來源 → 實體表 registry（來源選表 SSOT）。
 
-5 反饋來源中目前僅 product_reviews 拆為獨立實體表（見 tables.py）；其餘 4 來源
-（conversations/freshdesk_tickets/app_feedback/mixpanel_tracker）仍沿用通用
-intake_items 表。本模組只登記「已拆表」的來源，未登記者一律 fallback 沿用
-intake_items 既有邏輯——刻意不為尚未拆表的來源預先寫死佔位規格（simplicity first，
-Rule of Three：待第 2、3 個來源真的拆表時再擴充 registry，非現在假設性預留）。
+5 反饋來源皆已拆為獨立實體表（見 tables.py）：product_reviews / conversations /
+freshdesk_tickets / app_feedback / mixpanel_tracker，各以特徵 id 為 natural_key。
+本模組登記每個來源的 table + natural_key + score_col/category_col/date_col，供 db.py
+統一 spec 驅動查詢（source=None＝縱覽全部，走 judgments 直接聚合，非單表）。
 """
 
 from __future__ import annotations

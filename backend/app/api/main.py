@@ -498,12 +498,6 @@ def export_problems(body: ExportProblemsIn) -> Response:
     )
 
 
-@app.get("/api/problems/summary")
-def get_problems_summary() -> dict:
-    """問題即時匯總（不另存匯總表）：來源 / 歸因域 / 信心分層 分佈。"""
-    return db.problems_summary()
-
-
 @app.get("/api/problems/attribution_overview")
 def get_attribution_overview(
     source: str | None = None,

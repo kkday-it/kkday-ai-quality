@@ -33,23 +33,6 @@ from app.core.config import env
 
 metadata = MetaData()
 
-# ── 來源數據表（欄位對齊舊 DDL；composite PK 用多個 primary_key）──────────────────
-intake_items = Table(
-    "intake_items",
-    metadata,
-    Column("item_id", Text, primary_key=True),
-    Column("source", Text),
-    Column("batch_id", Text),
-    Column("prod_oid", Text),
-    Column("pkg_oid", Text),
-    Column("rating", Integer),
-    Column("comment", Text),
-    Column("raw", Text),
-    Column("status", Text),
-    Column("created_at", Text),
-    Column("occurred_at", Text),  # 原始事件時間（評論 create_date 等）；伺服器端分頁排序鍵
-)
-
 judgments = Table(
     "judgments",
     metadata,

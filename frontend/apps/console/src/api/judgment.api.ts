@@ -48,9 +48,6 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   return j(`${BASE}/problems?${q.toString()}`);
 };
 
-/** 問題即時匯總（來源 / 域 / 信心分層 分佈）。 */
-export const getProblemsSummary = () => j(`${BASE}/problems/summary`);
-
 /** 導出 CSV（POST·item_ids 放 body 避免 URL 過長 431）→ 回 Blob 供前端下載。 */
 export const exportProblems = async (p: {
   source?: string;

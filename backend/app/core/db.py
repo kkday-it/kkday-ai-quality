@@ -826,18 +826,18 @@ def list_problems(
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
-    """統一問題列表（intake/專表 LEFT JOIN judgments），分頁。回 {rows, total}。
+    """統一問題列表（來源專表 LEFT JOIN judgments），分頁。回 {rows, total}。
 
-    source 命中 source_registry（如 product_reviews）時直接查該專表（表本身已是單一來源，
-    免 WHERE source= 過濾）；未命中則沿用 intake_items 舊邏輯。**不做跨表 UNION**——
-    這是本次刻意的範圍限制（source=None 時只回 intake_items 全來源，不含已拆表來源）。
+    5 來源皆已拆獨立表：source 命中 source_registry 時查該專表（表本身即單一來源，免 WHERE source=）。
+    **不做跨表 UNION**——source=None（縱覽全部）無單表可查，直接回空 {rows:[], total:0}
+    （縱覽聚合走 attribution_overview/breakdown 的 judgments 直接聚合，非此列表）。
 
     Args:
         source: 來源 code 過濾（product_reviews…）。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
         polarity: 傾向過濾（judgments.data.polarity）。
         limit/offset: 分頁。
-        score: 星等過濾（IN 清單；僅 source_registry 命中的表可用，intake_items 路徑忽略）。
+        score: 星等過濾（IN 清單；僅 source_registry 命中且有 score_col 的來源可用）。
         product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
@@ -1205,56 +1205,6 @@ def export_problems_csv(
     return ("﻿" + buf.getvalue()).encode("utf-8")  # BOM：Excel 直接開不亂碼
 
 
-def problems_summary() -> dict:
-    """即時匯總（不另存匯總表）：來源分佈 + 歸因域/信心分層 + 總數。
-
-    Returns:
-        {total_intake, judged, by_source, by_domain, by_tier}。
-    """
-    ii, jg = T.intake_items, T.judgments
-    cnt = func.count().label("n")
-    tiers = _CONFIDENCE_TIERS
-    with T.get_engine().connect() as c:
-        total_intake = c.execute(select(func.count()).select_from(ii)).scalar() or 0
-        judged = c.execute(select(func.count()).select_from(jg)).scalar() or 0
-        by_source = [
-            dict(r)
-            for r in c.execute(
-                select(ii.c.source, cnt).group_by(ii.c.source).order_by(cnt.desc())
-            ).mappings()
-        ]
-        # 域 / 信心分層需讀 data JSON / confidence，Python 即時聚合（資料量小）
-        by_domain: dict[str, int] = {}
-        by_tier = {"auto_accept": 0, "jury": 0, "needs_review": 0}
-        for r in c.execute(select(jg.c.confidence, jg.c.data)).mappings():
-            conf = r.get("confidence")
-            if conf is not None:
-                if conf >= tiers["auto_accept"]:
-                    by_tier["auto_accept"] += 1
-                elif conf >= tiers["jury_low"]:
-                    by_tier["jury"] += 1
-                else:
-                    by_tier["needs_review"] += 1
-            if r.get("data"):
-                try:
-                    dom = json.loads(r["data"]).get("root_cause_domain") or "—"
-                except (ValueError, TypeError):
-                    dom = "—"
-                by_domain[dom] = by_domain.get(dom, 0) + 1
-    return {
-        "total_intake": total_intake,
-        "judged": judged,
-        "by_source": by_source,
-        "by_domain": [
-            {"domain": k, "n": v} for k, v in sorted(by_domain.items(), key=lambda x: -x[1])
-        ],
-        "by_tier": by_tier,
-    }
-
-
-# ── 信心度校準參數（confidence_calibration；Cleanlab/Platt 離線擬合 → 線上套用）──────
-
-
 def prejudge_target_ids(
     source: str | None = None,
     product_vertical: str | list[str] | None = None,
@@ -1264,9 +1214,9 @@ def prejudge_target_ids(
 ) -> list[str]:
     """初判歸因「目標選取」的 item_id 清單（scope=all；stage 驅動）。
 
-    只 SELECT item_id、不跑 _enrich_problem，避免對全量 intake 做 source_mapping 還原的無謂開銷；
-    供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry（product_reviews）
-    查專表，否則 fallback intake_items。
+    只 SELECT 特徵 id、不跑 _enrich_problem，避免對全量做 source_mapping 還原的無謂開銷；
+    供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry 查該專表；
+    source=None（縱覽全部）無單表可查故回空清單。
 
     選取邏輯（兩分支聯集去重）：
     - stages 含 'unjudged' → 收「無 finding 列」item_ids（首判，原 unjudged_item_ids 語義）。
@@ -1276,7 +1226,7 @@ def prejudge_target_ids(
       ——供「只重判已判中負向且低信心」等再收斂場景，避免浪費 token 重判已確定的正向/高信心。
 
     Args:
-        source: 來源 code（None＝全部；未拆表來源沿用 intake_items，無分類欄故不套 vertical）。
+        source: 來源 code（None＝全部來源，走 judgments 直接聚合，無分類欄故不套 vertical）。
         product_vertical: 商品垂直分類分組（僅 spec.category_col 存在的來源生效）。
         stages: 目標判決階段清單（預設 ["unjudged"]）。
         target_polarity: 已判分支的傾向收斂（如 "negative"；None＝不收斂）。
@@ -1339,13 +1289,13 @@ def attribution_overview(
     """歸因縱覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
     比 problems_summary 多：傾向(polarity)分布、L1 七域分布、星等分布、月度時序（已判/負向）。
-    域軸用 data.l1_domain_code（7-code 機器值），非 problems_summary 的 root_cause_domain 圈號。
+    域軸用 data.l1_domain_code（7-code 機器值）。
     polarity/l1 取自 judgments.data JSON（JSONB 抽出 GROUP BY，與 list_problems 同手法）；
-    星等取 intake_items.rating；月份用 occurred_at 前 7 字（YYYY-MM；occurred_at 為 Text，
-    免 timezone/格式 cast，最穩）。信心分層走 Python 即時聚合（資料量小，沿用 problems_summary）。
+    星等取 spec.score_col；月份用 occurred_at 前 7 字（YYYY-MM；occurred_at 為 Text，
+    免 timezone/格式 cast，最穩）。信心分層走 Python 即時聚合（資料量小）。
 
-    source 命中 source_registry（product_reviews）時改查該專表（表本身即單一來源，
-    不需 WHERE source= 過濾；星等改讀 spec.score_col 而非 intake_items.rating）；
+    source 命中 source_registry 時查該專表（表本身即單一來源，
+    不需 WHERE source= 過濾；星等讀 spec.score_col）；
     未命中則行為與改動前完全一致——此函式邏輯複雜，優先保證正確性，僅做選表 + 加 filter
     的最小必要調整（見計畫說明）。
 
@@ -1462,8 +1412,8 @@ def attribution_breakdown(
     L2/L3 取自 judgments.data JSON（l2_code/l2_label/l3_code/l3_label），限定該 L1 域；
     GROUP BY code（carry label），依筆數降序。空 code 自然排除（非負向無此欄）。
 
-    source 命中 source_registry（product_reviews）時改查該專表（單一來源，免 WHERE source=）；
-    未命中則沿用 intake_items 舊邏輯（最小必要調整，同 attribution_overview 說明）。
+    source 命中 source_registry 時查該專表（單一來源，免 WHERE source=）；
+    source=None（縱覽全部）走 judgments 直接聚合（同 attribution_overview）。
 
     Args:
         source: 來源 code 過濾（None＝全部）。
