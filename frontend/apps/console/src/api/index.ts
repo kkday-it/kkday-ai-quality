@@ -7,4 +7,3 @@ export * from './inbound.api';
 export * from './judgment.api';
 export * from './settings.api';
 export * from './datasource.api';
-export * from './config.api';

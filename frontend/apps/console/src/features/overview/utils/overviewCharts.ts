@@ -1,7 +1,7 @@
 /**
  * AI 質檢縱覽 ECharts option 建構器（純函式，無副作用）。
  * 元件只負責把 data 餵進對應 builder 並渲染 <v-chart>，配色 / 結構集中於此單一真相。
- * 圖表型別的 `use([...])` 註冊由消費頁面統一執行（見 QualityOverview.vue），此處不耦合 echarts/core。
+ * 圖表型別的 `use([...])` 註冊由消費頁面統一執行（見 DashboardView.vue），此處不耦合 echarts/core。
  */
 import type { TrendData, IntakeBreakdown, ReviewFunnel } from '../types';
 import type { GaugeData, BarData } from '../dashboard.types';

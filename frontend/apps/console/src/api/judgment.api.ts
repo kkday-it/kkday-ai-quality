@@ -94,10 +94,6 @@ export const startPrejudge = (body: {
     body: JSON.stringify(body),
   });
 
-/** 查初判歸因任務進度（輪詢後備）{status, total, processed, ok, failed, model, total_tokens, cost_usd}。 */
-export const getPrejudgeStatus = (jobId: string) =>
-  j(`${BASE}/v1/judgment/prejudge/status?job_id=${encodeURIComponent(jobId)}`);
-
 /**
  * 初判歸因進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。
  * @param jobId startPrejudge 回傳的 job_id（capability token，端點免 auth header）

@@ -16,8 +16,6 @@ import type {
 
 /** 三個業務目標 key（對齊 Google Sheet roadmap）。 */
 export type GoalKey = 'content' | 'presale' | 'postsale';
-/** view key：總覽 + 三目標 + 自訂。 */
-export type ViewKey = 'all' | GoalKey | 'custom';
 
 /** 圖表類型（對應 chartRegistry 的 renderer/builder）。 */
 export type ChartType =
@@ -73,14 +71,6 @@ export interface ViewSpec {
 export interface DashboardConfig {
   views: Record<string, ViewSpec>;
   charts: Record<string, ChartSpec>;
-}
-
-/** 使用者自訂組合看板（Feature 2b，存 user_settings.overview_boards）。 */
-export interface OverviewBoard {
-  id: string;
-  label: string;
-  /** 從 catalog 挑選的 chartId 清單（有序）。 */
-  chartIds: string[];
 }
 
 /** 單一業務目標的資料集。 */

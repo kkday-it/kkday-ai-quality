@@ -11,13 +11,6 @@ export function deriveProviderId(base_url: string): string {
 }
 
 /**
- * 後端 provider 欄位（POST payload 用）：目前後端只區分 gemini / openai，
- * ByteDance 暫歸 openai（已知簡化；若後端支援 bytedance provider 需同步擴充此處）。
- */
-export const deriveBackendProvider = (base_url: string): string =>
-  base_url.includes('generativelanguage') ? 'gemini' : 'openai';
-
-/**
  * model id 是否達到最低版本門檻。僅 `gpt-N.M` 受限（gpt-5.4-mini → [5,4]）；
  * 非 gpt-* model（gemini / bytedance 等）一律放行，避免被版本規則誤濾。
  *

@@ -98,15 +98,3 @@ export interface SourceRow {
   url: string;
 }
 
-export interface OverviewData {
-  meta: { title: string; subtitle: string; period: string; note: string; loopCaption: string };
-  northStar: NorthStarMetric[];
-  loop: LoopStep[];
-  engines: EngineCard[];
-  laggingTrend: TrendData;
-  leadingTrend: TrendData;
-  intakeBreakdown: IntakeBreakdown;
-  reviewFunnel: ReviewFunnel;
-  categoryCoverage: CategoryCoverageRow[];
-  sources: SourceRow[];
-}
