@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # 環境自檢閘門 —— dev.sh / 部署前置。偵測工具鏈 + 依賴 + DB + migration，冪等可重跑。
-#   ./scripts/doctor.sh          檢測 + 冪等自動修復（cp .env / 裝依賴 / alembic upgrade）
-#   ./scripts/doctor.sh --check  唯讀檢測（CI / prod：不改檔、不裝、不 upgrade），有問題回非零
+#   ./scripts/dev/doctor.sh          檢測 + 冪等自動修復（cp .env / 裝依賴 / alembic upgrade）
+#   ./scripts/dev/doctor.sh --check  唯讀檢測（CI / prod：不改檔、不裝、不 upgrade），有問題回非零
 #
 # 設計原則（呼應專案反 over-engineering）：
 #   - 系統級工具（python / node / pnpm / PostgreSQL）缺失 → 只「報告 + 給安裝指令」，不擅自裝（跨平台太脆）
 #   - 項目內、冪等、無副作用者（venv / pip / pnpm / .env / alembic）→ 預設自動修復，--check 模式僅報告
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 CHECK_ONLY=0

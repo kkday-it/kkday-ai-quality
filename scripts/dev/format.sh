@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 統一格式化前後端（前端 Prettier + 後端 ruff format；鏈式/長行自動換行）。
-#   ./scripts/format.sh
+#   ./scripts/dev/format.sh
 # 一次性前置：frontend 跑 `pnpm install`；backend 跑 `pip install -e ".[dev]"`（含 ruff）。
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 fail=0
 
 echo "🎨 frontend prettier ..."

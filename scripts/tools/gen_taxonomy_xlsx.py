@@ -12,7 +12,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 AJ_DIR = ROOT / "config" / "ai_judge"
 OUT = ROOT / "data" / "問題分類層級結構.xlsx"
 

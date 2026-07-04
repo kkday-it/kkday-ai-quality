@@ -13,8 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# repo 根：scripts/accuracy_audit.py → parents[1]；backend 掛上 sys.path 才能 import app.*
-_ROOT = Path(__file__).resolve().parents[1]
+# repo 根：scripts/accuracy_audit.py → parents[2]；backend 掛上 sys.path 才能 import app.*
+_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "backend"))
 
 from app.judge import accuracy  # noqa: E402

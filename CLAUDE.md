@@ -33,7 +33,7 @@
 
 - monorepo：`frontend/apps/console`（主控台）、`frontend/packages/*`（共用 types）
 - 路由入口：`frontend/apps/console/src/router/index.ts`｜全域殼層（header / tabs / 設定抽屜）：`frontend/apps/console/src/App.vue`
-- 一鍵啟動：`./scripts/dev.sh`（後端 uvicorn :8100 + 前端 vite :5273）
+- 一鍵啟動：`./scripts/dev/dev.sh`（後端 uvicorn :8100 + 前端 vite :5273）
 
 ## 條件載入規則（`.claude/rules/`，編輯對應檔案時自動注入）
 

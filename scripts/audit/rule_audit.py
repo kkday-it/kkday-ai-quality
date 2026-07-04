@@ -24,8 +24,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# repo 根:scripts/rule_audit.py → parents[1]
-_ROOT = Path(__file__).resolve().parents[1]
+# repo 根:scripts/rule_audit.py → parents[2]
+_ROOT = Path(__file__).resolve().parents[2]
 _AI_JUDGE_DIR = _ROOT / "config" / "ai_judge"
 _REPORTS_DIR = _ROOT / "data" / "reports"
 
