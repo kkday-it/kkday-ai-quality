@@ -43,5 +43,6 @@
 | `typescript.md` | `**/*.ts` `**/*.tsx` `**/*.vue` | JSDoc 註釋 + 工具函式優先序 + barrel |
 | `python.md` | `**/*.py` | Google-style docstring + 註釋密度 + 重庫 lazy import |
 | `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` | 禁硬編碼配置化完整規範 |
+| `docs-sync.md` | `**/*.py` `**/*.ts` `**/*.vue` `config/**` `constants/**` | 改邏輯/結構/契約 → 同步更新所有相關文檔（寫前先核實 code）|
 
 > 冷啟動問「有什麼規則」時，只答本檔常駐部分；rules/ 條件規則不列為常駐。
