@@ -1,6 +1,8 @@
-"""source_registry.spec_for / all_sources 單元測試（無需資料庫，純查表邏輯）。"""
+"""source_registry.spec_for 單元測試（無需資料庫，純查表邏輯）。"""
 
 from __future__ import annotations
+
+import pytest
 
 from app.core import source_registry
 from app.core import tables as T
@@ -12,19 +14,31 @@ def test_spec_for_product_reviews_returns_correct_spec() -> None:
     assert spec is not None
     assert spec.source == "product_reviews"
     assert spec.table is T.product_reviews
-    assert spec.natural_key == "source_record_id"
-    assert spec.score_col == "score"
-    assert spec.category_col == "product_category_main"
-    assert spec.date_col == "occurred_at"
+    assert spec.natural_key == "rec_oid"
+    assert spec.score_col == "rec_scores"
+    assert spec.category_col == "product_category"
+    assert spec.date_col == "create_date"
+
+
+@pytest.mark.parametrize(
+    ("source", "natural_key"),
+    [
+        ("product_reviews", "rec_oid"),
+        ("conversations", "session_oid"),
+        ("freshdesk_tickets", "id"),
+        ("app_feedback", "oid"),
+        ("mixpanel_tracker", "insert_id"),
+    ],
+)
+def test_spec_for_registered_sources(source: str, natural_key: str) -> None:
+    """5 來源皆已拆表註冊，各回對應 SourceSpec（自然鍵對齊該表特徵 id）。"""
+    spec = source_registry.spec_for(source)
+    assert spec is not None
+    assert spec.source == source
+    assert spec.natural_key == natural_key
 
 
 def test_spec_for_unknown_source_returns_none() -> None:
-    """未註冊 / 未拆表的來源回 None（呼叫端 fallback intake_items 舊邏輯）。"""
+    """未知來源 / None 回 None（source=None 即縱覽全部，走 judgments 直接聚合）。"""
     assert source_registry.spec_for("unknown_source") is None
-    assert source_registry.spec_for("conversations") is None  # 尚未拆表
     assert source_registry.spec_for(None) is None
-
-
-def test_all_sources_lists_registered_sources() -> None:
-    """all_sources 回傳已註冊來源清單，至少含 product_reviews。"""
-    assert "product_reviews" in source_registry.all_sources()

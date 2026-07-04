@@ -44,12 +44,6 @@ def _load() -> dict[str, dict]:
     return _table
 
 
-def reload() -> None:
-    """清快取（llm_model.json 編輯後呼叫，使新單價即時生效）。"""
-    global _table
-    _table = None
-
-
 def price_for(model: str) -> dict:
     """模型 → {input, output}（每 1M tokens USD）；未列出回 price_default。"""
     return _load().get(model) or _default

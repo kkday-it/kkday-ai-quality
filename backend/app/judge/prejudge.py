@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, get_args
 
@@ -38,12 +37,6 @@ def _cfg() -> dict:
         except (OSError, ValueError):
             _cfg_cache = {}
     return _cfg_cache
-
-
-def reload_config() -> None:
-    """清 config 快取（judgment.json 線上編輯後呼叫，使新閾值/旋鈕即時生效）。"""
-    global _cfg_cache
-    _cfg_cache = None
 
 
 def _tiers() -> dict:
@@ -130,12 +123,6 @@ def _tier_for(conf: float) -> str:
     if conf < t.get("jury_low", 0.5):
         return "needs_review"
     return "jury"
-
-
-def _in_jury_band(conf: float) -> bool:
-    """信心是否落自適應複判帶 [jury_low, jury_high)。"""
-    t = _tiers()
-    return t.get("jury_low", 0.5) <= conf < t.get("jury_high", 0.7)
 
 
 def _evidence_capped(l1_domain: str, item: dict) -> bool:
@@ -276,23 +263,6 @@ def _l3_catalog(domains: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _l2_canon_block(l2_code: str) -> str:
-    """某 L2 面向下所有 L3 的判準（canon/allow/forbid + 好壞範例 few-shot）；Stage2b 聚焦複判注入。"""
-    lines: list[str] = []
-    for n in ai_judge.l3_nodes_for_domains([]):  # 全量後過濾該 L2（節點帶 l2_code）
-        if n.get("l2_code") != l2_code:
-            continue
-        lines.append(
-            f"[{n['code']}] {n.get('l3_label') or n.get('l2_label', '')}\n"
-            f"  canon: {n.get('canon', '')}\n"
-            f"  允許: {'；'.join(n.get('allow', []))}\n"
-            f"  禁止: {'；'.join(n.get('forbid', []))}\n"
-            f"  好範例: {'；'.join(n.get('positive_cases', []))}\n"
-            f"  壞範例: {'；'.join(n.get('negative_cases', []))}"
-        )
-    return "\n".join(lines)
-
-
 # prompt caching 友善切分：靜態法典/目錄/格式放 system 前綴（跨筆逐字元相同 → OpenAI 自動前綴快取
 # 命中，cached input ~-50%），動態進線文字放 user 末端。順序不可顛倒——caching 靠「最長共同前綴精確
 # 比對」，動態內容擺前面會使每筆前綴立即岔開、完全命不中（此為改前 _attr_user 把 text 放最前的 bug）。
@@ -310,21 +280,6 @@ def _attr_system(catalog: str) -> str:
 
 def _attr_user(text: str) -> str:
     """Stage2 歸因 user prompt：僅動態進線文字（置末端，維持 system 前綴穩定以命中 prompt caching）。"""
-    return f"進線文字：\n{text}"
-
-
-def _rejudge_system(canon_block: str) -> str:
-    """Stage2b 聚焦複判 system prompt：判官指引 + 該 L2 完整厚判準 + 輸出格式（靜態前綴）。"""
-    return (
-        f"{_ATTR_SYS}\n\n"
-        f"候選 L3 完整判準（canon/允許/禁止/正反例）：\n{canon_block}\n\n"
-        "依上述判準再判一次，輸出 JSON："
-        "{\"l3_code\":\"code\",\"confidence\":0~1,\"evidence_quote\":\"原文片段\"}"
-    )
-
-
-def _rejudge_user(text: str) -> str:
-    """Stage2b 複判 user prompt：僅動態進線文字（置末端，維持前綴穩定）。"""
     return f"進線文字：\n{text}"
 
 
@@ -461,12 +416,6 @@ def _stage1_polarity(item: dict, text: str, main_model: str) -> str:
     return pol if pol in ("positive", "negative", "neutral") else "unknown"
 
 
-def _candidate_codes() -> frozenset[str]:
-    """候選域（排除 intake_excluded）底下全部 L3 code 白名單。"""
-    domains = ai_judge.selectable_domains()
-    return frozenset(n["code"] for n in ai_judge.l3_nodes_for_domains([d["code"] for d in domains]))
-
-
 def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[str]) -> dict:
     """LLM 歸因輸出 → 淨化 attr dict，套 global_rule abstain/evidence 政策（單次 Stage2 與 cascade Stage B 共用）。
 
@@ -500,111 +449,10 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
             "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item)}
 
 
-def _stage2_attribute(item: dict, text: str, model: str) -> dict:
-    """Stage2 歸因（負向·單次呼叫全 6 域目錄；cascade 關閉時走此路）→ 淨化後 attr dict。"""
-    domains = ai_judge.selectable_domains()
-    candidate_codes = frozenset(
-        n["code"] for n in ai_judge.l3_nodes_for_domains([d["code"] for d in domains])
-    )
-    if client.is_stub():  # stub 佔位：未歸類、中信心、待人審
-        base = _sanitize_l3("", candidate_codes)
-        return {**base, "confidence": 0.5, "raw_confidence": 0.5,
-                "evidence_quote": text[:120], "l3_candidates": []}
-    out = _call(
-        _attr_system(_l3_catalog(domains)), _attr_user(text), "attribute", model,
-        schema=_attr_schema(candidate_codes),
-    )
-    return _finalize_attr(item, text, out, candidate_codes)
-
-
-def _stage2b_rejudge(item: dict, text: str, prev: dict, model: str) -> dict:
-    """Stage2b 自適應複判（僅 jury 帶）：注入該 L2 完整判準再判，取信心較高者。"""
-    l2_code = prev.get("l2_code", "")
-    if not l2_code or client.is_stub():
-        return prev
-    candidate_codes = frozenset(
-        n["code"] for n in ai_judge.l3_nodes_for_domains([prev.get("l1_domain_code", "")])
-    )
-    # 複判 schema：l3_code 限該 L1 域合法 code（無 candidates 欄，對齊 _rejudge_user 輸出）
-    rj_schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["l3_code", "confidence", "evidence_quote"],
-        "properties": {
-            "l3_code": {"type": "string", "enum": [*sorted(candidate_codes), ""]},
-            "confidence": {"type": "number"},
-            "evidence_quote": {"type": "string"},
-        },
-    } if candidate_codes else None
-    out = _call(_rejudge_system(_l2_canon_block(l2_code)), _rejudge_user(text), "rejudge", model, schema=rj_schema)
-    new_conf = _as_float(out.get("confidence"), 0.0)
-    if new_conf <= prev["confidence"]:
-        return prev  # 複判沒更有把握 → 保留原判
-    resolved = _sanitize_l3(str(out.get("l3_code", "")).strip(), candidate_codes) if candidate_codes else {}
-    merged = {k: v for k, v in resolved.items() if v} if resolved else {}
-    conf = _evidence_cap(merged.get("l1_domain_code", prev["l1_domain_code"]), item, new_conf)
-    return {**prev, **merged, "confidence": conf, "raw_confidence": new_conf,
-            "evidence_quote": str(out.get("evidence_quote", prev.get("evidence_quote", "")))[:300]}
-
-
-# ── cascade（global_rule.cascade.enabled）：Stage A 域分類 → Stage B 單域 L2/L3 ────────────
+# ── cascade（global_rule.cascade.enabled）：Stage A 多域 → Stage B 逐域 L2/L3（見 _resolve_attrs_multi）──
 def _stage_a_user(text: str) -> str:
     """Stage A user prompt：僅動態進線文字（置末端，維持 system 前綴穩定以命中 prompt caching）。"""
     return f"進線文字：\n{text}"
-
-
-def _stage_a_system() -> str:
-    """Stage A 域分類 system：注入 global_rule.decision_tree（各域 core + 所需證據）+ 跨域界線 + 輸出格式。
-
-    只判 6 域（不灌全部 L3 目錄）→ 候選少、prompt 小且逐字元固定（可快取），對抗一次攤平數十條 L3 的注意力稀釋。
-    """
-    dt = global_rule.decision_tree()
-    gate_lines = "\n".join(
-        f"- {g.get('domain', '')}：{g.get('core', '')}（需證據：{g.get('need', '')}）"
-        for g in dt.get("gates", [])
-    )
-    bound_lines = "\n".join(f"- {b}" for b in global_rule.global_boundaries())
-    return (
-        "你是 KKday 旅遊商品客訴『歸因域分類器』。這是負向評論，依決策樹選出唯一最貼切的歸因域 domain。\n"
-        "決策樹（依優先序，先排除商品頁問題再往履約／現場／客服／客人）：\n" + gate_lines + "\n"
-        "跨域界線：\n" + bound_lines + "\n"
-        "只能從上列 domain 機器值選一個；負向必歸一域、不得空。輸出 JSON："
-        "{\"domain\":\"域機器值\",\"confidence\":0~1 浮點,\"evidence_quote\":\"最能佐證的原文片段\"}"
-    )
-
-
-def _stage_a_schema(domain_values: list[str]) -> dict:
-    """Stage A 輸出 schema：domain enum 限 6 域機器值（不含空 → 強制選一域）。"""
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["domain", "confidence", "evidence_quote"],
-        "properties": {
-            "domain": {"type": "string", "enum": sorted(domain_values)},
-            "confidence": {"type": "number"},
-            "evidence_quote": {"type": "string"},
-        },
-    }
-
-
-def _stage_a_domain(text: str, model: str) -> str:
-    """Stage A：判 L1 歸因域（machine value）；負向強制選一域；可選 self-consistency 多數決。"""
-    domain_values = [d["code"] for d in ai_judge.selectable_domains()]
-    if not domain_values:
-        return ""
-    casc = global_rule.cascade().get("stageA_l1", {})
-    sa_model = casc.get("model") or _stage1_model(model)  # 域分類用便宜模型（nano），沿 config stage1_model
-    n = max(1, int(casc.get("self_consistency", 1) or 1))
-    schema = _stage_a_schema(domain_values)
-    votes: list[str] = []
-    for _ in range(n):
-        out = _call(_stage_a_system(), _stage_a_user(text), "domain", sa_model, schema=schema)
-        d = str(out.get("domain", "")).strip()
-        if d in domain_values:
-            votes.append(d)
-    if not votes:
-        return domain_values[0]  # 逃生：負向必歸一域（不 abstain L1）
-    return Counter(votes).most_common(1)[0][0]
 
 
 def _stage_b(item: dict, text: str, domain_code: str, model: str) -> dict:
@@ -624,46 +472,6 @@ def _stage_b(item: dict, text: str, domain_code: str, model: str) -> dict:
         schema=_attr_schema(candidate_codes, allow_empty=False),  # 強制選 leaf → 保證 ≥ L2
     )
     return _finalize_attr(item, text, out, candidate_codes)
-
-
-def to_finding(item: dict, *, model: str) -> TicketFinding:
-    """一條進線資料 → TicketFinding（完整四階段管線）。
-
-    Args:
-        item: intake_items 列 dict（item_id/source/prod_oid/rating/comment/raw/order_oid…）。
-        model: 主判決模型（Stage2/2b）；stub 模式忽略、走啟發式。
-
-    Returns:
-        判決單元 TicketFinding（正向不歸因 / 負向帶 L1-L3 歸因）。
-    """
-    used_model = "stub" if client.is_stub() else model
-    text = _text_of(item)
-
-    # Stage 0：零 LLM 略過純好評
-    if _skip0(item, text):
-        return _non_issue_finding(item, "positive", "heuristic")
-
-    # Stage 1：極性閘門
-    polarity = _stage1_polarity(item, text, model)
-    if polarity != "negative":
-        return _non_issue_finding(item, polarity, used_model)
-
-    # Stage 2：歸因（負向）——cascade 開啟走 Stage A 域→Stage B 單域 L2/L3（省 token、少候選提準）；
-    # 否則走現行單次全目錄（可 feature-flag 回退）。stub 一律走單次路（其自帶 stub 佔位）。
-    if global_rule.cascade().get("enabled", False) and not client.is_stub():
-        domain = _stage_a_domain(text, model)
-        attr = _stage_b(item, text, domain, model)
-        return _attributed_finding(item, attr, used_model, enhanced=True)
-
-    attr = _stage2_attribute(item, text, model)
-
-    # Stage 2b：自適應複判（僅 jury 帶且開啟）
-    if _prejudge_cfg().get("enable_adaptive_rejudge", True) and _in_jury_band(attr["confidence"]):
-        enhanced = _stage2b_rejudge(item, text, attr, model)
-        if enhanced is not attr:
-            return _attributed_finding(item, enhanced, used_model, enhanced=True)
-
-    return _attributed_finding(item, attr, used_model, enhanced=False)
 
 
 # ── 多歸因（全 5 來源 1:N）：一則負向評論同時違反多規則 → 多條 attr dict，由 to_findings 各組一 TicketFinding ──

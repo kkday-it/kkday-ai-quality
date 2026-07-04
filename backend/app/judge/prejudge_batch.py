@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import uuid
@@ -60,24 +59,6 @@ def _new_snapshot(total: int, model: str) -> dict:
         "total_tokens": 0,
         "cost_usd": 0.0,
     }
-
-
-def _normalize_raw(item: dict) -> dict:
-    """把 intake_items 列的 `raw`（JSON 字串）就地解成 dict。
-
-    prejudge 的 `_evidence_cap` / `_text_of` 會對 `item["raw"]` 直接 `.get(...)`，而 db 存的是
-    `json.dumps` 後的字串——不先解會在負向供應商判決路徑 AttributeError。於邊界層正規化，
-    prejudge 引擎維持零改動。
-    """
-    raw = item.get("raw")
-    if isinstance(raw, str):
-        try:
-            item["raw"] = json.loads(raw)
-        except (ValueError, TypeError):
-            item["raw"] = {}
-    elif raw is None:
-        item["raw"] = {}
-    return item
 
 
 def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:

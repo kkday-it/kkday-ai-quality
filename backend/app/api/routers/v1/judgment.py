@@ -60,15 +60,6 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     return {"job_id": job_id, "total": len(item_ids), "model": model}
 
 
-@router.get("/prejudge/status")
-def prejudge_status(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
-    """查初判歸因任務進度（輪詢後備；主推 /stream SSE）→ {status, total, processed, ok, failed, model, total_tokens, cost_usd}。"""
-    snap = prejudge_batch.get_job(job_id)
-    if snap is None:
-        raise HTTPException(status_code=404, detail=f"job 不存在或已清除：{job_id}")
-    return snap
-
-
 @router.post("/prejudge/pause")
 def pause_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
     """暫停執行中的初判歸因任務（提交迴圈阻塞、已在跑的收斂後 processed 停增）→ 回更新後快照。"""

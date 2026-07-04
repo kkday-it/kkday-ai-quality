@@ -41,17 +41,6 @@ assert set(CONTENT_DIMENSIONS) | {"non_content"} == set(get_args(Dimension)), (
     "CONTENT_DIMENSIONS 與 Dimension Literal 不一致，請同步"
 )
 
-# 商品可歸因的邏輯欄位（L0 已正規化別名）
-LogicalField = Literal[
-    "prod_name",
-    "prod_summary",
-    "prod_feature",
-    "prod_schedules",
-    "pkg_desc",
-    "pkg_schedules",
-    "none",
-]
-
 RecommendedAction = Literal[
     "rewrite_field",
     "fix_contradiction",
@@ -65,61 +54,12 @@ RecommendedAction = Literal[
 
 
 # ── SSOT v2.7 軸A/軸B 共用型別 ──
-# 旅程階段（軸A · 進線可觀察）
-TripStage = Literal["PRE", "DURING", "POST", "OTHERS"]
-
 # 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）
 # 判決硬閘依此封鎖：< with_order ⇒ 禁判 ②contract_breach
 EvidenceLevel = Literal["symptom_only", "with_product_page", "with_order", "with_both"]
 
 # 嚴重度（軸B · ITIL Priority）
 Severity = Literal["P0", "P1", "P2", "P3"]
-
-# 7 歸因域（軸B · 判決後收斂單選；以 SSOT 圈號為正規值）
-# ⑤客服營運僅判決層浮現，禁進預判候選集（見 symptom_candidate_map）
-RootCauseDomain = Literal["①", "②", "③", "④", "⑤", "⑥", "⑦"]
-
-
-class CSTurn(BaseModel):
-    role: str = ""  # customer | agent
-    content: str = ""
-
-
-class NormalizedTicket(BaseModel):
-    """L1 正規化工單（評論/工單/訂單訊息共用）。"""
-
-    ticket_id: str  # 冪等鍵（review id / thread ts / session_oid）
-    # 6 進線渠道 + manual：conversations 依方向拆 chatbot/order_message；feedback=app_feedback；mixpanel=埋點
-    source: Literal[
-        "review", "ticket", "order_message", "chatbot", "feedback", "mixpanel", "manual"
-    ]
-    prod_oid: str = ""
-    pkg_oid: str = ""
-    order_oid: str = ""  # 訂單編號（進線可定位具體訂單）
-    supplier_oid: str = ""  # 供應商編號（order_message 進線可定位）
-    lang: str = "zh-tw"
-    rating: int | None = None  # 評論星等（嚴重度訊號）
-    comment: str = ""  # 客訴/差評自由文字 → L2 主輸入
-    cs_conversation: list[CSTurn] = Field(default_factory=list)  # ground truth
-    created_at: str = ""
-    # ── 軸A 預判 intake_vector（判決前可給，不需商品/訂單原文；由 intaker 填）──
-    symptom_tag1: str = ""  # KKday 既有症狀樹 tag1（大類）
-    symptom_tag2: str = ""  # tag2（中類，候選集查表鍵）
-    symptom_tag3: str = ""  # tag3（細類）
-    trip_stage: TripStage | None = None  # 旅程階段
-    product_category: str = ""  # 商品類別（bd_tag 或推斷）
-    failure_type: str = ""  # 失效型態：缺漏/矛盾/模糊/不符/未達/誤解
-    root_cause_candidates: list[str] = Field(default_factory=list)  # 候選歸因域集合 1..N（不含⑤）
-    evidence_level: EvidenceLevel = "symptom_only"  # 進線初值，pipeline 隨補證據升級
-
-
-class ProductConfig(BaseModel):
-    """L0 商品設定原文。"""
-
-    prod_oid: str
-    pkg_oid: str = ""
-    fields: dict[str, str] = Field(default_factory=dict)  # 邏輯欄位 → 原文
-
 
 class AdequacyResult(BaseModel):
     """L3 充分度檢查結果（第二意見）。"""

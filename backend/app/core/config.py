@@ -38,25 +38,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
     cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
-    http_timeout: int = 30  # 外部 API（B2C / 評論）httpx timeout 秒
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
-    bigquery_project_id: str = ""  # BQ live 抽取 project；強制各環境經 env 設定（移除硬編碼 project 名，避免洩漏；空值時 datasource live 應報錯）
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
     ai_judge_model: str = "gpt-5-nano"  # fallback 預設＝最省（對齊 llm_model.json defaultModel）；下拉見 defaultModels（minVersion 已降至 5）
     llm_max_retries: int = 5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
-    # ── KKday B2C API（datasource live 模式才需要）──
-    kkday_b2c_token1: str = ""
-    kkday_x_auth_token: str = ""
-    # ── Mixpanel 進線 CLI（python -m app.judge.ingest.mixpanel_feedback）──
-    mixpanel_sa_username: str | None = None
-    mixpanel_sa_password: str | None = None
-    mixpanel_project_id: str | None = None
-    mixpanel_token: str | None = None
-    mixpanel_out_dir: str | None = None
 
 
 # 單例：import 時即載入 .env，全後端共用。

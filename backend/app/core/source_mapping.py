@@ -50,12 +50,6 @@ def sources() -> dict[str, dict[str, Any]]:
     return _sources
 
 
-def canonical_fields() -> list[str]:
-    """統一問題列表的公共欄位清單。"""
-    _ensure_loaded()
-    return list(_canonical)
-
-
 def source_label(source: str) -> str:
     """來源 code → 中文顯示名；委派 sources.label_for（label SSOT 唯一在 config/global/sources.json）。
 

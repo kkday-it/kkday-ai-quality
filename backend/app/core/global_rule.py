@@ -40,16 +40,6 @@ def reload() -> None:
     _cache = None
 
 
-def flow() -> dict[str, Any]:
-    """完整判決總規範 dict。"""
-    return _load()
-
-
-def polarity_gate() -> dict[str, Any]:
-    """極性閘門設定（attribute_only_when）。"""
-    return _load().get("polarity_gate", {})
-
-
 def abstain_policy() -> dict[str, Any]:
     """abstain 政策（l1/l2/l3 各層是否強制/可空）。"""
     return _load().get("abstain_policy", {})

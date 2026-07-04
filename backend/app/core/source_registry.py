@@ -80,8 +80,3 @@ def spec_for(source: str | None) -> SourceSpec | None:
     if not source:
         return None
     return _REGISTRY.get(source)
-
-
-def all_sources() -> list[str]:
-    """已註冊（已拆表）的來源 code 清單。"""
-    return list(_REGISTRY.keys())

@@ -86,31 +86,6 @@ def _resolve() -> dict:
     }
 
 
-def list_models() -> list[str]:
-    """回傳當前 provider（由 base_url 判定）的本地預設模型清單；不再打 /v1/models。
-
-    清單 SSOT＝`config/global/llm_model.json` providers[].defaultModels（前後端共用、{id,desc} 物件、按能力排序）；
-    新增模型只改該檔一處。改本地預設原因：/v1/models 會倒出帳號全模型（embedding / 語音 / 影像 /
-    legacy davinci-babbage-ada / ft-kkday 舊 fine-tune），下拉可能誤選 whisper 當判決模型。
-    base_url 空 → 預設 openai；非 OpenAI 依關鍵字判 gemini / bytedance。
-    """
-    base = (_resolve().get("base_url") or "").strip()
-    providers = _settings.LLM_PROVIDERS
-    prov = None
-    if base:
-        prov = next((p for p in providers if p.get("base_url") == base), None)
-        if prov is None:
-            if "generativelanguage" in base:
-                prov = next((p for p in providers if p.get("id") == "gemini"), None)
-            elif "bytepluses" in base or "volces" in base:
-                prov = next((p for p in providers if p.get("id") == "bytedance"), None)
-        if prov is None:
-            return []  # 自訂 base_url 無對應 provider → 回空，前端顯示「請手動輸入 model」（勿誤導回 OpenAI 清單）
-    if prov is None:  # base_url 空 → 預設 openai
-        prov = next((p for p in providers if p.get("id") == "openai"), None)
-    return [m["id"] for m in prov.get("defaultModels", [])] if prov else []
-
-
 def has_key() -> bool:
     return bool(_resolve()["token"])
 

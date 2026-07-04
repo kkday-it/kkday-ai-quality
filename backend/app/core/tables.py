@@ -273,26 +273,3 @@ def upsert(table: Table, values: dict, pk: list[str]):
     return stmt.on_conflict_do_update(index_elements=pk, set_=update)
 
 
-def upsert_ignore(table: Table, values: dict, pk: list[str]):
-    """INSERT … ON CONFLICT(pk) DO NOTHING（取代 sqlite INSERT OR IGNORE）。"""
-    return _pg_insert(table).values(**values).on_conflict_do_nothing(index_elements=pk)
-
-
-def upsert_preserve(table: Table, values: dict, pk: list[str], preserve_if_empty: list[str]):
-    """upsert；preserve_if_empty 欄位若新值為空字串則保留既有值（只更新 values 內欄位）。
-
-    等價 sqlite `COALESCE(NULLIF(excluded.col,''), table.col)`：即時撈/CSV 補灌時，
-    既有非空內容不被空值覆蓋（prod_name 等）。其餘有提供的欄位以新值覆蓋。
-    """
-    from sqlalchemy import func as _func
-
-    stmt = _pg_insert(table).values(**values)
-    update = {}
-    for k in values:
-        if k in pk:
-            continue
-        if k in preserve_if_empty:
-            update[k] = _func.coalesce(_func.nullif(stmt.excluded[k], ""), table.c[k])
-        else:
-            update[k] = stmt.excluded[k]
-    return stmt.on_conflict_do_update(index_elements=pk, set_=update)

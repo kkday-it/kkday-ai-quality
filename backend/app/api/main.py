@@ -132,14 +132,6 @@ def _activate_settings(user_id: str) -> None:
     app_settings.set_current(app_settings.effective_llm_dict(s))
 
 
-# ── L1 資料錄入（CSV/Excel 批量 + 單個）→ 本地 SQLite ──────────────────
-class SingleEntryIn(BaseModel):
-    prod_oid: str
-    comment: str
-    rating: int | None = None
-    pkg_oid: str = ""
-
-
 class UploadSelection(BaseModel):
     """確認匯入時用戶勾選的工作表：sheet_name + 確認來源（通常＝自動辨識結果）。"""
 
@@ -204,15 +196,6 @@ async def upload_inbound(
     if not sel:
         raise HTTPException(status_code=400, detail="未選擇任何工作表")
     return upload_batch.start_upload_job(content, file.filename or "", sel)
-
-
-@app.get("/api/inbound/upload/status")
-def upload_inbound_status(job_id: str) -> dict:
-    """上傳背景 job 進度快照（輪詢後備；主推 /stream SSE）：status + 每表 processed/total/inserted/failed。"""
-    snap = upload_batch.get_job(job_id)
-    if snap is None:
-        raise HTTPException(status_code=404, detail="job 不存在")
-    return snap
 
 
 @app.get("/api/inbound/upload/stream")
@@ -373,32 +356,6 @@ def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
         "reasoning_effort": body.reasoning_effort or "default",
     }
     return llm_client.ping(cfg=cfg)
-
-
-def _model_meets_min(model_id: str, min_version: str) -> bool:
-    """gpt-N.M 版本 ≥ min_version 才保留；非 gpt-* model（gemini/bytedance 等）不受版本限制。"""
-    import re
-
-    m = re.match(r"^gpt-(\d+)(?:\.(\d+))?", model_id)
-    if not m:
-        return True
-    cur = (int(m.group(1)), int(m.group(2) or 0))
-    mj, mn = (min_version.split(".") + ["0"])[:2]
-    return cur >= (int(mj), int(mn))
-
-
-@app.get("/api/settings/models")
-def list_models(user: dict = Depends(load_user_context)) -> dict:
-    """動態列出當前 user 配置可取得的 model id（過濾 ≥ 門檻版本）；無 token 回空清單。
-
-    供前端 Model 下拉 Arco loading 更新；成本/評價由前端 config/global/llm_model.json defaultModels[].desc 提供（API 無此資訊）。
-    """
-    from app.core import settings as app_settings
-
-    _activate_settings(user["user_id"])
-    ids = llm_client.list_models()
-    minv = app_settings.LLM_MODEL_MIN_VERSION
-    return {"models": [m for m in ids if _model_meets_min(m, minv)]}
 
 
 @app.get("/api/findings")

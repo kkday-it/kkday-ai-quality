@@ -178,12 +178,6 @@ def l3_by_code(code: str) -> dict[str, Any] | None:
     return _l3_by_code.get(code)
 
 
-def valid_l3_codes() -> frozenset[str]:
-    """全部合法 L3 C-code 集合（arbiter 白名單校驗 LLM 輸出用）。"""
-    _ensure_loaded()
-    return frozenset(_l3_by_code.keys())
-
-
 def l3_nodes_for_domains(domain_codes: list[str]) -> list[dict[str, Any]]:
     """取指定歸因域（code 清單）底下所有 L3 節點（保序去重；空清單回全部）。
 
