@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from app.core import db
-from app.core import tables as T
+from app.core.db import tables as T
 from app.core.schema import TicketFinding
 
 

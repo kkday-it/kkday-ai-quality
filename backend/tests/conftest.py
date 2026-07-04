@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
 from app.core import db
-from app.core import tables as T
+from app.core.db import tables as T
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",

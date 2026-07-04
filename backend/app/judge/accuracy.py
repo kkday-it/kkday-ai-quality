@@ -40,7 +40,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
         from sqlalchemy import select  # noqa: PLC0415
 
         from app.core import ai_judge  # noqa: PLC0415
-        from app.core import tables as T  # noqa: PLC0415
+        from app.core.db import tables as T  # noqa: PLC0415
 
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:

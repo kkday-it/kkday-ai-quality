@@ -79,7 +79,7 @@ def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
     舊列（重判冪等、保留 true_label）。
     """
     from app.core import source_mapping as _srcmap
-    from app.core import source_registry as _reg
+    from app.core.db import source_registry as _reg
 
     with _sem:
         try:

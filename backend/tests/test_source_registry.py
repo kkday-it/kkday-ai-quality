@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.core import source_registry
-from app.core import tables as T
+from app.core.db import source_registry
+from app.core.db import tables as T
 
 
 def test_spec_for_product_reviews_returns_correct_spec() -> None:

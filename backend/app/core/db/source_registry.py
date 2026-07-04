@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Table
 
-from app.core import tables as T
+from app.core.db import tables as T
 
 
 @dataclass(frozen=True)

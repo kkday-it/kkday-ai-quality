@@ -1,0 +1,88 @@
+"""db 子模組共用：judgment.json 顯示標籤 / 信心閾值 + 複合鍵 join + 商品垂直分類 + 時間格式化。
+
+problems / prejudge_targets / attribution / export 多處共用，抽出為單一真相（Rule of Three）。
+判決顯示 label + 信心閾值 SSOT＝config/ai_judge/judgment.json（前後端同讀）；db 不能 import settings
+（settings 已 import db → 循環），故以 paths.AI_JUDGE_DIR 自讀該檔。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+
+from sqlalchemy import and_, exists
+
+from app.core.db import source_registry
+from app.core.db import tables as T
+from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
+
+# ── 判決顯示標籤 + 信心閾值（judgment.json；取代已移除的 taxonomy）───────────────
+try:
+    _JUDGMENT_CFG: dict = json.loads((_AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    _JUDGMENT_CFG = {}
+
+_POLARITY_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("polarity_labels", {})
+_TIER_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("tier_labels", {})
+_STAGE_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("stage_labels", {})
+_CONFIDENCE_TIERS: dict = _JUDGMENT_CFG.get(
+    "confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
+)
+
+
+def _jg_join_cond(spec):
+    """judgments 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。"""
+    jg = T.judgments
+    return and_(jg.c.source == spec.source, jg.c.source_id == spec.table.c[spec.natural_key])
+
+
+def _jg_exists(spec, *extra):
+    """`EXISTS (SELECT 1 FROM judgments WHERE source=X AND source_id=特徵id [AND ...])`。"""
+    return exists().where(and_(_jg_join_cond(spec), *extra))
+
+
+def _vertical_codes(product_vertical: str | list[str] | None) -> list[str]:
+    """商品垂直分類分組名 → CATEGORY 代碼清單（多分組 extend 合併；空/None 回空清單）。
+
+    局部 import：product_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
+    供 list_problems / overview / breakdown / prejudge_targets 共用（比對 spec.category_col 的 IN 篩選）。
+    """
+    if not product_vertical:
+        return []
+    from app.core import product_vertical as _product_vertical
+
+    groups = [product_vertical] if isinstance(product_vertical, str) else list(product_vertical)
+    codes: list[str] = []
+    for g in groups:
+        codes.extend(_product_vertical.codes_for_group(g))
+    return codes
+
+
+def _vertical_scoped_spec(
+    source: str | None, product_vertical: str | list[str] | None
+) -> source_registry.SourceSpec | None:
+    """歸因聚合（overview/breakdown）選表：source 命中拆表來源用其 spec；否則 source=None（縱覽全部）
+    但帶商品垂直分類篩選時，改走唯一具分類欄的 product_reviews。
+
+    有篩選時只統計「有分類且落在所選分類」的資料，無分類來源（進線/工單）在有篩選時排除。
+    無篩選則回 None，呼叫端走 judgments 直接聚合維持「全部來源」語義。
+    """
+    spec = source_registry.spec_for(source)
+    if spec is None and _vertical_codes(product_vertical):
+        spec = source_registry.spec_for("product_reviews")
+    return spec
+
+
+def fmt_datetime(value, *, date_only: bool = False) -> str:
+    """正規化時間字串：去毫秒/去 T·Z；date_only 或時間為 00:00:00 時只留日期。
+
+    來源 raw 時間格式不一（'2026-06-25 07:46:19.810' / ISO 'T...Z'）→ 統一可讀格式，
+    導出與前端共用此語義（前端另有同名 JS helper）。非時間字串原樣返回（不誤傷）。
+    """
+    s = str(value).strip().replace("T", " ")
+    if s.endswith("Z"):
+        s = s[:-1].strip()
+    s = re.sub(r"\.\d+", "", s)  # 去小數秒（.810）
+    if date_only or s.endswith(" 00:00:00"):
+        return s.split(" ")[0]
+    return s
