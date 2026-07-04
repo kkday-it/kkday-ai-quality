@@ -1085,7 +1085,7 @@ def export_problems_xlsx(
 
     from openpyxl import Workbook
 
-    from app.core.rule_export import _style_header
+    from app.core.judge_config.rule_export import _style_header
 
     data = list_problems(
         source=source,
