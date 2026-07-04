@@ -31,13 +31,13 @@ docs/                    # ARCHITECTURE · TECH-STACK · DELIVERY-PLAN · specs/
 
 ### 一鍵啟動前後端（推薦）
 ```bash
-./scripts/dev.sh
+./scripts/dev/dev.sh
 ```
 - 後端 → http://localhost:8100（Swagger `/docs`）｜前端 → http://localhost:5273
 - **Ctrl-C 一次**前後端一起停（自動收 uvicorn reload 子程序）
 - 首次較慢（自建 venv + 裝後端依賴；前端需先 `pnpm install` 過）；需 `pnpm`（`brew install pnpm`）
 
-**常用腳本**（`scripts/` 是所有腳本單一入口，見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev.sh` 起前後端 · `./scripts/seed.sh` 重置 mock · `./scripts/test.sh` smoke test · `./scripts/lint.sh` lint 前後端。
+**常用腳本**（`scripts/` 是所有腳本單一入口，見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev/dev.sh` 起前後端 · `./scripts/dev/seed.sh` 重置 mock · `./scripts/dev/test.sh` smoke test · `./scripts/dev/lint.sh` lint 前後端。
 
 > 要分開 / 手動啟動見下方。
 

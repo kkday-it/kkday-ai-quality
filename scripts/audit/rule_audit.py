@@ -277,7 +277,7 @@ def _write_quality_md(q: dict[str, Any]) -> str:
 def _write_coverage_md(cov: dict[str, Any] | None) -> str:
     """覆蓋率 → markdown(None → skipped 說明)。"""
     if cov is None:
-        return "# Rule 命中覆蓋率報表\n\n> ⚠️ DB 不可達,覆蓋率段落 skipped。先 `./scripts/dev.sh` 起後端再跑。\n"
+        return "# Rule 命中覆蓋率報表\n\n> ⚠️ DB 不可達,覆蓋率段落 skipped。先 `./scripts/dev/dev.sh` 起後端再跑。\n"
     lines = ["# Rule 命中覆蓋率報表", ""]
     lines.append(
         f"- 已判筆數: **{cov['total_judged']}**  ·  命中不重複 L3: "

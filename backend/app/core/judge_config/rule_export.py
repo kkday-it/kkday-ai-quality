@@ -1,7 +1,7 @@
 """判決規則 → Excel 匯出（規則配置頁「導出 Excel」）。
 
 讀 DB active 版本的全部歸因分類（C-N，每域一分頁，葉判準逐列，欄位對齊
-data/問題分類層級結構.xlsx / scripts/gen_taxonomy_xlsx.py）＋ global_rule 判決總規範
+data/問題分類層級結構.xlsx / scripts/tools/gen_taxonomy_xlsx.py）＋ global_rule 判決總規範
 （額外一分頁，區塊/項目/內容 扁平呈現）。openpyxl 為重庫，於函式內 lazy import。
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 import json
 
-# C-N 分頁欄位（對齊 scripts/gen_taxonomy_xlsx.py 的 HEADERS；離線腳本與線上導出維持同一導出格式）。
+# C-N 分頁欄位（對齊 scripts/tools/gen_taxonomy_xlsx.py 的 HEADERS；離線腳本與線上導出維持同一導出格式）。
 _TREE_HEADERS = [
     "L1 歸因域",
     "L2 面向／子因",

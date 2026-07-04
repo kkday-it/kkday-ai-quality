@@ -208,7 +208,7 @@ def build_report() -> dict[str, Any]:
     """組報表資料：撈 attributed → analyze；DB 不可達回 {status: skipped}。"""
     findings = _load_attributed()
     if findings is None:
-        return {"status": "skipped", "reason": "DB 不可達（先 ./scripts/dev.sh 起後端）"}
+        return {"status": "skipped", "reason": "DB 不可達（先 ./scripts/dev/dev.sh 起後端）"}
     return analyze(findings)
 
 
