@@ -1,5 +1,8 @@
 # kkday-ai-quality — 技術棧與「輪子」推薦清單
 
+> ⚠️ 本文為**初期選型決策記錄**（2026-06-22）。部分概念已演進（去 verdict 軸→純歸因 L1-L3、
+> 存儲已定 PostgreSQL、live-fetch → 5 來源上傳落表）；**當前架構以根 [README.md](../README.md) 為準**。
+>
 > 目標：盡量複用成熟輪子，**提高 AI 法官判斷準確性**，減少自造與重寫。
 > 基礎技術棧：**前端 Vue3（Node 工具鏈）+ 後端 Python**。
 > 構想來源：Gary（Slack）——用 **function calling** 讓 AI 自主決定呼叫哪個 API 撈資料（function1 order API、function2 評論 API、function3 商品 API…）。Python 的 OpenAI SDK / Pydantic AI 同樣成熟。
@@ -22,10 +25,10 @@
 | 判決邏輯 | **沿用 ProductContentAIChecker** | — | rules.json / prompt / 雙意見仲裁 / golden / optimizer 直接複用（**零重寫、保留 F1 0.986 準確率**）|
 | 評估 / golden / LLM-as-judge | **Promptfoo** + **DeepEval**（py 原生）| `promptfoo` `deepeval` | `llm-rubric`/`g-eval`/**multi-judge voting**；信心度 calibration + 準確率驗收 |
 | 可觀測 + token 成本監控 | **Langfuse**（py SDK）| `langfuse` | trace + 分專案 token 成本（對應獨立 key 計量）|
-| 存儲（MVP→prod）| SQLite → PostgreSQL + **pgvector** | `sqlite3` / `psycopg` `pgvector` | Finding 持久化；pgvector 供同類爭議語義聚類/去重 |
+| 存儲 | **PostgreSQL**（SQLAlchemy Core + Alembic）| `psycopg2` `sqlalchemy` `alembic` | 5 來源專表 + judgments 持久化；已定 PG（非 SQLite，pgvector 未啟用）|
 | 前端框架 | **Vue3** + Vite | `vue` `vite` | 指定 |
 | 前端 UI | **Arco Design Vue** | `@arco-design/web-vue` | 字節企業級、data-heavy 強（table/descriptions/tag）、原生 Vue3、維護中（2.58 / 2026-04）|
-| 圖表 | **vue-echarts** | `vue-echarts` `echarts` | dimension×verdict 熱力矩陣 + 趨勢 sparkline |
+| 圖表 | **vue-echarts** | `vue-echarts` `echarts` | 歸因 L1-L3 分布 + 漏斗 + 月趨勢 sparkline |
 | 前端狀態 | **Pinia** | `pinia` | dashboard 狀態 |
 
 ## 為何後端用 Python（不換 Node）

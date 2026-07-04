@@ -2,114 +2,94 @@
 
 **AI 商品質檢平台 — AI 法官（內容爭議裁決系統）**（KKday 內容質量 Pod 第三支柱）
 
-把客訴 / 商品差評 / 工單等真實負面訊號，自動歸因到「哪個商品的哪個欄位該改」，產出可執行 action，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
+把客訴 / 商品差評 / 工單 / App 反饋 / 埋點等真實負面訊號，自動**歸因**到「哪個歸因域的哪個問題」（L1→L2→L3 三層分類），標註信心與判決階段，產出可執行方向，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
 
-> 邏輯參照 [folder 2117435397](https://kkday.atlassian.net/wiki/spaces/VM/folder/2117435397)（工單驅動審核 L0–L5）+ [AI 法官 V2 總覽](https://kkday.atlassian.net/wiki/spaces/VM/pages/2125660181)。
+> 邏輯參照 [folder 2117435397](https://kkday.atlassian.net/wiki/spaces/VM/folder/2117435397)（工單驅動審核）+ [AI 法官 V2 總覽](https://kkday.atlassian.net/wiki/spaces/VM/pages/2125660181)。
 
 ## 技術棧
-- **後端**：Python 3.10+ / FastAPI（沿用 ProductContentAIChecker 判決資產）+ OpenAI SDK（function calling）+ Pydantic + SQLite
-- **前端**：Vue3 + Vite + **Arco Design** + vue-echarts + Pinia（M3 實作）
-- **LLM**：OpenAI gpt-5-mini（無 key 時走 stub 啟發式）
-- 選型/輪子清單見 [docs/TECH-STACK.md](./docs/TECH-STACK.md)；架構見 [ARCHITECTURE.md](./ARCHITECTURE.md)；各方面 SD 見 [docs/specs/](./docs/specs/)
+- **後端**：Python 3.10+ / FastAPI + SQLAlchemy Core + **PostgreSQL**（Alembic 遷移）+ OpenAI SDK（Structured Outputs）+ Pydantic
+- **前端**：Vue3 + Vite + **Arco Design Vue** + Pinia + vue-echarts
+- **LLM**：OpenAI gpt-5 系列（無 key 時走 stub 啟發式，可零 key 走通閉環）
+- 選型/輪子清單見 [docs/TECH-STACK.md](./docs/TECH-STACK.md)；各面向 spec 見 [docs/specs/](./docs/specs/)
+
+## 核心流程
+```
+資料上傳（5 來源 xlsx/csv·自動辨識+校驗）
+  → 各來源專表（product_reviews / conversations / freshdesk_tickets / app_feedback / mixpanel_tracker）
+  → 初判歸因（prejudge：極性閘門 → 候選域 canon 聚焦 → L1/L2/L3 + 信心 + 判決階段）
+  → judgments（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
+  → 歸因列表 / 歸因縱覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出
+判準來源＝config/ai_judge 規則樹（RuleManager 面板版本化編輯，DB append-only 快照）
+```
 
 ## Monorepo 結構
 ```
-backend/                 # Python（FastAPI）
-  pyproject.toml · requirements.txt
-  fixtures/product_150665.json   # golden 測試資料（纜車案例）
+backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
   app/
-    core/      schema.py(Pydantic) · db.py(SQLite)
-    judge/     ingest/entry.py · datasource/{reviews,product}.py
-               classify · adequacy · arbiter · diagnose · pipeline · llm/client.py
-    api/main.py                    # FastAPI gateway
-frontend/                # pnpm workspace（Vue3+Arco+ECharts，M3）
-  apps/console/ · packages/{types,ui,charts}
-docs/                    # ARCHITECTURE · TECH-STACK · DELIVERY-PLAN · specs/00–04
+    core/                    # 領域基礎層（見 core/README.md）
+      db/                    # 資料存取（tables/source_registry + 8 職責模組 + barrel）
+      judge_config/          # 7 判準 config loader（ai_judge/global_rule/…）
+      auth · config · paths · schema · settings
+    judge/                   # 判決引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
+    api/                     # FastAPI gateway（main.py + routers/v1）
+  alembic/                   # schema 遷移
+  tests/ · fixtures/
+config/                      # 前後端共用非機密配置 SSOT（global/ + ai_judge/）
+constants/                   # 固定參照常數字典 SSOT（labels/）
+frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
+  apps/console/src/features/ # judge / settings / overview / auth（feature-based）
+  packages/types
+scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
+docs/                        # TECH-STACK · UPSTREAM-REFS · specs/
 ```
 
-## 🚀 啟動流程
+## 🚀 啟動
 
-### 一鍵啟動前後端（推薦）
+### 一鍵起前後端（推薦）
 ```bash
 ./scripts/dev/dev.sh
 ```
 - 後端 → http://localhost:8100（Swagger `/docs`）｜前端 → http://localhost:5273
-- **Ctrl-C 一次**前後端一起停（自動收 uvicorn reload 子程序）
-- 首次較慢（自建 venv + 裝後端依賴；前端需先 `pnpm install` 過）；需 `pnpm`（`brew install pnpm`）
+- **Ctrl-C 一次**前後端一起停；首次較慢（自建 venv + 裝依賴，前端需先 `pnpm install`）；需 `pnpm`
 
-**常用腳本**（`scripts/` 是所有腳本單一入口，見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev/dev.sh` 起前後端 · `./scripts/dev/seed.sh` 重置 mock · `./scripts/dev/test.sh` smoke test · `./scripts/dev/lint.sh` lint 前後端。
-
-> 要分開 / 手動啟動見下方。
+**常用腳本**（見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev/dev.sh` 起前後端 · `./scripts/dev/seed.sh` 重置 mock · `./scripts/dev/test.sh` smoke · `./scripts/dev/lint.sh` lint · `./scripts/dev/format.sh` format · `./scripts/dev/doctor.sh` 環境自檢。
 
 ### 後端（單獨）
 ```bash
 cd backend
-
-# 1. 建虛擬環境（首次）
 python3 -m venv .venv
-
-# 2. 安裝依賴（首次 / requirements 變動時）
-.venv/bin/pip install -e .
-
-# 3. 啟動 API（port 8100，--reload 開發熱重載）
+.venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn app.api.main:app --reload --port 8100
 ```
-> 需 Python ≥ 3.10。DB 為 SQLite，自動建於 `backend/data/kkdb_ai_quality.db`（gitignore）。
+> 需 Python ≥ 3.10 + 本機 PostgreSQL（`kkdb_ai_quality`）。schema：dev 由啟動時 `create_all` 建表；prod 部署跑 `alembic upgrade head`。連線經 `backend/.env` `DATABASE_URL`（預設 `postgresql+psycopg2://localhost:5432/kkdb_ai_quality`）。
+
+### 前端（單獨）
+```bash
+cd frontend && pnpm install
+cd apps/console && npx vite   # http://localhost:5273（需後端先起於 8100；dev 經 vite proxy /api → 8100）
+```
 
 ### LLM 模式
-- **無 `OPENAI_API_KEY`**：自動走 **stub**（啟發式），可零 key 走通整條 pipeline。
-- **設 key**（6/25 生效後）：`export OPENAI_API_KEY=sk-...`（可選 `export AI_JUDGE_MODEL=gpt-5-mini`），自動切真 LLM。
+- **無 `OPENAI_API_KEY`**：走 **stub**（啟發式），零 key 走通整條 pipeline。
+- **有 key**：面板（設定 › LLM 模型連線）或 env `OPENAI_API_KEY` 設定，自動切真 LLM。
 
-### 驗證（另開終端）
-```bash
-# 健康檢查
-curl http://localhost:8100/health
-# → {"status":"ok"}
-
-# 評論線判決（fixture 模式，150665 富士山一日遊）
-curl -X POST http://localhost:8100/api/diagnose \
-  -H 'Content-Type: application/json' -d '{"prod_oid":"150665"}'
-# → count=6，纜車案例判 content_unclear / 承諾與SLA
-
-# 查判決結果
-curl 'http://localhost:8100/api/findings?prod_oid=150665'
-
-# CSV/Excel 批量錄入（表頭含 prod_oid,rating,comment，中英別名容錯）
-curl -F file=@your.csv http://localhost:8100/api/inbound/upload
-
-# 單個錄入
-curl -X POST http://localhost:8100/api/inbound \
-  -H 'Content-Type: application/json' \
-  -d '{"prod_oid":"150665","comment":"客訴文字","rating":1}'
-
-# 查錄入清單
-curl http://localhost:8100/api/inbound
-```
-> API 文件（Swagger UI）：啟動後開 http://localhost:8100/docs
-
-### 前端（M3 已完成）
-```bash
-cd frontend && pnpm install        # 首次
-cd apps/console && npx vite         # http://localhost:5273（config 固定 port；需後端先起於 8100）
-```
-網址（history 模式，無 #）：**品控分析** http://localhost:5273/analytics（KPI + 熱力矩陣下鑽 + 規則缺口）· **單品診斷** http://localhost:5273/product（商品下拉 + 依欄位分組 + Finding 卡片雙路徑動作）。dev 經 vite proxy `/api` → 後端 8100。
-
-## API 一覽
+## API 一覽（主要）
 | method | path | 說明 |
 |---|---|---|
 | GET | `/health` | 健康檢查 |
-| POST | `/api/inbound/upload` | CSV/Excel 批量錄入 → SQLite |
-| POST | `/api/inbound` | 單個錄入 |
-| GET | `/api/inbound` | 錄入清單（`?status=`）|
-| POST | `/api/diagnose` | 評論線判決（`{prod_oid, source}`，source=fixture/live）|
-| GET | `/api/findings` | 判決結果（`?prod_oid=`）|
-| GET | `/api/findings/aggregate` | dimension×verdict 熱力矩陣 + KPI（出口B）|
-| PATCH | `/api/findings/{id}/status` | 更新狀態 confirmed/dismissed/fixed（出口A）|
+| POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
+| GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁）|
+| GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因縱覽聚合 + L2/L3 下鑽 |
+| POST | `/api/problems/export` | 美化 xlsx 導出（1:N 多歸因合併儲存格）|
+| POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/SSE 進度/暫停/恢復/停止）|
+| CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認）|
+| GET | `/api/products` · `/api/findings` | 商品清單（依 finding）· 判決結果列表 |
+| POST | `/api/auth/register`·`/login` | 帳號 |
 
-## 狀態（2026-06-23）
-- ✅ M1a 錄入層（CSV/Excel/單個 → SQLite）
-- ✅ M1b 資料拉取（fetch_reviews/fetch_product，fixture+live）
-- ✅ M2-stub 判決層（評論線端到端走通，150665 纜車案例判對，stub 粗判 5/6）
-- ✅ M3 Dashboard（Vue3+Arco+ECharts 兩出口：熱力矩陣 + 單品診斷，瀏覽器驗證通過）
-- 🟡 M2 真 LLM + golden 驗收（等 OpenAI key 6/25）
-- ⬜ M3+ 表格導入導出（SheetJS/openpyxl）· M4 閉環 calibration · P2 多管道
+> 完整 API：啟動後開 Swagger UI http://localhost:8100/docs
+
+## 架構要點
+- **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），judgments 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
+- **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L3、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
+- **判準 SSOT**＝`config/ai_judge` 規則樹（RuleManager 面板版本化，DB `judge_rule_versions` append-only 快照）。
+- **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
