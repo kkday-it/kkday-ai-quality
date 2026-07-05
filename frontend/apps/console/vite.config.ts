@@ -1,5 +1,7 @@
 import { fileURLToPath, URL } from 'node:url';
-import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { searchForWorkspaceRoot } from 'vite';
+// defineConfig 取自 vitest/config（vite defineConfig 的超集，額外提供 `test` 欄位型別）。
+import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 
 // repo 根的跨語言共用目錄；前端與 Python 後端同讀。
@@ -9,6 +11,11 @@ const constantsDir = fileURLToPath(new URL('../../../constants', import.meta.url
 
 export default defineConfig({
   plugins: [vue()],
+  // 純函式 util 單元測試（無 DOM）→ node 環境即可；`.test.ts` 就近置於 utils/ 旁，沿用上方 resolve.alias。
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
   resolve: {
     alias: {
       // `@` → src，跨 feature import 用絕對路徑，避免深層 ../../ 噪音
