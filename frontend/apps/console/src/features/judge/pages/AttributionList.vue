@@ -16,12 +16,16 @@ import {
   IconClose,
   IconDownload,
   IconEdit,
+  IconMessage,
 } from '@arco-design/web-vue/es/icon';
 import {
+  addFindingNote,
   evaluateTrueLabel,
+  getFindingNotes,
   getTaxonomyCascade,
   updateTrueLabel,
   type CascadeNode,
+  type FindingNote,
   type TrueLabelEval,
 } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
@@ -292,6 +296,50 @@ const confirmTrueLabels = async () => {
     truelabelSaving.value = false;
   }
 };
+
+// ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）──
+const noteOpen = ref(false);
+const noteFindingId = ref('');
+const noteList = ref<FindingNote[]>([]);
+const noteDraft = ref('');
+const noteLoading = ref(false);
+const noteSaving = ref(false);
+
+/** 開某條歸因的備註彈窗並載入歷史。 */
+const openNotes = async (findingId: string) => {
+  noteFindingId.value = findingId;
+  noteDraft.value = '';
+  noteList.value = [];
+  noteOpen.value = true;
+  noteLoading.value = true;
+  try {
+    noteList.value = await getFindingNotes(findingId);
+  } catch (e: any) {
+    Message.error('載入備註失敗：' + (e?.message || e));
+  } finally {
+    noteLoading.value = false;
+  }
+};
+
+/** 送出一則備註（備註人由後端登入身分帶入），成功後置頂插入歷史。 */
+const submitNote = async () => {
+  const content = noteDraft.value.trim();
+  if (!content) return;
+  noteSaving.value = true;
+  try {
+    const created = await addFindingNote(noteFindingId.value, content);
+    noteList.value = [created, ...noteList.value];
+    noteDraft.value = '';
+    Message.success('已新增備註');
+  } catch (e: any) {
+    Message.error('新增備註失敗：' + (e?.message || e));
+  } finally {
+    noteSaving.value = false;
+  }
+};
+
+/** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
+const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
 const LLM_OPTS = computed(() => llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })));
 
@@ -600,6 +648,7 @@ onMounted(init);
                   v-if="a.content?.summary"
                   class="text-[13px] font-semibold leading-snug text-[var(--color-text-1)]"
                 >
+                  <span class="mr-1 align-[1px] text-[11px] font-normal text-[var(--color-text-3)]">摘要</span>
                   {{ a.content.summary }}
                 </div>
                 <!-- L1→L3 純文字麵包屑（分類，次級）：L1 域藍字、› 灰分隔、L2/L3 中色 -->
@@ -675,6 +724,15 @@ onMounted(init);
                   <a-button size="mini" type="text" @click="openTrueLabel(record)">
                     <template #icon><IconEdit /></template>
                     標真值
+                  </a-button>
+                  <a-button
+                    v-if="a.finding_id"
+                    size="mini"
+                    type="text"
+                    @click="openNotes(a.finding_id)"
+                  >
+                    <template #icon><IconMessage /></template>
+                    備註
                   </a-button>
                 </div>
               </div>
@@ -969,6 +1027,52 @@ onMounted(init);
               確認標註
             </a-button>
           </template>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 歸因備註彈窗：新增備註 + append-only 歷史（備註人 / 時間 / 內容）-->
+    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="520" unmount-on-close>
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-2">
+          <a-textarea
+            v-model="noteDraft"
+            :auto-size="{ minRows: 2 }"
+            :max-length="500"
+            show-word-limit
+            placeholder="輸入備註內容（供覆核者間留言、追蹤同一問題）…"
+          />
+          <div class="flex justify-end">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="noteSaving"
+              :disabled="!noteDraft.trim()"
+              @click="submitNote"
+            >
+              送出備註
+            </a-button>
+          </div>
+        </div>
+        <div class="border-t border-[var(--color-neutral-3)] pt-2">
+          <StateGuard :loading="noteLoading" error="">
+            <div v-if="noteList.length" class="flex max-h-[320px] flex-col gap-2 overflow-auto">
+              <div
+                v-for="n in noteList"
+                :key="n.id"
+                class="rounded-md border border-[var(--color-neutral-3)] p-2.5"
+              >
+                <div class="flex items-center justify-between text-[11px] text-[var(--color-text-3)]">
+                  <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
+                  <span>{{ fmtNoteTime(n.created_at) }}</span>
+                </div>
+                <div class="mt-1 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
+                  {{ n.content }}
+                </div>
+              </div>
+            </div>
+            <a-empty v-else description="尚無備註" />
+          </StateGuard>
         </div>
       </div>
     </a-modal>

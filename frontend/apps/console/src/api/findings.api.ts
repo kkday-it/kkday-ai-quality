@@ -64,6 +64,27 @@ export const updateTrueLabel = (
     body: JSON.stringify({ true_label: trueLabel, reason: opts.reason, llm_conf: opts.llmConf }),
   });
 
+/** 歸因備註（append-only 歷史一則）。 */
+export interface FindingNote {
+  id: number;
+  finding_id: string;
+  author: string;
+  content: string;
+  created_at: string | null;
+}
+
+/** 取某條歸因的備註歷史（新到舊：備註人 / 時間 / 內容）。 */
+export const getFindingNotes = (findingId: string): Promise<FindingNote[]> =>
+  j<FindingNote[]>(`${BASE}/findings/${encodeURIComponent(findingId)}/notes`);
+
+/** 為某條歸因新增一則備註（備註人由登入身分帶入、時間由後端補）。 */
+export const addFindingNote = (findingId: string, content: string): Promise<FindingNote> =>
+  j<FindingNote>(`${BASE}/findings/${encodeURIComponent(findingId)}/notes`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ content }),
+  });
+
 export const diagnose = (prodOid: string) =>
   j(`${BASE}/diagnose`, {
     method: 'POST',
