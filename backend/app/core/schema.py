@@ -98,7 +98,8 @@ class TicketFinding(BaseModel):
     hit_rule_id: str = (
         ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
     )
-    status: Literal["new", "confirmed", "dismissed", "fixed"] = "new"
+    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed·fixed=人工覆核
+    status: Literal["new", "auto_confirmed", "confirmed", "dismissed", "fixed"] = "new"
     created_at: str = ""
     # 感知層來源（管道 A 平台主動 / B 客人進線 / C 供應商申訴）
     source_channel: str = ""  # A_platform | B_customer | C_supplier | unknown

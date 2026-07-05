@@ -28,7 +28,7 @@ def get_products() -> list[dict]:
 
 
 class StatusIn(BaseModel):
-    # 人工只可改這三態；new 由系統設定（初判）。非法值 Pydantic 自動回 422。
+    # 人工只可改這三態；new / auto_confirmed 由系統設定（初判 + G1 自動確認路由）。非法值 Pydantic 自動回 422。
     status: Literal["confirmed", "dismissed", "fixed"]
 
 

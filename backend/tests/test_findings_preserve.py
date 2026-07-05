@@ -97,3 +97,13 @@ def test_date_to_includes_same_day_with_time_component(temp_db) -> None:
     result = db.list_problems(source="product_reviews", date_from="2026-06-01", date_to="2026-06-30")
     assert result["total"] == 1
     assert result["rows"][0]["_group"] == "D1"
+
+
+def test_rejudge_does_not_preserve_auto_confirmed(temp_db) -> None:
+    """G1 auto_confirmed（系統自動確認·非人工）重判不保留 → 由新判決 status 決定（有別於人工 confirmed）。"""
+    db.insert_source_batch("product_reviews", [_pr_row("R4")])
+    fid = "fd_product_reviews_R4__content"
+    db.replace_source_findings("product_reviews", "R4", [_finding("R4")])
+    db.update_finding_status(fid, "auto_confirmed")  # 系統自動確認
+    db.replace_source_findings("product_reviews", "R4", [_finding("R4", status="new")])
+    assert _status_of(fid)[0] == "new"  # auto_confirmed 未被保留（與 confirmed 對比）

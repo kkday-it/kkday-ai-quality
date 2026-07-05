@@ -45,9 +45,9 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
     upsert——否則舊域殘留孤兒列。刪除前撈各列 true_label + status 依 finding_id 回填（同域重判
     finding_id 不變＝人工覆核結果保留）：
     - true_label：人工標註真值，非空即保留。
-    - status（G2）：人工已覆核（confirmed/dismissed/fixed，即偏離初始 "new"）者保留，避免重判把
-      已處理的歸因打回 "new" 洗掉人工覆核；仍為 "new" 者交由新判決 status 決定（不硬回填，
-      為 Phase 4 自動確認路由預留空間）。
+    - status（G2）：僅保留**人工**覆核結果（confirmed/dismissed/fixed），避免重判把已處理歸因打回；
+      new 與 **auto_confirmed（G1 系統自動確認）** 不保留——交由新判決 `_route_status` 依最新 tier+stage
+      重新路由（重判後信心可能變、系統狀態應重算，非沿用舊自動確認）。
     判決引擎（prejudge_batch._work_one）全 5 來源統一走此。
 
     Args:
@@ -74,7 +74,7 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
             if old:
                 if old["true_label"] is not None:
                     values["true_label"] = old["true_label"]
-                if old["status"] and old["status"] != "new":  # 保留人工覆核結果，重判不打回 new
+                if old["status"] in ("confirmed", "dismissed", "fixed"):  # 僅保留人工覆核；new/auto_confirmed 重算
                     values["status"] = old["status"]
             c.execute(sa_insert(jg).values(**values))
     return len(findings)

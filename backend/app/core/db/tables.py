@@ -69,7 +69,7 @@ judgments = Table(
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
-    Column("status", Text),  # new / confirmed / dismissed / fixed
+    Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed
     Column("true_label", Text),  # 人工標註真值分類
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),

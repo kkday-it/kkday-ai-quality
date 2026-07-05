@@ -5,6 +5,11 @@
     "jury_low": 0.5,
     "jury_high": 0.7
   },
+  "auto_confirm": {
+    "_comment": "G1 自動確認路由：auto_accept+judged 的判決自動採信、不進人工佇列（status=auto_confirmed）；audit_sample_rate 比例抽樣回 new 交人工複核（防自動化偏誤——LLM 高召回低精確）。QC 免改碼調（本檔已納 RULE_CODES 熱重載）。",
+    "enabled": true,
+    "audit_sample_rate": 0.05
+  },
   "ui_confidence_bands": {
     "high": 0.85,
     "mid": 0.7

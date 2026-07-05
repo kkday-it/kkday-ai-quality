@@ -5,7 +5,7 @@
 
 | 項目 | 職責 |
 |---|---|
-| `prejudge.py` | 單條進線 → **多歸因** TicketFinding 清單（`to_findings`）：Stage0 略過純好評 → Stage1 極性閘門 → Stage2 多歸因（候選域 canon 聚焦選 L1/L2/L3 + 信心）。cascade（config-gated）走 Stage A 多域→逐域 Stage B。 |
+| `prejudge.py` | 單條進線 → **多歸因** TicketFinding 清單（`to_findings`）：Stage0 略過純好評 → Stage1 極性閘門 → Stage2 多歸因（候選域 canon 聚焦選 L1/L2/L3 + 信心）。cascade（config-gated）走 Stage A 多域→逐域 Stage B。**G1 自動確認路由**（`_route_status`）：auto_accept+judged→`auto_confirmed`（免人工佇列）+ `audit_sample_rate` 抽樣回 new 防自動化偏誤。 |
 | `prejudge_batch.py` | in-mem job registry + ThreadPool 併發判決（copy_context 帶 contextvar）+ 進度/花費快照 + 暫停/恢復/停止（背壓逐筆提交）。 |
 | `ingest/` | 上傳落庫：`entry.read_sheets`（CSV/xlsx 讀成工作表）+ `upload_batch`（背景 job 分塊 → `db.insert_source_batch` 各來源專表 + $ 欄淨化）。 |
 | `llm/client.py` | LLM client（Structured Outputs、prompt caching、per-provider token、usage sink 回報、stub 模式）+ gateway 分派：`env.llm_gateway` 預設 `openai`（SDK 直呼），設 `litellm` 走 LiteLLM 統一 gateway（cost 正規化，fallback/語意快取待 Phase 7）；對外介面不變。 |
