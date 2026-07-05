@@ -1,5 +1,6 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
 import { BASE, j } from './http.api';
+import type { ProblemRow } from '@/features/judge/constants';
 
 /** 統一問題列表查詢參數（source/judged/polarity 既有；scores/productVerticals/日期區間為新增篩選）。 */
 export interface GetProblemsParams {
@@ -32,8 +33,14 @@ export interface GetProblemsParams {
   offset?: number;
 }
 
+/** 統一問題列表回應：每 review 一列（含 attributions 陣列）+ 符合篩選總數。 */
+export interface ProblemListResp {
+  rows: ProblemRow[];
+  total: number;
+}
+
 /** 統一問題列表（intake + 歸因 join）。judged=true 僅已歸因。 */
-export const getProblems = (params: GetProblemsParams = {}) => {
+export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemListResp> => {
   const q = new URLSearchParams();
   if (params.source) q.set('source', params.source);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
@@ -51,7 +58,7 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   if (params.sortDir) q.set('sort_dir', params.sortDir);
   q.set('limit', String(params.limit ?? 2000));
   q.set('offset', String(params.offset ?? 0));
-  return j(`${BASE}/problems?${q.toString()}`);
+  return j<ProblemListResp>(`${BASE}/problems?${q.toString()}`);
 };
 
 /** 某來源已判資料出現過的 L1 歸因域（供列表 L1 篩選下拉；code/label/count 皆來自 judgments.data distinct）。 */
@@ -63,7 +70,7 @@ export interface L1DomainOpt {
 
 /** 取某來源 L1 歸因域清單（選項恆與可篩內容一致，見後端 db.list_l1_domains）。 */
 export const getL1Domains = (source: string): Promise<L1DomainOpt[]> =>
-  j(`${BASE}/problems/l1_domains?source=${encodeURIComponent(source)}`);
+  j<L1DomainOpt[]>(`${BASE}/problems/l1_domains?source=${encodeURIComponent(source)}`);
 
 /**
  * 啟動問題列表導出背景 job（POST·item_ids 放 body 避免 URL 過長 431）→ {job_id, filename}（立即回）。
@@ -83,11 +90,18 @@ export const startProblemsExport = (p: {
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   date_to?: string;
 }): Promise<{ job_id: string; filename: string }> =>
-  j(`${BASE}/problems/export`, {
+  j<{ job_id: string; filename: string }>(`${BASE}/problems/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(p),
   });
+
+/** 初判歸因批量任務啟動回應（job_id + 將處理總數 + 實際採用模型）。 */
+export interface PrejudgeStartResp {
+  job_id: string;
+  total: number;
+  model: string;
+}
 
 /** 啟動初判歸因批量任務（選擇驅動：item_ids 複選 / scope=all 全部未判 + 指定模型）→ {job_id, total, model}。 */
 export const startPrejudge = (body: {
@@ -100,8 +114,8 @@ export const startPrejudge = (body: {
   stages?: string[];
   target_polarity?: string;
   max_confidence?: number;
-}) =>
-  j(`${BASE}/v1/judgment/prejudge`, {
+}): Promise<PrejudgeStartResp> =>
+  j<PrejudgeStartResp>(`${BASE}/v1/judgment/prejudge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -180,4 +194,4 @@ export interface ProductVerticalResolved {
  * @returns {groups:{分組名:[CATEGORY代碼,...]}}
  */
 export const getProductVerticalResolved = (): Promise<ProductVerticalResolved> =>
-  j(`${BASE}/judge-rules/product-vertical/resolved`);
+  j<ProductVerticalResolved>(`${BASE}/judge-rules/product-vertical/resolved`);

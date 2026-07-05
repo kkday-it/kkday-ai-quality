@@ -264,7 +264,7 @@ def list_problems(
         product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
-        confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review/hold）。
+        confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
         l1_domain: L1 歸因域過濾（judgments.data.l1_domain_code；content/supplier/…）。
 
     Returns:
@@ -342,10 +342,12 @@ def _list_problems_spec(
             stmt = stmt.where(tbl.c.prod_oid == prod_oid)
         if order_oid and "order_oid" in tbl.c:
             stmt = stmt.where(tbl.c.order_oid == order_oid)
+        # sargable 日期比較（走 btree 索引，取代打死索引的 substr）；date_col 為 raw datetime 文字，
+        # 上界半開 < date_to||'~' 以含當日整天（直接 <= 會漏當日有時間的列），'~' 大於 ' '/'T' 分隔符。
         if date_from:
-            stmt = stmt.where(func.substr(date_col, 1, 10) >= date_from)
+            stmt = stmt.where(date_col >= date_from)
         if date_to:
-            stmt = stmt.where(func.substr(date_col, 1, 10) <= date_to)
+            stmt = stmt.where(date_col < date_to + "~")
         return stmt
 
     # item 級排序（白名單防注入）；confidence 取該 item 各歸因最大信心（scalar 子查詢）

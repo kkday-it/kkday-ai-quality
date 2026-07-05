@@ -1,7 +1,8 @@
-"""判決規則管理端點（config/ai_judge/ 的 7 rule + schema 的 live + 版本化）。
+"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment 的 live + 版本化）。
 
-檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前以 active schema
-驗 content（jsonschema），不過回 422——DB 永不存非法規則。全端點 JWT 守衛。
+檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
+（歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment 各自結構驗），
+不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
 """
 
 from __future__ import annotations
@@ -20,14 +21,18 @@ _VALID_CODES = set(db.RULE_CODES)
 
 
 def _reload_judge_cache() -> None:
-    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ 判決總規範即時反映新規則
-    （對齊 config.py；ai_judge / global_rule 皆讀 DB active 版，reload 後 prejudge 立即採用；
-    reload 失敗不阻斷已成功的寫入）。"""
+    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ 判決總規範 + judgment 配置
+    （信心閾值 / 顯示 label / prejudge 旋鈕）即時反映新規則（對齊 config.py；ai_judge / global_rule /
+    judgment 皆讀 DB active 版，reload 後 prejudge 立即採用；reload 失敗不阻斷已成功的寫入）。"""
     try:
         from app.core import ai_judge, global_rule
+        from app.core.db import _shared
+        from app.judge import prejudge
 
         ai_judge.reload()
         global_rule.reload()
+        _shared.reload_judgment_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
+        prejudge.reload()  # 初判信心閾值 + 旋鈕快取
     except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
         pass
 
@@ -80,6 +85,17 @@ def _validate(code: str, content: dict) -> None:
         if gerrs:
             gmsgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in gerrs[:8]]
             raise HTTPException(status_code=422, detail={"errors": gmsgs, "count": len(gerrs)})
+        return
+    if code == "judgment":
+        # 判決配置（顯示 label / 信心閾值 / prejudge 旋鈕）非 L1-L3 歸因樹 → 不套歸因 schema；輕量結構驗。
+        tiers = content.get("confidence_tiers")
+        if not isinstance(tiers, dict) or not all(
+            isinstance(tiers.get(k), (int, float)) for k in ("auto_accept", "jury_low", "jury_high")
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="judgment 需含 confidence_tiers（auto_accept / jury_low / jury_high 皆為數值）",
+            )
         return
     schema = db.get_rule_active("schema") or db.default_rule_content("schema")
     errs = sorted(

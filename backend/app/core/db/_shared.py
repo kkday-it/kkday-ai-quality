@@ -17,17 +17,53 @@ from app.core.db import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
 # ── 判決顯示標籤 + 信心閾值（judgment.json；取代已移除的 taxonomy）───────────────
-try:
-    _JUDGMENT_CFG: dict = json.loads((_AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    _JUDGMENT_CFG = {}
+# 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
+# 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
+_DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
+_POLARITY_LABEL_ZH: dict[str, str] = {}
+_TIER_LABEL_ZH: dict[str, str] = {}
+_STAGE_LABEL_ZH: dict[str, str] = {}
+_CONFIDENCE_TIERS: dict = {}
 
-_POLARITY_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("polarity_labels", {})
-_TIER_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("tier_labels", {})
-_STAGE_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("stage_labels", {})
-_CONFIDENCE_TIERS: dict = _JUDGMENT_CFG.get(
-    "confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
-)
+
+def _apply_judgment_cfg(cfg: dict) -> None:
+    """將 judgment 配置就地灌入 module 級 label / 閾值 dict（clear+update 保持同一物件引用）。"""
+    _POLARITY_LABEL_ZH.clear()
+    _POLARITY_LABEL_ZH.update(cfg.get("polarity_labels", {}))
+    _TIER_LABEL_ZH.clear()
+    _TIER_LABEL_ZH.update(cfg.get("tier_labels", {}))
+    _STAGE_LABEL_ZH.clear()
+    _STAGE_LABEL_ZH.update(cfg.get("stage_labels", {}))
+    _CONFIDENCE_TIERS.clear()
+    _CONFIDENCE_TIERS.update(cfg.get("confidence_tiers", _DEFAULT_TIERS))
+
+
+def _read_judgment_file() -> dict:
+    """讀 seed 檔 config/ai_judge/judgment.json（import 期安全來源；DB 引擎未必就緒時用）。"""
+    try:
+        return json.loads((_AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def reload_judgment_cfg() -> None:
+    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge/global_rule）。
+
+    SSOT＝DB active 版（`rule_versions.get_rule_active('judgment')`），缺版本 / DB 未就緒回退 seed 檔；
+    就地更新 label / 閾值 dict，使 import 引用免改碼即反映新值。
+    """
+    from app.core.db import rule_versions as _rv
+
+    cfg: dict | None = None
+    try:
+        cfg = _rv.get_rule_active("judgment")
+    except Exception:  # noqa: BLE001  DB 未就緒 / 查詢失敗 → 回退 seed 檔，不阻斷
+        cfg = None
+    _apply_judgment_cfg(cfg if cfg is not None else _read_judgment_file())
+
+
+# import 期以 seed 檔初始化（DB 引擎未必就緒；DB active 熱更新由 reload_judgment_cfg 於 runtime 觸發）。
+_apply_judgment_cfg(_read_judgment_file())
 
 
 # ── 判決 API DTO：judgments typed 欄 → 乾淨巢狀物件（storage=typed 欄；呈現=巢狀 DTO 的 SSOT）──

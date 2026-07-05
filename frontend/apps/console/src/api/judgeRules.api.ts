@@ -1,8 +1,8 @@
-// 判決規則管理 API（config/ai_judge/ 的 7 rule + schema 的版本化）。
-// 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前 jsonschema 驗證，非法回 422。
+// 判決規則管理 API（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment 的版本化）。
+// 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前依 code 型別驗證，非法回 422；存檔後熱重載。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
-/** rule code：'C-1'..'C-7' | 'schema'。 */
+/** rule code：'C-1'..'C-6' | 'schema' | 'product_vertical' | 'global_rule' | 'judgment'。 */
 export type RuleCode = string;
 
 /** 某 rule 的 active 版 meta（清單用）。 */
@@ -39,19 +39,19 @@ export interface RuleSaveResult {
 }
 
 /** 列所有判決規則 active 版 meta。 */
-export const listRules = (): Promise<RuleMeta[]> => j(`${BASE}/judge-rules`);
+export const listRules = (): Promise<RuleMeta[]> => j<RuleMeta[]>(`${BASE}/judge-rules`);
 
 /** 讀某 rule active content（或指定 version）。 */
 export const getRule = (code: RuleCode, version?: number): Promise<RuleContentResp> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}${version ? `?version=${version}` : ''}`);
+  j<RuleContentResp>(`${BASE}/judge-rules/${encodeURIComponent(code)}${version ? `?version=${version}` : ''}`);
 
 /** 某 rule 全版本清單（新到舊）。 */
 export const getRuleHistory = (code: RuleCode): Promise<RuleVersionMeta[]> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}/history`);
+  j<RuleVersionMeta[]>(`${BASE}/judge-rules/${encodeURIComponent(code)}/history`);
 
 /** 取特定版本完整 content（diff / 恢復預覽用）。 */
 export const getRuleVersion = (code: RuleCode, version: number): Promise<RuleContentResp> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}/versions/${version}`);
+  j<RuleContentResp>(`${BASE}/judge-rules/${encodeURIComponent(code)}/versions/${version}`);
 
 /** 存檔（後端先 jsonschema 驗證 → 新 active 版）。 */
 export const saveRule = (
@@ -59,7 +59,7 @@ export const saveRule = (
   content: unknown,
   note = '',
 ): Promise<RuleSaveResult> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}`, {
+  j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ content, note }),
@@ -67,21 +67,21 @@ export const saveRule = (
 
 /** 恢復歷史版本（複製為新 active 版）。 */
 export const restoreRule = (code: RuleCode, version: number): Promise<RuleSaveResult> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}/restore/${version}`, {
+  j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}/restore/${version}`, {
     method: 'POST',
     headers: JSON_HEADERS,
   });
 
 /** 恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。 */
 export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
-  j(`${BASE}/judge-rules/${encodeURIComponent(code)}/reset-default`, {
+  j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}/reset-default`, {
     method: 'POST',
     headers: JSON_HEADERS,
   });
 
 /** 恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
 export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipped: string[] }> =>
-  j(`${BASE}/judge-rules/reset-default-all`, {
+  j<{ reset: RuleSaveResult[]; skipped: string[] }>(`${BASE}/judge-rules/reset-default-all`, {
     method: 'POST',
     headers: JSON_HEADERS,
   });
@@ -92,4 +92,7 @@ export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipp
  * 進度走 /api/exports SSE（見 exports.api），完成後 downloadExport(job_id) 取檔。
  */
 export const startRulesExport = (): Promise<{ job_id: string; filename: string }> =>
-  j(`${BASE}/judge-rules/export`, { method: 'POST', headers: JSON_HEADERS });
+  j<{ job_id: string; filename: string }>(`${BASE}/judge-rules/export`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });

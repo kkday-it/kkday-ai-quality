@@ -1,0 +1,99 @@
+"""重判（replace_source_findings）人工覆核軸保留 + 日期上界含當日整天回歸測試。
+
+需 temp_db fixture（隔離 PostgreSQL 測試庫，合成拋棄列，非真實資料）：
+- G2：重判整組替換舊列時，人工既定 status（confirmed/dismissed/fixed）與 true_label 必須依
+  finding_id 保留，不得被打回初始 "new" 洗掉人工覆核結果。
+- 效能改動語義守恆：date_to 上界改半開 `< date_to||'~'` 後，仍須含當日「有時間分量」的列
+  （naive `<= date_to` 會漏），且排除隔日。
+"""
+
+from __future__ import annotations
+
+from sqlalchemy import select
+
+from app.core import db
+from app.core.db import tables as T
+from app.core.schema import TicketFinding
+
+
+def _pr_row(rec_oid: str, **overrides) -> dict:
+    """建一筆最小 product_reviews 源列（源欄名、值皆 Text）。"""
+    base = {
+        "rec_oid": rec_oid,
+        "create_date": "2026-06-01 10:00:00",
+        "rec_desc": "內容",
+        "rec_scores": "5",
+        "prod_oid": "P1",
+        "order_snap_json": "{}",
+    }
+    base.update(overrides)
+    return base
+
+
+def _finding(rec_oid: str, domain: str = "content", status: str = "new") -> TicketFinding:
+    """建一筆對應 product_reviews 列的歸因（finding_id 依 fd_{source}_{source_id}__{domain} 慣例）。"""
+    return TicketFinding(
+        finding_id=f"fd_product_reviews_{rec_oid}__{domain}",
+        ticket_id=rec_oid,  # source_id
+        dimension="non_content",
+        recommended_action="no_action",
+        status=status,
+    )
+
+
+def _status_of(finding_id: str) -> tuple[str | None, str | None]:
+    """讀某 finding 的 (status, true_label)。"""
+    jg = T.judgments
+    with T.get_engine().connect() as c:
+        r = c.execute(
+            select(jg.c.status, jg.c.true_label).where(jg.c.finding_id == finding_id)
+        ).first()
+    return (r.status, r.true_label) if r else (None, None)
+
+
+def test_rejudge_preserves_human_status_and_true_label(temp_db) -> None:
+    """人工覆核（confirmed）+ 標真值後重判：status 與 true_label 依 finding_id 保留（G2）。"""
+    db.insert_source_batch("product_reviews", [_pr_row("R1")])
+    fid = "fd_product_reviews_R1__content"
+    db.replace_source_findings("product_reviews", "R1", [_finding("R1")])
+    # 人工覆核：確認 + 標真值
+    db.update_finding_status(fid, "confirmed")
+    db.update_finding_true_label(fid, "content")
+    # 重判（新結果 status 仍為初始 new）→ 不得洗掉人工覆核
+    db.replace_source_findings("product_reviews", "R1", [_finding("R1", status="new")])
+    assert _status_of(fid) == ("confirmed", "content")
+
+
+def test_rejudge_preserves_status_without_true_label(temp_db) -> None:
+    """僅設 status（dismissed）未標真值時，重判仍保留 status（舊碼只保 true_label 列 → 會漏此列）。"""
+    db.insert_source_batch("product_reviews", [_pr_row("R2")])
+    fid = "fd_product_reviews_R2__content"
+    db.replace_source_findings("product_reviews", "R2", [_finding("R2")])
+    db.update_finding_status(fid, "dismissed")
+    db.replace_source_findings("product_reviews", "R2", [_finding("R2", status="new")])
+    status, true_label = _status_of(fid)
+    assert status == "dismissed"
+    assert true_label is None
+
+
+def test_rejudge_untouched_status_follows_new_judgment(temp_db) -> None:
+    """從未覆核（仍為 new）者重判：status 由新判決決定（不硬回填 new，為 Phase 4 自動確認預留）。"""
+    db.insert_source_batch("product_reviews", [_pr_row("R3")])
+    fid = "fd_product_reviews_R3__content"
+    db.replace_source_findings("product_reviews", "R3", [_finding("R3", status="new")])
+    db.replace_source_findings("product_reviews", "R3", [_finding("R3", status="new")])
+    assert _status_of(fid)[0] == "new"
+
+
+def test_date_to_includes_same_day_with_time_component(temp_db) -> None:
+    """date_to 上界含當日整天：'2026-06-30 23:00' 應入選、隔日 '2026-07-01 00:00' 應排除。"""
+    db.insert_source_batch(
+        "product_reviews",
+        [
+            _pr_row("D1", create_date="2026-06-30 23:00:00"),
+            _pr_row("D2", create_date="2026-07-01 00:00:00"),
+        ],
+    )
+    result = db.list_problems(source="product_reviews", date_from="2026-06-01", date_to="2026-06-30")
+    assert result["total"] == 1
+    assert result["rows"][0]["_group"] == "D1"

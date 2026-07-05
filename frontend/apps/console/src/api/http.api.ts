@@ -9,11 +9,13 @@ export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);
 
 /**
  * 統一 fetch 包裝：自動帶 Authorization、處理 401、解析後端錯誤 detail。
+ * @template T 回應 JSON 形狀（呼叫端 `j<Resp>(...)` 指定；預設 unknown，避免 any 洩漏）
  * @param url 完整請求路徑（含 BASE）
  * @param init 原生 fetch 選項
+ * @returns 解析後的回應 JSON（型別為 T）
  * @throws {Error} 非 2xx 時拋出後端 `detail`（無則 `${status} ${url}`）；401 另清 token + 導向 /login
  */
-export async function j(url: string, init: RequestInit = {}) {
+export async function j<T = unknown>(url: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -34,7 +36,7 @@ export async function j(url: string, init: RequestInit = {}) {
     }
     throw new Error(detail);
   }
-  return r.json();
+  return r.json() as Promise<T>;
 }
 
 /** 共用 JSON POST/PATCH header。 */

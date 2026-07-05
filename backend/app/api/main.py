@@ -518,7 +518,7 @@ def get_attribution_breakdown(
 
 
 class StatusIn(BaseModel):
-    # 人工只可改這三態；new / data_missing 由系統設定。非法值 Pydantic 自動回 422。
+    # 人工只可改這三態；new 由系統設定（初判）。非法值 Pydantic 自動回 422。
     status: Literal["confirmed", "dismissed", "fixed"]
 
 

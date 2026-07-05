@@ -14,7 +14,7 @@ export interface AuthResult {
 
 /** 註冊新帳號 → 回 token + user（email 重複後端回 409）。 */
 export const register = (email: string, password: string): Promise<AuthResult> =>
-  j(`${BASE}/auth/register`, {
+  j<AuthResult>(`${BASE}/auth/register`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ email, password }),
@@ -22,11 +22,11 @@ export const register = (email: string, password: string): Promise<AuthResult> =
 
 /** 登入 → 回 token + user（帳密錯後端回 401）。 */
 export const login = (email: string, password: string): Promise<AuthResult> =>
-  j(`${BASE}/auth/login`, {
+  j<AuthResult>(`${BASE}/auth/login`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ email, password }),
   });
 
 /** 取當前登入使用者（帶 token 驗證）。 */
-export const getMe = (): Promise<AuthUser> => j(`${BASE}/auth/me`);
+export const getMe = (): Promise<AuthUser> => j<AuthUser>(`${BASE}/auth/me`);

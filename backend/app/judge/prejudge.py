@@ -29,14 +29,34 @@ _cfg_cache: dict | None = None
 
 
 def _cfg() -> dict:
-    """讀 config/ai_judge/judgment.json（信心閾值 + prejudge 旋鈕）；缺檔回內建預設。"""
+    """讀 judgment 判決配置（信心閾值 + prejudge 旋鈕）；lazy 快取。
+
+    SSOT＝DB active 'judgment' 版（規則管理可熱更新，對齊 ai_judge/global_rule）；缺版本 / DB 未就緒
+    回退 seed 檔 config/ai_judge/judgment.json；再缺回內建預設空 dict。存檔後由 rules._reload_judge_cache
+    呼叫 reload() 清快取即時生效。
+    """
     global _cfg_cache
     if _cfg_cache is None:
+        cfg: dict | None = None
         try:
-            _cfg_cache = json.loads((AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            _cfg_cache = {}
+            from app.core.db import rule_versions as _rv
+
+            cfg = _rv.get_rule_active("judgment")
+        except Exception:  # noqa: BLE001  DB 未就緒 / 查詢失敗 → 回退 seed 檔，不阻斷判決
+            cfg = None
+        if cfg is None:
+            try:
+                cfg = json.loads((AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cfg = {}
+        _cfg_cache = cfg
     return _cfg_cache
+
+
+def reload() -> None:
+    """清 judgment 配置快取（規則管理存檔後呼叫，使新閾值 / 旋鈕即時反映於初判）。"""
+    global _cfg_cache
+    _cfg_cache = None
 
 
 def _tiers() -> dict:

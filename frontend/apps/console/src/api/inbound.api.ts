@@ -20,7 +20,10 @@ export interface SheetValidation {
 export const validateInbound = (file: File): Promise<{ filename: string; sheets: SheetValidation[] }> => {
   const fd = new FormData();
   fd.append('file', file);
-  return j(`${BASE}/inbound/validate`, { method: 'POST', body: fd });
+  return j<{ filename: string; sheets: SheetValidation[] }>(`${BASE}/inbound/validate`, {
+    method: 'POST',
+    body: fd,
+  });
 };
 
 /** 上傳背景 job 單一工作表的進度（SSE 事件內 sheets[] 元素）。 */
@@ -62,7 +65,17 @@ export const uploadInbound = (
   const fd = new FormData();
   fd.append('file', file);
   fd.append('selections', JSON.stringify(selections));
-  return j(`${BASE}/inbound/upload`, { method: 'POST', body: fd });
+  return j<{
+    job_id: string;
+    sheets: {
+      sheet_name: string;
+      source: string;
+      label: string;
+      total: number;
+      valid: boolean;
+      reason: string;
+    }[];
+  }>(`${BASE}/inbound/upload`, { method: 'POST', body: fd });
 };
 
 /**
@@ -72,12 +85,13 @@ export const uploadInbound = (
 export const uploadStreamUrl = (jobId: string): string =>
   `${BASE}/inbound/upload/stream?job_id=${encodeURIComponent(jobId)}`;
 
-/** 上傳批次清單（新到舊）。 */
-export const getBatches = () => j(`${BASE}/batches`);
+/** 上傳批次清單（新到舊；每列 batch_id/name/source/row_count/uploaded_at/original_name 等動態欄）。 */
+export const getBatches = (): Promise<Record<string, unknown>[]> =>
+  j<Record<string, unknown>[]>(`${BASE}/batches`);
 
 /** 某批次的錄入明細（點擊批次展開用）。 */
-export const getBatchItems = (batchId: string) =>
-  j(`${BASE}/batches/${encodeURIComponent(batchId)}/items`);
+export const getBatchItems = (batchId: string): Promise<Record<string, unknown>[]> =>
+  j<Record<string, unknown>[]>(`${BASE}/batches/${encodeURIComponent(batchId)}/items`);
 
 /** 批次 CSV 匯出 URL（給 window.open / a 連結直接下載）。 */
 export const exportBatchUrl = (batchId: string) =>

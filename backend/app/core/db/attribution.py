@@ -63,10 +63,13 @@ def attribution_overview(
             j = tbl.outerjoin(jg, _jg_join_cond(spec))
 
             def _src(stmt):  # 套日期區間 + 商品垂直分類（None／空＝不限）
+                # date_col 為 raw datetime 文字（'YYYY-MM-DD HH:MM' / 'YYYY-MM-DDTHH:MM'）；用可走 btree
+                # 索引的 sargable 比較取代 substr（substr 打死索引＝overview 慢）。上界含當日整天：直接
+                # <= date_to 會漏當日有時間的列（'…30 08:00' > '…30'），改半開 < date_to||'~'（'~'>所有分隔符）。
                 if date_from:
-                    stmt = stmt.where(func.substr(date_col, 1, 10) >= date_from)
+                    stmt = stmt.where(date_col >= date_from)
                 if date_to:
-                    stmt = stmt.where(func.substr(date_col, 1, 10) <= date_to)
+                    stmt = stmt.where(date_col < date_to + "~")
                 if _v_codes:
                     stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes))
                 return stmt
@@ -154,10 +157,11 @@ def attribution_breakdown(
         date_col = tbl.c[spec.date_col]
         frm = tbl.outerjoin(jg, _jg_join_cond(spec))
         extra = []
+        # sargable 日期比較（走 btree 索引，取代 substr）；上界半開含當日整天，見 attribution_overview 註解。
         if date_from:
-            extra.append(func.substr(date_col, 1, 10) >= date_from)
+            extra.append(date_col >= date_from)
         if date_to:
-            extra.append(func.substr(date_col, 1, 10) <= date_to)
+            extra.append(date_col < date_to + "~")
         if _v_codes:
             extra.append(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes))
     else:

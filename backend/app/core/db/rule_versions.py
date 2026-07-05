@@ -1,8 +1,9 @@
-"""判決規則版本（config/ai_judge/ 的 7 rule + schema + product_vertical；append-only 快照）。
+"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule + judgment；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
-商品垂直分類（product_vertical：Tour/Exp/Charter/Tix→CATEGORY 代碼）為可編輯版本化規則，
-復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認），非歸因分類。
+非歸因分類但復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認、存檔後熱重載）者：
+- product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
+- global_rule（判決流程總規範）、judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕），seed 放 config/ai_judge。
 """
 
 from __future__ import annotations
@@ -18,15 +19,20 @@ from app.core.db import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
-RULE_CODES = ("C-1", "C-2", "C-3", "C-4", "C-5", "C-6", "schema", "product_vertical", "global_rule")
+RULE_CODES = (
+    "C-1", "C-2", "C-3", "C-4", "C-5", "C-6",
+    "schema", "product_vertical", "global_rule", "judgment",
+)
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，global_rule→config/ai_judge，C-N→rule_C-N.json）。"""
+    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，global_rule/judgment→config/ai_judge，C-N→rule_C-N.json）。"""
     if code == "product_vertical":  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
         return _GLOBAL_DIR / "product_vertical.json"
     if code == "global_rule":  # 整體規則（判決流程總規範）與判決 config 同置，默認 seed 放 config/ai_judge
         return _AI_JUDGE_DIR / "global_rule.json"
+    if code == "judgment":  # 判決顯示標籤 + 信心閾值 + prejudge 旋鈕（判決 config SSOT），默認 seed = judgment.json
+        return _AI_JUDGE_DIR / "judgment.json"
     return _AI_JUDGE_DIR / ("rule.schema.json" if code == "schema" else f"rule_{code}.json")
 
 

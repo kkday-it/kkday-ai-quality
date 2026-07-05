@@ -39,10 +39,15 @@ def insert_finding(f: TicketFinding, source: str) -> None:
 
 
 def replace_source_findings(source: str, source_id: str, findings: list[TicketFinding]) -> int:
-    """整組替換某來源列的所有歸因（1:N；刪 (source, source_id) 舊列 → 插新列），保留人工 true_label。
+    """整組替換某來源列的所有歸因（1:N；刪 (source, source_id) 舊列 → 插新列），保留人工覆核軸。
 
     多歸因下一個來源列對應多筆 judgments（每域一筆）；重判以最新結果整組替換舊列（冪等），非逐筆
-    upsert——否則舊域殘留孤兒列。刪除前撈各列 true_label 依 finding_id 回填（同域重判 finding_id 不變＝標註保留）。
+    upsert——否則舊域殘留孤兒列。刪除前撈各列 true_label + status 依 finding_id 回填（同域重判
+    finding_id 不變＝人工覆核結果保留）：
+    - true_label：人工標註真值，非空即保留。
+    - status（G2）：人工已覆核（confirmed/dismissed/fixed，即偏離初始 "new"）者保留，避免重判把
+      已處理的歸因打回 "new" 洗掉人工覆核；仍為 "new" 者交由新判決 status 決定（不硬回填，
+      為 Phase 4 自動確認路由預留空間）。
     判決引擎（prejudge_batch._work_one）全 5 來源統一走此。
 
     Args:
@@ -59,16 +64,18 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
     key = and_(jg.c.source == source, jg.c.source_id == source_id)
     with T.get_engine().begin() as c:
         preserved = {
-            r.finding_id: r.true_label
-            for r in c.execute(
-                select(jg.c.finding_id, jg.c.true_label).where(key, jg.c.true_label.isnot(None))
-            )
+            r.finding_id: {"true_label": r.true_label, "status": r.status}
+            for r in c.execute(select(jg.c.finding_id, jg.c.true_label, jg.c.status).where(key))
         }
         c.execute(sa_delete(jg).where(key))
         for f in findings:
             values = _finding_values(f, source)
-            if f.finding_id in preserved:
-                values["true_label"] = preserved[f.finding_id]
+            old = preserved.get(f.finding_id)
+            if old:
+                if old["true_label"] is not None:
+                    values["true_label"] = old["true_label"]
+                if old["status"] and old["status"] != "new":  # 保留人工覆核結果，重判不打回 new
+                    values["status"] = old["status"]
             c.execute(sa_insert(jg).values(**values))
     return len(findings)
 

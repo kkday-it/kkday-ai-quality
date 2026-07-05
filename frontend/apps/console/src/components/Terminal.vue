@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onBeforeUnmount } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
+// 型別靜態引入（編譯期擦除，不進 bundle）；xterm JS 實作改掛載期動態載入，避免把終端庫綁進
+// 主 bundle（呼應 code-splitting：首屏不需要者延遲載入）。CSS 體積小，留靜態 side-effect 引入。
+import type { Terminal } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 /**
@@ -26,7 +28,14 @@ const elRef = ref<HTMLDivElement>();
 const term = shallowRef<Terminal>();
 const fit = shallowRef<FitAddon>();
 
-onMounted(() => {
+// 動態載入 xterm 實作 + CSS + fit addon（並行）；掛載期才拉，縮小首屏 bundle。
+onMounted(async () => {
+  if (!elRef.value) return;
+  const [{ Terminal }, { FitAddon }] = await Promise.all([
+    import('@xterm/xterm'),
+    import('@xterm/addon-fit'),
+  ]);
+  // await 期間元件可能已 unmount（elRef 掛載點消失）→ 中止，避免建立孤兒實例。
   if (!elRef.value) return;
   const t = new Terminal({
     fontSize: props.fontSize,

@@ -8,7 +8,7 @@
 |---|---|
 | `tables.py` | SQLAlchemy schema + engine（`get_engine`/`set_engine`/`metadata`/`upsert`）；連線＝`config.env.database_url`。 |
 | `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
-| `_shared.py` | 共用：judgment.json 標籤/信心閾值、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**判決 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
+| `_shared.py` | 共用：judgment 顯示標籤/信心閾值（`reload_judgment_cfg`：DB active `judgment` 版優先、缺版本回退 seed 檔，規則管理存檔後就地熱重載）、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**判決 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
 
 ## judgments 判決表結構（typed 欄 · 最佳架構）
 
@@ -21,7 +21,7 @@
 - **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, is_primary, status, true_label}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳 `plans/1-peaceful-wirth.md`。
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
-| `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。 |
+| `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝C-1..6 + schema + product_vertical + global_rule + judgment。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`/`list_findings`/`list_products`）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |

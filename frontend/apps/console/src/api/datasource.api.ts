@@ -17,7 +17,7 @@ export interface QcDbTestResult {
  * @param patch 當前表單值（qc_db_env / host / port / names / user / password…）
  */
 export const testQcDb = (patch: Record<string, unknown>): Promise<QcDbTestResult> =>
-  j(`${BASE}/datasource/qc-db/test`, {
+  j<QcDbTestResult>(`${BASE}/datasource/qc-db/test`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(patch),
