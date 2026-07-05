@@ -157,3 +157,91 @@ def test_to_findings_unknown_polarity_insufficient(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "unknown"
     assert f.judgment_stage == "insufficient"
+
+
+# ── 歸因處理正確性（_evidence_grounded / _finalize_attr）───────────────────
+# 這批鎖「LLM 原始輸出 → 淨化 attr」的確定性邏輯——證據接地防編造、abstain 回填、證據封頂——
+# 是判決核心的正確性關鍵，也是未來換 DSPy 引擎須逐位對齊的行為。
+
+# 假 L3 節點解析（避開 ai_judge config 依賴，使斷言確定）。
+_L3_NODES = {
+    "L3-content": {"l1_domain_code": "content", "l1_label": "商品內容", "l2_code": "L2c", "l2_label": "描述", "l3_code": "L3-content", "l3_label": "不符"},
+    "L3-supplier": {"l1_domain_code": "supplier", "l1_label": "供應商", "l2_code": "L2s", "l2_label": "履約", "l3_code": "L3-supplier", "l3_label": "遲到"},
+}
+_EMPTY_NODE = {k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")}
+
+
+def _fake_sanitize(code: str, _cands) -> dict:
+    return _L3_NODES.get(code, dict(_EMPTY_NODE))
+
+
+@pytest.fixture
+def finalize_env(monkeypatch, fixed_config):
+    """固定 _finalize_attr 的 config 依賴（L3 解析 / 證據・abstain 政策），使斷言與 config 解耦。"""
+    monkeypatch.setattr(prejudge, "_sanitize_l3", _fake_sanitize)
+    monkeypatch.setattr(
+        prejudge.global_rule, "evidence_policy", lambda: {"require_quote_grounded": True, "l3_min_confidence": 0.5}
+    )
+    monkeypatch.setattr(prejudge.global_rule, "abstain_policy", lambda: {"l3": "allow_empty_low_evidence"})
+
+
+def test_evidence_grounded() -> None:
+    """evidence_quote 須為原文逐字片段（去空白後 substring）且 ≥4 字，防編造證據。"""
+    g = prejudge._evidence_grounded
+    assert g("客服態度差且沒有回應訊息", "沒有回應") is True
+    assert g("退 款 太 慢 了", "退款太慢") is True  # 去空白後比對
+    assert g("完全不相關的內容", "編造的假證據") is False  # 非原文
+    assert g("有效文字內容", "短") is False  # <4 字視為未佐證
+    assert g("任何文字", "") is False  # 空 quote
+
+
+def test_finalize_attr_grounded_high_conf_keeps_l3(finalize_env) -> None:
+    """證據接地 + 高信心 + content 域（不封頂）→ 保留 L3、信心不變。"""
+    attr = prejudge._finalize_attr(
+        {"source": "pr", "source_id": "R1"},
+        "商品頁描述與實際完全不符很誤導",
+        {"l3_code": "L3-content", "confidence": 0.9, "evidence_quote": "描述與實際完全不符", "candidates": []},
+        frozenset({"L3-content"}),
+    )
+    assert attr["l1_domain_code"] == "content"
+    assert attr["l3_code"] == "L3-content"
+    assert attr["confidence"] == pytest.approx(0.9)
+
+
+def test_finalize_attr_ungrounded_drops_l3_and_presses_conf(finalize_env) -> None:
+    """證據非原文（疑編造）→ L3 降階留空、保留 L1/L2、信心壓至 l3_min-0.01 交人審。"""
+    attr = prejudge._finalize_attr(
+        {"source": "pr", "source_id": "R1"},
+        "完全不同的評論內容跟證據無關",
+        {"l3_code": "L3-content", "confidence": 0.9, "evidence_quote": "這是編造的假證據", "candidates": []},
+        frozenset({"L3-content"}),
+    )
+    assert attr["l1_domain_code"] == "content"  # L1/L2 保留
+    assert attr["l3_code"] == ""  # L3 降階
+    assert attr["confidence"] == pytest.approx(0.49)  # 壓至 l3_min(0.5)-0.01
+
+
+def test_finalize_attr_abstain_backfills_from_candidate(finalize_env) -> None:
+    """模型 abstain（l3_code 空）但有候選 → 取 top 候選回填 L1/L2/L3。"""
+    attr = prejudge._finalize_attr(
+        {"source": "pr", "source_id": "R1"},
+        "商品描述與實際不符誤導消費",
+        {"l3_code": "", "confidence": 0.7, "evidence_quote": "描述與實際不符", "candidates": [{"code": "L3-content", "score": 0.8}]},
+        frozenset({"L3-content"}),
+    )
+    assert attr["l1_domain_code"] == "content"  # 從候選回填
+    assert attr["l3_code"] == "L3-content"  # grounded + conf≥min → 保留
+    assert attr["confidence"] == pytest.approx(0.7)
+
+
+def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
+    """供應商域缺 order_oid → 證據封頂至 jury_high-0.01、標記 evidence_capped。"""
+    attr = prejudge._finalize_attr(
+        {"source": "pr", "source_id": "R1"},  # 無 order_oid
+        "供應商臨時取消還遲到接送",
+        {"l3_code": "L3-supplier", "confidence": 0.95, "evidence_quote": "臨時取消還遲到", "candidates": []},
+        frozenset({"L3-supplier"}),
+    )
+    assert attr["l1_domain_code"] == "supplier"
+    assert attr["confidence"] == pytest.approx(0.69)  # 封頂 jury_high(0.7)-0.01
+    assert attr["evidence_capped"] is True
