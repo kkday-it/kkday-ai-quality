@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from typing import Any, get_args
 
 from app.core import ai_judge, global_rule
-from app.core.paths import AI_JUDGE_DIR
 from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
 from app.judge.llm import client
 
@@ -31,25 +30,14 @@ _cfg_cache: dict | None = None
 def _cfg() -> dict:
     """讀 judgment 判決配置（信心閾值 + prejudge 旋鈕）；lazy 快取。
 
-    SSOT＝DB active 'judgment' 版（規則管理可熱更新，對齊 ai_judge/global_rule）；缺版本 / DB 未就緒
-    回退 seed 檔 config/ai_judge/judgment.json；再缺回內建預設空 dict。存檔後由 rules._reload_judge_cache
-    呼叫 reload() 清快取即時生效。
+    走 `_shared.read_judgment_config`（DB active 'judgment' 版優先、缺版本回退 seed 檔——judgment 讀取
+    單一入口）。存檔後由 rules._reload_judge_cache 呼叫 reload() 清快取即時生效。
     """
     global _cfg_cache
     if _cfg_cache is None:
-        cfg: dict | None = None
-        try:
-            from app.core.db import rule_versions as _rv
+        from app.core.db import _shared
 
-            cfg = _rv.get_rule_active("judgment")
-        except Exception:  # noqa: BLE001  DB 未就緒 / 查詢失敗 → 回退 seed 檔，不阻斷判決
-            cfg = None
-        if cfg is None:
-            try:
-                cfg = json.loads((AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                cfg = {}
-        _cfg_cache = cfg
+        _cfg_cache = _shared.read_judgment_config()
     return _cfg_cache
 
 
@@ -60,7 +48,15 @@ def reload() -> None:
 
 
 def _tiers() -> dict:
-    return _cfg().get("confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7})
+    """判決信心閾值（走 OpenFeature 標準介面 flags.threshold 避免鎖定；provider 讀 judgment DB active
+    confidence_tiers、module 級快取，Phase 7 換 Flagsmith 呼叫端零改）。"""
+    from app.core import flags
+
+    return {
+        "auto_accept": flags.threshold("auto_accept", 0.8),
+        "jury_low": flags.threshold("jury_low", 0.5),
+        "jury_high": flags.threshold("jury_high", 0.7),
+    }
 
 
 def _prejudge_cfg() -> dict:

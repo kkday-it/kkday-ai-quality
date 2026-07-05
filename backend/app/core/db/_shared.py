@@ -46,20 +46,28 @@ def _read_judgment_file() -> dict:
         return {}
 
 
-def reload_judgment_cfg() -> None:
-    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge/global_rule）。
+def read_judgment_config() -> dict:
+    """讀 judgment 判決配置：DB active 版優先（`rule_versions.get_rule_active('judgment')`），缺版本 /
+    DB 未就緒回退 seed 檔。不快取（呼叫端各自快取）。
 
-    SSOT＝DB active 版（`rule_versions.get_rule_active('judgment')`），缺版本 / DB 未就緒回退 seed 檔；
-    就地更新 label / 閾值 dict，使 import 引用免改碼即反映新值。
+    judgment 讀取的**單一入口**——_shared 熱重載、prejudge 旋鈕快取、flags 閾值 provider 三處共用，
+    避免各自重寫 DB-active→file 回退邏輯（Rule of Three）。
     """
     from app.core.db import rule_versions as _rv
 
-    cfg: dict | None = None
     try:
         cfg = _rv.get_rule_active("judgment")
     except Exception:  # noqa: BLE001  DB 未就緒 / 查詢失敗 → 回退 seed 檔，不阻斷
         cfg = None
-    _apply_judgment_cfg(cfg if cfg is not None else _read_judgment_file())
+    return cfg if cfg is not None else _read_judgment_file()
+
+
+def reload_judgment_cfg() -> None:
+    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge/global_rule）。
+
+    就地更新 label / 閾值 dict（DB active 優先，見 read_judgment_config），使 import 引用免改碼即反映新值。
+    """
+    _apply_judgment_cfg(read_judgment_config())
 
 
 # import 期以 seed 檔初始化（DB 引擎未必就緒；DB active 熱更新由 reload_judgment_cfg 於 runtime 觸發）。

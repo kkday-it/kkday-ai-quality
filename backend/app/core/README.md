@@ -13,6 +13,7 @@
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout…），全專案最底層依賴。 |
 | `paths.py` | 路徑 SSOT（REPO_ROOT / CONFIG_DIR / AI_JUDGE_DIR / GLOBAL_DIR），全專案唯一算一次。 |
 | `auth.py` | JWT 簽發/驗證 + 密碼雜湊。 |
+| `flags.py` | OpenFeature 判決閾值旗標介面（`threshold()`）+ 薄 `JudgeConfigProvider`（解析 judge.<tier> → judgment confidence_tiers，DB active·熱重載）。面向 OpenFeature 標準避供應商鎖定，Phase 7 換 Flagsmith 呼叫端零改；prejudge 閾值讀取走此。 |
 
 ## 依賴方向（禁循環）
-`config`/`paths` 為底層；`db`/`judge_config` 依 tables+config；`settings` 不可被 `db` 反向 import（db 註解明載）。判準 loader 讀 DB 的 active 版走延遲 import（`from app.core import db`）避循環。
+`config`/`paths` 為底層；`db`/`judge_config` 依 tables+config；`settings` 不可被 `db` 反向 import（db 註解明載）。判準 loader 讀 DB 的 active 版走延遲 import（`from app.core import db`）避循環。`flags` 讀 judgment 配置亦走延遲 `from app.core.db import _shared`。

@@ -25,14 +25,15 @@ def _reload_judge_cache() -> None:
     （信心閾值 / 顯示 label / prejudge 旋鈕）即時反映新規則（對齊 config.py；ai_judge / global_rule /
     judgment 皆讀 DB active 版，reload 後 prejudge 立即採用；reload 失敗不阻斷已成功的寫入）。"""
     try:
-        from app.core import ai_judge, global_rule
+        from app.core import ai_judge, flags, global_rule
         from app.core.db import _shared
         from app.judge import prejudge
 
         ai_judge.reload()
         global_rule.reload()
         _shared.reload_judgment_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
-        prejudge.reload()  # 初判信心閾值 + 旋鈕快取
+        prejudge.reload()  # 初判 prejudge 旋鈕快取
+        flags.reload()  # OpenFeature 判決閾值 cache（auto_accept/jury_*）
     except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
         pass
 
