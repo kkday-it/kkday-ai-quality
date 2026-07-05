@@ -128,7 +128,7 @@ const onRejudge = async (id: string) => {
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
   const tr = tableRef.value?.$el?.querySelectorAll('.arco-table-body tbody > tr')[idx];
-  (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'auto' }); // 即時定位，無滾動動畫
 };
 
 // ── 操作：查看判決詳情彈窗（純前端，資料取自該列 attributions）──
