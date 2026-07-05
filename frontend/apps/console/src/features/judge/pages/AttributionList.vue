@@ -651,7 +651,7 @@ onMounted(init);
                 <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
                 <div v-if="a.content?.summary" class="flex gap-1.5">
                   <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">摘要</span>
-                  <div class="min-w-0 text-[13px] font-semibold leading-snug text-[var(--color-text-1)]">
+                  <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
                     {{ a.content.summary }}
                   </div>
                 </div>
