@@ -1,7 +1,7 @@
 # scripts/ — 開發腳本（按職責分層）
 
 **所有開發腳本收攏於此，按職責分三子夾**：`dev/`（日常工作流：dev/doctor/format/lint/test/seed）、
-`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews）。
+`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
 `backend/`（`run.sh` / `seed_mock.py` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
 
@@ -13,6 +13,7 @@
 | `./scripts/dev/lint.sh` | Lint 前後端（ruff + eslint） | `cd backend && .venv/bin/ruff check .` ＋ `cd frontend && pnpm lint` |
 | `./scripts/dev/format.sh` | 格式化前後端（Prettier + ruff format，鏈式/長行自動換行） | `cd frontend && pnpm format` ＋ `cd backend && .venv/bin/ruff format .` |
 | `./scripts/tools/prejudge_reviews.sh` | 批量預判歸因（product_reviews → L3 + 信心度，config/ai_judge 驅動） | `cd backend && .venv/bin/python prejudge_reviews.py` |
+| `./scripts/tools/translate_summaries.py` | 一鍵批量轉譯既有判決摘要為繁中（DB 直接改；只轉非中文為主者·需 active LLM·stub 拒跑；`--dry-run`/`--limit N` 試跑） | `cd backend && .venv/bin/python ../scripts/tools/translate_summaries.py` |
 
 ## 統一格式化 / Lint 規則（ready-made，零調校）
 
