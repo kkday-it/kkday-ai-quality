@@ -164,3 +164,33 @@ def test_get_items_by_ids_none_source_returns_empty(temp_db) -> None:
     """source=None（縱覽全部）無單表可查，空清單安全回 []。"""
     assert db.get_items_by_ids([], source=None) == []
     assert db.get_items_by_ids(["not-exist"], source=None) == []
+
+
+def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
+    """sort_by=confidence 不再 500（scalar 子查詢 correlate_except judgments）＋依 item 最大信心排序。
+
+    回歸鎖：_paged_fanout 外層 join judgments，confidence 排序子查詢若不指定 correlate 範圍，
+    SQLAlchemy 會把子查詢的 judgments 也 auto-correlate 掉 → 「no FROM clauses」500。
+    """
+    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R1", ticket_id="R1",
+            dimension="non_content", recommended_action="no_action", confidence=0.3,
+        ),
+        "product_reviews",
+    )
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R2", ticket_id="R2",
+            dimension="non_content", recommended_action="no_action", confidence=0.9,
+        ),
+        "product_reviews",
+    )
+
+    asc = db.list_problems(source="product_reviews", judged=True, sort_by="confidence", sort_dir="asc")
+    assert asc["total"] == 2
+    assert [r["_group"] for r in asc["rows"]] == ["R1", "R2"]  # 0.3 在前
+
+    desc = db.list_problems(source="product_reviews", judged=True, sort_by="confidence", sort_dir="desc")
+    assert [r["_group"] for r in desc["rows"]] == ["R2", "R1"]  # 0.9 在前

@@ -357,7 +357,15 @@ def _list_problems_spec(
         "score": tbl.c[spec.score_col] if spec.score_col else tbl.c[spec.date_col],
     }
     if sort_by == "confidence":
-        sort_expr = select(func.max(T.judgments.c.conf_value)).where(_jg_join_cond(spec)).scalar_subquery()
+        # 該 item 各歸因最大信心的 scalar 子查詢。_paged_fanout 外層也 join judgments，若不指定關聯範圍，
+        # SQLAlchemy 會把子查詢的 judgments 也 auto-correlate 掉 → 「no FROM clauses」500。
+        # correlate_except(judgments)：judgments 留在子查詢 FROM，只把外層 source 表關聯進來。
+        sort_expr = (
+            select(func.max(T.judgments.c.conf_value))
+            .where(_jg_join_cond(spec))
+            .correlate_except(T.judgments)
+            .scalar_subquery()
+        )
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
     return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
