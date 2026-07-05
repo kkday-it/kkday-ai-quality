@@ -184,3 +184,36 @@ def get_finding(finding_id: str) -> dict | None:
     with T.get_engine().connect() as c:
         r = c.execute(select(T.judgments).where(T.judgments.c.finding_id == finding_id)).mappings().first()
         return dict(r) if r else None
+
+
+def _note_row(r) -> dict:
+    """finding_notes 列 → API dict（created_at ISO 字串）。"""
+    return {
+        "id": r["id"],
+        "finding_id": r["finding_id"],
+        "author": r["author"],
+        "content": r["content"],
+        "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+    }
+
+
+def add_finding_note(finding_id: str, author: str, content: str) -> dict:
+    """新增一則歸因備註（append-only 歷史）；回傳建立的備註（含 id / 時間）。"""
+    ins = (
+        sa_insert(T.finding_notes)
+        .values(finding_id=finding_id, author=author, content=content)
+        .returning(*T.finding_notes.c)
+    )
+    with T.get_engine().begin() as c:
+        return _note_row(c.execute(ins).mappings().first())
+
+
+def list_finding_notes(finding_id: str) -> list[dict]:
+    """列某條歸因的備註歷史（新到舊：備註人 / 時間 / 內容）。"""
+    stmt = (
+        select(T.finding_notes)
+        .where(T.finding_notes.c.finding_id == finding_id)
+        .order_by(T.finding_notes.c.created_at.desc(), T.finding_notes.c.id.desc())
+    )
+    with T.get_engine().connect() as c:
+        return [_note_row(r) for r in c.execute(stmt).mappings()]

@@ -254,6 +254,19 @@ judge_rule_versions = Table(
     ),
 )
 
+# 歸因備註（append-only 歷史；每條歸因 finding_id 可累積多則備註，記備註人/時間/內容）。
+# 獨立表：重判（replace_source_findings 刪+插 judgments）不影響備註（依 finding_id 關聯，同域重判 id 不變）。
+finding_notes = Table(
+    "finding_notes",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("finding_id", Text, nullable=False),  # 對應 judgments.finding_id（該條歸因分類）
+    Column("author", Text, nullable=False),  # 備註人（user email）
+    Column("content", Text, nullable=False),  # 備註內容
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),  # 備註時間
+    Index("idx_finding_notes_finding", "finding_id"),
+)
+
 
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────
 _engine: Engine | None = None

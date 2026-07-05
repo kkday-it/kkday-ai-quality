@@ -1,13 +1,13 @@
-"""判決結果端點（列表 / 商品清單 / 人工狀態 / 真值標註）；全路徑自帶 /api。"""
+"""判決結果端點（列表 / 商品清單 / 人工狀態 / 真值標註 / 歸因備註）；全路徑自帶 /api。"""
 
 from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core import db
+from app.core import auth, db
 
 router = APIRouter()
 
@@ -137,3 +137,28 @@ def patch_finding_true_label(finding_id: str, body: TrueLabelIn) -> dict:
             raise HTTPException(status_code=422, detail="LLM 對此真值信心明顯偏低，需填寫修改理由才能標註")
     db.update_finding_true_label(finding_id, body.true_label, reason=body.reason, llm_conf=body.llm_conf)
     return {"finding_id": finding_id, "true_label": body.true_label}
+
+
+class NoteIn(BaseModel):
+    """新增歸因備註：content 為備註內容（備註人由登入身分帶入、時間由 DB 補）。"""
+
+    content: str
+
+
+@router.get("/api/findings/{finding_id}/notes")
+def get_finding_notes(finding_id: str) -> list[dict]:
+    """列某條歸因的備註歷史（新到舊：id / 備註人 / 備註時間 / 備註內容）。"""
+    return db.list_finding_notes(finding_id)
+
+
+@router.post("/api/findings/{finding_id}/notes")
+def add_finding_note(
+    finding_id: str, body: NoteIn, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """為某條歸因新增一則備註（append-only）；備註人＝登入 email、備註時間由 DB 補。"""
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="備註內容不可為空")
+    if db.get_finding(finding_id) is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    return db.add_finding_note(finding_id, author=user.get("email") or user.get("user_id") or "unknown", content=content)
