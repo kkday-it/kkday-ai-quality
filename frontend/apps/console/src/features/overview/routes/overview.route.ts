@@ -1,22 +1,16 @@
-// 📊 質檢概覽模組路由：總覽 + 三業務目標（共用 DashboardView，config 驅動）+ 自訂組合。
-// 父路由無 component（僅分組 + 重導）；子路由於殼層 <router-view> 渲染，tab 由 children meta.text 衍生。
-// 各頁 lazy import：DashboardView 分出獨立 chunk（含 echarts），進入概覽才載入。
+// 📊 質檢概覽路由：判決系統 KPI 總覽（單頁，接真 attribution_overview）。
+// 原「三業務目標」子路由（content/presale/postsale）為 mock 敘事，已改為單一真實 KPI 總覽。
+// lazy import：DashboardView 分獨立 chunk（含 echarts），進入概覽才載入。
 import type { RouteRecordRaw } from 'vue-router';
 
 export const overviewRoutes: RouteRecordRaw = {
   path: '/overview',
-  redirect: '/overview/content',
-  children: [
-    { path: 'content', component: () => import('../pages/DashboardView.vue'), meta: { text: '內容質量 & 閉環引擎' } },
-    { path: 'presale', component: () => import('../pages/DashboardView.vue'), meta: { text: '售前轉化' } },
-    { path: 'postsale', component: () => import('../pages/DashboardView.vue'), meta: { text: '售後履約' } },
-  ],
+  component: () => import('../pages/DashboardView.vue'),
+  meta: { text: '判決系統總覽' },
 };
 
 /**
- * 概覽視圖 tab（由 children meta.text 衍生，單一真相；與 JUDGE_TABS 同模式）。
- * 殼層 modules.ts 據此於 topbar 下渲 tab 列。
+ * 概覽視圖 tab：單頁總覽，無次級 tab（殼層 modules.ts 據此於 topbar 下不渲 tab 列）。
+ * 保留 export 契約供 modules.ts；未來若再分檢視於此擴充。
  */
-export const OVERVIEW_TABS = (overviewRoutes.children ?? [])
-  .filter((c) => c.meta?.text)
-  .map((c) => ({ key: `/overview/${String(c.path)}`, label: c.meta!.text as string }));
+export const OVERVIEW_TABS: ReadonlyArray<{ key: string; label: string }> = [];
