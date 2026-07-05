@@ -60,33 +60,44 @@ export interface SourceListSchema {
   filters: SourceFilterDef[];
 }
 
-/** L3 候選（後端 `l3_candidates`：目前僅 code/score；label 保留給未來後端補中文名）。 */
-export interface L3Candidate {
+/** 歸因分類層（L1/L2/L3 共用形狀）。 */
+export interface AttributionLevel {
   code?: string;
   label?: string;
-  score?: number;
 }
 
-/** 單條歸因分類（後端 `_attribution_of`：一則評論 1:N 多歸因，各帶 L1-L3/信心/分層/階段）。 */
+/** 歸因信心（value=最終校準後 / raw=LLM 原始 / tier=分層）。 */
+export interface AttributionConfidence {
+  value?: number;
+  raw?: number;
+  tier?: string;
+}
+
+/** 歸因判決內容（摘要 / 佐證原文 / 建議行動）。 */
+export interface AttributionContent {
+  summary?: string;
+  evidence?: string;
+  action?: string;
+}
+
+/**
+ * 單條歸因分類（後端 `attribution_dto`：一則評論 1:N 多歸因，乾淨巢狀物件）。
+ * 一條形狀貫穿 DB(typed 欄)→API→前端；L1-L3/信心/內容各為分組物件。
+ */
 export interface Attribution {
   finding_id?: string;
-  l1_domain?: string;
-  l1_label?: string;
-  l2_code?: string;
-  l2_label?: string;
-  l3_code?: string;
-  l3_label?: string;
-  confidence?: number;
-  confidence_tier?: string;
-  judgment_stage?: string;
-  recommended_action?: string;
   polarity?: string;
-  problem_summary?: string;
-  reason?: string;
+  /** 判決階段（judged/pending_review/pending_data/insufficient）。 */
+  stage?: string;
+  l1?: AttributionLevel;
+  l2?: AttributionLevel;
+  l3?: AttributionLevel;
+  confidence?: AttributionConfidence;
+  content?: AttributionContent;
   is_primary?: boolean;
-  /** 人工覆核 status（confirmed/dismissed/fixed）——後端 _attribution_of 回傳；覆核徽章用。 */
+  /** 人工覆核 status（confirmed/dismissed/fixed）——覆核徽章用。 */
   status?: string;
-  /** 人工標註真值分類 true_label（正確 L1 域 code）——標真值功能用。 */
+  /** 人工標註真值分類 true_label——標真值功能用。 */
   true_label?: string;
 }
 
@@ -98,9 +109,7 @@ export interface Attribution {
  */
 export interface ProblemRow {
   item_id: string;
-  polarity?: string;
-  confidence_tier?: string;
-  l3_candidates?: L3Candidate[];
+  polarity?: string; // 列級傾向（列樣式；判決詳情走 attributions[]）
   source_id?: string; // 該來源特徵 id（product_reviews→rec_oid…；選取/導出業務身分）
   // ── 一列一 review（後端 _paged_fanout 附）：多歸因收進 attributions 陣列，右側單欄堆疊呈現 ──
   _group?: string; // 該 review 的特徵 id（source_id；前端 rowKey / expand key）

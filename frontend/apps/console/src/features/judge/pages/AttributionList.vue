@@ -25,6 +25,7 @@ import {
   TABLE_DEFAULTS,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
+  type Attribution,
   type ProblemRow,
 } from '../constants';
 import { fmtDt, useAttributionList } from '../composables';
@@ -122,8 +123,8 @@ const viewDetail = (record: ProblemRow) => {
   detailOpen.value = true;
 };
 /** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
-const attrPath = (a: { l1_label?: string; l2_label?: string; l3_label?: string }): string =>
-  [a.l1_label, a.l2_label, a.l3_label].filter(Boolean).join(' › ') || '未歸因';
+const attrPath = (a: Attribution): string =>
+  [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
 
 // ── 操作欄：標真值彈窗（人工標註每條歸因的正確 L1 域，供準確率評估）──
 const truelabelOpen = ref(false);
@@ -463,9 +464,9 @@ onMounted(init);
               <div v-for="(a, ai) in record.attributions" :key="ai" class="verdict-blk text-xs leading-relaxed">
                 <!-- L1→L3 純文字麵包屑：L1 域藍字粗體、› 灰分隔、L2/L3 深色（乾淨不擁擠） -->
                 <div class="text-xs">
-                  <template v-if="[a.l1_label, a.l2_label, a.l3_label].some(Boolean)">
+                  <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
                     <template
-                      v-for="(lvl, li) in [a.l1_label, a.l2_label, a.l3_label].filter(Boolean)"
+                      v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
                       :key="li"
                     >
                       <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
@@ -482,22 +483,22 @@ onMounted(init);
                   </template>
                   <span v-else class="text-[var(--color-text-3)]">未歸因</span>
                 </div>
-                <!-- 反饋摘要（problem_summary）：該歸因標出的痛點片段，緊貼其分類（僅有值才顯示）-->
-                <div v-if="a.problem_summary" class="mt-0.5 text-[11px] leading-snug text-[var(--color-text-3)]">
-                  摘要：{{ a.problem_summary }}
+                <!-- 反饋摘要（content.summary）：該歸因標出的痛點片段，緊貼其分類（僅有值才顯示）-->
+                <div v-if="a.content?.summary" class="mt-0.5 text-[11px] leading-snug text-[var(--color-text-3)]">
+                  摘要：{{ a.content.summary }}
                 </div>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span class="text-[var(--color-text-3)]">信心</span>
                   <span class="font-semibold text-[var(--color-text-1)]">
-                    {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }}
+                    {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}
                   </span>
                   <span
                     class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]"
                   >
-                    {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
+                    {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
                   </span>
-                  <a-tag v-if="a.judgment_stage" size="small" :color="STAGE_COLOR[a.judgment_stage]">
-                    {{ STAGE_LABELS[a.judgment_stage] || a.judgment_stage }}
+                  <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
+                    {{ STAGE_LABELS[a.stage] || a.stage }}
                   </a-tag>
                   <!-- 人工覆核徽章：status≠new/空 時顯示（人工軸，與 AI 階段並存）-->
                   <a-tag
@@ -714,15 +715,15 @@ onMounted(init);
           >
             <a-descriptions-item label="歸因分類">{{ attrPath(a) }}</a-descriptions-item>
             <a-descriptions-item label="信心 / 分層">
-              {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }} ·
-              {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
+              {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }} ·
+              {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
             </a-descriptions-item>
             <a-descriptions-item label="判決階段">
-              {{ a.judgment_stage ? STAGE_LABELS[a.judgment_stage] || a.judgment_stage : '—' }}
+              {{ a.stage ? STAGE_LABELS[a.stage] || a.stage : '—' }}
             </a-descriptions-item>
-            <!-- 反饋摘要（problem_summary）；判決理由永遠＝同一 evidence_quote 複製，故移除避免重複 -->
-            <a-descriptions-item label="反饋摘要">{{ a.problem_summary || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="建議行動">{{ a.recommended_action || '—' }}</a-descriptions-item>
+            <!-- 反饋摘要（content.summary）；判決理由永遠＝同一 evidence 複製，故移除避免重複 -->
+            <a-descriptions-item label="反饋摘要">{{ a.content?.summary || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="建議行動">{{ a.content?.action || '—' }}</a-descriptions-item>
           </a-descriptions>
         </template>
         <a-empty v-else description="此列尚無歸因（未判 / 正向不歸因）" />

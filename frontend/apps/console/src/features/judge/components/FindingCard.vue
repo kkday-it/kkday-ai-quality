@@ -3,19 +3,18 @@ import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { patchStatus } from '@/api';
 import {
-  FIELD_LABEL as FLABEL,
   ACTION_LABEL as ALABEL,
-  CHANNEL_LABEL as CHANNEL,
   STATUS_LABEL as SLABEL,
   STATUS_COLOR as SCOLOR,
 } from '../constants';
 
+// f＝list_findings 列（judgments typed 欄 + 巢狀 finding DTO）。
 const props = defineProps<{ f: any }>();
 
 // 本地狀態（optimistic 更新）：避免直接 mutate prop（vue/no-mutating-props）；模板用 localStatus 顯示
 const localStatus = ref<string>(props.f.status);
 
-const conf = computed(() => Number(props.f.confidence ?? 0));
+const conf = computed(() => Number(props.f.conf_value ?? 0));
 const confLevel = computed(() => (conf.value >= 0.85 ? 'hi' : conf.value >= 0.7 ? 'mid' : 'lo'));
 
 // 信心徽章配色：完整 class 字串（非拼接）確保 Tailwind JIT 掃得到、不被 purge。
@@ -25,6 +24,11 @@ const CONF_CLASS = {
   lo: 'text-[#d4380d] bg-[#fff1f0]',
 } as const;
 const confClass = computed(() => CONF_CLASS[confLevel.value]);
+
+// 歸因麵包屑（L1 › L2 › L3；取 typed 欄 label）
+const attrPath = computed(
+  () => [props.f.l1_label, props.f.l2_label, props.f.l3_label].filter(Boolean).join(' › ') || '未歸因',
+);
 
 const setStatus = async (s: string) => {
   try {
@@ -40,7 +44,7 @@ const setStatus = async (s: string) => {
 
 <template>
   <a-card class="mb-3">
-    <!-- 突顯識別列：信心 / 商品·方案·訂單·供應商 OID（有才顯示）/ 狀態 -->
+    <!-- 突顯識別列：信心 / 商品 OID（有才顯示）/ 狀態 -->
     <div class="flex items-center gap-3 rounded-lg bg-[#f7f8fa] px-2.5 py-1.5">
       <span class="rounded-md px-2 py-px text-sm font-bold" :class="confClass"
         >信心 {{ conf.toFixed(2) }}</span
@@ -49,18 +53,6 @@ const setStatus = async (s: string) => {
         ><span class="mr-0.5 text-[11px] font-normal text-[#86909c]">商品</span>
         {{ f.prod_oid }}</span
       >
-      <span v-if="f.pkg_oid" class="font-mono text-[13px] font-semibold text-[#1d2129]"
-        ><span class="mr-0.5 text-[11px] font-normal text-[#86909c]">方案</span>
-        {{ f.pkg_oid }}</span
-      >
-      <span v-if="f.order_oid" class="font-mono text-[13px] font-semibold text-[#1d2129]"
-        ><span class="mr-0.5 text-[11px] font-normal text-[#86909c]">訂單</span>
-        {{ f.order_oid }}</span
-      >
-      <span v-if="f.supplier_oid" class="font-mono text-[13px] font-semibold text-[#1d2129]"
-        ><span class="mr-0.5 text-[11px] font-normal text-[#86909c]">供應商</span>
-        {{ f.supplier_oid }}</span
-      >
       <a-tag :color="SCOLOR[localStatus]" class="ml-auto">{{
         SLABEL[localStatus] || localStatus
       }}</a-tag>
@@ -68,53 +60,21 @@ const setStatus = async (s: string) => {
 
     <a-space wrap class="mb-1 mt-2">
       <a-tag color="arcoblue">{{ f.dimension }}</a-tag>
-      <a-tag v-if="f.suspected_field && f.suspected_field !== 'none'" color="purple">{{
-        FLABEL[f.suspected_field] || f.suspected_field
-      }}</a-tag>
       <a-tag v-if="f.is_primary" color="purple" bordered>主要</a-tag>
     </a-space>
 
-    <div class="my-1 text-sm leading-[1.55]">{{ f.problem_summary }}</div>
-    <div v-if="f.evidence_quote" class="mt-1.5 text-[12.5px] leading-normal text-[#86909c]">
-      📄 目前頁面：{{ f.evidence_quote }}
-    </div>
-    <div
-      v-if="f.ground_truth_quote"
-      class="mt-2 rounded-lg border border-[#a3e8dd] bg-[#e8fffb] px-[11px] py-2 text-[12.5px] leading-normal"
-    >
-      <b class="text-[#0f9b8e]">✅ 客服標準答案（待補事實）：</b>{{ f.ground_truth_quote }}
-    </div>
-
-    <div class="mt-2 flex flex-wrap gap-1.5">
-      <span class="rounded-md bg-[#f2f3f5] px-2 py-px text-[11.5px] text-[#4e5969]"
-        >📥 感知層：{{ CHANNEL[f.source_channel] || '其他'
-        }}<template v-if="f.source_system"> · {{ f.source_system }}</template></span
-      >
-      <span
-        v-if="f.owner_role"
-        class="rounded-md bg-[#f2f3f5] px-2 py-px text-[11.5px] text-[#4e5969]"
-        >👤 {{ f.owner_role }}</span
-      >
-      <span
-        v-if="f.exec_platform"
-        class="rounded-md bg-[#f2f3f5] px-2 py-px text-[11.5px] text-[#4e5969]"
-        >🛠 {{ f.exec_platform }}</span
-      >
-    </div>
-
-    <div class="mt-2.5 flex flex-wrap items-center gap-2">
-      <template v-if="f.writer_handoff">
-        <a-button size="mini" type="primary"
-          >✎ 用 writer 重生{{ FLABEL[f.suspected_field] }}</a-button
-        >
-        <span class="text-xs text-[#86909c]">可重生（改寫既有事實），結果供確認不自動寫回</span>
-      </template>
-      <span v-else class="text-xs text-[#fb923c]">⛔ 缺事實 → 需 PM 手動補（不可自動重生）</span>
+    <!-- 歸因分類麵包屑（L1 › L2 › L3）-->
+    <div class="my-1 text-[13px] font-medium text-[#1d2129]">{{ attrPath }}</div>
+    <!-- 反饋摘要 -->
+    <div class="my-1 text-sm leading-[1.55]">{{ f.summary }}</div>
+    <!-- 佐證原文 -->
+    <div v-if="f.evidence" class="mt-1.5 text-[12.5px] leading-normal text-[#86909c]">
+      📄 佐證：{{ f.evidence }}
     </div>
 
     <div class="mt-2.5 flex flex-wrap items-center gap-2">
       <span class="text-xs text-[#86909c]"
-        >建議動作：<b>{{ ALABEL[f.recommended_action] || f.recommended_action }}</b></span
+        >建議動作：<b>{{ ALABEL[f.action] || f.action }}</b></span
       >
       <span class="ml-auto"></span>
       <a-button size="mini" type="outline" status="success" @click="setStatus('confirmed')"
