@@ -10,9 +10,9 @@ judgments.summary 逐條交 LLM 翻成繁體中文，**直接 UPDATE**（evidenc
 
 用法（backend venv）：
     cd backend
-    .venv/bin/python ../scripts/tools/translate_summaries.py --dry-run   # 只看需轉幾條 + 樣本
-    .venv/bin/python ../scripts/tools/translate_summaries.py             # 實際轉譯並寫 DB
-    .venv/bin/python ../scripts/tools/translate_summaries.py --limit 20  # 先試跑前 20 條
+    .venv/bin/python ../scripts/tools/translate_summaries.py --dry-run                      # 只看需轉幾條 + 樣本（免 token）
+    .venv/bin/python ../scripts/tools/translate_summaries.py --user you@kkday.com           # 用你帳號的 LLM 設定實際轉譯寫 DB
+    .venv/bin/python ../scripts/tools/translate_summaries.py --user you@kkday.com --limit 20 # 先試跑前 20 條
 """
 import argparse
 import os
@@ -63,7 +63,19 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="批量轉譯既有判決摘要為繁體中文")
     ap.add_argument("--dry-run", action="store_true", help="只統計需轉數量 + 印樣本，不寫 DB")
     ap.add_argument("--limit", type=int, default=0, help="只處理前 N 條（試跑）")
+    ap.add_argument("--user", help="以此 user（email）的 active LLM 設定跑；標準命令列無 request context 需指定")
     args = ap.parse_args()
+
+    # 載入指定 user 的 active LLM 設定到 contextvar（腳本無 request context，否則走 stub）。
+    if args.user:
+        from app.core import db as _db
+        from app.core import settings as app_settings
+
+        u = _db.get_user_by_email(args.user)
+        if not u:
+            print(f"❌ 找不到 user：{args.user}")
+            sys.exit(1)
+        app_settings.set_current(app_settings.effective_llm_dict(app_settings.load_settings(u["user_id"])))
 
     with T.get_engine().connect() as c:
         rows = c.execute(
@@ -81,7 +93,7 @@ def main() -> None:
         return
 
     if client.is_stub():  # 實際轉譯才需 LLM；stub（無 token）拒跑避免寫入垃圾
-        print("❌ 目前為 stub 模式（active LLM 配置無 token）。請先於設定啟用可用的 LLM 配置再跑本腳本。")
+        print("❌ 目前為 stub 模式（無 LLM token）。請加 --user <你的 email> 以載入該帳號已設定的 LLM 配置再跑。")
         sys.exit(1)
 
     ok = 0
