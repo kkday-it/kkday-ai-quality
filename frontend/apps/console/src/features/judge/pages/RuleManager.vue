@@ -144,36 +144,40 @@ function doResetAll() {
 
 <template>
   <div class="flex h-full gap-4">
-    <!-- 左：子規則選單 + 全局商品垂直分類篩選 -->
-    <div class="flex h-full w-44 shrink-0 flex-col gap-3">
-      <!-- 歸因分類標題列 + 恢復默認：獨立於 a-menu-item-group（其 title slot 內按鈕點擊會被 Arco menu 吞掉）-->
+    <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
+    <div class="flex h-full w-52 shrink-0 flex-col gap-3">
+      <!-- 面板標題列 + 恢復默認：獨立於 a-menu-item-group（其 title slot 內按鈕點擊會被 Arco menu 吞掉）-->
       <div class="flex flex-none items-center justify-between px-1">
-        <span class="text-xs text-[var(--color-text-3)]">歸因分類</span>
+        <span class="text-xs text-[var(--color-text-3)]">規則配置</span>
         <a-button size="mini" type="text" @click="doResetAll">恢復默認</a-button>
       </div>
 
-      <!-- schema 置頂為第一項，其後為歸因分類子規則（C-N）-->
+      <!-- 兩組：整體配置（schema/global/judgment 純 JSON）+ 歸因分類（C-N 判準樹）-->
       <a-menu
         :selected-keys="[store.activeCode]"
         class="min-h-0 flex-1 overflow-auto rounded-lg border"
         @menu-item-click="pick"
       >
-        <a-menu-item key="schema">
-          <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
-          <span class="ml-2">{{ store.labelFor('schema') }}</span>
-        </a-menu-item>
-        <a-menu-item key="global_rule">
-          <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
-          <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
-        </a-menu-item>
-        <a-menu-item key="judgment">
-          <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
-          <span class="ml-2">{{ store.labelFor('judgment') }}</span>
-        </a-menu-item>
-        <a-menu-item v-for="c in domainCodes" :key="c">
-          <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-          <span class="ml-2">{{ store.labelFor(c) }}</span>
-        </a-menu-item>
+        <a-menu-item-group title="整體配置">
+          <a-menu-item key="schema">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
+            <span class="ml-2">{{ store.labelFor('schema') }}</span>
+          </a-menu-item>
+          <a-menu-item key="global_rule">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
+            <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
+          </a-menu-item>
+          <a-menu-item key="judgment">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
+            <span class="ml-2">{{ store.labelFor('judgment') }}</span>
+          </a-menu-item>
+        </a-menu-item-group>
+        <a-menu-item-group title="歸因分類">
+          <a-menu-item v-for="c in domainCodes" :key="c">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+            <span class="ml-2">{{ store.labelFor(c) }}</span>
+          </a-menu-item>
+        </a-menu-item-group>
       </a-menu>
 
       <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
