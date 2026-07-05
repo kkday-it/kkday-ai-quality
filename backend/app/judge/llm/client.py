@@ -1,8 +1,11 @@
-"""LLM client + stub 開關。
+"""LLM client + stub 開關 + gateway 分派。
 
 配置來源：當前 user 的 DB user_settings（前端「設定」面板管理）優先，fallback 環境變數（config.env）。
-無 api_token（settings 與 env 皆無）→ stub 模式（啟發式，零 key 走通 pipeline）；
-有 token → OpenAI SDK 真判（預設 gpt-5-mini）。
+無 api_token（settings 與 env 皆無）→ stub 模式（啟發式，零 key 走通 pipeline）；有 token → 真判。
+
+gateway（`env.llm_gateway`，增量 strangler·可回滾）：預設 `openai`（OpenAI SDK 直呼，proven）；設
+`litellm` 走 LiteLLM 統一 gateway（cost 正規化 + 未來 fallback/語意快取/OTel）。對外介面（chat_json/ping）
+不變，僅 `_complete` 內部依 gateway 分派；兩後端回應同構（.choices/.usage），usage 抽取與解析共用。
 """
 
 from __future__ import annotations
@@ -66,6 +69,51 @@ def _get_client(token: str, base_url: str):
         return cli
 
 
+# ── LLM gateway 分派（增量 strangler：預設 OpenAI SDK；LLM_GATEWAY=litellm 切換，可回滾）─────────
+def _complete_openai(cfg: dict, kwargs: dict, cache_key: str | None):
+    """OpenAI SDK 路徑（預設，proven）：共用快取 client（含 retry/timeout）+ prompt_cache_key 直傳頂層。"""
+    client = _get_client(cfg["token"], cfg["base_url"])
+    k = dict(kwargs)
+    if cache_key:
+        k["prompt_cache_key"] = cache_key
+    return client.chat.completions.create(**k)
+
+
+def _complete_litellm(cfg: dict, kwargs: dict, cache_key: str | None):
+    """LiteLLM gateway 路徑（LLM_GATEWAY=litellm）：統一介面 + cost 正規化（語意快取/fallback/OTel 待 Phase 7）。
+
+    任何自訂 base_url 一律以 `openai/<model>` + api_base 強制走 OpenAI-compatible transport（對齊現有以
+    base_url 打各 OpenAI 相容端點的行為）；prompt_cache_key 走 extra_body 轉發（litellm 原生不收此 OpenAI
+    專屬參數）；drop_params 讓不受支援參數靜默丟棄，跨 provider 更穩。回應物件與 OpenAI SDK 同構
+    （.choices[0].message.content / .usage.*），上層 usage 抽取與 JSON 解析共用。
+    """
+    import litellm
+
+    base_url = cfg["base_url"]
+    k = dict(kwargs)
+    k["model"] = f"openai/{kwargs['model']}" if base_url else kwargs["model"]
+    k["api_key"] = cfg["token"]
+    k["drop_params"] = True  # 不受支援參數（如 reasoning_effort 於某 provider）靜默丟棄，避免 400
+    k["num_retries"] = env.llm_max_retries
+    k["timeout"] = float(env.llm_timeout)
+    if base_url:
+        k["api_base"] = base_url
+    if cache_key:
+        k["extra_body"] = {"prompt_cache_key": cache_key}
+    return litellm.completion(**k)
+
+
+def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
+    """依 env.llm_gateway 分派 LLM 呼叫（'litellm' → gateway；否則 OpenAI SDK 直呼）。
+
+    kwargs＝後端無關的共用 completion 參數（model/messages/response_format/temperature/reasoning_effort）；
+    cache_key 由各後端放對位置（OpenAI 頂層 / litellm extra_body）。回應同構，上層免分歧。
+    """
+    if env.llm_gateway == "litellm":
+        return _complete_litellm(cfg, kwargs, cache_key)
+    return _complete_openai(cfg, kwargs, cache_key)
+
+
 def _resolve() -> dict:
     """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。
 
@@ -115,7 +163,6 @@ def chat_json(
             避免相容端點（Gemini/ByteDance）拒收。實際命中仍靠「靜態前綴放前、動態放後」的排序。
     """
     cfg = _resolve()
-    client = _get_client(cfg["token"], cfg["base_url"])  # 共用快取 client（含 retry/timeout）
     kwargs: dict = {
         "model": cfg["model"],
         "messages": [
@@ -123,8 +170,6 @@ def chat_json(
             {"role": "user", "content": user},
         ],
     }
-    if cache_key and _settings.provider_id_for(cfg["base_url"]) == "openai":
-        kwargs["prompt_cache_key"] = cache_key
     if schema is not None:
         kwargs["response_format"] = {
             "type": "json_schema",
@@ -138,14 +183,16 @@ def chat_json(
     eff = cfg["reasoning_effort"]
     if eff and eff != "default":
         kwargs["reasoning_effort"] = eff
+    # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
+    ck = cache_key if (cache_key and _settings.provider_id_for(cfg["base_url"]) == "openai") else None
     try:
-        resp = client.chat.completions.create(**kwargs)
+        resp = _complete(cfg, kwargs, ck)  # gateway 分派（OpenAI SDK / litellm）
     except Exception as e:  # noqa: BLE001  json_schema 不受支援（400）→ 回退 json_object 重試一次
         if schema is None:
             raise
         _log.warning("json_schema 不受支援(stage=%s)，回退 json_object：%s", stage, str(e).splitlines()[0][:160])
         kwargs["response_format"] = {"type": "json_object"}
-        resp = client.chat.completions.create(**kwargs)
+        resp = _complete(cfg, kwargs, ck)
     # token 用量回報（供批量累計花費；失敗不影響判決）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)
@@ -192,13 +239,6 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
             "error": "當前 provider 未設定 token（stub 模式，無法真打 API）；請先填入並儲存該 provider 的 token",
         }
 
-    from openai import OpenAI
-
-    client = (
-        OpenAI(api_key=cfg["token"], base_url=cfg["base_url"])
-        if cfg["base_url"]
-        else OpenAI(api_key=cfg["token"])
-    )
     kwargs: dict = {
         "model": cfg["model"],
         "messages": [
@@ -214,7 +254,7 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
 
     t0 = time.monotonic()
     try:
-        resp = client.chat.completions.create(**kwargs)
+        resp = _complete(cfg, kwargs, None)  # gateway 分派（同 chat_json）
         dt = int((time.monotonic() - t0) * 1000)
         usage = getattr(resp, "usage", None)
         return {

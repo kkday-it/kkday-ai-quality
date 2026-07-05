@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.4.0",
     "openai>=1.50.0",
+    "litellm>=1.90.0",       # LLM gateway（env.llm_gateway=litellm 啟用；統一介面 + cost，fallback/語意快取待 Phase 7）
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",  # pydantic-settings 解析 env_file 所需
     "openpyxl>=3.1.0",
@@ -29,12 +30,15 @@ dev = [
 #   - 線上格式/編碼校驗：現以 pydantic + 白名單（arbiter/prejudge）等效 Guardrails ValidChoices（零額外 LLM）。
 #     深度版改掛 guardrails-ai（on_fail=reask 自動修正重判 1 次）。注意：新版 ValidChoices 在 guardrails hub，
 #     需 `guardrails hub install hub://guardrails/valid_choices`（額外 hub 設定）。
-#   - 離線信心度校準：現以純 Python Platt（judge/calibration.fit_platt）擬合，免裝。深度版可改用 cleanlab
-#     （find_label_issues 挖混淆/標註錯誤 + ECE 質量報告）。
+#   - 離線信心度校準（judge/calibration.py）：以人工 true_label 擬合 conf_raw→calibrated（isotonic/Platt）
+#     + ECE 前後對比。用 scikit-learn（輕量、無 torch）；**不用 netcal**（會拉 torch/gpytorch/pyro/tensorboard
+#     數百 MB，違背零重依賴）。fit 需 sklearn（缺則優雅 skip）；apply 為純 numpy 免依賴。
+#   - 樣本品質體檢：cleanlab（find_label_issues 挖混淆/標註錯誤，label-free 一致性報告，見 accuracy.py）。
 # 啟用：pip install -e ".[accuracy]"
 accuracy = [
     "guardrails-ai>=0.5.0",
     "cleanlab>=2.6.0",
+    "scikit-learn>=1.3",
 ]
 
 # ── 格式化 / Lint（ruff，需 pip install -e ".[dev]"）──
