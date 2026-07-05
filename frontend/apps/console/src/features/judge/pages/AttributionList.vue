@@ -596,13 +596,26 @@ onMounted(init);
           <!-- 操作欄：整列級動作全展開（歸因/重判 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
           <template #actions="{ record }">
             <div class="flex flex-col items-stretch gap-1.5 py-1">
+              <!-- 重判＝破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次「歸因」無覆寫，直接執行不製造確認疲勞 -->
+              <a-popconfirm
+                v-if="record.attributions && record.attributions.length"
+                content="重判會用 AI 重新判決並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定重判？"
+                ok-text="重判"
+                cancel-text="取消"
+                @ok="rejudgeRow(record._group)"
+              >
+                <a-button type="primary" size="small" :loading="isRowBusy(record._group)">
+                  重判
+                </a-button>
+              </a-popconfirm>
               <a-button
+                v-else
                 type="primary"
                 size="small"
                 :loading="isRowBusy(record._group)"
                 @click="rejudgeRow(record._group)"
               >
-                {{ record.attributions && record.attributions.length ? '重判' : '歸因' }}
+                歸因
               </a-button>
               <a-button
                 size="small"
