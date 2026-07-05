@@ -97,6 +97,20 @@ def _validate(code: str, content: dict) -> None:
                 status_code=422,
                 detail="judgment 需含 confidence_tiers（auto_accept / jury_low / jury_high 皆為數值）",
             )
+        # auto_confirm（G1 自動確認路由）必驗：QC 若在 JSON 誤刪整塊，下游 _auto_confirm_cfg 會靜默退回
+        # 預設 enabled=True，等於「刪一個鍵就重開自動確認、跳過人工複核」——業務行為靜默改變，故存檔前擋。
+        ac = content.get("auto_confirm")
+        rate = ac.get("audit_sample_rate") if isinstance(ac, dict) else None
+        if (
+            not isinstance(ac, dict)
+            or not isinstance(ac.get("enabled"), bool)
+            or not isinstance(rate, (int, float))
+            or not (0 <= rate <= 1)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="judgment 需含 auto_confirm（enabled 為 true/false·audit_sample_rate 為 0~1 數值）——防誤刪靜默重開自動確認",
+            )
         return
     schema = db.get_rule_active("schema") or db.default_rule_content("schema")
     errs = sorted(
@@ -150,7 +164,7 @@ def get_rule(
 ) -> dict:
     """取某 rule 的 active content（或 ?version=N 取特定版）。"""
     _check_code(code)
-    content = db.get_rule_version(code, version) if version else db.get_rule_active(code)
+    content = db.get_rule_version(code, version) if version is not None else db.get_rule_active(code)
     if content is None:
         raise HTTPException(status_code=404, detail="無此版本（或尚未 seed）")
     return {"rule_code": code, "version": version, "content": content}

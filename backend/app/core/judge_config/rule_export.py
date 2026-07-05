@@ -111,8 +111,9 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
 def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
     """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ global 判決總規範分頁。
 
-    資料源＝DB active 版本（規則配置頁的當前生效內容，反映使用者最新編輯）。schema 結構規格與
-    product_vertical 選項池非人閱分類法典，故不含。
+    資料源＝DB active 版本（規則配置頁的當前生效內容，反映使用者最新編輯）。僅導出人閱分類法典
+    （C-N + global）；schema 結構規格、product_vertical 選項池、judgment 判決配置（信心閾值/
+    prejudge 旋鈕）皆非人閱法典，故不含（迴圈只走 C- 開頭 + global_rule 而自然排除）。
 
     Args:
         ctx: 背景 job 進度把手（可選）；給定時每完成一分頁回報進度並輪詢取消，None＝同步直呼。
