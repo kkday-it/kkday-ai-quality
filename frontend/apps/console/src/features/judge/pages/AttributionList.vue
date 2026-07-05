@@ -33,7 +33,8 @@ import {
   type Attribution,
   type ProblemRow,
 } from '../constants';
-import { fmtDt, useAttributionList } from '../composables';
+import { useAttributionList } from '../composables';
+import { fmtDt } from '../utils';
 
 const POLARITY_COLOR: Record<string, string> = {
   positive: 'green',

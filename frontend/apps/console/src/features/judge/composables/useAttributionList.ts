@@ -10,7 +10,6 @@ import {
   prejudgeStreamUrl,
   getL1Domains,
   getProblems,
-  getSettings,
   resumePrejudge,
   startPrejudge,
   type L1DomainOpt,
@@ -20,30 +19,7 @@ import { useVerticalFilterStore } from '@/stores';
 import { schemaFor, type Attribution, type ProblemRow } from '../constants';
 import { exportName } from '../utils';
 import { useExportJob } from './useExportJob';
-
-/** LLM 模型配置選項（同「設定 › LLM 模型連線」）。 */
-interface LlmConfigOpt {
-  id: string;
-  provider: string;
-  model: string;
-  reasoning_effort: string;
-}
-
-/**
- * 正規化時間字串顯示：去小數秒/去 T·Z；dateOnly 或時間為 00:00:00 時只留日期。
- * 與後端 db.fmt_datetime 語義一致（評論時間含時分秒、出發日只到日）。
- * @param value 原始時間字串（可能為 null/undefined）
- * @param dateOnly 是否強制只顯示日期
- * @returns 正規化後字串（無值回傳空字串）
- */
-export const fmtDt = (value: unknown, dateOnly = false): string => {
-  if (value === null || value === undefined || value === '') return '';
-  let s = String(value).trim().replace('T', ' ');
-  if (s.endsWith('Z')) s = s.slice(0, -1).trim();
-  s = s.replace(/\.\d+/, ''); // 去小數秒
-  if (dateOnly || s.endsWith(' 00:00:00')) return s.split(' ')[0];
-  return s;
-};
+import { useLlmConfigs } from './useLlmConfigs';
 
 /**
  * 歸因列表的資料載入、篩選、選取與初判歸因批次邏輯。
@@ -92,24 +68,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 生效的 polarity 篩選（送後端；空＝不篩）。「僅看問題」已移除，傾向下拉直接涵蓋負向。 */
   const effPolarity = computed(() => polarityFilter.value || undefined);
 
-  // ── LLM 模型（已保存配置）──
-  const llmConfigId = ref('');
-  // 與「設定 › LLM 模型連線」同源（backend settings.llm_configs）；顯示名共用 composeLlmLabel 確保同步
-  const llmConfigs = ref<LlmConfigOpt[]>([]);
-  const loadConfigs = async () => {
-    try {
-      const s = await getSettings();
-      llmConfigs.value = (s.llm_configs || []).map((c: any) => ({
-        id: c.id,
-        provider: c.provider || '',
-        model: c.model || '',
-        reasoning_effort: c.reasoning_effort || 'default',
-      }));
-      llmConfigId.value = s.active_llm_config_id || llmConfigs.value[0]?.id || '';
-    } catch {
-      llmConfigs.value = [];
-    }
-  };
+  // ── LLM 模型（已保存配置）──下沉 useLlmConfigs（載入/選中）；同源「設定 › LLM 模型連線」。
+  const { llmConfigId, llmConfigs, loadConfigs } = useLlmConfigs();
 
   // ── 伺服器端分頁 ──
   const rows = ref<ProblemRow[]>([]);
