@@ -9,7 +9,7 @@
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
@@ -119,6 +119,17 @@ const {
   reviewFinding,
   init,
 } = useAttributionList(source);
+
+// 單列重判完成 + 重載後，把表身捲回剛判的那一列（大列表·表身內滾動 y='100%'，重載會回頂 → 失去位置）。
+const tableRef = ref<{ $el: HTMLElement } | null>(null);
+const onRejudge = async (id: string) => {
+  await rejudgeRow(id); // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）
+  await nextTick();
+  const idx = rows.value.findIndex((r) => String(r._group) === id);
+  if (idx < 0) return;
+  const tr = tableRef.value?.$el?.querySelectorAll('.arco-table-body tbody > tr')[idx];
+  (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+};
 
 // ── 操作：查看判決詳情彈窗（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
@@ -428,6 +439,7 @@ onMounted(init);
         empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
       >
         <a-table
+          ref="tableRef"
           v-bind="TABLE_DEFAULTS"
           :data="rows"
           :columns="COLS"
@@ -633,7 +645,7 @@ onMounted(init);
                 content="重判會用 AI 重新判決並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定重判？"
                 ok-text="重判"
                 cancel-text="取消"
-                @ok="rejudgeRow(record._group)"
+                @ok="onRejudge(record._group)"
               >
                 <a-button type="primary" size="small" :loading="isRowBusy(record._group)">
                   重判
@@ -644,7 +656,7 @@ onMounted(init);
                 type="primary"
                 size="small"
                 :loading="isRowBusy(record._group)"
-                @click="rejudgeRow(record._group)"
+                @click="onRejudge(record._group)"
               >
                 歸因
               </a-button>
