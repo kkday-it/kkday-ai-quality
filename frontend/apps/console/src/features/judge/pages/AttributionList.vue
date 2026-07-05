@@ -1041,11 +1041,11 @@ onMounted(init);
       </div>
     </a-modal>
 
-    <!-- 歸因備註彈窗：左右佈局——左＝時間軸歷史（備註人/時間/內容），右＝新增備註 -->
-    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="720" unmount-on-close>
-      <div class="flex gap-4">
-        <!-- 左：append-only 歷史時間軸（新到舊）-->
-        <div class="min-w-0 flex-1">
+    <!-- 歸因備註彈窗：左右佈局——左＝時間軸歷史（固定寬），右＝新增備註（flex-1 填滿，消除中間空隙）-->
+    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="680" unmount-on-close>
+      <div class="flex gap-5">
+        <!-- 左：append-only 歷史時間軸（新到舊；固定寬避免撐開留白）-->
+        <div class="w-[300px] shrink-0">
           <StateGuard :loading="noteLoading" error="">
             <a-timeline v-if="noteList.length" class="max-h-[360px] overflow-auto pl-1">
               <a-timeline-item v-for="n in noteList" :key="n.id">
@@ -1061,8 +1061,8 @@ onMounted(init);
             <a-empty v-else description="尚無備註" />
           </StateGuard>
         </div>
-        <!-- 右：新增備註 -->
-        <div class="flex w-[260px] shrink-0 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-4">
+        <!-- 右：新增備註（flex-1 填滿剩餘寬）-->
+        <div class="flex min-w-0 flex-1 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5">
           <a-textarea
             v-model="noteDraft"
             :auto-size="{ minRows: 4 }"
