@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// AI 法官分析頁 KPI 指標卡：label / 數值（可帶單位）/ 說明，點擊冒泡 click。
+// 跨 feature 公共 KPI 指標卡：label / 數值（可帶單位）/ 說明，點擊冒泡 click。
 defineProps<{
   /** 指標名稱 */
   label: string;

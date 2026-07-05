@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router';
 import { authRoutes } from '@/features/auth/routes';
 import { judgeRoutes } from '@/features/judge/routes';
 import { overviewRoutes } from '@/features/overview/routes';
+import { usageRoutes } from '@/features/usage/routes';
 
 // 註：設定（帳號 / 模型配置）改以殼層右滑抽屜的兩分頁呈現（App.vue），
 // 分頁狀態同步 URL query(?settings=account|model)，不再佔用獨立 /settings 路由。
@@ -12,4 +13,5 @@ export const routes: RouteRecordRaw[] = [
   authRoutes,
   overviewRoutes,
   judgeRoutes,
+  usageRoutes,
 ];

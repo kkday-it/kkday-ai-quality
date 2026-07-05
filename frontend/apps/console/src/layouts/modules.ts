@@ -2,6 +2,7 @@
 // 每個模組綁定 home 路由 + 路徑前綴 + 視圖 tab；新增模組只需在此追加一筆，殼層自動處理導航與 tab 高亮。
 import { JUDGE_TABS } from '@/features/judge/routes';
 import { OVERVIEW_TABS } from '@/features/overview/routes';
+import { USAGE_TABS } from '@/features/usage/routes';
 
 export interface AppModule {
   /** 模組唯一鍵 */
@@ -19,6 +20,7 @@ export interface AppModule {
 /** 縱覽置首（整個 AI 質檢的鳥瞰），AI 法官為其下一環。 */
 export const MODULES: ReadonlyArray<AppModule> = [
   { value: 'overview', label: '📊 質檢概覽', home: '/overview', prefix: '/overview', tabs: OVERVIEW_TABS },
+  { value: 'ai-usage', label: '💰 AI 消耗', home: '/usage', prefix: '/usage', tabs: USAGE_TABS },
   { value: 'ai-judge', label: '⚖️ AI 法官', home: '/judge', prefix: '/judge', tabs: JUDGE_TABS },
 ];
 

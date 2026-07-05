@@ -2,8 +2,8 @@
 import { ref, onMounted, computed, reactive } from 'vue';
 import { countBy, maxBy } from 'lodash-es';
 import { getFindings } from '@/api';
-import { StateGuard, TableLayout } from '@/components';
-import { FindingCard, KpiCard } from '../components';
+import { StateGuard, TableLayout, KpiCard } from '@/components';
+import { FindingCard } from '../components';
 import { DIMS, STATUS_OPTS } from '../constants';
 import { flatFinding as flat } from '../utils';
 

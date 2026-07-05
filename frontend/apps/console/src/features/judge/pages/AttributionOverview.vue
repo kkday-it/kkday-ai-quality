@@ -21,8 +21,7 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { IconRefresh } from '@arco-design/web-vue/es/icon';
-import { StateGuard, CardSection } from '@/components';
-import { KpiCard } from '../components';
+import { StateGuard, CardSection, KpiCard } from '@/components';
 import { SOURCE_LABEL } from '../constants';
 import { useAttributionDashboard } from '../composables';
 

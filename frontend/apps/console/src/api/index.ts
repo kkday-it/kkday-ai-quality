@@ -8,3 +8,4 @@ export * from './judgment.api';
 export * from './exports.api';
 export * from './settings.api';
 export * from './datasource.api';
+export * from './usage.api';

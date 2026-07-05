@@ -6,3 +6,4 @@ export { default as Terminal } from './Terminal.vue';
 export { default as AccordionGroup } from './AccordionGroup.vue';
 export { default as JsonEditor } from './JsonEditor.vue';
 export { default as ExportProgressBar } from './ExportProgressBar.vue';
+export { default as KpiCard } from './KpiCard.vue';
