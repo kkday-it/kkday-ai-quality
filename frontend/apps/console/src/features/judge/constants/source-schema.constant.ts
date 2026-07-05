@@ -132,7 +132,7 @@ export interface ProblemRow {
  */
 const COMPOSITE_COLUMNS: TableColumnData[] = [
   {
-    title: '反饋內容',
+    title: '反饋內容（評論時間）', // 闊號＝排序依據：此欄可排序，依 occurred_at 評論時間
     dataIndex: 'occurred_at',
     slotName: 'review',
     width: 320,
@@ -140,7 +140,7 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   },
   { title: '關聯資料', dataIndex: 'order_mid', slotName: 'context', width: 300 },
   {
-    title: '判決歸因',
+    title: '判決歸因（信心度）', // 闊號＝排序依據：此欄可排序，依該 review 各歸因最大 confidence 信心度
     dataIndex: 'confidence',
     slotName: 'verdict',
     width: 260,
