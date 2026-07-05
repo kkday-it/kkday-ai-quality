@@ -1,77 +1,69 @@
 <script setup lang="ts">
 /**
- * 判決系統 KPI 總覽（landing）——接真後端 `attribution_overview`（source=undefined＝縱覽全部來源）。
- *
- * 呈現跨全部來源的即時歸因聚合：核心指標（進線 / 已判 / 問題比 / 自動採信率 / 待人工）+ 傾向 / L1 域 /
- * 信心分層 三分布。**棄原業務目標敘事 mock**（其北極星 / loop / 引擎指標不存在於資料、無法接真）。
- * 詳細 per-source、日期趨勢、L1→L2/L3 下鑽走「歸因縱覽」頁；此處為高階 landing 概覽，復用同一
- * `useAttributionDashboard` 真實資料源，不重造。
+ * config 驅動的業務目標儀表板 view（內容質量&閉環引擎 / 售前轉化 / 售後履約 共用一頁）。
+ * 由路由末段決定 viewKey → 讀 dashboard.json 的 views[viewKey] → 逐 section 渲 SectionTitle + 等高 ChartCard grid。
+ * 結構/公共/特有皆由 config 組合；改 dashboard.json 即改版面。
  */
-import VChart from 'vue-echarts';
-import { use } from 'echarts/core';
-import { BarChart, PieChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import { IconRefresh } from '@arco-design/web-vue/es/icon';
-import { CardSection, StateGuard } from '@/components';
-import { KpiCard } from '@/features/judge/components';
-import { useAttributionDashboard } from '@/features/judge/composables';
+import { computed, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { ChartCard, ChartModal, SectionTitle } from '../components';
+import { resolveChartData } from '../utils';
+import dashboard from '@config/overview/dashboard.json';
+import mock3 from '../mock/overview.mock3.json';
+import type { ChartSpec, DashboardConfig, Overview3, SectionSpec, ViewSpec } from '../dashboard.types';
 
-use([PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+const config = dashboard as unknown as DashboardConfig;
+const data = mock3 as unknown as Overview3;
 
-// source=undefined → 跨全部來源聚合（判決系統整體 KPI）；landing 取整體、不帶日期/粒度篩選。
-const { loading, error, hasData, kpi, polarityDonut, l1Bar, tierDonut, reload } =
-  useAttributionDashboard(() => undefined);
+const route = useRoute();
+const viewKey = computed(() => {
+  const seg = route.path.split('/').pop() ?? 'content';
+  return config.views[seg] ? seg : 'content';
+});
+const view = computed<ViewSpec>(() => config.views[viewKey.value]);
+const sections = computed<SectionSpec[]>(() => view.value.sections ?? []);
+
+const specsOf = (section: SectionSpec): ChartSpec[] =>
+  section.charts.map((id) => config.charts[id]).filter(Boolean);
+const resolveData = (spec: ChartSpec): unknown => resolveChartData(spec, data);
+
+// 單圖放大（Feature 1）
+const modalOpen = ref(false);
+const zoomSpec = ref<ChartSpec | null>(null);
+const zoomData = ref<unknown>(null);
+const onZoom = (spec: ChartSpec) => {
+  zoomSpec.value = spec;
+  zoomData.value = resolveData(spec);
+  modalOpen.value = true;
+};
 </script>
 
 <template>
   <div class="mx-auto max-w-[1320px]">
     <header class="mb-5 flex flex-wrap items-end justify-between gap-2">
       <div>
-        <h1 class="m-0 text-xl font-semibold text-[#1d2129]">判決系統總覽</h1>
-        <p class="mt-1 text-sm text-[#86909c]">跨全部來源的即時歸因聚合 · 詳細 per-source / 趨勢 / 下鑽見「歸因縱覽」</p>
+        <h1 class="m-0 text-xl font-semibold text-[#1d2129]">{{ view.label }}</h1>
+        <p class="mt-1 text-sm text-[#86909c]">{{ data.meta.subtitle }} · {{ data.meta.period }}</p>
       </div>
-      <a-button size="small" :loading="loading" @click="reload">
-        <template #icon><icon-refresh /></template>
-        重新整理
-      </a-button>
+      <a-tag color="orange" size="small" bordered>Demo · mock 資料</a-tag>
     </header>
 
-    <StateGuard
-      :loading="loading"
-      :error="error"
-      :empty="!hasData"
-      empty-text="尚無歸因資料，請先到「歸因列表」進行初判歸因"
-    >
-      <div v-if="kpi" class="flex flex-col gap-4">
-        <CardSection title="核心指標" hint="整體進線結構：進線量、歸因進度與問題 / 自動採信比率">
-          <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
-            <KpiCard label="總進線" :value="kpi.total" subtext="全部錄入標的" />
-            <KpiCard label="已歸因" :value="kpi.judged" subtext="已完成初判歸因" />
-            <KpiCard label="問題占比" :value="kpi.problemPct" unit="%" subtext="負向 / 已判" />
-            <KpiCard label="自動採信率" :value="kpi.autoPct" unit="%" subtext="auto_accept / 已判" />
-            <KpiCard label="待人工" :value="kpi.needsReview" subtext="低信心需複核" />
-          </div>
-        </CardSection>
+    <section v-for="(sec, i) in sections" :key="i" class="mb-6">
+      <SectionTitle :title="sec.title" :subtitle="sec.desc" />
+      <a-row :gutter="[16, 16]" align="stretch" class="mt-3">
+        <a-col v-for="spec in specsOf(sec)" :key="spec.id" :span="spec.grid ?? 24">
+          <ChartCard
+            :spec="spec"
+            :data="resolveData(spec)"
+            :caption="data.meta.loopCaption"
+            @zoom="onZoom"
+          />
+        </a-col>
+      </a-row>
+    </section>
 
-        <a-row :gutter="[16, 16]" align="stretch">
-          <a-col :span="8">
-            <CardSection title="傾向分布" hint="正向 / 負向 / 中性 / 傾向不明 占比">
-              <v-chart :option="polarityDonut" class="h-[320px]" autoresize />
-            </CardSection>
-          </a-col>
-          <a-col :span="8">
-            <CardSection title="L1 歸因域分布" hint="負向問題的歸因域分布（詳細下鑽見歸因縱覽）">
-              <v-chart :option="l1Bar" class="h-[320px]" autoresize />
-            </CardSection>
-          </a-col>
-          <a-col :span="8">
-            <CardSection title="信心分層" hint="自動採信 / 陪審 / 待人工 三段分流">
-              <v-chart :option="tierDonut" class="h-[320px]" autoresize />
-            </CardSection>
-          </a-col>
-        </a-row>
-      </div>
-    </StateGuard>
+    <p class="mt-2 text-center text-xs text-[#c9cdd4]">{{ data.meta.note }}</p>
+
+    <ChartModal v-model:visible="modalOpen" :spec="zoomSpec" :data="zoomData" />
   </div>
 </template>
