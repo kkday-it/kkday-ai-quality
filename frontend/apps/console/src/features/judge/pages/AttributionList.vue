@@ -11,7 +11,12 @@
  */
 import { computed, onMounted, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { IconDownload } from '@arco-design/web-vue/es/icon';
+import {
+  IconCheck,
+  IconClose,
+  IconDownload,
+  IconEdit,
+} from '@arco-design/web-vue/es/icon';
 import { updateTrueLabel } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
@@ -125,6 +130,19 @@ const viewDetail = (record: ProblemRow) => {
 /** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
 const attrPath = (a: Attribution): string =>
   [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
+
+/**
+ * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
+ * auto_accept(≥0.8) 綠＝可採信 / jury(0.5–0.8) 琥珀＝需覆核 / needs_review(<0.5) 紅＝必人工。
+ * 讓覆核者掃一眼信心色就知哪條要處理（呼應「< 0.8 需人工覆核」）。
+ */
+const CONF_TIER_CLASS: Record<string, string> = {
+  auto_accept: 'text-[rgb(var(--success-6))]',
+  jury: 'text-[rgb(var(--warning-6))]',
+  needs_review: 'text-[rgb(var(--danger-6))]',
+};
+const confClass = (tier?: string): string =>
+  CONF_TIER_CLASS[tier || ''] || 'text-[var(--color-text-1)]';
 
 // ── 操作欄：標真值彈窗（人工標註每條歸因的正確 L1 域，供準確率評估）──
 const truelabelOpen = ref(false);
@@ -489,7 +507,8 @@ onMounted(init);
                 </div>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span class="text-[var(--color-text-3)]">信心</span>
-                  <span class="font-semibold text-[var(--color-text-1)]">
+                  <!-- 信心按 tier 上色：綠可採信 / 琥珀需覆核 / 紅必人工（< 0.8 需人工覆核）-->
+                  <span class="font-semibold" :class="confClass(a.confidence?.tier)">
                     {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}
                   </span>
                   <span
@@ -514,24 +533,31 @@ onMounted(init);
                     <span class="text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
                   </a-tooltip>
                 </div>
-                <!-- 每條歸因分開操作：確認 / 忽略（per finding_id）+ 標真值（開彈窗）；全展開不收 ⋯ -->
+                <!-- 每條歸因分開操作，語義色區分：確認＝採信(綠) / 忽略＝駁回(紅) / 標真值＝輔助標註(text)。
+                     選中該覆核狀態時填色(primary)，未選為 outline，一眼看出當前判定。 -->
                 <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <a-button
                     size="mini"
+                    status="success"
                     :type="a.status === 'confirmed' ? 'primary' : 'outline'"
                     @click="reviewFinding(a, 'confirmed')"
                   >
+                    <template #icon><IconCheck /></template>
                     確認
                   </a-button>
                   <a-button
                     size="mini"
-                    :status="a.status === 'dismissed' ? 'danger' : 'normal'"
+                    status="danger"
                     :type="a.status === 'dismissed' ? 'primary' : 'outline'"
                     @click="reviewFinding(a, 'dismissed')"
                   >
+                    <template #icon><IconClose /></template>
                     忽略
                   </a-button>
-                  <a-button size="mini" type="text" @click="openTrueLabel(record)">標真值</a-button>
+                  <a-button size="mini" type="text" @click="openTrueLabel(record)">
+                    <template #icon><IconEdit /></template>
+                    標真值
+                  </a-button>
                 </div>
               </div>
             </template>
