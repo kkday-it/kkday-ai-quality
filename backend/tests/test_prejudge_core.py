@@ -245,3 +245,47 @@ def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
     assert attr["l1_domain_code"] == "supplier"
     assert attr["confidence"] == pytest.approx(0.69)  # 封頂 jury_high(0.7)-0.01
     assert attr["evidence_capped"] is True
+
+
+# ── 多歸因去重 / 排序 / 上限（_resolve_attrs_multi 的防過度歸因邏輯）──────────
+# 鎖：同 L1 域保信心最高（action/owner 為域級）+ 濾全 abstain（無域）+ 依 confidence 降冪 + cap max_n。
+# mock 掉 LLM 產出階段（_stage2_attribute_multi），只測其後的確定性去重/排序。
+
+
+@pytest.fixture
+def non_stub(monkeypatch):
+    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）。"""
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(prejudge.global_rule, "cascade", lambda: {"enabled": False})
+
+
+def test_resolve_attrs_multi_dedup_keeps_highest_and_drops_abstain(non_stub, monkeypatch) -> None:
+    """同域保信心最高 + 濾空域 + 依信心降冪。"""
+    synthetic = [
+        {"l1_domain_code": "content", "confidence": 0.6},
+        {"l1_domain_code": "content", "confidence": 0.9},  # 同域較高 → 保這條
+        {"l1_domain_code": "supplier", "confidence": 0.7},
+        {"l1_domain_code": "", "confidence": 0.95},  # 空域（全 abstain）→ 濾除
+    ]
+    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 3)
+    assert [a["l1_domain_code"] for a in out] == ["content", "supplier"]  # 0.9 > 0.7 降冪
+    assert out[0]["confidence"] == 0.9
+
+
+def test_resolve_attrs_multi_caps_at_max_n(non_stub, monkeypatch) -> None:
+    """歸因數封頂 max_n（依信心取前 N 域），防過度歸因。"""
+    synthetic = [
+        {"l1_domain_code": "content", "confidence": 0.9},
+        {"l1_domain_code": "supplier", "confidence": 0.8},
+        {"l1_domain_code": "service", "confidence": 0.7},
+    ]
+    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["content", "supplier"]  # 取前 2 高信心
+
+
+def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:
+    """stub 模式無法真歸因 → 回空（負向但無違規線 → 上層轉 pending_data）。"""
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: True)
+    assert prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 2) == []
