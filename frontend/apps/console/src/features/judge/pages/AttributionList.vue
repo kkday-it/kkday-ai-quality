@@ -1064,23 +1064,20 @@ onMounted(init);
             </a-button>
           </div>
         </div>
-        <div class="border-t border-[var(--color-neutral-3)] pt-2">
+        <div class="border-t border-[var(--color-neutral-3)] pt-3">
           <StateGuard :loading="noteLoading" error="">
-            <div v-if="noteList.length" class="flex max-h-[320px] flex-col gap-2 overflow-auto">
-              <div
-                v-for="n in noteList"
-                :key="n.id"
-                class="rounded-md border border-[var(--color-neutral-3)] p-2.5"
-              >
-                <div class="flex items-center justify-between text-[11px] text-[var(--color-text-3)]">
+            <!-- append-only 歷史以時間軸呈現（新到舊）：每節點＝備註人 · 時間 · 內容 -->
+            <a-timeline v-if="noteList.length" class="max-h-[320px] overflow-auto pl-1">
+              <a-timeline-item v-for="n in noteList" :key="n.id">
+                <div class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]">
                   <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
                   <span>{{ fmtNoteTime(n.created_at) }}</span>
                 </div>
-                <div class="mt-1 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
+                <div class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
                   {{ n.content }}
                 </div>
-              </div>
-            </div>
+              </a-timeline-item>
+            </a-timeline>
             <a-empty v-else description="尚無備註" />
           </StateGuard>
         </div>

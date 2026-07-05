@@ -92,20 +92,20 @@ const num = (n: number) => n.toLocaleString();
         </a-col>
       </a-row>
 
-      <!-- 各維度成本分布：模型 / 階段 / 來源 -->
+      <!-- 各維度成本分布：模型 / 階段 / 來源（hint 短句避免擠掉標題；詳解放 desc 的 ⓘ popover）-->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col :span="8">
-          <CardSection title="各模型成本" hint="依模型分組的成本佔比（USD）">
+          <CardSection title="各模型成本" hint="USD" desc="依模型分組的成本佔比（USD），依成本高低排序。">
             <v-chart :option="byModelOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="各階段成本" hint="極性/歸因/域/標真值評分/翻譯 等呼叫階段的成本">
+          <CardSection title="各階段成本" hint="USD" desc="依呼叫階段分組：polarity 極性閘門 / attribute 歸因 / domain 域分類 / attribute_b cascade / true_label 標真值評分 / translate 摘要翻譯。">
             <v-chart :option="byStageOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="各來源成本" hint="判決來源（product_reviews…）的成本；ad-hoc 呼叫歸「（未標）」">
+          <CardSection title="各來源成本" hint="USD" desc="依判決來源分組（product_reviews / conversations…）；ad-hoc 單次呼叫無來源者歸「（未標）」。">
             <v-chart :option="bySourceOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
