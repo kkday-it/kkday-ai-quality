@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
- * 判決規則管理（config/ai_judge 7 域 + schema）：面板 / JSON 雙編 + schema 查改 +
- * 歷史對比恢復 + 恢復默認 + PostgreSQL 版本化。左選子規則、右編輯、工具列操作。
+ * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
+ * 選單置頂特殊項（純 JSON 編輯）：schema 結構規格 / global 判決總規範 / judgment 判決配置
+ *   （信心閾值 · 顯示 label · prejudge 旋鈕含 G1 auto_confirm.audit_sample_rate，QC 免改碼調）；
+ *   其後為歸因分類 C-N（面板 / JSON 雙編 + active schema 驗證）。歷史對比恢復 + 單項/整批恢復默認。
  */
 import { computed, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
@@ -20,13 +22,15 @@ import { useExportJob } from '../composables';
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
 const verticalFilter = useVerticalFilterStore();
-// 歸因分類（C-N，schema 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不再讀前端靜態表。
-// 非歸因判準者一律排除、不在此攤因分類選單顯示（product_vertical 已移「配置」抽屜；judgment＝信心閾值/
-// label/prejudge 旋鈕，屬判決 config 非 L1-L3 樹，納入 RULE_CODES 僅為後端版本化/熱重載，不在此編輯）。
+// 歸因分類（C-N，schema/global/judgment 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不讀前端靜態表。
+// 非 L1-L3 歸因樹者一律排除出 C-N 迴圈、改為置頂特殊項（product_vertical 已移「配置」抽屜，此處不顯示；
+// schema＝結構規格、global＝判決總規範、judgment＝信心閾值/label/prejudge 旋鈕，皆純 JSON 編輯）。
 const _NON_DOMAIN_CODES = new Set(['schema', 'product_vertical', 'global_rule', 'judgment']);
 const domainCodes = computed(() =>
   store.metas.filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code)).map((m) => m.rule_code),
 );
+// 純 JSON 編輯（無 L1-L3 樹）的置頂特殊項：一律 JSON 模式、不走 RuleTreePanel、不套 schema 驗證。
+const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment']);
 const mode = ref<'panel' | 'json'>('panel');
 const historyOpen = ref(false);
 const saveOpen = ref(false);
@@ -46,8 +50,8 @@ const {
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
 
 const isSchema = computed(() => store.activeCode === 'schema');
-// 非 L1-L3 歸因樹的規則（schema 結構規格 / global_rule 判決總規範）→ 一律 JSON 編輯、不走 RuleTreePanel。
-const isNonTree = computed(() => store.activeCode === 'schema' || store.activeCode === 'global_rule');
+// 非 L1-L3 歸因樹的規則（schema / global_rule / judgment）→ 一律 JSON 編輯、不走 RuleTreePanel。
+const isNonTree = computed(() => _NON_TREE_CODES.has(store.activeCode));
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
@@ -71,8 +75,8 @@ async function pick(code: string) {
     Message.warning('有未儲存變更，請先儲存或切換版本');
     return;
   }
-  // schema / global_rule 無 L1-L3 樹 → 只用 JSON；C-N 預設面板
-  mode.value = code === 'schema' || code === 'global_rule' ? 'json' : 'panel';
+  // schema / global_rule / judgment 無 L1-L3 樹 → 只用 JSON；C-N 預設面板
+  mode.value = _NON_TREE_CODES.has(code) ? 'json' : 'panel';
   await store.selectRule(code);
 }
 
@@ -161,6 +165,10 @@ function doResetAll() {
         <a-menu-item key="global_rule">
           <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
           <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
+        </a-menu-item>
+        <a-menu-item key="judgment">
+          <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
+          <span class="ml-2">{{ store.labelFor('judgment') }}</span>
         </a-menu-item>
         <a-menu-item v-for="c in domainCodes" :key="c">
           <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>

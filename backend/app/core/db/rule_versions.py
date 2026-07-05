@@ -142,9 +142,9 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 def reset_all_rule_defaults(author: str = "") -> dict:
     """恢復規則配置頁所有規則（schema + global_rule + C-N）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    範圍＝規則配置頁顯示的全部（schema 結構規格 + global_rule 整體規則 + C-N 歸因分類）；
-    **非歸因判準者排除**（不在規則配置頁 domainCodes，見 RuleManager）：product_vertical（設定抽屜獨立管理）、
-    judgment（信心閾值/label/prejudge 旋鈕，無 UI；若納入會靜默重置 auto_confirm 等配置，與頁面文案矛盾）。
+    範圍＝規則配置頁「歸因分類」bulk 恢復（schema 結構規格 + global_rule 整體規則 + C-N 歸因分類）；
+    **排除**（見 RuleManager）：product_vertical（設定抽屜獨立管理）、judgment（信心閾值/label/prejudge 旋鈕，
+    已有獨立編輯器 + 各自「恢復默認」；排除於 bulk 是為免「恢復歸因分類默認」誤掃 QC 調過的 auto_confirm 等配置）。
     缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
 
     Returns:
@@ -152,7 +152,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    _EXCLUDED = {"product_vertical", "judgment"}  # 非歸因判準·不在規則配置頁 reset-all 範圍
+    _EXCLUDED = {"product_vertical", "judgment"}  # 各有獨立編輯入口·不納入歸因分類 bulk reset-all
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

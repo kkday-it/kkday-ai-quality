@@ -24,6 +24,8 @@ export const RULE_LABELS_FALLBACK: Record<string, string> = {
   // 商品垂直分類：seed 檔已含 _meta.label，但既有 DB 若在補 _meta 前即 seed 過（label 為 None）時，
   // 由此 fallback 補顯示名，避免選單顯示原始 code。
   product_vertical: '商品垂直分類',
+  // 判決配置：judgment.json 無 _meta.label（純旋鈕 config），選單顯示名一律由此 fallback 提供。
+  judgment: '判決配置',
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {
