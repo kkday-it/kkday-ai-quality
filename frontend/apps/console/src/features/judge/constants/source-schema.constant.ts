@@ -132,7 +132,7 @@ export interface ProblemRow {
  */
 const COMPOSITE_COLUMNS: TableColumnData[] = [
   {
-    title: '反饋內容（評論時間）', // 闊號＝排序依據：此欄可排序，依 occurred_at 評論時間
+    title: '反饋內容（時間）', // 闊號＝排序依據：此欄可排序，依 occurred_at 反饋時間
     dataIndex: 'occurred_at',
     slotName: 'review',
     width: 320,
