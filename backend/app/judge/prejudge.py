@@ -251,7 +251,16 @@ def _attr_schema(candidate_codes: frozenset[str], *, allow_empty: bool = True) -
         "properties": {
             "l3_code": {"type": "string", "enum": l3_enum},
             "confidence": {"type": "number"},
-            "summary": {"type": "string"},  # 繁中一句話概括（顯示用摘要）
+            # 反饋摘要：語系→簡明摘要陣列（1~3 條·去重）；務必含一條 lang='zh-tw'（台灣繁體·簡明扼要總結到位）
+            "summary": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["lang", "text"],
+                    "properties": {"lang": {"type": "string"}, "text": {"type": "string"}},
+                },
+            },
             "evidence_quote": {"type": "string"},  # 逐字原文佐證（grounding + 佐證欄）
             "candidates": {
                 "type": "array",
@@ -319,7 +328,9 @@ def _attr_system(catalog: str) -> str:
         f"問題分類 L3 目錄（只能從中選 code）：\n{catalog}\n\n"
         "輸出 JSON：{\"l3_code\":\"最貼切的一條 code（無法歸類回空字串）\","
         "\"confidence\":0~1 浮點,"
-        "\"summary\":\"用繁體中文一句話（20~40字）概括此問題，不論原文何種語言皆輸出繁中\","
+        "\"summary\":[{\"lang\":\"語言碼\",\"text\":\"該語言的簡明摘要\"},...]（1~3 條·去重）——"
+        "務必含一條 lang=\"zh-tw\"（台灣繁體中文書面語，一句話簡明扼要、總結到位，不論原文何種語言）；"
+        "若原文非繁中，另附一條 lang=原文語言碼（如 ja/ko/en/th）的簡明摘要；每條 text 都要簡明扼要，"
         "\"evidence_quote\":\"進線中最能佐證的原文片段（保留原文語言，逐字不改寫）\","
         "\"candidates\":[{\"code\":\"code\",\"score\":0~1},...最多3條]}"
     )
@@ -414,7 +425,8 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
-        summary=attr.get("summary") or attr.get("evidence_quote", "")[:200],  # 繁中摘要；空則回退原文片段
+        # 語系→摘要 map；LLM 未產則回退原文片段包成 {zh-tw: …}（表格恆有顯示值）
+        summary=attr.get("summary") or ({"zh-tw": attr["evidence_quote"][:200]} if attr.get("evidence_quote") else {}),
         evidence_quote=attr.get("evidence_quote", ""),
         polarity="negative",
         confidence=conf,
@@ -462,6 +474,27 @@ def _stage1_polarity(item: dict, text: str, main_model: str) -> str:
     return pol if pol in ("positive", "negative", "neutral") else "unknown"
 
 
+def _summary_map(raw) -> dict[str, str]:
+    """LLM summary 陣列 [{lang,text}] → 語系→簡明摘要 map（去重·每條 ≤200 字·確保含 zh-tw）。
+
+    容錯：raw 為字串（舊格式/單語）→ 當作 zh-tw；空/異常→空 map。表格顯示只取 zh-tw。
+    """
+    if isinstance(raw, str):
+        s = raw.strip()[:200]
+        return {"zh-tw": s} if s else {}
+    out: dict[str, str] = {}
+    for it in raw or []:
+        if not isinstance(it, dict):
+            continue
+        lang = str(it.get("lang", "")).strip().lower()
+        text = str(it.get("text", "")).strip()[:200]
+        if lang and text and lang not in out:
+            out[lang] = text
+    if out and "zh-tw" not in out:  # LLM 漏標 zh-tw → 取第一條當顯示版，保證表格有值
+        out["zh-tw"] = next(iter(out.values()))
+    return out
+
+
 def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[str]) -> dict:
     """LLM 歸因輸出 → 淨化 attr dict，套 global_rule abstain/evidence 政策（單次 Stage2 與 cascade Stage B 共用）。
 
@@ -482,7 +515,7 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
     raw_conf = _as_float(out.get("confidence"), 0.5)
     conf = _evidence_cap(resolved["l1_domain_code"], item, raw_conf)
     evidence = str(out.get("evidence_quote", ""))[:300]
-    summary = str(out.get("summary", "")).strip()[:200]  # LLM 繁中一句話概括（顯示摘要）
+    summary = _summary_map(out.get("summary"))  # 語系→簡明摘要 map（去重·含 zh-tw）
     ev = global_rule.evidence_policy()
     pol = global_rule.abstain_policy()
     l3_min = float(ev.get("l3_min_confidence", _tiers().get("jury_low", 0.5)))

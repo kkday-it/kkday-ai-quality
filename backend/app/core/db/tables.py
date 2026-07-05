@@ -61,7 +61,7 @@ judgments = Table(
     Column("conf_raw", Float),  # arbiter LLM 原始信心
     Column("conf_tier", Text),  # auto_accept / jury / needs_review
     # ── 判決內容 ──
-    Column("summary", Text),  # 反饋摘要（LLM 繁中一句話概括；逐字原文佐證另存 evidence 欄）
+    Column("summary", JSONB),  # 反饋摘要（語系→簡明摘要 map；務必含 zh-tw·表格只顯示 zh-tw；逐字原文佐證另存 evidence）
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──

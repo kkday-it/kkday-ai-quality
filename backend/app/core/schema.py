@@ -78,7 +78,8 @@ class TicketFinding(BaseModel):
     pkg_oid: str = ""
     # L2 問題理解
     dimension: Dimension
-    summary: str = ""  # 反饋摘要（LLM 產繁體中文一句話概括；空則回退 evidence_quote 片段）
+    # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
+    summary: dict[str, str] = Field(default_factory=dict)
     # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
     suspected_field: str = "none"
     evidence_quote: str = ""  # 逐字原文佐證（防捏造 grounding 錨點 + FindingCard 佐證欄；非摘要）

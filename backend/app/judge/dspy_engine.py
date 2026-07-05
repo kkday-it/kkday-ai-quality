@@ -124,10 +124,14 @@ def load_trainset() -> list[dspy.Example] | None:
             rows = c.execute(stmt).all()
     except Exception:  # noqa: BLE001  DB 未就緒 / 表缺 → 交呼叫端 skip
         return None
+    # summary 現為語系 map（JSONB）→ 取 zh-tw 文字當訓練用 review；優先 evidence 原文。
+    def _txt(r) -> str:
+        return r.evidence or (r.summary or {}).get("zh-tw") or ""
+
     return [
-        dspy.Example(review=(r.evidence or r.summary or ""), l1_code=r.true_label).with_inputs("review")
+        dspy.Example(review=_txt(r), l1_code=r.true_label).with_inputs("review")
         for r in rows
-        if (r.evidence or r.summary)
+        if _txt(r)
     ]
 
 

@@ -75,7 +75,10 @@ export interface AttributionConfidence {
 
 /** 歸因判決內容（摘要 / 佐證原文 / 建議行動）。 */
 export interface AttributionContent {
+  /** 表格顯示用摘要＝繁中（zh-tw）字串（後端由 summary_langs 取出，前端直接用）。 */
   summary?: string;
+  /** 全語系摘要 map（語系碼→簡明摘要，如 {'zh-tw':…, ja:…}）；詳情/多語用，去重可能只有 zh-tw。 */
+  summary_langs?: Record<string, string>;
   evidence?: string;
   action?: string;
 }

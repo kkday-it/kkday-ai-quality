@@ -80,6 +80,24 @@ _apply_judgment_cfg(_read_judgment_file())
 # 巢狀 DTO。改 DTO 形狀只改此處（前端 Attribution interface 對齊）。
 
 
+def _summary_langs(raw) -> dict:
+    """DB summary 值 → 語系→摘要 map。JSONB→dict；舊 JSON 字串→parse；純字串→{zh-tw:…}；None→{}。"""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("{"):
+            try:
+                d = json.loads(s)
+                return d if isinstance(d, dict) else {"zh-tw": s}
+            except (ValueError, TypeError):
+                return {"zh-tw": s}
+        return {"zh-tw": s} if s else {}
+    return {}
+
+
 def attribution_dto(r: dict) -> dict:
     """judgments 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
@@ -95,6 +113,7 @@ def attribution_dto(r: dict) -> dict:
         owner, is_primary, status, true_label}。
     """
     l1_code = r.get("l1_code")
+    summary_langs = _summary_langs(r.get("summary"))
     return {
         "finding_id": r.get("finding_id"),
         "polarity": r.get("polarity"),
@@ -103,7 +122,13 @@ def attribution_dto(r: dict) -> dict:
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
         "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
         "confidence": {"value": r.get("conf_value"), "raw": r.get("conf_raw"), "tier": r.get("conf_tier")},
-        "content": {"summary": r.get("summary"), "evidence": r.get("evidence"), "action": r.get("action")},
+        # summary＝表格顯示用 zh-tw 字串（前端零改）；summary_langs＝全語系 map（詳情/未來多語用）
+        "content": {
+            "summary": summary_langs.get("zh-tw") or next(iter(summary_langs.values()), None),
+            "summary_langs": summary_langs,
+            "evidence": r.get("evidence"),
+            "action": r.get("action"),
+        },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
         "owner": _domain_owner(l1_code or ""),
         "is_primary": r.get("is_primary"),
