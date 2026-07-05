@@ -213,6 +213,11 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
    */
   const rejudgeRow = async (id: string) => {
     if (rowBusy.value.has(id)) return;
+    if (running.value) {
+      // 批次判決進行中，避免與批次 job 並發對同一 finding 送出重複判決（重複花費 / 結果互相覆蓋）
+      Message.warning('批次判決進行中，請稍後再試');
+      return;
+    }
     _setBusy(id, true);
     try {
       const r = await startPrejudge({

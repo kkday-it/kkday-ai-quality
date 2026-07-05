@@ -34,7 +34,7 @@ export interface StageFilterDef {
   type: 'stage';
 }
 
-/** 信心分層篩選（單選；選項來自 TIER_LABELS，值 auto_accept/jury/needs_review/hold）。 */
+/** 信心分層篩選（單選；選項來自 TIER_LABELS，值 auto_accept/jury/needs_review）。 */
 export interface TierFilterDef {
   type: 'tier';
 }
@@ -95,7 +95,7 @@ export interface Attribution {
   confidence?: AttributionConfidence;
   content?: AttributionContent;
   is_primary?: boolean;
-  /** 人工覆核 status（confirmed/dismissed/fixed）——覆核徽章用。 */
+  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed）——覆核徽章用。 */
   status?: string;
   /** 人工標註真值分類 true_label——標真值功能用。 */
   true_label?: string;

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import and_, func, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert as sa_insert
@@ -10,6 +12,8 @@ from sqlalchemy import update as sa_update
 from app.core.db import tables as T
 from app.core.db._shared import attribution_dto
 from app.core.schema import TicketFinding
+
+_log = logging.getLogger(__name__)
 
 
 def _finding_values(f: TicketFinding, source: str) -> dict:
@@ -63,10 +67,22 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
     jg = T.judgments
     key = and_(jg.c.source == source, jg.c.source_id == source_id)
     with T.get_engine().begin() as c:
+        # FOR UPDATE 鎖住舊列：關閉「讀快照 → 之後才 DELETE/INSERT」之間的 TOCTOU 視窗
+        # （批量重判長跑期間，並發的 update_finding_status/true_label 若插隊，本次會用舊快照覆蓋掉人工操作）。
         preserved = {
             r.finding_id: {"true_label": r.true_label, "status": r.status}
-            for r in c.execute(select(jg.c.finding_id, jg.c.true_label, jg.c.status).where(key))
+            for r in c.execute(
+                select(jg.c.finding_id, jg.c.true_label, jg.c.status).where(key).with_for_update()
+            )
         }
+        new_ids = {f.finding_id for f in findings}
+        # 審計：舊列有人工覆核/真值、但新判決不再產出該域（finding_id 無承接）→ 靜默隨整組刪除消失，留 log 可追。
+        for fid, old in preserved.items():
+            if fid not in new_ids and (old["status"] in ("confirmed", "dismissed", "fixed") or old["true_label"]):
+                _log.warning(
+                    "重判丟棄含人工覆核的舊歸因列 finding_id=%s status=%s true_label=%s（新判決不再產出此域）",
+                    fid, old["status"], old["true_label"],
+                )
         c.execute(sa_delete(jg).where(key))
         for f in findings:
             values = _finding_values(f, source)

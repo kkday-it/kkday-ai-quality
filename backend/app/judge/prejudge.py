@@ -662,7 +662,7 @@ def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
     全 5 來源統一入口，取代單歸因 to_finding。每條歸因＝一個 TicketFinding（獨立 finding_id、
-    L1-L3、信心、分層、判決階段、action），落庫為 judgments 獨立列（見 db.replace_item_findings）。
+    L1-L3、信心、分層、判決階段、action），落庫為 judgments 獨立列（見 db.replace_source_findings）。
     - 正向/中性/純好評 → [單一 non_issue finding]（不歸因）。
     - 負向且有歸因 → 每域一條 finding（信心最高標 is_primary）。
     - 負向但全無法歸類 → [單一負向未歸因 finding]（pending_data）。

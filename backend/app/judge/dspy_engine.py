@@ -93,13 +93,13 @@ class DspyJudge(dspy.Module):
 def attribution_metric(example: dspy.Example, pred: Any, trace: Any = None) -> bool:
     """編譯 metric：模型判出的 L1 域是否命中人工真值 true_label（exact-match）。
 
-    pred 為 DspyJudge 輸出（TicketFinding 清單）或 AttributionJudge 輸出；取其 L1 域 code 與 example.l1_code 比對。
+    pred 為 DspyJudge 輸出（TicketFinding 清單）；取首個非空 L1 域 code（l1_domain_code）與 example.l1_code 比對。
     """
     gold = getattr(example, "l1_code", "") or ""
     findings = pred if isinstance(pred, list) else [pred]
     got = ""
     for f in findings:
-        code = getattr(f, "l1_domain_code", "") or getattr(f, "l1_code", "")
+        code = getattr(f, "l1_domain_code", "")
         if code:
             got = code
             break

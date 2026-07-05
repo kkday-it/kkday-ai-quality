@@ -21,7 +21,7 @@ export interface GetProblemsParams {
   prodOid?: string;
   /** 訂單 order_oid 精確過濾。 */
   orderOid?: string;
-  /** 信心分層過濾（單選；auto_accept/jury/needs_review/hold）。 */
+  /** 信心分層過濾（單選；auto_accept/jury/needs_review）。 */
   confidenceTier?: string;
   /** L1 歸因域過濾（單選；content/supplier/…，選項來自 getL1Domains）。 */
   l1Domain?: string;
