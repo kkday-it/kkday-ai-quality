@@ -284,7 +284,10 @@ onMounted(init);
         >
           暫停
         </a-button>
-        <a-popconfirm content="確定停止？已判結果會保留，剩餘未判可稍後重跑。" @ok="cancelJob">
+        <a-popconfirm
+          content="確定停止？僅取消『尚未派發』的判決；已在進行的會判完（無法中途中斷）。故小批量可能已全部派發、停止近乎無效。已判結果保留，剩餘可稍後重跑。"
+          @ok="cancelJob"
+        >
           <a-button size="small" status="danger" :disabled="jobStatus === 'cancelling'">
             {{ jobStatus === 'cancelling' ? '停止中…' : '停止' }}
           </a-button>

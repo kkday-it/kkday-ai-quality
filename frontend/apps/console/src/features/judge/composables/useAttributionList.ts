@@ -12,6 +12,7 @@ import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
 import { schemaFor, type Attribution, type ProblemRow } from '../constants';
 import { exportName } from '../utils';
+import { useAttributionSelection } from './useAttributionSelection';
 import { useExportJob } from './useExportJob';
 import { useLlmConfigs } from './useLlmConfigs';
 import { usePrejudgeJob } from './usePrejudgeJob';
@@ -207,57 +208,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadUnjudged();
   };
 
-  // ── 選取（跨頁累積；rowKey=source_id → selectedKeys 即勾選 key，doRun/export/selectPages 直接用）──
-  const selectedKeys = ref<string[]>([]); // source_id（該來源特徵 id）
-  const runCount = computed(() => selectedKeys.value.length); // 已選 review 數
-  const clearSelection = () => (selectedKeys.value = []);
-  /** 表格 selectedRowKeys＝業務 selectedKeys（rowKey=source_id，一列一 review，無需映射）。 */
-  const selectedRowKeys = selectedKeys;
-  /** 表格勾選變更（rowKey=source_id）：合併保留非本頁既有選取（跨頁）。 */
-  const onSelectionChange = (keys: (string | number)[]) => {
-    const pageGroups = new Set(rows.value.map((r) => String(r._group)));
-    selectedKeys.value = [
-      ...selectedKeys.value.filter((id) => !pageGroups.has(id)), // 保留非本頁選取
-      ...keys.map((k) => String(k)), // 本頁已勾（key 即 source_id）
-    ];
-  };
-  const pageSpec = ref('');
-  /** 分頁選取（1,2,3,5 / 1~200）：依後端分頁抓對應頁的 item_id 加入選取。 */
-  const selectPages = async () => {
-    const spec = pageSpec.value.trim();
-    if (!spec) return;
-    const pages = new Set<number>();
-    for (const part of spec.split(/[,，]/)) {
-      const seg = part.trim();
-      if (!seg) continue;
-      const m = seg.split(/[~\-～]/);
-      if (m.length === 2 && +m[0] && +m[1]) {
-        for (let p = Math.min(+m[0], +m[1]); p <= Math.max(+m[0], +m[1]); p++) pages.add(p);
-      } else if (+seg) {
-        pages.add(+seg);
-      }
-    }
-    if (!pages.size) return;
-    const lo = Math.min(...pages);
-    const hi = Math.max(...pages);
-    const ps = pageSize.value;
-    try {
-      const r = await getProblems({
-        ...filterQuery(),
-        limit: (hi - lo + 1) * ps,
-        offset: (lo - 1) * ps,
-      });
-      const ids: string[] = [];
-      (r.rows || []).forEach((row: ProblemRow, idx: number) => {
-        const gp = lo + Math.floor(idx / ps); // 該列的全域分頁號
-        if (pages.has(gp)) ids.push(String(row._group)); // 特徵 id（source_id）
-      });
-      selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...ids]));
-      Message.success(`已選取 ${ids.length} 列（分頁 ${spec}）`);
-    } catch (e: any) {
-      Message.error('分頁選取失敗：' + (e?.message || e));
-    }
-  };
+  // ── 選取（跨頁累積；下沉 useAttributionSelection，注入 rows/pageSize/filterQuery；selectedKeys
+  //    解構出來供 onFilterChange 清空 / exportCsv / usePrejudgeJob 直接用，維持原變數名不改呼叫端）──
+  const selection = useAttributionSelection({ rows, pageSize, filterQuery });
+  const { selectedKeys } = selection;
 
   // ── 初判歸因批次 + 單列重判（下沉 usePrejudgeJob；注入依賴，回傳 ref 保留 identity 不改綁定）──
   const job = usePrejudgeJob({
@@ -336,14 +290,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loading,
     error,
     loadPage,
-    // 選取
-    selectedKeys,
-    selectedRowKeys,
-    onSelectionChange,
-    runCount,
-    clearSelection,
-    pageSpec,
-    selectPages,
+    // 選取（useAttributionSelection：selectedKeys/selectedRowKeys/onSelectionChange/runCount/clearSelection/pageSpec/selectPages）
+    ...selection,
     // 初判歸因批次 + 單列重判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
     ...job,
     // 單列覆核

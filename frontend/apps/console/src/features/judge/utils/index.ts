@@ -5,3 +5,4 @@ export * from './reportPdf';
 export * from './attributionCharts';
 export * from './ruleVersion.util';
 export * from './exportName.util';
+export * from './pageSpec.util';
