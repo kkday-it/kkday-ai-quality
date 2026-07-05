@@ -21,6 +21,7 @@ import { updateTrueLabel } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import {
+  ACTION_LABEL,
   ALL_PAGINATION,
   POLARITY_LABELS,
   SOURCES,
@@ -779,7 +780,9 @@ onMounted(init);
             </a-descriptions-item>
             <!-- 反饋摘要（content.summary）；判決理由永遠＝同一 evidence 複製，故移除避免重複 -->
             <a-descriptions-item label="反饋摘要">{{ a.content?.summary || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="建議行動">{{ a.content?.action || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="建議行動">
+              {{ a.content?.action ? ACTION_LABEL[a.content.action] || a.content.action : '—' }}
+            </a-descriptions-item>
           </a-descriptions>
         </template>
         <a-empty v-else description="此列尚無歸因（未判 / 正向不歸因）" />
