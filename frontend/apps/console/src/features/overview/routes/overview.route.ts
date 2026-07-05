@@ -1,5 +1,5 @@
-// 📊 質檢概覽模組路由：總覽 + 三業務目標（共用 DashboardView，config 驅動）+ 自訂組合。
-// 父路由無 component（僅分組 + 重導）；子路由於殼層 <router-view> 渲染，tab 由 children meta.text 衍生。
+// 📊 質檢概覽模組路由：三業務目標 content / presale / postsale（共用 DashboardView，dashboard.json config 驅動）。
+// 父路由無 component（僅重導至 content）；子路由於殼層 <router-view> 渲染，tab 由 children meta.text 衍生。
 import type { RouteRecordRaw } from 'vue-router';
 import DashboardView from '../pages/DashboardView.vue';
 

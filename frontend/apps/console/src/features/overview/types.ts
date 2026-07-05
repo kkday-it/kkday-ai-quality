@@ -1,6 +1,6 @@
 /**
  * AI 質檢縱覽資料模型。
- * 對齊 mock/overview.mock.json；接後端後改為 /api/overview 回傳同形狀，元件不需改。
+ * 對齊 mock/overview.mock3.json；接後端後改為 /api/overview 回傳同形狀，元件不需改。
  */
 
 /** 北極星指標卡。tone＝core（核心落後·強調）/ lead（領先指標）。 */

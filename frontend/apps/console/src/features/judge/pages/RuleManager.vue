@@ -52,6 +52,11 @@ const schemaContent = shallowRef<Record<string, unknown> | null>(null);
 const isSchema = computed(() => store.activeCode === 'schema');
 // 非 L1-L3 歸因樹的規則（schema / global_rule / judgment）→ 一律 JSON 編輯、不走 RuleTreePanel。
 const isNonTree = computed(() => _NON_TREE_CODES.has(store.activeCode));
+// 是否為真正的 C-N 歸因分類（有 L1-L3 樹）。RuleTreePanel / 歸因 schema 驗證只對這些 code 生效——
+// 防禦：商品垂直分類（product_vertical）由「配置」抽屜的 ProductVerticalSettingsPanel 共用同一 store，
+// 其 selectRule('product_vertical') 會改共用 activeCode；若仍用 !isNonTree 判斷，product_vertical（不在
+// _NON_TREE_CODES）會被誤餵進 RuleTreePanel（{groups} 非樹）→ 空白錯亂樹。以 domainCodes 精準判斷即免此坑。
+const isDomainTree = computed(() => domainCodes.value.includes(store.activeCode));
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
@@ -245,9 +250,10 @@ function doResetAll() {
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
-          <!-- schema / global_rule 一律 JSON；C-N 歸因分類依 mode 走 RuleTreePanel / JsonEditor -->
+          <!-- 只有真正的 C-N 歸因分類（isDomainTree）＋面板模式才走 RuleTreePanel；其餘（schema/global/
+               judgment，及被抽屜共用 store 帶入的 product_vertical）一律 JsonEditor，歸因 schema 也僅對 C-N 套用 -->
           <RuleTreePanel
-            v-if="mode === 'panel' && !isNonTree && store.edited"
+            v-if="mode === 'panel' && isDomainTree && store.edited"
             :key="editorKey"
             class="h-full"
             :content="store.edited"
@@ -259,7 +265,7 @@ function doResetAll() {
             class="h-full"
             fill
             :json="store.edited"
-            :schema="isNonTree ? undefined : (schemaContent ?? undefined)"
+            :schema="isDomainTree ? (schemaContent ?? undefined) : undefined"
             :mode="jsonEditorMode"
             @change="onChange"
           />

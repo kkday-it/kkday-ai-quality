@@ -1,6 +1,7 @@
 /**
- * 依 chartSpec 從 3-goal 資料集解析該圖資料（DashboardView 與 CustomBoard 共用）。
- * 以 spec.goal 決定取數：'all' 走跨目標彙整；單一目標走 goals[goal]。
+ * 依 chartSpec 從 3-goal 資料集解析該圖資料（DashboardView 用）。
+ * 以 spec.goal 決定取數：單一目標走 goals[goal]；'all' 跨目標彙整分支保留供未來「總覽」檢視——
+ * dashboard.json 目前無 goal:'all' 條目，此分支尚未接線（規劃中）。
  */
 import type { ChartSpec, GoalKey, Overview3 } from '../dashboard.types';
 import type { NorthStarMetric, SourceRow } from '../types';

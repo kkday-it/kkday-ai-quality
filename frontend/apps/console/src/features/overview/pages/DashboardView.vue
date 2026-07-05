@@ -24,7 +24,14 @@ const view = computed<ViewSpec>(() => config.views[viewKey.value]);
 const sections = computed<SectionSpec[]>(() => view.value.sections ?? []);
 
 const specsOf = (section: SectionSpec): ChartSpec[] =>
-  section.charts.map((id) => config.charts[id]).filter(Boolean);
+  section.charts
+    .map((id) => {
+      const spec = config.charts[id];
+      // dashboard.json 為業務可編輯 config；chart id 打錯會靜默缺圖，warn 出來便於定位 typo（非拿掉）
+      if (!spec) console.warn(`[overview] dashboard.json 區塊「${section.title}」引用了不存在的 chart id：${id}`);
+      return spec;
+    })
+    .filter(Boolean);
 const resolveData = (spec: ChartSpec): unknown => resolveChartData(spec, data);
 
 // 單圖放大（Feature 1）
