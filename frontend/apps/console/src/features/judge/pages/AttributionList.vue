@@ -712,8 +712,9 @@ onMounted(init);
                   <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                     <a-button
                       size="mini"
+                      type="text"
                       status="success"
-                      :type="a.status === 'confirmed' ? 'primary' : 'outline'"
+                      :class="a.status === 'confirmed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''"
                       @click="reviewFinding(a, 'confirmed')"
                     >
                       <template #icon><IconCheck /></template>
@@ -721,8 +722,9 @@ onMounted(init);
                     </a-button>
                     <a-button
                       size="mini"
+                      type="text"
                       status="danger"
-                      :type="a.status === 'dismissed' ? 'primary' : 'outline'"
+                      :class="a.status === 'dismissed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''"
                       @click="reviewFinding(a, 'dismissed')"
                     >
                       <template #icon><IconClose /></template>

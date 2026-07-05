@@ -267,6 +267,29 @@ finding_notes = Table(
     Index("idx_finding_notes_finding", "finding_id"),
 )
 
+# AI 使用紀錄（per-call：每次真 LLM 呼叫落一列，供消耗 dashboard 多維度聚合）。
+# 唯一寫入點＝llm.client.chat_json 的 usage recorder（批次 buffer 批量寫 / 單次即時寫）。
+llm_usage = Table(
+    "llm_usage",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("stage", Text),  # 呼叫階段：polarity/attribute/domain/attribute_b/true_label/translate
+    Column("model", Text, nullable=False),  # 使用模型（cfg.model）
+    Column("provider", Text),  # 供應商 id（settings.provider_id_for(base_url) 反推）
+    Column("prompt_tokens", Integer),  # 輸入 token
+    Column("completion_tokens", Integer),  # 輸出 token
+    Column("cached_tokens", Integer),  # prompt 中命中 prompt cache 的部分（折扣計價）
+    Column("total_tokens", Integer),  # prompt + completion
+    Column("cost_usd", Float),  # pricing.cost_usd 換算（含 cache 折扣）
+    Column("source", Text),  # 判決來源（product_reviews…；ad-hoc 呼叫可空）
+    Column("source_id", Text),  # 該來源特徵 id（可空）
+    Column("job_id", Text),  # 批次任務 id（單次呼叫為空）
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),  # 呼叫時間
+    Index("idx_llm_usage_created_at", "created_at"),
+    Index("idx_llm_usage_model", "model"),
+    Index("idx_llm_usage_stage", "stage"),
+)
+
 
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────
 _engine: Engine | None = None

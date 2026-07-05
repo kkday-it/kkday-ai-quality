@@ -33,6 +33,7 @@ from app.api.routers import config as config_router  # noqa: E402
 from app.api.routers import exports as exports_router  # noqa: E402
 from app.api.routers import findings as findings_router  # noqa: E402
 from app.api.routers import inbound as inbound_router  # noqa: E402
+from app.api.routers import llm_usage as llm_usage_router  # noqa: E402
 from app.api.routers import problems as problems_router  # noqa: E402
 from app.api.routers import rules as rules_router  # noqa: E402
 from app.api.routers import settings as settings_router  # noqa: E402
@@ -50,6 +51,7 @@ for _r in (
     settings_router.router,  # /api/settings + /api/datasource
     findings_router.router,  # /api/findings + /api/products
     problems_router.router,  # /api/problems
+    llm_usage_router.router,  # /api/llm-usage（AI 消耗聚合）
 ):
     app.include_router(_r)
 

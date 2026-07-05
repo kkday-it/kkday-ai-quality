@@ -87,6 +87,8 @@ def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
             spec = _reg.spec_for(src)
             canon = _srcmap.normalize_row(src, item) if src in _srcmap.sources() else {}
             source_id = str(item.get(spec.natural_key) or "") if spec else ""
+            # per-item 用量情境（worker 自身 copied context，隔離）：附 source_id 供 llm_usage 落庫歸戶
+            client.set_usage_context({"job_id": job_id, "source": src, "source_id": source_id})
             norm = dict(item)
             norm["source"] = src
             norm["source_id"] = source_id
@@ -117,6 +119,10 @@ def _run(job_id: str, item_ids: list[str], eff: dict, model: str, source: str | 
             snap["cost_usd"] = round(snap["cost_usd"] + pricing.cost_usd(m, prompt, completion, cached), 6)
 
     client.set_usage_sink(_sink)
+    # per-call 用量落庫：base 情境（job/source）+ 共用 buffer（copy_context 前設定→worker 共用同一 list），
+    # 各 worker 於 _work_one 覆寫 source_id；job 結束 flush bulk insert 進 llm_usage。
+    client.set_usage_context({"job_id": job_id, "source": source or ""})
+    usage_buf = client.open_usage_buffer()
     ctrl = _controls.get(job_id, {})
     gate, cancel = ctrl.get("gate"), ctrl.get("cancel")
     max_workers = env.prejudge_max_workers
@@ -148,6 +154,11 @@ def _run(job_id: str, item_ids: list[str], eff: dict, model: str, source: str | 
         _set_status(job_id, "error")
     finally:
         client.set_usage_sink(None)
+        try:  # flush 本 job 累積的 per-call 用量列（best-effort，計費不阻斷）
+            db.insert_llm_usage_rows(usage_buf)
+        except Exception:  # noqa: BLE001
+            _log.debug("llm_usage flush 失敗 job=%s", job_id)
+        client.set_usage_context(None)
         _drop_controls(job_id)
 
 

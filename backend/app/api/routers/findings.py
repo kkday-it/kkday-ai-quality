@@ -83,14 +83,22 @@ class EvaluateIn(BaseModel):
 
 
 @router.post("/api/findings/{finding_id}/true_label/evaluate")
-def evaluate_true_label(finding_id: str, body: EvaluateIn) -> dict:
+def evaluate_true_label(
+    finding_id: str, body: EvaluateIn, user: dict = Depends(auth.get_current_user)
+) -> dict:
     """標真值把關：LLM 對『人工提議真值 vs 反饋原文』評分，回與原判信心對比 + 是否需填理由（防亂標）。"""
+    from app.core import settings as app_settings
     from app.core.db import _shared
     from app.judge import prejudge
+    from app.judge.llm import client as _client
 
     finding = db.get_finding(finding_id)
     if finding is None:
         raise HTTPException(status_code=404, detail="finding not found")
+    # 於 handler 同一 thread 注入該 user 的 active LLM 設定（否則 score_true_label 走預設/stub·用錯 model）；
+    # 並設用量落庫情境（true_label 階段即時單列 insert）——修此端點原本漏設 settings/usage 的缺口。
+    app_settings.set_current(app_settings.effective_llm_dict(app_settings.load_settings(user["user_id"])))
+    _client.set_usage_context({"source": finding.get("source"), "source_id": finding.get("source_id")})
     text = _review_text(finding)
     if not text:
         raise HTTPException(status_code=422, detail="無法取得反饋原文，無法評分")

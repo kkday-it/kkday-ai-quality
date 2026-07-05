@@ -27,6 +27,11 @@ from app.core.db.ingest import (
     list_batches,
     update_batch_inserted,
 )
+from app.core.db.llm_usage import (
+    insert_llm_usage_row,
+    insert_llm_usage_rows,
+    llm_usage_overview,
+)
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_l1_domains, list_problems
 from app.core.db.rule_versions import (
@@ -87,6 +92,9 @@ __all__ = [
     "get_finding",
     "add_finding_note",
     "list_finding_notes",
+    "insert_llm_usage_row",
+    "insert_llm_usage_rows",
+    "llm_usage_overview",
     "update_batch_inserted",
     "update_finding_status",
     "update_finding_true_label",

@@ -35,6 +35,54 @@ def set_usage_sink(cb: Callable[[str, int, int, int], None] | None) -> None:
     _usage_sink.set(cb)
 
 
+# ── per-call 用量落庫（llm_usage 表）──
+# _usage_ctx：呼叫情境 {source, source_id, job_id}，由呼叫端設定（批次於 _run/_work_one、單次於端點）。
+# _usage_buffer：批次用暫存 list（於 copy_context 前設定→各 worker 共用同一 list 引用），job 結束 bulk insert；
+#   None＝無 buffer→每次呼叫即時單列 insert（ad-hoc 單次呼叫）。
+_usage_ctx: ContextVar[dict | None] = ContextVar("llm_usage_ctx", default=None)
+_usage_buffer: ContextVar[list | None] = ContextVar("llm_usage_buffer", default=None)
+
+
+def set_usage_context(ctx: dict | None) -> None:
+    """設定當前 context 的用量情境 {source, source_id, job_id}（供 per-call 落庫附註來源）。"""
+    _usage_ctx.set(ctx)
+
+
+def open_usage_buffer() -> list:
+    """開啟批次用量暫存並回傳該 list（批次於 copy_context 前呼叫，各 worker 共用；job 結束 flush 落庫）。"""
+    buf: list = []
+    _usage_buffer.set(buf)
+    return buf
+
+
+def _record_usage(stage: str, cfg: dict, prompt: int, completion: int, cached: int) -> None:
+    """組單次呼叫用量列並落庫（buffer 有則 append 待批量、無則即時 insert）；失敗不阻斷判決。"""
+    from app.core.judge_config import pricing
+
+    model = cfg.get("model", "")
+    ctx = _usage_ctx.get() or {}
+    row = {
+        "stage": stage,
+        "model": model,
+        "provider": _settings.provider_id_for(cfg.get("base_url", "")),
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "cached_tokens": cached,
+        "total_tokens": prompt + completion,
+        "cost_usd": pricing.cost_usd(model, prompt, completion, cached),
+        "source": ctx.get("source"),
+        "source_id": ctx.get("source_id"),
+        "job_id": ctx.get("job_id"),
+    }
+    buf = _usage_buffer.get()
+    if buf is not None:
+        buf.append(row)
+    else:
+        from app.core import db
+
+        db.insert_llm_usage_row(row)
+
+
 # 共用 OpenAI client 快取（按 token+base_url）：避免每次呼叫新建 connection pool；
 # OpenAI SDK client thread-safe，可跨 ThreadPool worker 共用。高併發批量必要的效能優化。
 _CLIENT_CACHE: dict[tuple[str, str], object] = {}
@@ -209,6 +257,10 @@ def chat_json(
                 sink(cfg["model"], prompt_tokens, completion_tokens, cached)
             except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
                 _log.debug("usage sink 回報失敗 stage=%s", stage)
+        try:  # per-call 落庫（AI 消耗紀錄）；失敗絕不阻斷判決
+            _record_usage(stage, cfg, prompt_tokens, completion_tokens, cached)
+        except Exception:  # noqa: BLE001
+            _log.debug("usage 落庫失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"
     try:
         return json.loads(raw)
