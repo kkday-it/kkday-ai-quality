@@ -1041,13 +1041,31 @@ onMounted(init);
       </div>
     </a-modal>
 
-    <!-- 歸因備註彈窗：新增備註 + append-only 歷史（備註人 / 時間 / 內容）-->
-    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="520" unmount-on-close>
-      <div class="flex flex-col gap-3">
-        <div class="flex flex-col gap-2">
+    <!-- 歸因備註彈窗：左右佈局——左＝時間軸歷史（備註人/時間/內容），右＝新增備註 -->
+    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="720" unmount-on-close>
+      <div class="flex gap-4">
+        <!-- 左：append-only 歷史時間軸（新到舊）-->
+        <div class="min-w-0 flex-1">
+          <StateGuard :loading="noteLoading" error="">
+            <a-timeline v-if="noteList.length" class="max-h-[360px] overflow-auto pl-1">
+              <a-timeline-item v-for="n in noteList" :key="n.id">
+                <div class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]">
+                  <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
+                  <span>{{ fmtNoteTime(n.created_at) }}</span>
+                </div>
+                <div class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
+                  {{ n.content }}
+                </div>
+              </a-timeline-item>
+            </a-timeline>
+            <a-empty v-else description="尚無備註" />
+          </StateGuard>
+        </div>
+        <!-- 右：新增備註 -->
+        <div class="flex w-[260px] shrink-0 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-4">
           <a-textarea
             v-model="noteDraft"
-            :auto-size="{ minRows: 2 }"
+            :auto-size="{ minRows: 4 }"
             :max-length="500"
             show-word-limit
             placeholder="輸入備註內容（供覆核者間留言、追蹤同一問題）…"
@@ -1063,23 +1081,6 @@ onMounted(init);
               送出備註
             </a-button>
           </div>
-        </div>
-        <div class="border-t border-[var(--color-neutral-3)] pt-3">
-          <StateGuard :loading="noteLoading" error="">
-            <!-- append-only 歷史以時間軸呈現（新到舊）：每節點＝備註人 · 時間 · 內容 -->
-            <a-timeline v-if="noteList.length" class="max-h-[320px] overflow-auto pl-1">
-              <a-timeline-item v-for="n in noteList" :key="n.id">
-                <div class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]">
-                  <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
-                  <span>{{ fmtNoteTime(n.created_at) }}</span>
-                </div>
-                <div class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
-                  {{ n.content }}
-                </div>
-              </a-timeline-item>
-            </a-timeline>
-            <a-empty v-else description="尚無備註" />
-          </StateGuard>
         </div>
       </div>
     </a-modal>

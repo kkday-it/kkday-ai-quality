@@ -221,7 +221,8 @@ export function buildBarOption(d: BarData) {
     grid: { left: 8, right: 28, top: 12, bottom: hasTarget ? 28 : 12, containLabel: true },
     xAxis: {
       type: 'value',
-      axisLabel: { formatter: `{value}${d.unit}`, color: C.gray },
+      // hideOverlap：值域小（如成本 0~0.007USD）時刻度密集 + 單位後綴使標籤過寬會重疊，自動隱藏重疊者
+      axisLabel: { formatter: `{value}${d.unit}`, color: C.gray, hideOverlap: true },
       splitLine: { lineStyle: { color: C.line } },
     },
     yAxis: { type: 'category', data: names, axisLabel: { color: '#4e5969', fontWeight: 600 } },
