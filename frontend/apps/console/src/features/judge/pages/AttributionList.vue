@@ -642,98 +642,106 @@ onMounted(init);
                塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
           <template #verdict="{ record }">
             <template v-if="record.attributions && record.attributions.length">
-              <div v-for="(a, ai) in record.attributions" :key="ai" class="verdict-blk text-xs leading-relaxed">
-                <!-- 反饋摘要（content.summary）置頂顯明：大家看得最多，作為該歸因的標題性內容（僅有值才顯示）-->
-                <div
-                  v-if="a.content?.summary"
-                  class="text-[13px] font-semibold leading-snug text-[var(--color-text-1)]"
-                >
-                  <span class="mr-1 align-[1px] text-[11px] font-normal text-[var(--color-text-3)]">摘要</span>
-                  {{ a.content.summary }}
+              <!-- 每條歸因一塊，比照關聯資料欄：左小標籤（摘要/歸因/信心/操作）+ 右內容或操作 -->
+              <div
+                v-for="(a, ai) in record.attributions"
+                :key="ai"
+                class="verdict-blk flex flex-col gap-1 py-1 text-xs leading-relaxed"
+              >
+                <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
+                <div v-if="a.content?.summary" class="flex gap-1.5">
+                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">摘要</span>
+                  <div class="min-w-0 text-[13px] font-semibold leading-snug text-[var(--color-text-1)]">
+                    {{ a.content.summary }}
+                  </div>
                 </div>
-                <!-- L1→L3 純文字麵包屑（分類，次級）：L1 域藍字、› 灰分隔、L2/L3 中色 -->
-                <div class="text-xs" :class="{ 'mt-0.5': a.content?.summary }">
-                  <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
-                    <template
-                      v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
-                      :key="li"
-                    >
-                      <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
-                      <span
-                        :class="
-                          li === 0
-                            ? 'font-medium text-[rgb(var(--primary-6))]'
-                            : 'text-[var(--color-text-2)]'
-                        "
+                <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
+                <div class="flex gap-1.5">
+                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">歸因</span>
+                  <div class="min-w-0">
+                    <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
+                      <template
+                        v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
+                        :key="li"
                       >
-                        {{ lvl }}
-                      </span>
+                        <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
+                        <span
+                          :class="
+                            li === 0
+                              ? 'font-medium text-[rgb(var(--primary-6))]'
+                              : 'text-[var(--color-text-2)]'
+                          "
+                        >
+                          {{ lvl }}
+                        </span>
+                      </template>
                     </template>
-                  </template>
-                  <span v-else class="text-[var(--color-text-3)]">未歸因</span>
+                    <span v-else class="text-[var(--color-text-3)]">未歸因</span>
+                    <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
+                      <span class="ml-1.5 text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
+                    </a-tooltip>
+                  </div>
                 </div>
-                <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span class="text-[var(--color-text-3)]">信心</span>
-                  <!-- 信心按 tier 上色：綠可採信 / 琥珀需覆核 / 紅必人工（< 0.8 需人工覆核）-->
-                  <span class="font-semibold" :class="confClass(a.confidence?.tier)">
-                    {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}
-                  </span>
-                  <span
-                    class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]"
-                  >
-                    {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
-                  </span>
-                  <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
-                    {{ STAGE_LABELS[a.stage] || a.stage }}
-                  </a-tag>
-                  <!-- 人工覆核徽章：status≠new/空 時顯示（人工軸，與 AI 階段並存）-->
-                  <a-tag
-                    v-if="a.status && a.status !== 'new'"
-                    size="small"
-                    :color="STATUS_COLOR[a.status]"
-                    bordered
-                  >
-                    {{ STATUS_LABEL[a.status] || a.status }}
-                  </a-tag>
-                  <!-- 真值標註徽章 -->
-                  <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
-                    <span class="text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
-                  </a-tooltip>
+                <!-- 信心（值 + 分層 + 判決階段 + 人工覆核徽章）-->
+                <div class="flex gap-1.5">
+                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">信心</span>
+                  <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <!-- 信心按 tier 上色：綠可採信 / 琥珀需覆核 / 紅必人工（< 0.8 需人工覆核）-->
+                    <span class="font-semibold" :class="confClass(a.confidence?.tier)">
+                      {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}
+                    </span>
+                    <span class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]">
+                      {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
+                    </span>
+                    <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
+                      {{ STAGE_LABELS[a.stage] || a.stage }}
+                    </a-tag>
+                    <a-tag
+                      v-if="a.status && a.status !== 'new'"
+                      size="small"
+                      :color="STATUS_COLOR[a.status]"
+                      bordered
+                    >
+                      {{ STATUS_LABEL[a.status] || a.status }}
+                    </a-tag>
+                  </div>
                 </div>
-                <!-- 每條歸因分開操作，語義色區分：確認＝採信(綠) / 忽略＝駁回(紅) / 標真值＝輔助標註(text)。
-                     選中該覆核狀態時填色(primary)，未選為 outline，一眼看出當前判定。 -->
-                <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <a-button
-                    size="mini"
-                    status="success"
-                    :type="a.status === 'confirmed' ? 'primary' : 'outline'"
-                    @click="reviewFinding(a, 'confirmed')"
-                  >
-                    <template #icon><IconCheck /></template>
-                    確認
-                  </a-button>
-                  <a-button
-                    size="mini"
-                    status="danger"
-                    :type="a.status === 'dismissed' ? 'primary' : 'outline'"
-                    @click="reviewFinding(a, 'dismissed')"
-                  >
-                    <template #icon><IconClose /></template>
-                    忽略
-                  </a-button>
-                  <a-button size="mini" type="text" @click="openTrueLabel(record)">
-                    <template #icon><IconEdit /></template>
-                    標真值
-                  </a-button>
-                  <a-button
-                    v-if="a.finding_id"
-                    size="mini"
-                    type="text"
-                    @click="openNotes(a.finding_id)"
-                  >
-                    <template #icon><IconMessage /></template>
-                    備註
-                  </a-button>
+                <!-- 操作（確認採信(綠)/忽略駁回(紅)/標真值/備註；選中覆核狀態填色 primary）-->
+                <div class="flex gap-1.5">
+                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">操作</span>
+                  <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <a-button
+                      size="mini"
+                      status="success"
+                      :type="a.status === 'confirmed' ? 'primary' : 'outline'"
+                      @click="reviewFinding(a, 'confirmed')"
+                    >
+                      <template #icon><IconCheck /></template>
+                      確認
+                    </a-button>
+                    <a-button
+                      size="mini"
+                      status="danger"
+                      :type="a.status === 'dismissed' ? 'primary' : 'outline'"
+                      @click="reviewFinding(a, 'dismissed')"
+                    >
+                      <template #icon><IconClose /></template>
+                      忽略
+                    </a-button>
+                    <a-button size="mini" type="text" @click="openTrueLabel(record)">
+                      <template #icon><IconEdit /></template>
+                      標真值
+                    </a-button>
+                    <a-button
+                      v-if="a.finding_id"
+                      size="mini"
+                      type="text"
+                      @click="openNotes(a.finding_id)"
+                    >
+                      <template #icon><IconMessage /></template>
+                      備註
+                    </a-button>
+                  </div>
                 </div>
               </div>
             </template>
