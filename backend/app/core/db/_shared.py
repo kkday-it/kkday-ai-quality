@@ -14,6 +14,7 @@ from sqlalchemy import and_, exists
 
 from app.core.db import source_registry
 from app.core.db import tables as T
+from app.core.judge_config.ai_judge import domain_owner as _domain_owner
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
 # ── 判決顯示標籤 + 信心閾值（judgment.json；取代已移除的 taxonomy）───────────────
@@ -91,17 +92,20 @@ def attribution_dto(r: dict) -> dict:
     Returns:
         巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
         confidence:{value,raw,tier}, content:{summary,evidence,action},
-        is_primary, status, true_label}。
+        owner, is_primary, status, true_label}。
     """
+    l1_code = r.get("l1_code")
     return {
         "finding_id": r.get("finding_id"),
         "polarity": r.get("polarity"),
         "stage": r.get("stage"),
-        "l1": {"code": r.get("l1_code"), "label": r.get("l1_label")},
+        "l1": {"code": l1_code, "label": r.get("l1_label")},
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
         "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
         "confidence": {"value": r.get("conf_value"), "raw": r.get("conf_raw"), "tier": r.get("conf_tier")},
         "content": {"summary": r.get("summary"), "evidence": r.get("evidence"), "action": r.get("action")},
+        # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
+        "owner": _domain_owner(l1_code or ""),
         "is_primary": r.get("is_primary"),
         "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
         "true_label": r.get("true_label"),  # 人工標註真值分類

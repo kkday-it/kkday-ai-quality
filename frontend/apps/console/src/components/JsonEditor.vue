@@ -25,7 +25,7 @@ const props = withDefaults(
     /** 撐滿父容器高度（height:100%）取代預設 60vh 上限；用於整頁編輯（如判決規則頁）。 */
     fill?: boolean;
   }>(),
-  { readOnly: false, mode: 'tree', fill: false },
+  { readOnly: false, mode: 'tree', fill: false, schema: undefined },
 );
 
 // jsoneditor API 於掛載時動態載入；型別走 import type（編譯期擦除，不進 bundle）

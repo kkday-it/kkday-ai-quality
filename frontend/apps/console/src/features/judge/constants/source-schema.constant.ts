@@ -94,6 +94,8 @@ export interface Attribution {
   l3?: AttributionLevel;
   confidence?: AttributionConfidence;
   content?: AttributionContent;
+  /** 負責單位（後端自 l1 域 rule _meta.owner_role 派生；業務未填時為空字串，不顯示標籤）。 */
+  owner?: string;
   is_primary?: boolean;
   /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed）——覆核徽章用。 */
   status?: string;

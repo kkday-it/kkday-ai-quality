@@ -147,12 +147,15 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
   const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
 
+  // 單調遞增請求序號：快速切換條件會併發多次 refresh，僅最後一次可寫入 targetCount（防慢回應覆蓋新值）。
+  let countSeq = 0;
   /** 依目標模式/條件算「將處理 N 筆」預覽（scope 模式逐階段查 getProblems total 加總；信心收斂無法由列表 API 精算，屬近似）。 */
   const refreshTargetCount = async () => {
     if (targetMode.value === 'selected') {
       targetCount.value = selectedKeys.value.length;
       return;
     }
+    const seq = ++countSeq;
     let total = 0;
     for (const st of targetStages.value) {
       const r = await getProblems({
@@ -165,7 +168,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       });
       total += r.total || 0;
     }
-    targetCount.value = total;
+    if (seq === countSeq) targetCount.value = total; // 過期回應（已有更新的 refresh）丟棄，不覆蓋
   };
 
   /** 開初判歸因彈窗：有勾選預設 selected 模式，否則 scope 模式。 */

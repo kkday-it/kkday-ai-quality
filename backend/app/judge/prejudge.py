@@ -412,7 +412,6 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
-        owner_role=ai_judge.domain_owner(attr["l1_domain_code"]),  # 負責單位（rule _meta.owner_role；未填空）
         problem_summary=attr.get("evidence_quote", "")[:200],
         evidence_quote=attr.get("evidence_quote", ""),
         polarity="negative",
@@ -507,7 +506,8 @@ def _stage_b(item: dict, text: str, domain_code: str, model: str) -> dict:
     if not candidate_codes:  # 該域無節點（逃生）：僅回域層 L1，L2/L3 空
         return {"l1_domain_code": domain_code, "l1_label": ai_judge.domain_label(domain_code),
                 "l2_code": "", "l2_label": "", "l3_code": "", "l3_label": "",
-                "confidence": 0.4, "raw_confidence": 0.4, "evidence_quote": text[:120], "l3_candidates": []}
+                "confidence": 0.4, "raw_confidence": 0.4, "evidence_quote": text[:120], "l3_candidates": [],
+                "evidence_capped": _evidence_capped(domain_code, item)}  # 對齊正常路徑，缺外部佐證仍封頂
     if client.is_stub():  # stub：給該域首個 leaf（負向必 L1+L2）
         base = _sanitize_l3(sorted(candidate_codes)[0], candidate_codes)
         return {**base, "confidence": 0.5, "raw_confidence": 0.5,
@@ -633,7 +633,9 @@ def _stage_a_domains_multi(text: str, model: str, max_n: int) -> list[str]:
         if d in domain_values and d not in seen:
             seen.add(d)
             doms.append(d)
-    return doms[:max_n] if doms else [domain_values[0]]  # 逃生：負向必歸 ≥1 域
+    # 全無效域（LLM abstain / 回幻覺 code）→ 回空，交由 _resolve_attrs_multi 產生未歸因 pending_data，
+    # 對齊單路徑 _stage2_attribute_multi 語義；不 fallback 到 domain_values[0]（捏造 content 歸因）。
+    return doms[:max_n]
 
 
 def _resolve_attrs_multi(item: dict, text: str, model: str, max_n: int) -> list[dict]:

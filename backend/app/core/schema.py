@@ -101,12 +101,8 @@ class TicketFinding(BaseModel):
     # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed·fixed=人工覆核
     status: Literal["new", "auto_confirmed", "confirmed", "dismissed", "fixed"] = "new"
     created_at: str = ""
-    # 感知層來源（管道 A 平台主動 / B 客人進線 / C 供應商申訴）
-    source_channel: str = ""  # A_platform | B_customer | C_supplier | unknown
-    source_system: str = ""  # 商品評論 / FreshDesk工單 / 訂單訊息 / Feedback / Mixpanel / NPS
-    # 執行層對應（誰處理 · 在哪改）
-    owner_role: str = ""  # Rule Maker(PM) / Coach(AM·BD) / Referee(QC) / Customer Advocate(CS) / Disciplinary(ERC)
-    exec_platform: str = ""  # PM 後台 / SCM2.0·Be2 / 客服系統 / Writer
+    # 負責單位（owner_role）不存於 finding：改由 db._shared.attribution_dto 讀取時自 l1_code 派生
+    # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。
     order_oid: str = ""  # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
     supplier_oid: str = ""  # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
     # ── 軸A intake_vector 轉存（自 NormalizedTicket 複製，dashboard 進線漏斗用）──
