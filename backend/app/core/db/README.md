@@ -8,24 +8,18 @@
 |---|---|
 | `tables.py` | SQLAlchemy schema + engine（`get_engine`/`set_engine`/`metadata`/`upsert`）；連線＝`config.env.database_url`。 |
 | `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
-| `_shared.py` | 共用：judgment.json 標籤/信心閾值、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**判決形狀存取 SSOT**（`d_*` 查詢層抽欄 + `read_stored` Python 層還原，見下）。 |
+| `_shared.py` | 共用：judgment.json 標籤/信心閾值、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**判決 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
 
-## judgments 判決表結構（攤平後 · SSOT）
+## judgments 判決表結構（typed 欄 · 最佳架構）
 
-一列 = 一條歸因。scalar 欄僅存**關聯鍵**（`finding_id`PK / `source` / `source_id` / `prod_oid`）、**查詢便利**（`dimension` / `needs_review`）與**人工覆核軸**（`status` / `true_label` / `created_at`）；判決 payload 全收進 **`data`（Text 存乾淨分組物件）**：
+一列 = 一條歸因，**全 typed scalar 欄**（無 JSONB blob）。判決表是查詢/聚合/篩選密集的分析核心且 schema 已穩定，故 storage 用 typed 欄（可直接 btree 索引、SQL 乾淨），巢狀物件屬呈現層於 API DTO 組（`_shared.attribution_dto`）。
 
-```
-data = { polarity, stage,
-         attribution:{ l1:{code,label}, l2:{code,label}, l3:{code,label} },
-         confidence:{ value, raw, tier },
-         content:{ summary, evidence, action },
-         meta:{ model, primary, judgedAt } }
-```
+**欄位**：關聯鍵 `finding_id`PK / `source` / `source_id` / `prod_oid`；查詢便利 `dimension`；傾向階段 `polarity` / `stage`；歸因 `l1_code` `l1_label` `l2_code` `l2_label` `l3_code` `l3_label`；信心 `conf_value` `conf_raw` `conf_tier`；內容 `summary` `evidence` `action`；元 `model` `is_primary` `judged_at`；人工覆核 `status` `true_label` `needs_review` `created_at`。
 
-- **寫入**：`schema.TicketFinding.to_stored()` 產出上方物件（殘留/幽靈/legacy 欄不入庫）。
-- **查詢**（GROUP BY / FILTER / SORT）：`_shared.d_polarity()/d_stage()/d_tier()/d_l1_code()/d_conf_value()…`（JSONB expression，走 `idx_judgments_{polarity,stage,l1,tier}` expression 索引）。
-- **讀取**（json.loads 後）：`_shared.read_stored(data)` 還原成攤平前的扁平顯示鍵（`l1_domain_code`/`confidence_tier`/`judgment_stage`…）→ `_attribution_of`/`_enrich_problem`/`export`/`accuracy` 及前端 API 契約**零改動**。
-- 遷移：`alembic/versions/7c05d105e825`（regroup data + drop 7 重複/死欄 + 建 4 JSONB 索引）。詳 `plans/1-peaceful-wirth.md`。
+- **寫入**：`schema.TicketFinding.to_columns()` 產出判決 payload 欄 + `findings._finding_values` 補關聯/人工欄（殘留/legacy 欄不入庫）。
+- **查詢**（GROUP BY / FILTER / SORT）：直接 `jg.c.polarity == x` / `jg.c.l1_code` / `func.max(jg.c.conf_value)`，走 `idx_judgments_{polarity,stage,l1,tier}` btree 索引。
+- **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, is_primary, status, true_label}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
+- 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳 `plans/1-peaceful-wirth.md`。
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
 | `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     Index,
     Integer,
     MetaData,
@@ -42,25 +43,44 @@ judgments = Table(
     #  app_feedback→oid / mixpanel_tracker→insert_id）。
     Column("source", Text),
     Column("source_id", Text),
-    # ── 關聯 / 查詢便利 scalar 欄（prod_oid/dimension 供 ProductDetail 下鑽；needs_review 供人審佇列）──
+    # ── 關聯 / 查詢便利欄（prod_oid/dimension 供 ProductDetail 下鑽）──
     Column("prod_oid", Text),
     Column("dimension", Text),
-    Column("needs_review", Integer, server_default="0"),
-    # ── 人工覆核軸 scalar 欄 ──
-    Column("true_label", Text),
-    Column("status", Text),
+    # ── 傾向 / 階段 ──
+    Column("polarity", Text),  # positive | negative | neutral | unknown
+    Column("stage", Text),  # judged / pending_review / pending_data / insufficient
+    # ── 歸因分類 L1→L3（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
+    Column("l1_code", Text),
+    Column("l1_label", Text),
+    Column("l2_code", Text),
+    Column("l2_label", Text),
+    Column("l3_code", Text),
+    Column("l3_label", Text),
+    # ── 信心 ──
+    Column("conf_value", Float),  # 最終信心（校準後）
+    Column("conf_raw", Float),  # arbiter LLM 原始信心
+    Column("conf_tier", Text),  # auto_accept / jury / needs_review
+    # ── 判決內容 ──
+    Column("summary", Text),  # 反饋摘要（problem_summary）
+    Column("evidence", Text),  # 佐證原文（evidence_quote）
+    Column("action", Text),  # 建議行動（recommended_action）
+    # ── 元數據 ──
+    Column("model", Text),  # 判決模型（stub 時為 "stub"）
+    Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
+    Column("judged_at", Text),  # 判決時間（ISO）
+    # ── 人工覆核軸 ──
+    Column("status", Text),  # new / confirmed / dismissed / fixed / pending_evidence
+    Column("true_label", Text),  # 人工標註真值分類
+    Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
-    # ── 判決 payload：攤平後為乾淨分組物件（polarity/stage/attribution/confidence/content/meta；
-    #    形狀 SSOT 見 schema.TicketFinding.to_stored；查詢層抽欄見 _shared.d_*）──
-    Column("data", Text),
     Index("idx_judgments_source", "source"),
     # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件
     Index("idx_judgments_source_id", "source", "source_id"),
-    # 列表深化篩選熱路徑走 data 分組物件的 JSONB expression 索引（取代攤平前的 scalar 欄篩選）
-    Index("idx_judgments_polarity", text("((data::jsonb->>'polarity'))")),
-    Index("idx_judgments_stage", text("((data::jsonb->>'stage'))")),
-    Index("idx_judgments_l1", text("((data::jsonb->'attribution'->'l1'->>'code'))")),
-    Index("idx_judgments_tier", text("((data::jsonb->'confidence'->>'tier'))")),
+    # 列表深化篩選熱路徑（typed 欄直接 btree 索引，取代舊 JSONB expression 索引）
+    Index("idx_judgments_polarity", "polarity"),
+    Index("idx_judgments_stage", "stage"),
+    Index("idx_judgments_l1", "l1_code"),
+    Index("idx_judgments_tier", "conf_tier"),
 )
 
 # ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────

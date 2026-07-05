@@ -13,14 +13,6 @@ from app.core.db._shared import (
     _jg_join_cond,
     _vertical_codes,
     _vertical_scoped_spec,
-    d_conf_value,
-    d_l1_code,
-    d_l1_label,
-    d_l2_code,
-    d_l2_label,
-    d_l3_code,
-    d_l3_label,
-    d_polarity,
 )
 
 
@@ -46,10 +38,10 @@ def attribution_overview(
     jg = T.judgments
     cnt = func.count().label("n")
     tiers = _CONFIDENCE_TIERS
-    # judgments.data 分組物件的歸因欄（抽出，供 GROUP BY / FILTER；路徑 SSOT 見 _shared.d_*）
-    pol = d_polarity()
-    l1c = d_l1_code()
-    l1l = d_l1_label()
+    # judgments typed 判決欄（直接 GROUP BY / FILTER，走 btree 索引）
+    pol = jg.c.polarity
+    l1c = jg.c.l1_code
+    l1l = jg.c.l1_label
     _GRAN_LEN = {"year": 4, "month": 7, "day": 10}
     glen = _GRAN_LEN.get(granularity, 7)
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
@@ -88,7 +80,7 @@ def attribution_overview(
                 c.execute(_src(select(score_col.label("score"), cnt).select_from(tbl).where(score_col.isnot(None)).group_by(score_col).order_by(score_col.asc()))).mappings().all()
                 if score_col is not None else []
             )
-            by_tier = _by_tier(c.execute(_src(select(d_conf_value().label("confidence")).select_from(j).where(d_conf_value().isnot(None)))).mappings())
+            by_tier = _by_tier(c.execute(_src(select(jg.c.conf_value.label("confidence")).select_from(j).where(jg.c.conf_value.isnot(None)))).mappings())
             ym = func.substr(date_col, 1, glen).label("ym")
             trend_rows = c.execute(_src(
                 select(ym, func.count(jg.c.finding_id).label("judged"), func.count().filter(pol == "negative").label("negative"))
@@ -102,7 +94,7 @@ def attribution_overview(
             by_polarity_raw = c.execute(select(pol.label("k"), cnt).select_from(jg).group_by(pol).order_by(cnt.desc())).mappings().all()
             by_l1_raw = c.execute(select(l1c.label("code"), l1l.label("label"), cnt).select_from(jg).where(l1c.isnot(None), l1c != "").group_by(l1c, l1l).order_by(cnt.desc())).mappings().all()
             by_score_raw = []
-            by_tier = _by_tier(c.execute(select(d_conf_value().label("confidence")).select_from(jg).where(d_conf_value().isnot(None))).mappings())
+            by_tier = _by_tier(c.execute(select(jg.c.conf_value.label("confidence")).select_from(jg).where(jg.c.conf_value.isnot(None))).mappings())
             trend_rows = []
 
     by_polarity = [
@@ -151,9 +143,9 @@ def attribution_breakdown(
     spec = _vertical_scoped_spec(source, product_vertical)
     jg = T.judgments
     cnt = func.count().label("n")
-    l1c, l1l = d_l1_code(), d_l1_label()
-    l2c, l2l = d_l2_code(), d_l2_label()
-    l3c, l3l = d_l3_code(), d_l3_label()
+    l1c, l1l = jg.c.l1_code, jg.c.l1_label
+    l2c, l2l = jg.c.l2_code, jg.c.l2_label
+    l3c, l3l = jg.c.l3_code, jg.c.l3_label
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
 
     # spec 命中：join 該表（可套 date/vertical）；source=None：judgments 直接聚合

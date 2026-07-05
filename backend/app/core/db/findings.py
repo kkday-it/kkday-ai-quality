@@ -2,35 +2,33 @@
 
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import and_, func, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 
 from app.core.db import tables as T
-from app.core.db._shared import read_stored as _read_stored
+from app.core.db._shared import attribution_dto
 from app.core.schema import TicketFinding
 
 
 def _finding_values(f: TicketFinding, source: str) -> dict:
-    """TicketFinding → judgments 欄位 dict。
+    """TicketFinding → judgments typed 欄位 dict（全 typed 欄，無 JSONB blob）。
 
-    判決 payload 落 `data`（乾淨分組物件，見 schema.to_stored）；scalar 欄僅存關聯鍵
-    （source/source_id/prod_oid/dimension）與人工/查詢欄（needs_review/status/created_at）。
-    攤平後不再重複塞 pkg_oid/confidence/recommended_action… 等（統一在 data 分組物件內）。
+    關聯鍵（source/source_id/prod_oid/dimension）+ 人工覆核軸（status/created_at/needs_review）
+    於此補齊；判決 payload 17 欄由 f.to_columns() 攤出（polarity/l1_code…/conf_value/summary…）。
+    殘留/legacy 欄不入庫。true_label 由 replace_source_findings 的 preserve 邏輯補（非首寫）。
     """
     return {
         "finding_id": f.finding_id,
         "source": source,
         "source_id": f.ticket_id,  # prejudge 設 ticket_id = 特徵 id（source_id）
-        "prod_oid": f.prod_oid,  # ProductDetail / list_products 下鑽用（保留 scalar）
-        "dimension": f.dimension,  # ProductDetail 內容/非內容過濾用（保留 scalar）
-        "needs_review": int(f.needs_review),  # 人審佇列篩選（保留 scalar）
-        "data": json.dumps(f.to_stored(), ensure_ascii=False),
+        "prod_oid": f.prod_oid,  # ProductDetail / list_products 下鑽用
+        "dimension": f.dimension,  # ProductDetail 內容/非內容過濾用
         "status": f.status,
         "created_at": f.created_at,
+        "needs_review": bool(f.needs_review),  # 人審佇列篩選
+        **f.to_columns(),
     }
 
 
@@ -92,9 +90,8 @@ def list_findings(
     with T.get_engine().connect() as c:
         for r in c.execute(stmt).mappings():
             d = dict(r)
-            if d.get("data"):
-                # data 為攤平後分組物件 → read_stored 還原扁平 finding（FindingCard 消費舊扁平鍵，零改動）
-                d["finding"] = _read_stored(json.loads(d["data"]))
+            # typed 欄 → 乾淨巢狀 DTO（FindingCard 消費巢狀 finding）
+            d["finding"] = attribution_dto(d)
             out.append(d)
     return out
 

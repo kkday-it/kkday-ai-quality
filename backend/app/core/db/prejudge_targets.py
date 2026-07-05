@@ -8,13 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import source_registry
 from app.core.db import tables as T
-from app.core.db._shared import (
-    _jg_join_cond,
-    _vertical_codes,
-    d_conf_value,
-    d_polarity,
-    d_stage,
-)
+from app.core.db._shared import _jg_join_cond, _vertical_codes
 
 
 def prejudge_target_ids(
@@ -71,10 +65,10 @@ def prejudge_target_ids(
             ids.update(r[0] for r in c.execute(s))
         if judged_stages:
             s = select(nk).select_from(j).where(jg.c.finding_id.isnot(None))
-            s = s.where(d_stage().in_(judged_stages))
+            s = s.where(jg.c.stage.in_(judged_stages))
             if target_polarity:
-                s = s.where(d_polarity() == target_polarity)
+                s = s.where(jg.c.polarity == target_polarity)
             if max_confidence is not None:
-                s = s.where(d_conf_value() < max_confidence)
+                s = s.where(jg.c.conf_value < max_confidence)
             ids.update(r[0] for r in c.execute(_scope(s)))
     return [str(x) for x in ids if x is not None]

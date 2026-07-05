@@ -41,25 +41,16 @@ def _load_attributed() -> list[dict[str, Any]] | None:
 
         from app.core import ai_judge  # noqa: PLC0415
         from app.core.db import tables as T  # noqa: PLC0415
-        from app.core.db._shared import read_stored  # noqa: PLC0415
-
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:
             jg = T.judgments
-            # finding_id / source_id 為 scalar 欄（攤平後不在 data 分組物件內），須一併 select
-            for fid, sid, raw_data in c.execute(select(jg.c.finding_id, jg.c.source_id, jg.c.data)):
-                if not raw_data:
-                    continue
-                try:
-                    f = read_stored(json.loads(raw_data))
-                except (ValueError, TypeError):
-                    continue
-                code = f.get("l3_code")
-                raw_conf = f.get("raw_confidence")
-                # 只取真正走過 L1→L3 歸因（負向）且有自評信心者
-                if not code or raw_conf is None:
-                    continue
-                # l3_candidates 於攤平時移除（實測全庫恆空，候選機制未落庫）→ cands 恆空，行為不變
+            # 攤平後判決欄皆 typed 欄，直接 select（l3_code / conf_raw / 關聯鍵）
+            rows = c.execute(
+                select(jg.c.finding_id, jg.c.source_id, jg.c.l3_code, jg.c.conf_raw)
+                .where(jg.c.l3_code.isnot(None), jg.c.l3_code != "", jg.c.conf_raw.isnot(None))
+            )
+            for fid, sid, code, raw_conf in rows:
+                # l3_candidates 於攤平時移除（實測全庫恆空，候選機制未落庫）→ candidates 恆空，行為不變
                 node = ai_judge.l3_by_code(code) or {}
                 out.append(
                     {

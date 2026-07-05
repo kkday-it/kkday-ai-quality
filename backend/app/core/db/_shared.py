@@ -10,9 +10,7 @@ from __future__ import annotations
 import json
 import re
 
-from sqlalchemy import Float, and_, exists
-from sqlalchemy import cast as sa_cast
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import and_, exists
 
 from app.core.db import source_registry
 from app.core.db import tables as T
@@ -32,105 +30,37 @@ _CONFIDENCE_TIERS: dict = _JUDGMENT_CFG.get(
 )
 
 
-# ── judgments.data 分組物件的存取 SSOT（形狀＝schema.TicketFinding.to_stored；改形狀只改此處）──
-# data 攤平重整後為乾淨分組物件：polarity / stage / attribution{l1,l2,l3{code,label}}
-# / confidence{value,raw,tier} / content{summary,evidence,action} / meta{model,primary,judgedAt}。
-# 查詢層（GROUP BY / FILTER / SORT）用下列 d_* 抽欄 expression；Python 層（json.loads 後）用 read_stored。
+# ── 判決 API DTO：judgments typed 欄 → 乾淨巢狀物件（storage=typed 欄；呈現=巢狀 DTO 的 SSOT）──
+# 一條形狀貫穿 DB→API→前端：DB 存 typed 欄（可 btree 索引 / 乾淨 SQL），此處組成前端消費的
+# 巢狀 DTO。改 DTO 形狀只改此處（前端 Attribution interface 對齊）。
 
 
-def _jdata():
-    """judgments.data(Text) → JSONB（查詢層抽欄基底）。"""
-    return sa_cast(T.judgments.c.data, JSONB)
+def attribution_dto(r: dict) -> dict:
+    """judgments 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
-
-def d_polarity():
-    """data.polarity 抽為 text expression（GROUP BY / 篩選用）。"""
-    return _jdata()["polarity"].astext
-
-
-def d_stage():
-    """data.stage 抽為 text expression。"""
-    return _jdata()["stage"].astext
-
-
-def d_tier():
-    """data.confidence.tier 抽為 text expression。"""
-    return _jdata()["confidence"]["tier"].astext
-
-
-def d_conf_value():
-    """data.confidence.value 抽為 Float expression（排序 / 聚合用；取代舊 confidence scalar 欄）。"""
-    return sa_cast(_jdata()["confidence"]["value"].astext, Float)
-
-
-def d_l1_code():
-    """data.attribution.l1.code 抽為 text expression。"""
-    return _jdata()["attribution"]["l1"]["code"].astext
-
-
-def d_l1_label():
-    """data.attribution.l1.label 抽為 text expression。"""
-    return _jdata()["attribution"]["l1"]["label"].astext
-
-
-def d_l2_code():
-    """data.attribution.l2.code 抽為 text expression。"""
-    return _jdata()["attribution"]["l2"]["code"].astext
-
-
-def d_l2_label():
-    """data.attribution.l2.label 抽為 text expression。"""
-    return _jdata()["attribution"]["l2"]["label"].astext
-
-
-def d_l3_code():
-    """data.attribution.l3.code 抽為 text expression。"""
-    return _jdata()["attribution"]["l3"]["code"].astext
-
-
-def d_l3_label():
-    """data.attribution.l3.label 抽為 text expression。"""
-    return _jdata()["attribution"]["l3"]["label"].astext
-
-
-def read_stored(data: dict) -> dict:
-    """judgments.data 分組物件 → 扁平顯示 dict（Python 層還原 SSOT）。
-
-    read adapter：對齊攤平前的舊扁平 key（l1_domain_code/l1_label/confidence_tier/
-    judgment_stage/problem_summary/evidence_quote/recommended_action…），故 _attribution_of /
-    _enrich_problem / export / accuracy 讀新分組 data 但輸出鍵不變 → 前端與導出零改動。
+    r 為含判決欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
+    或直接傳 judgments 列 mapping）。人工覆核軸（status/true_label）與 finding_id 亦在其中。
 
     Args:
-        data: json.loads(judgments.data) 後的分組物件（見 schema.TicketFinding.to_stored）。
+        r: 判決欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
 
     Returns:
-        扁平 dict（含 confidence_value / raw_confidence / is_primary / judged_at 等）。
+        巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
+        confidence:{value,raw,tier}, content:{summary,evidence,action},
+        is_primary, status, true_label}。
     """
-    attr = data.get("attribution") or {}
-    l1 = attr.get("l1") or {}
-    l2 = attr.get("l2") or {}
-    l3 = attr.get("l3") or {}
-    conf = data.get("confidence") or {}
-    content = data.get("content") or {}
-    meta = data.get("meta") or {}
     return {
-        "polarity": data.get("polarity"),
-        "judgment_stage": data.get("stage"),
-        "l1_domain_code": l1.get("code"),
-        "l1_label": l1.get("label"),
-        "l2_code": l2.get("code"),
-        "l2_label": l2.get("label"),
-        "l3_code": l3.get("code"),
-        "l3_label": l3.get("label"),
-        "confidence_value": conf.get("value"),
-        "raw_confidence": conf.get("raw"),
-        "confidence_tier": conf.get("tier"),
-        "problem_summary": content.get("summary"),
-        "evidence_quote": content.get("evidence"),
-        "recommended_action": content.get("action"),
-        "model_used": meta.get("model"),
-        "is_primary": meta.get("primary"),
-        "judged_at": meta.get("judgedAt"),
+        "finding_id": r.get("finding_id"),
+        "polarity": r.get("polarity"),
+        "stage": r.get("stage"),
+        "l1": {"code": r.get("l1_code"), "label": r.get("l1_label")},
+        "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
+        "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
+        "confidence": {"value": r.get("conf_value"), "raw": r.get("conf_raw"), "tier": r.get("conf_tier")},
+        "content": {"summary": r.get("summary"), "evidence": r.get("evidence"), "action": r.get("action")},
+        "is_primary": r.get("is_primary"),
+        "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
+        "true_label": r.get("true_label"),  # 人工標註真值分類
     }
 
 

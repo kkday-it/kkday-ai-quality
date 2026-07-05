@@ -141,41 +141,36 @@ class TicketFinding(BaseModel):
     model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
     judged_at: str = ""  # 判決時間（ISO）
 
-    def to_stored(self) -> dict:
-        """判決 payload 落庫形狀（judgments.data 的乾淨分組物件 · SSOT）。
+    def to_columns(self) -> dict:
+        """判決 payload → judgments typed 欄位 dict（落庫形狀 SSOT）。
 
-        只序列化 14 個真訊號欄、聚合成單詞命名的巢狀物件；殘留 / legacy / 恆空欄
-        （verdict 軸、symptom_tag、severity、evidence_level… 見 plans/1-peaceful-wirth.md）
-        一律不入庫。關聯鍵（source/source_id/prod_oid）與人工覆核軸（status/true_label/
-        needs_review）走 judgments scalar 欄，不重複塞 data。read 端由 attribution_view / enrich 還原。
+        攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取 14 個真訊號欄；
+        殘留 / legacy / 恆空欄（verdict 軸、symptom_tag、severity、evidence_level、
+        l3_candidates… 見 plans/1-peaceful-wirth.md）一律不入庫。finding_id / source /
+        source_id / prod_oid / dimension / status / created_at / needs_review / true_label
+        由 db.findings._finding_values 補齊（來源關聯 + 人工覆核軸）。
 
         Returns:
-            分組物件：polarity / stage / attribution{l1,l2,l3} / confidence{value,raw,tier}
-            / content{summary,evidence,action} / meta{model,primary,judgedAt}。
+            判決 payload 欄位 dict（polarity/stage/l1_code…/conf_value/summary/action…）。
         """
         return {
             "polarity": self.polarity,
             "stage": self.judgment_stage,
-            "attribution": {
-                "l1": {"code": self.l1_domain_code, "label": self.l1_label},
-                "l2": {"code": self.l2_code, "label": self.l2_label},
-                "l3": {"code": self.l3_code, "label": self.l3_label},
-            },
-            "confidence": {
-                "value": self.confidence,
-                "raw": self.raw_confidence,
-                "tier": self.confidence_tier,
-            },
-            "content": {
-                "summary": self.problem_summary,
-                "evidence": self.evidence_quote,
-                "action": self.recommended_action,
-            },
-            "meta": {
-                "model": self.model_used,
-                "primary": self.is_primary,
-                "judgedAt": self.judged_at,
-            },
+            "l1_code": self.l1_domain_code,
+            "l1_label": self.l1_label,
+            "l2_code": self.l2_code,
+            "l2_label": self.l2_label,
+            "l3_code": self.l3_code,
+            "l3_label": self.l3_label,
+            "conf_value": self.confidence,
+            "conf_raw": self.raw_confidence,
+            "conf_tier": self.confidence_tier,
+            "summary": self.problem_summary,
+            "evidence": self.evidence_quote,
+            "action": self.recommended_action,
+            "model": self.model_used,
+            "is_primary": self.is_primary,
+            "judged_at": self.judged_at,
         }
 
 

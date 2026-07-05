@@ -66,6 +66,19 @@ def _xlsx_safe(value):
     return _XLSX_ILLEGAL_RE.sub("", value) if isinstance(value, str) else value
 
 
+def _flat_attr(a: dict) -> dict:
+    """歸因巢狀 DTO（attribution_dto）→ 導出用扁平欄（對齊 _EXPORT_XLSX_COLS 的 attr key）。"""
+    return {
+        "l1_label": (a.get("l1") or {}).get("label"),
+        "l2_label": (a.get("l2") or {}).get("label"),
+        "l3_label": (a.get("l3") or {}).get("label"),
+        "confidence": (a.get("confidence") or {}).get("value"),
+        "confidence_tier": (a.get("confidence") or {}).get("tier"),
+        "judgment_stage": a.get("stage"),
+        "problem_summary": (a.get("content") or {}).get("summary"),
+    }
+
+
 def _export_sheet_title(source: str | None, rows: list[dict], date_from: str | None, date_to: str | None) -> str:
     """工作表名＝來源 label + 時間區間（如「商品評論 20260601~20260701」）。
 
@@ -161,7 +174,7 @@ def export_problems_xlsx(
         attrs = r.get("attributions") or []
         n = max(1, len(attrs))
         for j in range(n):
-            a = attrs[j] if j < len(attrs) else {}
+            a = _flat_attr(attrs[j]) if j < len(attrs) else {}
             line = []
             for _title, key, _w in _EXPORT_XLSX_COLS:
                 src_val = a.get(key, "") if key in _attr_keys else r.get(key, "")

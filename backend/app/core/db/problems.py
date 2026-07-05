@@ -14,14 +14,20 @@ from app.core.db._shared import (
     _jg_exists,
     _jg_join_cond,
     _vertical_codes,
-    d_conf_value,
-    d_l1_code,
-    d_l1_label,
-    d_polarity,
-    d_stage,
-    d_tier,
-    read_stored,
+    attribution_dto,
 )
+
+# fan-out 需帶回的 judgments typed 判決欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
+_JG_COLS = (
+    "finding_id", "polarity", "stage", "l1_code", "l1_label", "l2_code", "l2_label",
+    "l3_code", "l3_label", "conf_value", "conf_raw", "conf_tier", "summary", "evidence",
+    "action", "is_primary", "status", "true_label",
+)
+
+
+def _jg_unwrap(r: dict) -> dict:
+    """fan-out 列（jg_ 前綴判決欄）→ 無前綴 dict（供 attribution_dto）。"""
+    return {k: r.get(f"jg_{k}") for k in _JG_COLS}
 
 
 def _extract_prod_name(raw: dict) -> str:
@@ -97,14 +103,6 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
     from app.core import source_mapping as _srcmap
     from app.core import sources as _sources
 
-    finding: dict = {}
-    if row.get("jg_data"):
-        try:
-            finding = json.loads(row["jg_data"])
-        except (ValueError, TypeError):
-            finding = {}
-    flat = read_stored(finding)  # 分組 data → 扁平顯示鍵（read adapter）
-
     src = source or row.get("source") or ""
     spec = source_registry.spec_for(src)
     canon = _srcmap.normalize_row(src, row) if src in _srcmap.sources() else {}
@@ -139,76 +137,40 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "created_at": None,
     }
 
+    # review 級判決摘要欄（詳細 L1-L3/信心/摘要走 attributions[] nested DTO，此處僅留列渲染/篩選/導出用）
     base.update(
         {
-            # 歸因（judgments；未判決則 None）
             "judged": bool(row.get("jg_finding_id")),
-            "confidence": flat.get("confidence_value"),
-            "raw_confidence": flat.get("raw_confidence"),
             "needs_review": bool(row.get("jg_needs_review")),
-            # L1→L3 歸因（取自 judgments.data 分組物件，read_stored 還原扁平鍵）
-            "polarity": flat.get("polarity"),
-            "l1_domain": flat.get("l1_domain_code"),
-            "l1_label": flat.get("l1_label"),
-            "l2_code": flat.get("l2_code"),
-            "l2_label": flat.get("l2_label"),
-            "l3_code": flat.get("l3_code"),
-            "l3_label": flat.get("l3_label"),
-            "confidence_tier": flat.get("confidence_tier"),
-            "judgment_stage": _stage_of(row, flat),
-            "recommended_action": flat.get("recommended_action"),
+            "polarity": row.get("jg_polarity"),  # 列級傾向（前端列樣式 record.polarity + 導出「傾向」欄）
             "dimension": row.get("jg_dimension"),
-            "problem_summary": flat.get("problem_summary"),
-            "evidence_quote": flat.get("evidence_quote"),
         }
     )
     return base
 
 
-def _stage_of(row: dict, flat: dict) -> str:
-    """判決階段顯示值：無 finding→未判(unjudged)；有存 stage 直接用；
-    舊資料無此欄則即時派生（不含 evidence_capped，供列表相容顯示）。flat＝read_stored(data)。"""
-    if not row.get("jg_finding_id"):
-        return "unjudged"
-    st = flat.get("judgment_stage")
-    if st:
-        return st
-    pol = flat.get("polarity")
+def _derive_stage(dto: dict) -> str:
+    """階段派生（僅供 stage 欄空的 legacy 列相容顯示；新資料 stage 欄已存值）。
+
+    dto＝attribution_dto 產物（巢狀）。負向且無 L3→pending_data；auto_accept→judged 否則
+    pending_review；unknown→insufficient；正/中→judged。
+    """
+    pol = dto.get("polarity")
     if pol == "unknown":
         return "insufficient"
     if pol != "negative":
         return "judged"
-    if not flat.get("l3_code"):
+    if not (dto.get("l3") or {}).get("code"):
         return "pending_data"
-    return "judged" if flat.get("confidence_tier") == "auto_accept" else "pending_review"
+    return "judged" if (dto.get("confidence") or {}).get("tier") == "auto_accept" else "pending_review"
 
 
 def _attribution_of(r: dict) -> dict:
-    """單筆 judgments join 列 → 一條歸因顯示 dict（供列表右側堆疊 / 導出 fan-out；欄名對齊前端）。"""
-    try:
-        data = json.loads(r.get("jg_data") or "{}")
-    except (ValueError, TypeError):
-        data = {}
-    f = read_stored(data)  # 分組 data → 扁平顯示鍵（read adapter；輸出鍵維持攤平前形狀）
-    return {
-        "finding_id": r.get("jg_finding_id"),
-        "l1_domain": f.get("l1_domain_code"),
-        "l1_label": f.get("l1_label"),
-        "l2_code": f.get("l2_code"),
-        "l2_label": f.get("l2_label"),
-        "l3_code": f.get("l3_code"),
-        "l3_label": f.get("l3_label"),
-        "confidence": f.get("confidence_value"),
-        "confidence_tier": f.get("confidence_tier"),
-        "judgment_stage": f.get("judgment_stage"),
-        "recommended_action": f.get("recommended_action"),
-        "polarity": f.get("polarity"),
-        "problem_summary": f.get("problem_summary"),
-        "reason": f.get("evidence_quote"),  # reason 幽靈欄已移除，一律用 evidence_quote（佐證原文）
-        "is_primary": f.get("is_primary"),
-        "status": r.get("jg_status"),  # 人工覆核狀態（confirmed/dismissed/fixed；覆核徽章用）
-        "true_label": r.get("jg_true_label"),  # 人工標註真值分類
-    }
+    """單筆 judgments fan-out 列（jg_ 前綴 typed 欄）→ 一條歸因的乾淨巢狀 DTO（供列表堆疊 / 導出）。"""
+    dto = attribution_dto(_jg_unwrap(r))
+    if dto["finding_id"] and not dto["stage"]:  # legacy 空 stage 相容派生
+        dto["stage"] = _derive_stage(dto)
+    return dto
 
 
 def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, offset: int) -> dict:
@@ -240,12 +202,9 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         fan = (
             select(
                 tbl,
-                jg.c.finding_id.label("jg_finding_id"),
-                jg.c.dimension.label("jg_dimension"),
+                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 判決欄（含 status/true_label）
                 jg.c.needs_review.label("jg_needs_review"),
-                jg.c.status.label("jg_status"),
-                jg.c.true_label.label("jg_true_label"),
-                jg.c.data.label("jg_data"),
+                jg.c.dimension.label("jg_dimension"),
             )
             .select_from(tbl.outerjoin(jg, _jg_join_cond(spec)))
             .where(nk.in_(item_ids))
@@ -354,8 +313,9 @@ def _list_problems_spec(
             stmt = stmt.where(has_jg)
         elif judged is False:
             stmt = stmt.where(~has_jg)
+        jg = T.judgments
         if polarity:
-            stmt = stmt.where(_jg_exists(spec, d_polarity() == polarity))
+            stmt = stmt.where(_jg_exists(spec, jg.c.polarity == polarity))
         if stage:
             # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
             conds = []
@@ -363,13 +323,13 @@ def _list_problems_spec(
                 conds.append(~has_jg)
             judged_stages = [s for s in stage if s != "unjudged"]
             if judged_stages:
-                conds.append(_jg_exists(spec, d_stage().in_(judged_stages)))
+                conds.append(_jg_exists(spec, jg.c.stage.in_(judged_stages)))
             if conds:
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
-            stmt = stmt.where(_jg_exists(spec, d_tier() == confidence_tier))
+            stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
         if l1_domain:
-            stmt = stmt.where(_jg_exists(spec, d_l1_code() == l1_domain))
+            stmt = stmt.where(_jg_exists(spec, jg.c.l1_code == l1_domain))
         if score and spec.score_col:
             # 源欄為 Text（如 rec_scores="5"）→ 星等清單轉字串比對
             stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
@@ -395,7 +355,7 @@ def _list_problems_spec(
         "score": tbl.c[spec.score_col] if spec.score_col else tbl.c[spec.date_col],
     }
     if sort_by == "confidence":
-        sort_expr = select(func.max(d_conf_value())).where(_jg_join_cond(spec)).scalar_subquery()
+        sort_expr = select(func.max(T.judgments.c.conf_value)).where(_jg_join_cond(spec)).scalar_subquery()
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
     return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
@@ -414,8 +374,8 @@ def list_l1_domains(source: str) -> list[dict]:
         [{"code", "label", "count"}]（count＝該域歸因筆數）。
     """
     jg = T.judgments
-    code = d_l1_code()
-    label = d_l1_label()
+    code = jg.c.l1_code
+    label = jg.c.l1_label
     stmt = (
         select(code.label("code"), label.label("label"), func.count().label("count"))
         .where(jg.c.source == source, code != "", code.isnot(None))
