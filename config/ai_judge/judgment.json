@@ -10,6 +10,11 @@
     "enabled": true,
     "audit_sample_rate": 0.05
   },
+  "true_label": {
+    "_comment": "標真值把關（防亂標/故意修改）：人工用級聯選 L1→L2→L3 標真值分類，確認時 LLM 對『該真值 vs 反饋原文』重判評分，與原判信心對比。當『原判信心 − LLM 真值信心』> reason_required_drop 時，強制填修改理由才能存（理由入 audit）。evaluate_model=null → 用 prejudge.stage1_model 便宜模型。QC 免改碼調。",
+    "reason_required_drop": 0.15,
+    "evaluate_model": null
+  },
   "ui_confidence_bands": {
     "high": 0.85,
     "mid": 0.7

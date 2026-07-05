@@ -70,9 +70,18 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
         # FOR UPDATE 鎖住舊列：關閉「讀快照 → 之後才 DELETE/INSERT」之間的 TOCTOU 視窗
         # （批量重判長跑期間，並發的 update_finding_status/true_label 若插隊，本次會用舊快照覆蓋掉人工操作）。
         preserved = {
-            r.finding_id: {"true_label": r.true_label, "status": r.status}
+            r.finding_id: {
+                "true_label": r.true_label,
+                "true_label_reason": r.true_label_reason,
+                "true_label_conf": r.true_label_conf,
+                "status": r.status,
+            }
             for r in c.execute(
-                select(jg.c.finding_id, jg.c.true_label, jg.c.status).where(key).with_for_update()
+                select(
+                    jg.c.finding_id, jg.c.true_label, jg.c.true_label_reason, jg.c.true_label_conf, jg.c.status
+                )
+                .where(key)
+                .with_for_update()
             )
         }
         new_ids = {f.finding_id for f in findings}
@@ -88,8 +97,10 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
             values = _finding_values(f, source)
             old = preserved.get(f.finding_id)
             if old:
-                if old["true_label"] is not None:
+                if old["true_label"] is not None:  # 真值三軸（真值 + 把關理由 + LLM 信心）一併保留
                     values["true_label"] = old["true_label"]
+                    values["true_label_reason"] = old["true_label_reason"]
+                    values["true_label_conf"] = old["true_label_conf"]
                 if old["status"] in ("confirmed", "dismissed", "fixed"):  # 僅保留人工覆核；new/auto_confirmed 重算
                     values["status"] = old["status"]
             c.execute(sa_insert(jg).values(**values))
@@ -141,16 +152,35 @@ def update_finding_status(finding_id: str, status: str) -> bool:
         return c.execute(stmt).rowcount > 0
 
 
-def update_finding_true_label(finding_id: str, true_label: str | None) -> bool:
-    """人工標註單筆 Finding 的真值分類 true_label（供準確率評估 / 未來微調）。回傳是否命中。
+def update_finding_true_label(
+    finding_id: str, true_label: str | None, *, reason: str | None = None, llm_conf: float | None = None
+) -> bool:
+    """人工標註單筆 Finding 的真值分類 true_label（+把關 audit：修改理由 + LLM 契合信心）。回傳是否命中。
 
-    true_label 存人工判定的正確歸因（如 L1 域 code）；None/空字串清除標註。
-    重判（replace_source_findings）會依 finding_id 保留此 true_label。
+    true_label 存人工用級聯選出的葉 code；None/空字串清除標註（連帶清 reason/conf）。
+    reason：LLM 對真值信心明顯下降時人工填的修改理由（防亂標）。llm_conf：標註當下 LLM 對該真值的契合信心。
+    重判（replace_source_findings）依 finding_id 保留此三軸（真值 + 理由 + 信心）。
     """
+    clearing = not (true_label or "").strip()
     stmt = (
         sa_update(T.judgments)
         .where(T.judgments.c.finding_id == finding_id)
-        .values(true_label=true_label or None)
+        .values(
+            true_label=None if clearing else true_label,
+            true_label_reason=None if clearing else (reason or None),
+            true_label_conf=None if clearing else llm_conf,
+        )
     )
     with T.get_engine().begin() as c:
         return c.execute(stmt).rowcount > 0
+
+
+def get_finding(finding_id: str) -> dict | None:
+    """取單筆判決列（供標真值把關讀原判信心 / 來源定位）；不存在回 None。
+
+    Returns:
+        judgments 列 mapping（含 source/source_id/conf_value/l1_code/true_label…），或 None。
+    """
+    with T.get_engine().connect() as c:
+        r = c.execute(select(T.judgments).where(T.judgments.c.finding_id == finding_id)).mappings().first()
+        return dict(r) if r else None

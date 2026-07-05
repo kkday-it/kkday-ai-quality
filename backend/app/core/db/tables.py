@@ -70,7 +70,9 @@ judgments = Table(
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
     Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed
-    Column("true_label", Text),  # 人工標註真值分類
+    Column("true_label", Text),  # 人工標註真值分類（級聯選出的葉 code）
+    Column("true_label_reason", Text),  # 標真值把關：LLM 信心明顯下降時人工填的修改理由（audit）
+    Column("true_label_conf", Float),  # 標真值時 LLM 對該真值的契合信心（audit + 準確率評估）
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
     Index("idx_judgments_source", "source"),

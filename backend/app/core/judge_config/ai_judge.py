@@ -24,6 +24,8 @@ _domain_order: list[str] = []  # 域顯示順序（rule 檔名排序，穩定）
 _domain_excluded: set[str] = set()  # _meta.intake_excluded=true 的域（不進預判候選）
 _domain_action: dict[str, str] = {}  # code → recommended_action（自 rule _meta.recommended_action）
 _domain_owner: dict[str, str] = {}  # code → 負責單位（自 rule _meta.owner_role；值待業務填，空則不顯示）
+_cascade: list[dict[str, Any]] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域 code，L2/L3 value=C-code）
+_path_label: dict[str, str] = {}  # value（域 code / C-code）→ 可讀路徑「L1 › L2 › L3」（供標真值評分 prompt）
 _loaded = False
 
 
@@ -130,7 +132,25 @@ def _ensure_loaded() -> None:
         _l3_by_domain.setdefault(domain, []).extend(nodes)
         for n in nodes:
             _l3_by_code[n["code"]] = n
+        _cascade.append(_build_cascade(l1, [], root=True))
     _loaded = True
+
+
+def _build_cascade(node: dict[str, Any], ancestors: list[str], *, root: bool) -> dict[str, Any]:
+    """遞迴組級聯節點 {value,label,children}，並登記每個 value 的完整路徑 label（供標真值評分 prompt）。
+
+    root（L1 域）value＝域機器值（domain，對齊 selectable_domains / true_label 儲存）；L2/L3 value＝C-code。
+    """
+    value = node.get("domain", "") if root else node.get("code", "")
+    label = node.get("label", "") or value
+    path = [*ancestors, label]
+    if value:
+        _path_label[value] = " › ".join(path)
+    out: dict[str, Any] = {"value": value, "label": label}
+    children = [_build_cascade(ch, path, root=False) for ch in (node.get("children") or [])]
+    if children:
+        out["children"] = children
+    return out
 
 
 def reload() -> None:
@@ -143,8 +163,22 @@ def reload() -> None:
     _domain_excluded.clear()
     _domain_action.clear()
     _domain_owner.clear()
+    _cascade.clear()
+    _path_label.clear()
     _loaded = False
     _ensure_loaded()
+
+
+def cascade_tree() -> list[dict[str, Any]]:
+    """完整歸因分類級聯樹（巢狀 {value,label,children}）——供前端標真值級聯選 L1→L2→L3 葉。"""
+    _ensure_loaded()
+    return _cascade
+
+
+def path_label(code: str) -> str:
+    """歸因 value（域 code / C-code）→ 可讀完整路徑「L1 › L2 › L3」；未知回空字串。"""
+    _ensure_loaded()
+    return _path_label.get(code, "")
 
 
 def domain_label(code: str) -> str:
