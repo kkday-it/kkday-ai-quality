@@ -21,16 +21,11 @@ const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
 const verticalFilter = useVerticalFilterStore();
 // 歸因分類（C-N，schema 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不再讀前端靜態表。
-// product_vertical（商品垂直分類）非歸因判準，已移至「配置」抽屜維護，故此處一律排除、不在規則管理顯示。
+// 非歸因判準者一律排除、不在此攤因分類選單顯示（product_vertical 已移「配置」抽屜；judgment＝信心閾值/
+// label/prejudge 旋鈕，屬判決 config 非 L1-L3 樹，納入 RULE_CODES 僅為後端版本化/熱重載，不在此編輯）。
+const _NON_DOMAIN_CODES = new Set(['schema', 'product_vertical', 'global_rule', 'judgment']);
 const domainCodes = computed(() =>
-  store.metas
-    .filter(
-      (m) =>
-        m.rule_code !== 'schema' &&
-        m.rule_code !== 'product_vertical' &&
-        m.rule_code !== 'global_rule',
-    )
-    .map((m) => m.rule_code),
+  store.metas.filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code)).map((m) => m.rule_code),
 );
 const mode = ref<'panel' | 'json'>('panel');
 const historyOpen = ref(false);
