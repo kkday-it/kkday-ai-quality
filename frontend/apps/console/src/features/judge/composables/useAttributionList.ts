@@ -1,17 +1,11 @@
 // 歸因列表資料與互動邏輯（分頁 / 篩選 / 選取 / 初判歸因批次 / CSV 導出）——由 AttributionList.vue 下沉，
 // 使頁面薄化為模板+綁定；來源切換時整組篩選按新 schema 清空殘留值。
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
-import judgment from '@config/ai_judge/judgment.json';
 import {
-  cancelPrejudge,
   startProblemsExport,
-  pausePrejudge,
   patchStatus,
-  prejudgeStreamUrl,
   getL1Domains,
   getProblems,
-  resumePrejudge,
-  startPrejudge,
   type L1DomainOpt,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
@@ -20,6 +14,7 @@ import { schemaFor, type Attribution, type ProblemRow } from '../constants';
 import { exportName } from '../utils';
 import { useExportJob } from './useExportJob';
 import { useLlmConfigs } from './useLlmConfigs';
+import { usePrejudgeJob } from './usePrejudgeJob';
 
 /**
  * 歸因列表的資料載入、篩選、選取與初判歸因批次邏輯。
@@ -264,169 +259,17 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     }
   };
 
-  // ── 初判歸因 ──
-  const running = ref(false);
-  /** 當前 job_id（供暫停/恢復/停止；無執行中為空）。 */
-  const jobId = ref('');
-  /** 當前 job 狀態（running/paused/cancelling/cancelled/done/error；由 SSE 權威更新，動作先樂觀設）。 */
-  const jobStatus = ref('');
-  const progress = ref({ processed: 0, total: 0, totalTokens: 0, costUsd: 0 });
-  const progressPct = computed(() =>
-    progress.value.total ? Math.round((progress.value.processed / progress.value.total) * 100) : 0,
-  );
-  /** token 花費顯示（金額 4 位小數，token 千分位）；批量判決過程同步更新。 */
-  const costText = computed(() =>
-    progress.value.totalTokens
-      ? `${progress.value.totalTokens.toLocaleString()} tokens · ≈ $${progress.value.costUsd.toFixed(4)}`
-      : '',
-  );
-  // 以 SSE 長連線接收批量判決進度（取代 setInterval 輪詢）；done/error 或連線中斷即 resolve。
-  const _poll = (jobId: string) =>
-    new Promise<void>((resolve) => {
-      const es = new EventSource(prejudgeStreamUrl(jobId));
-      const finish = () => {
-        es.close();
-        resolve();
-      };
-      es.onmessage = (ev) => {
-        const st = JSON.parse(ev.data);
-        jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
-        progress.value = {
-          processed: st.processed || 0,
-          total: st.total || progress.value.total,
-          totalTokens: st.total_tokens || 0,
-          costUsd: st.cost_usd || 0,
-        };
-        if (st.status === 'done' || st.status === 'error' || st.status === 'cancelled') finish();
-      };
-      es.onerror = finish;
-    });
-  const _run = async (body: {
-    item_ids?: string[];
-    source?: string;
-    scope?: string;
-    product_verticals?: string[];
-    stages?: string[];
-    target_polarity?: string;
-    max_confidence?: number;
-  }) => {
-    if (running.value) return;
-    running.value = true;
-    jobStatus.value = 'running';
-    progress.value = { processed: 0, total: 0, totalTokens: 0, costUsd: 0 };
-    try {
-      const r = await startPrejudge({ ...body, llm_config_id: llmConfigId.value || undefined });
-      jobId.value = r.job_id;
-      progress.value = { processed: 0, total: r.total, totalTokens: 0, costUsd: 0 };
-      if (!r.total) {
-        Message.warning('沒有可分析的對象');
-        return;
-      }
-      await _poll(r.job_id);
-      if (jobStatus.value === 'cancelled') {
-        Message.info(`已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`);
-      } else {
-        Message.success(`初判歸因完成：${progress.value.processed} 筆（模型 ${r.model}）`);
-      }
-      await loadPage(); // 重載當前頁（保持頁碼，就地看到結果）
+  // ── 初判歸因批次 + 單列重判（下沉 usePrejudgeJob；注入依賴，回傳 ref 保留 identity 不改綁定）──
+  const job = usePrejudgeJob({
+    source,
+    llmConfigId,
+    effVerticals,
+    selectedKeys,
+    reload: async () => {
+      await loadPage();
       await loadUnjudged();
-    } catch (e: any) {
-      Message.error('初判歸因失敗：' + (e?.message || e));
-    } finally {
-      running.value = false;
-      jobId.value = '';
-      jobStatus.value = '';
-    }
-  };
-  /** 暫停當前 job（樂觀設 paused，SSE 隨後權威更新）。 */
-  const pauseJob = async () => {
-    if (!jobId.value) return;
-    try {
-      await pausePrejudge(jobId.value);
-      jobStatus.value = 'paused';
-    } catch (e: any) {
-      Message.error('暫停失敗：' + (e?.message || e));
-    }
-  };
-  /** 恢復當前已暫停的 job。 */
-  const resumeJob = async () => {
-    if (!jobId.value) return;
-    try {
-      await resumePrejudge(jobId.value);
-      jobStatus.value = 'running';
-    } catch (e: any) {
-      Message.error('恢復失敗：' + (e?.message || e));
-    }
-  };
-  /** 停止當前 job（不再派新工，已在跑的收斂後轉 cancelled；已判已落庫）。 */
-  const cancelJob = async () => {
-    if (!jobId.value) return;
-    try {
-      await cancelPrejudge(jobId.value);
-      jobStatus.value = 'cancelling';
-    } catch (e: any) {
-      Message.error('停止失敗：' + (e?.message || e));
-    }
-  };
-  // 初判歸因統一彈窗 + 目標選取（stage 驅動）：於彈窗選範圍/收斂/model 再確認執行
-  const confirmOpen = ref(false);
-  /** 目標模式：selected＝用勾選列；scope＝依判決階段選取。有勾選預設 selected，否則 scope。 */
-  const targetMode = ref<'selected' | 'scope'>('scope');
-  const targetStages = ref<string[]>(['unjudged']); // 預設只收未判
-  const targetPolarity = ref('negative'); // 再判傾向收斂（勾已判階段時生效）
-  const lowConfOnly = ref(true); // true＝僅低信心(<auto_accept)；false＝全部信心
-  const targetCount = ref(0); // 「將處理 N 筆」預覽
-  /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
-  const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
-
-  /** 依目標模式/條件算「將處理 N 筆」預覽（scope 模式逐階段查 getProblems total 加總；信心收斂無法由列表 API 精算，屬近似）。 */
-  const refreshTargetCount = async () => {
-    if (targetMode.value === 'selected') {
-      targetCount.value = selectedKeys.value.length;
-      return;
-    }
-    let total = 0;
-    for (const st of targetStages.value) {
-      const r = await getProblems({
-        source: toValue(source),
-        productVerticals: effVerticals.value,
-        limit: 1,
-        ...(st === 'unjudged'
-          ? { judged: false }
-          : { stage: [st], ...(targetPolarity.value ? { polarity: targetPolarity.value } : {}) }),
-      });
-      total += r.total || 0;
-    }
-    targetCount.value = total;
-  };
-
-  /** 開初判歸因彈窗：有勾選預設 selected 模式，否則 scope 模式。 */
-  const openPrejudge = () => {
-    targetMode.value = selectedKeys.value.length ? 'selected' : 'scope';
-    confirmOpen.value = true;
-    void refreshTargetCount();
-  };
-
-  /** 二次確認後執行：selected→item_ids（帶 source，後端據此選對專表）；scope→stage 驅動目標選取。 */
-  const doRun = () => {
-    confirmOpen.value = false;
-    if (targetMode.value === 'selected') {
-      _run({ item_ids: selectedKeys.value, source: toValue(source) });
-      return;
-    }
-    _run({
-      source: toValue(source),
-      scope: 'all',
-      product_verticals: effVerticals.value,
-      stages: targetStages.value,
-      ...(hasJudgedStage.value
-        ? {
-            target_polarity: targetPolarity.value || undefined,
-            max_confidence: lowConfOnly.value ? judgment.confidence_tiers.auto_accept : undefined,
-          }
-        : {}),
-    });
-  };
+    },
+  });
 
   // ── 導出（背景 job + SSE 實時進度 + 可停止；有勾選→只導已選 review，否則導符合目前篩選全部）──
   const exportJob = useExportJob();
@@ -446,41 +289,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       exportName('歸因列表', 'xlsx'),
     );
 
-  // ── 單列操作（操作欄；與批量 selectedKeys 完全解耦，各自獨立路徑）──
-  /** 進行中的單列 id 集合（歸因/覆核共用，控制該列按鈕 loading）。 */
-  const rowBusy = ref<Set<string>>(new Set());
-  const isRowBusy = (id: string) => rowBusy.value.has(id);
-  const _setBusy = (id: string, busy: boolean) => {
-    const s = new Set(rowBusy.value);
-    if (busy) s.add(id);
-    else s.delete(id);
-    rowBusy.value = s;
-  };
-
-  /**
-   * 單列（重）判：對該列跑初判歸因（複用 startPrejudge，item_ids 僅此列），等 SSE done 就地重載。
-   * 走該列按鈕 inline loading，不觸發頁頂大進度條（不設 running，_poll 僅更新無人顯示的 progress）。
-   */
-  const rejudgeRow = async (id: string) => {
-    if (rowBusy.value.has(id)) return;
-    _setBusy(id, true);
-    try {
-      const r = await startPrejudge({
-        item_ids: [id],
-        source: toValue(source),
-        llm_config_id: llmConfigId.value || undefined,
-      });
-      await _poll(r.job_id);
-      await loadPage();
-      await loadUnjudged();
-      Message.success('已完成歸因');
-    } catch (e: any) {
-      Message.error('歸因失敗：' + (e?.message || e));
-    } finally {
-      _setBusy(id, false);
-    }
-  };
-
+  // ── 單列覆核（操作欄；與批量 selectedKeys 解耦；單列重判已下沉 usePrejudgeJob.rejudgeRow）──
   /**
    * 單條歸因覆核：只改該 finding 的 status（per-attribution；每條歸因分開操作）。
    * optimistic 即時回寫（PATCH 秒級，仿 FindingCard 無 loading）；只改人工 status 軸、不動 AI stage。
@@ -535,28 +344,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     clearSelection,
     pageSpec,
     selectPages,
-    // 初判歸因
-    running,
-    jobStatus,
-    progress,
-    progressPct,
-    costText,
-    confirmOpen,
-    openPrejudge,
-    targetMode,
-    targetStages,
-    targetPolarity,
-    lowConfOnly,
-    targetCount,
-    hasJudgedStage,
-    refreshTargetCount,
-    doRun,
-    pauseJob,
-    resumeJob,
-    cancelJob,
-    // 單列操作（操作欄）
-    isRowBusy,
-    rejudgeRow,
+    // 初判歸因批次 + 單列重判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
+    ...job,
+    // 單列覆核
     reviewFinding,
     // 導出（背景 job + 實時進度 + 停止）
     exportCsv,
