@@ -247,11 +247,12 @@ def _attr_schema(candidate_codes: frozenset[str], *, allow_empty: bool = True) -
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["l3_code", "confidence", "evidence_quote", "candidates"],
+        "required": ["l3_code", "confidence", "summary", "evidence_quote", "candidates"],
         "properties": {
             "l3_code": {"type": "string", "enum": l3_enum},
             "confidence": {"type": "number"},
-            "evidence_quote": {"type": "string"},
+            "summary": {"type": "string"},  # 繁中一句話概括（顯示用摘要）
+            "evidence_quote": {"type": "string"},  # 逐字原文佐證（grounding + 佐證欄）
             "candidates": {
                 "type": "array",
                 "items": {
@@ -318,7 +319,8 @@ def _attr_system(catalog: str) -> str:
         f"問題分類 L3 目錄（只能從中選 code）：\n{catalog}\n\n"
         "輸出 JSON：{\"l3_code\":\"最貼切的一條 code（無法歸類回空字串）\","
         "\"confidence\":0~1 浮點,"
-        "\"evidence_quote\":\"進線中最能佐證的原文片段\","
+        "\"summary\":\"用繁體中文一句話（20~40字）概括此問題，不論原文何種語言皆輸出繁中\","
+        "\"evidence_quote\":\"進線中最能佐證的原文片段（保留原文語言，逐字不改寫）\","
         "\"candidates\":[{\"code\":\"code\",\"score\":0~1},...最多3條]}"
     )
 
@@ -412,7 +414,7 @@ def _attributed_finding(item: dict, attr: dict, model: str, *, enhanced: bool) -
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
-        problem_summary=attr.get("evidence_quote", "")[:200],
+        summary=attr.get("summary") or attr.get("evidence_quote", "")[:200],  # 繁中摘要；空則回退原文片段
         evidence_quote=attr.get("evidence_quote", ""),
         polarity="negative",
         confidence=conf,
@@ -480,6 +482,7 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
     raw_conf = _as_float(out.get("confidence"), 0.5)
     conf = _evidence_cap(resolved["l1_domain_code"], item, raw_conf)
     evidence = str(out.get("evidence_quote", ""))[:300]
+    summary = str(out.get("summary", "")).strip()[:200]  # LLM 繁中一句話概括（顯示摘要）
     ev = global_rule.evidence_policy()
     pol = global_rule.abstain_policy()
     l3_min = float(ev.get("l3_min_confidence", _tiers().get("jury_low", 0.5)))
@@ -489,7 +492,7 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
         resolved = {**resolved, "l3_code": "", "l3_label": ""}
         conf = min(conf, l3_min - 0.01)
     return {**resolved, "confidence": conf, "raw_confidence": raw_conf,
-            "evidence_quote": evidence, "l3_candidates": cands,
+            "summary": summary, "evidence_quote": evidence, "l3_candidates": cands,
             "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item)}
 
 

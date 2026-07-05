@@ -26,7 +26,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("商品ID", "prod_oid", 12),
     ("商品名稱", "prod_name", 28),
     ("評論", "content", 48),
-    ("問題摘要", "problem_summary", 40),  # 緊接評論後：主歸因標出的痛點片段（依據/判決理由已移除）
+    ("問題摘要", "summary", 40),  # 緊接評論後：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
     ("星等", "score", 8),
     ("評論時間", "occurred_at", 20),
     ("出發日", "go_date", 14),
@@ -75,7 +75,7 @@ def _flat_attr(a: dict) -> dict:
         "confidence": (a.get("confidence") or {}).get("value"),
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
         "judgment_stage": a.get("stage"),
-        "problem_summary": (a.get("content") or {}).get("summary"),
+        "summary": (a.get("content") or {}).get("summary"),
     }
 
 
@@ -161,7 +161,7 @@ def export_problems_xlsx(
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級
     _attr_keys = {
         "l1_label", "l2_label", "l3_label", "confidence", "confidence_tier",
-        "judgment_stage", "problem_summary",
+        "judgment_stage", "summary",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)

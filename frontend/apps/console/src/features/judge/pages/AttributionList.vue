@@ -595,8 +595,15 @@ onMounted(init);
           <template #verdict="{ record }">
             <template v-if="record.attributions && record.attributions.length">
               <div v-for="(a, ai) in record.attributions" :key="ai" class="verdict-blk text-xs leading-relaxed">
-                <!-- L1→L3 純文字麵包屑：L1 域藍字粗體、› 灰分隔、L2/L3 深色（乾淨不擁擠） -->
-                <div class="text-xs">
+                <!-- 反饋摘要（content.summary）置頂顯明：大家看得最多，作為該歸因的標題性內容（僅有值才顯示）-->
+                <div
+                  v-if="a.content?.summary"
+                  class="text-[13px] font-semibold leading-snug text-[var(--color-text-1)]"
+                >
+                  {{ a.content.summary }}
+                </div>
+                <!-- L1→L3 純文字麵包屑（分類，次級）：L1 域藍字、› 灰分隔、L2/L3 中色 -->
+                <div class="text-xs" :class="{ 'mt-0.5': a.content?.summary }">
                   <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
                     <template
                       v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
@@ -606,8 +613,8 @@ onMounted(init);
                       <span
                         :class="
                           li === 0
-                            ? 'font-semibold text-[rgb(var(--primary-6))]'
-                            : 'text-[var(--color-text-1)]'
+                            ? 'font-medium text-[rgb(var(--primary-6))]'
+                            : 'text-[var(--color-text-2)]'
                         "
                       >
                         {{ lvl }}
@@ -615,10 +622,6 @@ onMounted(init);
                     </template>
                   </template>
                   <span v-else class="text-[var(--color-text-3)]">未歸因</span>
-                </div>
-                <!-- 反饋摘要（content.summary）：該歸因標出的痛點片段，緊貼其分類（僅有值才顯示）-->
-                <div v-if="a.content?.summary" class="mt-0.5 text-[11px] leading-snug text-[var(--color-text-3)]">
-                  摘要：{{ a.content.summary }}
                 </div>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span class="text-[var(--color-text-3)]">信心</span>
