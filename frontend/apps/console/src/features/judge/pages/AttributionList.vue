@@ -412,7 +412,8 @@ onMounted(init);
           @press-enter="selectPages"
         />
         <a-button size="small" @click="selectPages">選取分頁</a-button>
-        <a-button v-if="runCount" size="small" @click="clearSelection">清除選擇</a-button>
+        <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
+        <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
         <div class="flex-1" />
         <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
           已套用 {{ activeFilterCount }} 項篩選
