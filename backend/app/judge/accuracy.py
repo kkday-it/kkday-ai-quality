@@ -41,14 +41,17 @@ def _load_attributed() -> list[dict[str, Any]] | None:
 
         from app.core import ai_judge  # noqa: PLC0415
         from app.core.db import tables as T  # noqa: PLC0415
+        from app.core.db._shared import read_stored  # noqa: PLC0415
 
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:
-            for (raw_data,) in c.execute(select(T.judgments.c.data)):
+            jg = T.judgments
+            # finding_id / source_id 為 scalar 欄（攤平後不在 data 分組物件內），須一併 select
+            for fid, sid, raw_data in c.execute(select(jg.c.finding_id, jg.c.source_id, jg.c.data)):
                 if not raw_data:
                     continue
                 try:
-                    f = json.loads(raw_data)
+                    f = read_stored(json.loads(raw_data))
                 except (ValueError, TypeError):
                     continue
                 code = f.get("l3_code")
@@ -56,19 +59,15 @@ def _load_attributed() -> list[dict[str, Any]] | None:
                 # 只取真正走過 L1→L3 歸因（負向）且有自評信心者
                 if not code or raw_conf is None:
                     continue
-                cands: dict[str, float] = {}
-                for cand in f.get("l3_candidates") or []:
-                    cc, cs = _cand_pair(cand)
-                    if cc:
-                        cands[cc] = cs
+                # l3_candidates 於攤平時移除（實測全庫恆空，候選機制未落庫）→ cands 恆空，行為不變
                 node = ai_judge.l3_by_code(code) or {}
                 out.append(
                     {
-                        "finding_id": f.get("finding_id", ""),
-                        "ticket_id": f.get("ticket_id", ""),
+                        "finding_id": fid or "",
+                        "ticket_id": sid or "",
                         "l3_code": code,
                         "raw_confidence": float(raw_conf),
-                        "candidates": cands,
+                        "candidates": {},
                         "l1_domain": node.get("l1_domain", "") or "—",
                     }
                 )
@@ -76,16 +75,6 @@ def _load_attributed() -> list[dict[str, Any]] | None:
     except Exception as exc:  # noqa: BLE001  DB 未起 / 連線失敗 → skipped，非致命
         print(f"[accuracy] skipped — DB 不可達: {exc}", file=sys.stderr)
         return None
-
-
-def _cand_pair(cand: Any) -> tuple[str, float]:
-    """l3_candidates 元素 → (code, score)；容忍 dict{code,score} 或 [code, score]。"""
-    if isinstance(cand, dict):
-        v = cand.get("score")
-        return str(cand.get("code", "")), float(v) if isinstance(v, (int, float)) else 0.0
-    if isinstance(cand, (list, tuple)) and len(cand) >= 2:
-        return str(cand[0]), float(cand[1]) if isinstance(cand[1], (int, float)) else 0.0
-    return "", 0.0
 
 
 def _build_matrix(findings: list[dict[str, Any]]):

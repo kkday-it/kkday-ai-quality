@@ -10,7 +10,18 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import source_registry
 from app.core.db import tables as T
-from app.core.db._shared import _jg_exists, _jg_join_cond, _vertical_codes
+from app.core.db._shared import (
+    _jg_exists,
+    _jg_join_cond,
+    _vertical_codes,
+    d_conf_value,
+    d_l1_code,
+    d_l1_label,
+    d_polarity,
+    d_stage,
+    d_tier,
+    read_stored,
+)
 
 
 def _extract_prod_name(raw: dict) -> str:
@@ -92,6 +103,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             finding = json.loads(row["jg_data"])
         except (ValueError, TypeError):
             finding = {}
+    flat = read_stored(finding)  # 分組 data → 扁平顯示鍵（read adapter）
 
     src = source or row.get("source") or ""
     spec = source_registry.spec_for(src)
@@ -131,56 +143,53 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         {
             # 歸因（judgments；未判決則 None）
             "judged": bool(row.get("jg_finding_id")),
-            "confidence": row.get("jg_confidence"),
-            "raw_confidence": row.get("jg_raw_confidence"),
+            "confidence": flat.get("confidence_value"),
+            "raw_confidence": flat.get("raw_confidence"),
             "needs_review": bool(row.get("jg_needs_review")),
-            # L1→L3 歸因（取自 judgments.data；歸因列表/概覽展示用）
-            "polarity": finding.get("polarity"),
-            "l1_domain": finding.get("l1_domain_code"),
-            "l1_label": finding.get("l1_label"),
-            "l2_code": finding.get("l2_code"),
-            "l2_label": finding.get("l2_label"),
-            "l3_code": finding.get("l3_code"),
-            "l3_label": finding.get("l3_label"),
-            "l3_candidates": finding.get("l3_candidates") or [],  # top-3 符合度（透明檢視）
-            "confidence_tier": finding.get("confidence_tier"),
-            "judgment_stage": _stage_of(row, finding),
-            "recommended_action": finding.get("recommended_action"),
-            "root_cause_domain": finding.get("root_cause_domain"),
-            "sub_cause": finding.get("sub_cause"),
+            # L1→L3 歸因（取自 judgments.data 分組物件，read_stored 還原扁平鍵）
+            "polarity": flat.get("polarity"),
+            "l1_domain": flat.get("l1_domain_code"),
+            "l1_label": flat.get("l1_label"),
+            "l2_code": flat.get("l2_code"),
+            "l2_label": flat.get("l2_label"),
+            "l3_code": flat.get("l3_code"),
+            "l3_label": flat.get("l3_label"),
+            "confidence_tier": flat.get("confidence_tier"),
+            "judgment_stage": _stage_of(row, flat),
+            "recommended_action": flat.get("recommended_action"),
             "dimension": row.get("jg_dimension"),
-            "problem_summary": finding.get("problem_summary"),
-            "evidence_quote": finding.get("evidence_quote"),
-            "reason": finding.get("reason"),
+            "problem_summary": flat.get("problem_summary"),
+            "evidence_quote": flat.get("evidence_quote"),
         }
     )
     return base
 
 
-def _stage_of(row: dict, finding: dict) -> str:
-    """判決階段顯示值：無 finding→未判(unjudged)；有存 judgment_stage 直接用；
-    舊資料(prejudge 加欄前)無此欄則即時派生（不含 evidence_capped，供列表相容顯示）。"""
+def _stage_of(row: dict, flat: dict) -> str:
+    """判決階段顯示值：無 finding→未判(unjudged)；有存 stage 直接用；
+    舊資料無此欄則即時派生（不含 evidence_capped，供列表相容顯示）。flat＝read_stored(data)。"""
     if not row.get("jg_finding_id"):
         return "unjudged"
-    st = finding.get("judgment_stage")
+    st = flat.get("judgment_stage")
     if st:
         return st
-    pol = finding.get("polarity")
+    pol = flat.get("polarity")
     if pol == "unknown":
         return "insufficient"
     if pol != "negative":
         return "judged"
-    if not finding.get("l3_code"):
+    if not flat.get("l3_code"):
         return "pending_data"
-    return "judged" if finding.get("confidence_tier") == "auto_accept" else "pending_review"
+    return "judged" if flat.get("confidence_tier") == "auto_accept" else "pending_review"
 
 
 def _attribution_of(r: dict) -> dict:
     """單筆 judgments join 列 → 一條歸因顯示 dict（供列表右側堆疊 / 導出 fan-out；欄名對齊前端）。"""
     try:
-        f = json.loads(r.get("jg_data") or "{}")
+        data = json.loads(r.get("jg_data") or "{}")
     except (ValueError, TypeError):
-        f = {}
+        data = {}
+    f = read_stored(data)  # 分組 data → 扁平顯示鍵（read adapter；輸出鍵維持攤平前形狀）
     return {
         "finding_id": r.get("jg_finding_id"),
         "l1_domain": f.get("l1_domain_code"),
@@ -189,13 +198,13 @@ def _attribution_of(r: dict) -> dict:
         "l2_label": f.get("l2_label"),
         "l3_code": f.get("l3_code"),
         "l3_label": f.get("l3_label"),
-        "confidence": r.get("jg_confidence"),
+        "confidence": f.get("confidence_value"),
         "confidence_tier": f.get("confidence_tier"),
         "judgment_stage": f.get("judgment_stage"),
         "recommended_action": f.get("recommended_action"),
         "polarity": f.get("polarity"),
         "problem_summary": f.get("problem_summary"),
-        "reason": f.get("reason") or f.get("evidence_quote"),
+        "reason": f.get("evidence_quote"),  # reason 幽靈欄已移除，一律用 evidence_quote（佐證原文）
         "is_primary": f.get("is_primary"),
         "status": r.get("jg_status"),  # 人工覆核狀態（confirmed/dismissed/fixed；覆核徽章用）
         "true_label": r.get("jg_true_label"),  # 人工標註真值分類
@@ -233,8 +242,6 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
                 tbl,
                 jg.c.finding_id.label("jg_finding_id"),
                 jg.c.dimension.label("jg_dimension"),
-                jg.c.confidence.label("jg_confidence"),
-                jg.c.raw_confidence.label("jg_raw_confidence"),
                 jg.c.needs_review.label("jg_needs_review"),
                 jg.c.status.label("jg_status"),
                 jg.c.true_label.label("jg_true_label"),
@@ -337,7 +344,6 @@ def _list_problems_spec(
     表本身即單一來源，無需 WHERE source= 過濾；score/product_vertical/日期區間為此分支專屬篩選。
     """
     tbl = spec.table
-    jg = T.judgments
     # 日期欄：canonical 'go_date' 且該表有 lst_dt_go → 用之；否則一律 spec.date_col（occurred_at 等價源欄）
     date_col = tbl.c["lst_dt_go"] if (date_field == "go_date" and "lst_dt_go" in tbl.c) else tbl.c[spec.date_col]
 
@@ -349,27 +355,21 @@ def _list_problems_spec(
         elif judged is False:
             stmt = stmt.where(~has_jg)
         if polarity:
-            stmt = stmt.where(_jg_exists(spec, sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity))
+            stmt = stmt.where(_jg_exists(spec, d_polarity() == polarity))
         if stage:
-            # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝judgment_stage IN；兩者 OR 併存
+            # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
             conds = []
             if "unjudged" in stage:
                 conds.append(~has_jg)
             judged_stages = [s for s in stage if s != "unjudged"]
             if judged_stages:
-                conds.append(
-                    _jg_exists(spec, sa_cast(jg.c.data, JSONB)["judgment_stage"].astext.in_(judged_stages))
-                )
+                conds.append(_jg_exists(spec, d_stage().in_(judged_stages)))
             if conds:
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
-            stmt = stmt.where(
-                _jg_exists(spec, sa_cast(jg.c.data, JSONB)["confidence_tier"].astext == confidence_tier)
-            )
+            stmt = stmt.where(_jg_exists(spec, d_tier() == confidence_tier))
         if l1_domain:
-            stmt = stmt.where(
-                _jg_exists(spec, sa_cast(jg.c.data, JSONB)["l1_domain_code"].astext == l1_domain)
-            )
+            stmt = stmt.where(_jg_exists(spec, d_l1_code() == l1_domain))
         if score and spec.score_col:
             # 源欄為 Text（如 rec_scores="5"）→ 星等清單轉字串比對
             stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
@@ -395,7 +395,7 @@ def _list_problems_spec(
         "score": tbl.c[spec.score_col] if spec.score_col else tbl.c[spec.date_col],
     }
     if sort_by == "confidence":
-        sort_expr = select(func.max(jg.c.confidence)).where(_jg_join_cond(spec)).scalar_subquery()
+        sort_expr = select(func.max(d_conf_value())).where(_jg_join_cond(spec)).scalar_subquery()
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
     return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
@@ -414,9 +414,8 @@ def list_l1_domains(source: str) -> list[dict]:
         [{"code", "label", "count"}]（count＝該域歸因筆數）。
     """
     jg = T.judgments
-    data = sa_cast(jg.c.data, JSONB)
-    code = data["l1_domain_code"].astext
-    label = data["l1_label"].astext
+    code = d_l1_code()
+    label = d_l1_label()
     stmt = (
         select(code.label("code"), label.label("label"), func.count().label("count"))
         .where(jg.c.source == source, code != "", code.isnot(None))

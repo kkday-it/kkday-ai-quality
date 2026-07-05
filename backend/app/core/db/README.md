@@ -8,7 +8,24 @@
 |---|---|
 | `tables.py` | SQLAlchemy schema + engine（`get_engine`/`set_engine`/`metadata`/`upsert`）；連線＝`config.env.database_url`。 |
 | `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
-| `_shared.py` | 共用：judgment.json 標籤/信心閾值、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`。 |
+| `_shared.py` | 共用：judgment.json 標籤/信心閾值、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**判決形狀存取 SSOT**（`d_*` 查詢層抽欄 + `read_stored` Python 層還原，見下）。 |
+
+## judgments 判決表結構（攤平後 · SSOT）
+
+一列 = 一條歸因。scalar 欄僅存**關聯鍵**（`finding_id`PK / `source` / `source_id` / `prod_oid`）、**查詢便利**（`dimension` / `needs_review`）與**人工覆核軸**（`status` / `true_label` / `created_at`）；判決 payload 全收進 **`data`（Text 存乾淨分組物件）**：
+
+```
+data = { polarity, stage,
+         attribution:{ l1:{code,label}, l2:{code,label}, l3:{code,label} },
+         confidence:{ value, raw, tier },
+         content:{ summary, evidence, action },
+         meta:{ model, primary, judgedAt } }
+```
+
+- **寫入**：`schema.TicketFinding.to_stored()` 產出上方物件（殘留/幽靈/legacy 欄不入庫）。
+- **查詢**（GROUP BY / FILTER / SORT）：`_shared.d_polarity()/d_stage()/d_tier()/d_l1_code()/d_conf_value()…`（JSONB expression，走 `idx_judgments_{polarity,stage,l1,tier}` expression 索引）。
+- **讀取**（json.loads 後）：`_shared.read_stored(data)` 還原成攤平前的扁平顯示鍵（`l1_domain_code`/`confidence_tier`/`judgment_stage`…）→ `_attribution_of`/`_enrich_problem`/`export`/`accuracy` 及前端 API 契約**零改動**。
+- 遷移：`alembic/versions/7c05d105e825`（regroup data + drop 7 重複/死欄 + 建 4 JSONB 索引）。詳 `plans/1-peaceful-wirth.md`。
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
 | `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |

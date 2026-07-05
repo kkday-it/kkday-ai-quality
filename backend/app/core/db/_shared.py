@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import re
 
-from sqlalchemy import and_, exists
+from sqlalchemy import Float, and_, exists
+from sqlalchemy import cast as sa_cast
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import source_registry
 from app.core.db import tables as T
@@ -28,6 +30,108 @@ _STAGE_LABEL_ZH: dict[str, str] = _JUDGMENT_CFG.get("stage_labels", {})
 _CONFIDENCE_TIERS: dict = _JUDGMENT_CFG.get(
     "confidence_tiers", {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
 )
+
+
+# ── judgments.data 分組物件的存取 SSOT（形狀＝schema.TicketFinding.to_stored；改形狀只改此處）──
+# data 攤平重整後為乾淨分組物件：polarity / stage / attribution{l1,l2,l3{code,label}}
+# / confidence{value,raw,tier} / content{summary,evidence,action} / meta{model,primary,judgedAt}。
+# 查詢層（GROUP BY / FILTER / SORT）用下列 d_* 抽欄 expression；Python 層（json.loads 後）用 read_stored。
+
+
+def _jdata():
+    """judgments.data(Text) → JSONB（查詢層抽欄基底）。"""
+    return sa_cast(T.judgments.c.data, JSONB)
+
+
+def d_polarity():
+    """data.polarity 抽為 text expression（GROUP BY / 篩選用）。"""
+    return _jdata()["polarity"].astext
+
+
+def d_stage():
+    """data.stage 抽為 text expression。"""
+    return _jdata()["stage"].astext
+
+
+def d_tier():
+    """data.confidence.tier 抽為 text expression。"""
+    return _jdata()["confidence"]["tier"].astext
+
+
+def d_conf_value():
+    """data.confidence.value 抽為 Float expression（排序 / 聚合用；取代舊 confidence scalar 欄）。"""
+    return sa_cast(_jdata()["confidence"]["value"].astext, Float)
+
+
+def d_l1_code():
+    """data.attribution.l1.code 抽為 text expression。"""
+    return _jdata()["attribution"]["l1"]["code"].astext
+
+
+def d_l1_label():
+    """data.attribution.l1.label 抽為 text expression。"""
+    return _jdata()["attribution"]["l1"]["label"].astext
+
+
+def d_l2_code():
+    """data.attribution.l2.code 抽為 text expression。"""
+    return _jdata()["attribution"]["l2"]["code"].astext
+
+
+def d_l2_label():
+    """data.attribution.l2.label 抽為 text expression。"""
+    return _jdata()["attribution"]["l2"]["label"].astext
+
+
+def d_l3_code():
+    """data.attribution.l3.code 抽為 text expression。"""
+    return _jdata()["attribution"]["l3"]["code"].astext
+
+
+def d_l3_label():
+    """data.attribution.l3.label 抽為 text expression。"""
+    return _jdata()["attribution"]["l3"]["label"].astext
+
+
+def read_stored(data: dict) -> dict:
+    """judgments.data 分組物件 → 扁平顯示 dict（Python 層還原 SSOT）。
+
+    read adapter：對齊攤平前的舊扁平 key（l1_domain_code/l1_label/confidence_tier/
+    judgment_stage/problem_summary/evidence_quote/recommended_action…），故 _attribution_of /
+    _enrich_problem / export / accuracy 讀新分組 data 但輸出鍵不變 → 前端與導出零改動。
+
+    Args:
+        data: json.loads(judgments.data) 後的分組物件（見 schema.TicketFinding.to_stored）。
+
+    Returns:
+        扁平 dict（含 confidence_value / raw_confidence / is_primary / judged_at 等）。
+    """
+    attr = data.get("attribution") or {}
+    l1 = attr.get("l1") or {}
+    l2 = attr.get("l2") or {}
+    l3 = attr.get("l3") or {}
+    conf = data.get("confidence") or {}
+    content = data.get("content") or {}
+    meta = data.get("meta") or {}
+    return {
+        "polarity": data.get("polarity"),
+        "judgment_stage": data.get("stage"),
+        "l1_domain_code": l1.get("code"),
+        "l1_label": l1.get("label"),
+        "l2_code": l2.get("code"),
+        "l2_label": l2.get("label"),
+        "l3_code": l3.get("code"),
+        "l3_label": l3.get("label"),
+        "confidence_value": conf.get("value"),
+        "raw_confidence": conf.get("raw"),
+        "confidence_tier": conf.get("tier"),
+        "problem_summary": content.get("summary"),
+        "evidence_quote": content.get("evidence"),
+        "recommended_action": content.get("action"),
+        "model_used": meta.get("model"),
+        "is_primary": meta.get("primary"),
+        "judged_at": meta.get("judgedAt"),
+    }
 
 
 def _jg_join_cond(spec):

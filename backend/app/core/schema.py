@@ -141,4 +141,41 @@ class TicketFinding(BaseModel):
     model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
     judged_at: str = ""  # 判決時間（ISO）
 
+    def to_stored(self) -> dict:
+        """判決 payload 落庫形狀（judgments.data 的乾淨分組物件 · SSOT）。
+
+        只序列化 14 個真訊號欄、聚合成單詞命名的巢狀物件；殘留 / legacy / 恆空欄
+        （verdict 軸、symptom_tag、severity、evidence_level… 見 plans/1-peaceful-wirth.md）
+        一律不入庫。關聯鍵（source/source_id/prod_oid）與人工覆核軸（status/true_label/
+        needs_review）走 judgments scalar 欄，不重複塞 data。read 端由 attribution_view / enrich 還原。
+
+        Returns:
+            分組物件：polarity / stage / attribution{l1,l2,l3} / confidence{value,raw,tier}
+            / content{summary,evidence,action} / meta{model,primary,judgedAt}。
+        """
+        return {
+            "polarity": self.polarity,
+            "stage": self.judgment_stage,
+            "attribution": {
+                "l1": {"code": self.l1_domain_code, "label": self.l1_label},
+                "l2": {"code": self.l2_code, "label": self.l2_label},
+                "l3": {"code": self.l3_code, "label": self.l3_label},
+            },
+            "confidence": {
+                "value": self.confidence,
+                "raw": self.raw_confidence,
+                "tier": self.confidence_tier,
+            },
+            "content": {
+                "summary": self.problem_summary,
+                "evidence": self.evidence_quote,
+                "action": self.recommended_action,
+            },
+            "meta": {
+                "model": self.model_used,
+                "primary": self.is_primary,
+                "judgedAt": self.judged_at,
+            },
+        }
+
 

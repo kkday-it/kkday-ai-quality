@@ -14,7 +14,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Float,
     Index,
     Integer,
     MetaData,
@@ -43,23 +42,25 @@ judgments = Table(
     #  app_feedback→oid / mixpanel_tracker→insert_id）。
     Column("source", Text),
     Column("source_id", Text),
+    # ── 關聯 / 查詢便利 scalar 欄（prod_oid/dimension 供 ProductDetail 下鑽；needs_review 供人審佇列）──
     Column("prod_oid", Text),
-    Column("pkg_oid", Text),
     Column("dimension", Text),
-    Column("confidence", Float),
-    Column("raw_confidence", Float),
-    Column("is_enhanced", Integer, server_default="0"),
-    Column("enhance_model", Text),
     Column("needs_review", Integer, server_default="0"),
+    # ── 人工覆核軸 scalar 欄 ──
     Column("true_label", Text),
-    Column("suspected_field", Text),
-    Column("recommended_action", Text),
-    Column("data", Text),
     Column("status", Text),
     Column("created_at", Text),
+    # ── 判決 payload：攤平後為乾淨分組物件（polarity/stage/attribution/confidence/content/meta；
+    #    形狀 SSOT 見 schema.TicketFinding.to_stored；查詢層抽欄見 _shared.d_*）──
+    Column("data", Text),
     Index("idx_judgments_source", "source"),
-    # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件（取代舊 idx_judgments_item_id）
+    # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件
     Index("idx_judgments_source_id", "source", "source_id"),
+    # 列表深化篩選熱路徑走 data 分組物件的 JSONB expression 索引（取代攤平前的 scalar 欄篩選）
+    Index("idx_judgments_polarity", text("((data::jsonb->>'polarity'))")),
+    Index("idx_judgments_stage", text("((data::jsonb->>'stage'))")),
+    Index("idx_judgments_l1", text("((data::jsonb->'attribution'->'l1'->>'code'))")),
+    Index("idx_judgments_tier", text("((data::jsonb->'confidence'->>'tier'))")),
 )
 
 # ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────

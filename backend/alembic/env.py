@@ -7,7 +7,7 @@ URL 來源＝`tables.resolve_url()`（database_url 空→SQLite dev / postgresql
 from logging.config import fileConfig
 
 from alembic import context
-from app.core import tables
+from app.core.db import tables
 
 config = context.config
 if config.config_file_name is not None:

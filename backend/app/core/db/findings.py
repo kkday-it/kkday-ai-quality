@@ -10,26 +10,25 @@ from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 
 from app.core.db import tables as T
+from app.core.db._shared import read_stored as _read_stored
 from app.core.schema import TicketFinding
 
 
 def _finding_values(f: TicketFinding, source: str) -> dict:
-    """TicketFinding → judgments 欄位 dict（source + source_id 關聯鍵；source_id 存於 f.ticket_id）。"""
+    """TicketFinding → judgments 欄位 dict。
+
+    判決 payload 落 `data`（乾淨分組物件，見 schema.to_stored）；scalar 欄僅存關聯鍵
+    （source/source_id/prod_oid/dimension）與人工/查詢欄（needs_review/status/created_at）。
+    攤平後不再重複塞 pkg_oid/confidence/recommended_action… 等（統一在 data 分組物件內）。
+    """
     return {
         "finding_id": f.finding_id,
         "source": source,
         "source_id": f.ticket_id,  # prejudge 設 ticket_id = 特徵 id（source_id）
-        "prod_oid": f.prod_oid,
-        "pkg_oid": f.pkg_oid,
-        "dimension": f.dimension,
-        "confidence": f.confidence,
-        "raw_confidence": f.raw_confidence,
-        "is_enhanced": int(f.is_enhanced),
-        "enhance_model": f.enhance_model,
-        "needs_review": int(f.needs_review),
-        "suspected_field": f.suspected_field,
-        "recommended_action": f.recommended_action,
-        "data": f.model_dump_json(),
+        "prod_oid": f.prod_oid,  # ProductDetail / list_products 下鑽用（保留 scalar）
+        "dimension": f.dimension,  # ProductDetail 內容/非內容過濾用（保留 scalar）
+        "needs_review": int(f.needs_review),  # 人審佇列篩選（保留 scalar）
+        "data": json.dumps(f.to_stored(), ensure_ascii=False),
         "status": f.status,
         "created_at": f.created_at,
     }
@@ -94,7 +93,8 @@ def list_findings(
         for r in c.execute(stmt).mappings():
             d = dict(r)
             if d.get("data"):
-                d["finding"] = json.loads(d["data"])
+                # data 為攤平後分組物件 → read_stored 還原扁平 finding（FindingCard 消費舊扁平鍵，零改動）
+                d["finding"] = _read_stored(json.loads(d["data"]))
             out.append(d)
     return out
 
