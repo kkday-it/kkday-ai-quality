@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import io
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.export_jobs import ExportCtx
 
 # C-N 分頁欄位（對齊 scripts/tools/gen_taxonomy_xlsx.py 的 HEADERS；離線腳本與線上導出維持同一導出格式）。
 _TREE_HEADERS = [
@@ -104,14 +108,20 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
                 c.fill = zebra
 
 
-def build_rules_workbook_bytes() -> bytes:
+def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
     """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ global 判決總規範分頁。
 
     資料源＝DB active 版本（規則配置頁的當前生效內容，反映使用者最新編輯）。schema 結構規格與
     product_vertical 選項池非人閱分類法典，故不含。
 
+    Args:
+        ctx: 背景 job 進度把手（可選）；給定時每完成一分頁回報進度並輪詢取消，None＝同步直呼。
+
     Returns:
         xlsx 檔的位元組內容（供 API 以 attachment 回傳）。
+
+    Raises:
+        Cancelled: ctx 對應 job 被取消時由 ctx.check() 拋出。
     """
     from openpyxl import Workbook
 
@@ -120,24 +130,36 @@ def build_rules_workbook_bytes() -> bytes:
     wb = Workbook()
     wb.remove(wb.active)  # 移除預設空表
 
+    c_codes = [c for c in db.RULE_CODES if c.startswith("C-")]
+    total = len(c_codes) + 1  # C-N 各一分頁 + global 一分頁（進度總量近似，跳過的空 code 亦計入步進）
+    done = 0
+    if ctx is not None:
+        ctx.report(0, total)
+
     # C-N 歸因分類（依 RULE_CODES 順序取 C- 開頭者）；分頁名＝「code label」對齊規則管理 UI 左選單。
-    for code in [c for c in db.RULE_CODES if c.startswith("C-")]:
+    for code in c_codes:
+        if ctx is not None:
+            ctx.check()
         content = db.get_rule_active(code)
-        if not content or not content.get("tree"):
-            continue
-        l1 = content["tree"][0]
-        # 域名優先取 _meta.label（＝規則管理 UI 左選單顯示名，SSOT），與使用者所見一致；缺則退樹根 label。
-        l1_label = (content.get("_meta") or {}).get("label") or l1.get("label", "")
-        rows: list[list[str]] = []
-        _collect(l1, f"{code} {l1_label}".strip(), "", rows)  # L1 cell 帶 C-N code
-        title = f"{code} {l1_label}".strip()[:31]  # 分頁名上限 31 字
-        ws = wb.create_sheet(title)
-        ws.append(_TREE_HEADERS)
-        for r in rows:
-            ws.append(r)
-        _style_header(ws, _TREE_WIDTHS, freeze_cols=3)  # 凍結 L1/L2/L3 三 code 欄
+        if content and content.get("tree"):
+            l1 = content["tree"][0]
+            # 域名優先取 _meta.label（＝規則管理 UI 左選單顯示名，SSOT），與使用者所見一致；缺則退樹根 label。
+            l1_label = (content.get("_meta") or {}).get("label") or l1.get("label", "")
+            rows: list[list[str]] = []
+            _collect(l1, f"{code} {l1_label}".strip(), "", rows)  # L1 cell 帶 C-N code
+            title = f"{code} {l1_label}".strip()[:31]  # 分頁名上限 31 字
+            ws = wb.create_sheet(title)
+            ws.append(_TREE_HEADERS)
+            for r in rows:
+                ws.append(r)
+            _style_header(ws, _TREE_WIDTHS, freeze_cols=3)  # 凍結 L1/L2/L3 三 code 欄
+        done += 1
+        if ctx is not None:
+            ctx.report(done, total)
 
     # global 判決總規範（區塊/項目/內容 扁平化；跳過 $schema/_meta 中繼欄）
+    if ctx is not None:
+        ctx.check()
     gcontent = db.get_rule_active("global_rule")
     if gcontent:
         grows: list[list[str]] = []
@@ -155,6 +177,8 @@ def build_rules_workbook_bytes() -> bytes:
             gws.append(r)
         _style_header(gws, _GLOBAL_WIDTHS, freeze_cols=1)  # 凍結「區塊」欄
 
+    if ctx is not None:
+        ctx.report(total, total)  # 全部分頁完成（save 為單次序列化，無法再細分）
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

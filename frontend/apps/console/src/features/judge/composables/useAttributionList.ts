@@ -4,18 +4,22 @@ import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import judgment from '@config/ai_judge/judgment.json';
 import {
   cancelPrejudge,
-  exportProblems,
+  startProblemsExport,
   pausePrejudge,
+  patchStatus,
   prejudgeStreamUrl,
+  getL1Domains,
   getProblems,
   getSettings,
   resumePrejudge,
   startPrejudge,
+  type L1DomainOpt,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
-import { schemaFor, type ProblemRow } from '../constants';
+import { schemaFor, type Attribution, type ProblemRow } from '../constants';
 import { exportName } from '../utils';
+import { useExportJob } from './useExportJob';
 
 /** LLM 模型配置選項（同「設定 › LLM 模型連線」）。 */
 interface LlmConfigOpt {
@@ -67,17 +71,26 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   // ── 篩選狀態（各來源 schema 決定哪些生效；切來源時一併清空）──
   const polarityFilter = ref('');
-  const onlyProblem = ref(false);
-  const scoreFilter = ref<number[]>([]);
+  const scoreFilter = ref<number[]>([]); // 星等多選（1-5；僅有 score_col 的來源生效）
+  const stageFilter = ref<string[]>([]); // 判決階段多選（STAGE_LABELS 五值）
+  const tierFilter = ref(''); // 信心分層單選（TIER_LABELS）
+  const l1Filter = ref(''); // L1 歸因域單選（l1_domain_code）
+  const l1Options = ref<L1DomainOpt[]>([]); // L1 域下拉選項（該來源已判資料 distinct）
+  /** 載入 L1 域選項（來源切換 / 初始）；失敗回空不阻斷列表。 */
+  const loadL1Options = async () => {
+    try {
+      l1Options.value = await getL1Domains(toValue(source));
+    } catch {
+      l1Options.value = [];
+    }
+  };
   const dateRange = ref<string[]>([]);
   const prodOidFilter = ref('');
   const orderOidFilter = ref('');
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
   const sortValue = ref('occurred_at:desc');
-  /** 生效的 polarity 篩選（送後端）。 */
-  const effPolarity = computed(() =>
-    onlyProblem.value ? 'negative' : polarityFilter.value || undefined,
-  );
+  /** 生效的 polarity 篩選（送後端；空＝不篩）。「僅看問題」已移除，傾向下拉直接涵蓋負向。 */
+  const effPolarity = computed(() => polarityFilter.value || undefined);
 
   // ── LLM 模型（已保存配置）──
   const llmConfigId = ref('');
@@ -106,44 +119,47 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const pageSize = ref(20);
   const loading = ref(true);
   const error = ref('');
-  /** 展開列 key（受控）；每次載入預設全展開，「一鍵收合」清空。 */
-  const expandedKeys = ref<string[]>([]);
+
+  /**
+   * 列表 / 分頁選取共用的篩選+排序查詢參數（不含 limit/offset）。
+   * 抽為單一來源避免 loadPage / selectPages 兩處各寫一份、加新篩選時漏改而 drift。
+   */
+  const filterQuery = () => {
+    const [sortBy, sortDir] = sortValue.value.split(':');
+    return {
+      source: toValue(source),
+      polarity: effPolarity.value,
+      scores: scoreFilter.value.length ? scoreFilter.value : undefined,
+      stage: stageFilter.value.length ? stageFilter.value : undefined,
+      confidenceTier: tierFilter.value || undefined,
+      l1Domain: l1Filter.value || undefined,
+      productVerticals: effVerticals.value,
+      dateFrom: dateRange.value?.[0] || undefined,
+      dateTo: dateRange.value?.[1] || undefined,
+      prodOid: prodOidFilter.value.trim() || undefined,
+      orderOid: orderOidFilter.value.trim() || undefined,
+      sortBy: sortBy || undefined,
+      sortDir: (sortDir as 'asc' | 'desc') || 'desc',
+    };
+  };
 
   const loadPage = async () => {
     loading.value = true;
     error.value = '';
-    const [sortBy, sortDir] = sortValue.value.split(':');
     try {
       const r = await getProblems({
-        source: toValue(source),
-        polarity: effPolarity.value,
-        scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        productVerticals: effVerticals.value,
-        dateFrom: dateRange.value?.[0] || undefined,
-        dateTo: dateRange.value?.[1] || undefined,
-        prodOid: prodOidFilter.value.trim() || undefined,
-        orderOid: orderOidFilter.value.trim() || undefined,
-        sortBy: sortBy || undefined,
-        sortDir: (sortDir as 'asc' | 'desc') || 'desc',
+        ...filterQuery(),
         limit: pageSize.value,
         offset: (page.value - 1) * pageSize.value,
       });
       rows.value = r.rows || [];
       total.value = r.total || 0;
-      // 一列一 review（多歸因收進 row.attributions 陣列）；expand/rowKey 皆綁 _group（source_id）
-      expandedKeys.value = rows.value.map((x) => String(x._group)); // 載入後預設全展開
+      // 一列一 review（多歸因收進 row.attributions 陣列）；rowKey 綁 _group（source_id）
     } catch (e: any) {
       error.value = '載入失敗：' + (e?.message || e);
     } finally {
       loading.value = false;
     }
-  };
-  /** 一鍵收合 / 展開全部：依當前是否已全展開切換（一列一 review，key＝_group）。 */
-  const allExpanded = computed(
-    () => rows.value.length > 0 && expandedKeys.value.length >= rows.value.length,
-  );
-  const toggleExpandAll = () => {
-    expandedKeys.value = allExpanded.value ? [] : rows.value.map((x) => String(x._group));
   };
   /** Arco 表頭點擊排序變更 → 映射後端 sort_by/sort_dir；清除排序（direction 空）回預設評論時間新→舊。 */
   const onSortChange = (dataIndex: string, direction: string) => {
@@ -153,11 +169,26 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     onFilterChange();
   };
 
+  /** 生效篩選項數（供工具列「已套用 N 項」提示；不含排序）。 */
+  const activeFilterCount = computed(
+    () =>
+      (polarityFilter.value ? 1 : 0) +
+      (scoreFilter.value.length ? 1 : 0) +
+      (stageFilter.value.length ? 1 : 0) +
+      (tierFilter.value ? 1 : 0) +
+      (l1Filter.value ? 1 : 0) +
+      (dateRange.value?.length ? 1 : 0) +
+      (prodOidFilter.value.trim() ? 1 : 0) +
+      (orderOidFilter.value.trim() ? 1 : 0),
+  );
+
   /** 重置所有篩選 + 排序（回預設）並重載第 1 頁。 */
   const resetFilters = () => {
     polarityFilter.value = '';
-    onlyProblem.value = false;
     scoreFilter.value = [];
+    stageFilter.value = [];
+    tierFilter.value = '';
+    l1Filter.value = '';
     dateRange.value = [];
     prodOidFilter.value = '';
     orderOidFilter.value = '';
@@ -191,16 +222,17 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     () => toValue(source),
     () => {
       const filterTypes = new Set(schema.value.filters.map((f) => f.type));
-      if (!filterTypes.has('polarity')) {
-        polarityFilter.value = '';
-        onlyProblem.value = false;
-      }
+      if (!filterTypes.has('polarity')) polarityFilter.value = '';
       if (!filterTypes.has('score')) scoreFilter.value = [];
+      if (!filterTypes.has('stage')) stageFilter.value = [];
+      if (!filterTypes.has('tier')) tierFilter.value = '';
+      if (!filterTypes.has('l1Domain')) l1Filter.value = '';
       if (!filterTypes.has('dateRange')) dateRange.value = [];
       // prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
       prodOidFilter.value = '';
       orderOidFilter.value = '';
       sortValue.value = 'occurred_at:desc';
+      loadL1Options(); // L1 選項隨來源重載
       onFilterChange();
     },
   );
@@ -215,6 +247,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const init = () => {
     loadConfigs();
     verticalFilter.loadOptions();
+    loadL1Options();
     loadPage();
     loadUnjudged();
   };
@@ -254,18 +287,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     const hi = Math.max(...pages);
     const ps = pageSize.value;
     try {
-      const [sortBy, sortDir] = sortValue.value.split(':');
       const r = await getProblems({
-        source: toValue(source),
-        polarity: effPolarity.value,
-        scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        productVerticals: effVerticals.value,
-        dateFrom: dateRange.value?.[0] || undefined,
-        dateTo: dateRange.value?.[1] || undefined,
-        prodOid: prodOidFilter.value.trim() || undefined,
-        orderOid: orderOidFilter.value.trim() || undefined,
-        sortBy: sortBy || undefined,
-        sortDir: (sortDir as 'asc' | 'desc') || 'desc',
+        ...filterQuery(),
         limit: (hi - lo + 1) * ps,
         offset: (lo - 1) * ps,
       });
@@ -410,7 +433,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
         limit: 1,
         ...(st === 'unjudged'
           ? { judged: false }
-          : { stage: st, ...(targetPolarity.value ? { polarity: targetPolarity.value } : {}) }),
+          : { stage: [st], ...(targetPolarity.value ? { polarity: targetPolarity.value } : {}) }),
       });
       total += r.total || 0;
     }
@@ -445,27 +468,71 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     });
   };
 
-  /** 導出美化 xlsx（POST 全量；有勾選→只導已選 review，否則導符合目前篩選全部；1:N 每條歸因一列）→ blob 下載。 */
-  const exportCsv = async () => {
+  // ── 導出（背景 job + SSE 實時進度 + 可停止；有勾選→只導已選 review，否則導符合目前篩選全部）──
+  const exportJob = useExportJob();
+  /** 啟動導出：交由 useExportJob 管進度/下載/停止；1:N 每條歸因一列的美化 xlsx。 */
+  const exportCsv = () =>
+    exportJob.run(
+      () =>
+        startProblemsExport({
+          source: toValue(source),
+          polarity: effPolarity.value,
+          scores: scoreFilter.value.length ? scoreFilter.value : undefined,
+          product_verticals: effVerticals.value,
+          date_from: dateRange.value?.[0] || undefined,
+          date_to: dateRange.value?.[1] || undefined,
+          item_ids: selectedKeys.value.length ? selectedKeys.value : undefined,
+        }),
+      exportName('歸因列表', 'xlsx'),
+    );
+
+  // ── 單列操作（操作欄；與批量 selectedKeys 完全解耦，各自獨立路徑）──
+  /** 進行中的單列 id 集合（歸因/覆核共用，控制該列按鈕 loading）。 */
+  const rowBusy = ref<Set<string>>(new Set());
+  const isRowBusy = (id: string) => rowBusy.value.has(id);
+  const _setBusy = (id: string, busy: boolean) => {
+    const s = new Set(rowBusy.value);
+    if (busy) s.add(id);
+    else s.delete(id);
+    rowBusy.value = s;
+  };
+
+  /**
+   * 單列（重）判：對該列跑初判歸因（複用 startPrejudge，item_ids 僅此列），等 SSE done 就地重載。
+   * 走該列按鈕 inline loading，不觸發頁頂大進度條（不設 running，_poll 僅更新無人顯示的 progress）。
+   */
+  const rejudgeRow = async (id: string) => {
+    if (rowBusy.value.has(id)) return;
+    _setBusy(id, true);
     try {
-      const blob = await exportProblems({
+      const r = await startPrejudge({
+        item_ids: [id],
         source: toValue(source),
-        polarity: effPolarity.value,
-        scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-        product_verticals: effVerticals.value,
-        date_from: dateRange.value?.[0] || undefined,
-        date_to: dateRange.value?.[1] || undefined,
-        item_ids: selectedKeys.value.length ? selectedKeys.value : undefined,
+        llm_config_id: llmConfigId.value || undefined,
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = exportName('歸因列表', 'xlsx');
-      a.click();
-      URL.revokeObjectURL(url);
-      Message.success('已導出 Excel');
+      await _poll(r.job_id);
+      await loadPage();
+      await loadUnjudged();
+      Message.success('已完成歸因');
     } catch (e: any) {
-      Message.error('導出失敗：' + (e?.message || e));
+      Message.error('歸因失敗：' + (e?.message || e));
+    } finally {
+      _setBusy(id, false);
+    }
+  };
+
+  /**
+   * 單條歸因覆核：只改該 finding 的 status（per-attribution；每條歸因分開操作）。
+   * optimistic 即時回寫（PATCH 秒級，仿 FindingCard 無 loading）；只改人工 status 軸、不動 AI stage。
+   */
+  const reviewFinding = async (attr: Attribution, status: string) => {
+    if (!attr.finding_id) return;
+    try {
+      await patchStatus(attr.finding_id, status);
+      attr.status = status; // optimistic：覆核徽章即時反映
+      Message.success(status === 'confirmed' ? '已確認' : '已忽略');
+    } catch (e: any) {
+      Message.error('覆核失敗：' + (e?.message || e));
     }
   };
 
@@ -473,8 +540,11 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     schema,
     // 篩選
     polarityFilter,
-    onlyProblem,
     scoreFilter,
+    stageFilter,
+    tierFilter,
+    l1Filter,
+    l1Options,
     dateRange,
     prodOidFilter,
     orderOidFilter,
@@ -483,10 +553,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     onVerticalChange,
     onSortChange,
     onFilterChange,
+    activeFilterCount,
     resetFilters,
-    expandedKeys,
-    allExpanded,
-    toggleExpandAll,
     // 模型
     llmConfigId,
     llmConfigs,
@@ -526,8 +594,17 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     pauseJob,
     resumeJob,
     cancelJob,
-    // 導出
+    // 單列操作（操作欄）
+    isRowBusy,
+    rejudgeRow,
+    reviewFinding,
+    // 導出（背景 job + 實時進度 + 停止）
     exportCsv,
+    exporting: exportJob.exporting,
+    exportStatus: exportJob.status,
+    exportProgress: exportJob.progress,
+    exportPct: exportJob.pct,
+    cancelExport: exportJob.cancel,
     // 初始化（onMounted 呼叫）
     init,
   };

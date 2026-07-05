@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from app.core.db._shared import (
     _POLARITY_LABEL_ZH,
@@ -11,6 +12,12 @@ from app.core.db._shared import (
     fmt_datetime,
 )
 from app.core.db.problems import list_problems
+
+if TYPE_CHECKING:
+    from app.core.export_jobs import ExportCtx
+
+# 每寫入多少 review 檢查一次取消旗標並回報進度（過密徒增鎖競爭、過疏取消不即時）。
+_PROGRESS_STEP = 200
 
 # 導出 xlsx 欄位（標題, 記錄鍵, 欄寬）：特徵 id（source_id）第一列；1:N 每條歸因一列（review 級欄合併）
 _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
@@ -92,6 +99,7 @@ def export_problems_xlsx(
     product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    ctx: ExportCtx | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
 
@@ -101,9 +109,14 @@ def export_problems_xlsx(
     Args:
         source/polarity/judged/score/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
+        ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
+            None＝同步直呼（測試 / 腳本）。
 
     Returns:
         xlsx 位元組（供 API 以 attachment 回傳）。
+
+    Raises:
+        Cancelled: ctx 對應 job 被取消時由 ctx.check() 拋出（背景 job 據此標 cancelled）。
     """
     from io import BytesIO
 
@@ -125,6 +138,9 @@ def export_problems_xlsx(
     if item_ids:
         idset = set(item_ids)
         rows = [r for r in rows if r.get("_group") in idset]
+    total = len(rows)
+    if ctx is not None:
+        ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
@@ -137,7 +153,11 @@ def export_problems_xlsx(
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
     r_excel = 2  # 資料起始列（表頭列 1）
-    for r in rows:
+    for ri, r in enumerate(rows):
+        # 每 _PROGRESS_STEP 筆回報進度並檢查取消（取消時 ctx.check 拋 Cancelled 中止組檔）
+        if ctx is not None and ri % _PROGRESS_STEP == 0:
+            ctx.check()
+            ctx.report(ri, total)
         attrs = r.get("attributions") or []
         n = max(1, len(attrs))
         for j in range(n):
@@ -155,6 +175,8 @@ def export_problems_xlsx(
         if n > 1:
             for ci in review_col_idx:
                 ws.merge_cells(start_row=sr, start_column=ci, end_row=sr + n - 1, end_column=ci)
+    if ctx is not None:
+        ctx.report(total, total)  # 組檔完成（save 為單次序列化，無法再細分進度）
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

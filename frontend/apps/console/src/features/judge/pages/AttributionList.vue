@@ -10,14 +10,18 @@
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
 import { computed, onMounted, ref } from 'vue';
+import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
-import { StateGuard, TableLayout } from '@/components';
+import { updateTrueLabel } from '@/api';
+import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
 import {
   ALL_PAGINATION,
   POLARITY_LABELS,
   SOURCES,
   STAGE_LABELS,
+  STATUS_COLOR,
+  STATUS_LABEL,
   TABLE_DEFAULTS,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
@@ -48,7 +52,11 @@ const source = ref('product_reviews');
 const {
   schema,
   polarityFilter,
-  onlyProblem,
+  scoreFilter,
+  stageFilter,
+  tierFilter,
+  l1Filter,
+  l1Options,
   dateRange,
   prodOidFilter,
   orderOidFilter,
@@ -57,10 +65,8 @@ const {
   onVerticalChange,
   onSortChange,
   onFilterChange,
+  activeFilterCount,
   resetFilters,
-  expandedKeys,
-  allExpanded,
-  toggleExpandAll,
   llmConfigId,
   llmConfigs,
   rows,
@@ -96,24 +102,103 @@ const {
   resumeJob,
   cancelJob,
   exportCsv,
+  exporting,
+  exportStatus,
+  exportProgress,
+  exportPct,
+  cancelExport,
+  isRowBusy,
+  rejudgeRow,
+  reviewFinding,
   init,
 } = useAttributionList(source);
 
+// ── 操作：查看判決詳情彈窗（純前端，資料取自該列 attributions）──
+const detailRow = ref<ProblemRow | null>(null);
+const detailOpen = ref(false);
+/** 開查看詳情彈窗。 */
+const viewDetail = (record: ProblemRow) => {
+  detailRow.value = record;
+  detailOpen.value = true;
+};
+/** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
+const attrPath = (a: { l1_label?: string; l2_label?: string; l3_label?: string }): string =>
+  [a.l1_label, a.l2_label, a.l3_label].filter(Boolean).join(' › ') || '未歸因';
+
+// ── 操作欄：標真值彈窗（人工標註每條歸因的正確 L1 域，供準確率評估）──
+const truelabelOpen = ref(false);
+const truelabelRow = ref<ProblemRow | null>(null);
+const truelabelSaving = ref(false);
+/** finding_id → 選定的正確 L1 域 code（空＝清除標註）。 */
+const truelabelDraft = ref<Record<string, string>>({});
+/** 開標真值彈窗：以各歸因現有 true_label 為初值。 */
+const openTrueLabel = (record: ProblemRow) => {
+  if (!record.attributions || !record.attributions.length) {
+    Message.warning('此列尚無歸因可標註，請先歸因');
+    return;
+  }
+  truelabelRow.value = record;
+  truelabelDraft.value = {};
+  record.attributions.forEach((a) => {
+    if (a.finding_id) truelabelDraft.value[a.finding_id] = a.true_label || '';
+  });
+  truelabelOpen.value = true;
+};
+/** 儲存標真值：逐歸因 PATCH true_label，optimistic 回寫，重載當前頁。 */
+const saveTrueLabels = async () => {
+  const row = truelabelRow.value;
+  if (!row) return;
+  const attrs = (row.attributions || []).filter((a) => a.finding_id);
+  truelabelSaving.value = true;
+  try {
+    await Promise.all(
+      attrs.map((a) => updateTrueLabel(a.finding_id as string, truelabelDraft.value[a.finding_id as string] || null)),
+    );
+    attrs.forEach((a) => (a.true_label = truelabelDraft.value[a.finding_id as string] || undefined));
+    Message.success('已標註真值');
+    truelabelOpen.value = false;
+  } catch (e: any) {
+    Message.error('標註失敗：' + (e?.message || e));
+  } finally {
+    truelabelSaving.value = false;
+  }
+};
+
 const LLM_OPTS = computed(() => llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })));
+
+/** schema 是否含某篩選 type（控制篩選 UI 條件渲染）。 */
+const hasFilter = (t: string) => schema.value.filters.some((f) => f.type === t);
+/** 篩選下拉選項（由既有 label SSOT 衍生，勿另造）。 */
+const POLARITY_OPTS = Object.entries(POLARITY_LABELS).map(([value, label]) => ({ value, label }));
+const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
+const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
+const SCORE_OPTS = [1, 2, 3, 4, 5].map((v) => ({ value: v, label: `${v} 星` }));
+/** L1 域選項（動態；label 附該域筆數輔助判斷）。 */
+const L1_OPTS = computed(() =>
+  l1Options.value.map((d) => ({ value: d.code, label: `${d.label}（${d.count}）` })),
+);
 
 /** 序號欄（前置於業務欄前）：依當前頁碼 + 列索引計算全域序號。 */
 const SEQ_COL = { title: '序號', slotName: 'seq', width: 64 };
 /** 目前來源欄位（序號欄 + schema 業務欄）。 */
 const COLS = computed(() => [SEQ_COL, ...schema.value.columns]);
+/** 表格水平捲動總寬（欄寬合計 + selection 欄），欄多時橫向捲動不擠壓內容。 */
+const SCROLL_X = computed(() => COLS.value.reduce((w, c) => w + (Number(c.width) || 120), 0) + 48);
 
-/** 展開行明細值：無值防禦式顯示「—」；時間欄依 format 正規化。 */
-function expandFieldText(record: ProblemRow, key: string, format?: 'datetime' | 'date'): string {
-  const v = record?.[key];
+/** 欄位缺值防禦顯示（'—'）；部分來源（mixpanel）OID 為 JSON 陣列字串 `["x"]` → 攤平顯示。 */
+const cell = (v: unknown): string => {
   if (v === null || v === undefined || v === '') return '—';
-  if (format === 'datetime') return fmtDt(v) || '—';
-  if (format === 'date') return fmtDt(v, true) || '—';
-  return String(v);
-}
+  const s = String(v);
+  if (s.startsWith('[') && s.endsWith(']')) {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) return arr.length ? arr.map(String).join('、') : '—';
+    } catch {
+      /* 非 JSON 陣列 → 原樣顯示 */
+    }
+  }
+  return s;
+};
 
 onMounted(init);
 </script>
@@ -146,7 +231,7 @@ onMounted(init);
       <a-button type="primary" size="small" :loading="running" @click="openPrejudge">
         初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <a-button size="small" type="outline" @click="exportCsv">
+      <a-button size="small" type="outline" :loading="exporting" @click="exportCsv">
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
@@ -194,49 +279,89 @@ onMounted(init);
       </div>
     </div>
 
+    <!-- 導出實時進度：導出進行中才顯示（背景 job + SSE，可停止）-->
+    <ExportProgressBar
+      v-if="exporting"
+      label="導出列表"
+      :status="exportStatus"
+      :processed="exportProgress.processed"
+      :total="exportProgress.total"
+      :pct="exportPct"
+      @cancel="cancelExport"
+    />
+
     <TableLayout
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
       hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
     >
-      <!-- 篩選列 1：傾向 + 排序 + 操作（重置 / 一鍵收合）-->
-      <div class="mb-2 flex flex-wrap items-center gap-3">
-        <template v-if="schema.filters.some((f) => f.type === 'polarity')">
-          <a-checkbox v-model="onlyProblem" @change="onFilterChange">僅看問題（負向）</a-checkbox>
-          <a-select
-            v-model="polarityFilter"
-            size="small"
-            style="width: 130px"
-            :disabled="onlyProblem"
-            :options="[
-              { value: '', label: '全部傾向' },
-              { value: 'negative', label: POLARITY_LABELS.negative },
-              { value: 'positive', label: POLARITY_LABELS.positive },
-              { value: 'neutral', label: POLARITY_LABELS.neutral },
-              { value: 'unknown', label: POLARITY_LABELS.unknown },
-            ]"
-            @change="onFilterChange"
-          />
-        </template>
-        <a-button size="small" @click="resetFilters">重置篩選</a-button>
-        <a-button size="small" @click="toggleExpandAll">
-          {{ allExpanded ? '一鍵收合' : '全部展開' }}
-        </a-button>
+      <!-- 篩選維度列：傾向 / 判決階段 / 星等 / 信心分層 / L1 域（依 schema.filters 條件渲染）-->
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <a-select
+          v-if="hasFilter('polarity')"
+          v-model="polarityFilter"
+          size="small"
+          allow-clear
+          placeholder="傾向"
+          style="width: 116px"
+          :options="POLARITY_OPTS"
+          @change="onFilterChange"
+        />
+        <a-select
+          v-if="hasFilter('stage')"
+          v-model="stageFilter"
+          multiple
+          size="small"
+          :max-tag-count="1"
+          placeholder="判決階段"
+          style="width: 190px"
+          :options="STAGE_OPTS"
+          @change="onFilterChange"
+        />
+        <a-select
+          v-if="hasFilter('score')"
+          v-model="scoreFilter"
+          multiple
+          size="small"
+          :max-tag-count="2"
+          placeholder="星等"
+          style="width: 170px"
+          :options="SCORE_OPTS"
+          @change="onFilterChange"
+        />
+        <a-select
+          v-if="hasFilter('tier')"
+          v-model="tierFilter"
+          size="small"
+          allow-clear
+          placeholder="信心分層"
+          style="width: 130px"
+          :options="TIER_OPTS"
+          @change="onFilterChange"
+        />
+        <a-select
+          v-if="hasFilter('l1Domain')"
+          v-model="l1Filter"
+          size="small"
+          allow-clear
+          placeholder="L1 歸因域"
+          style="width: 160px"
+          :options="L1_OPTS"
+          @change="onFilterChange"
+        />
+        <a-range-picker
+          v-for="f in schema.filters.filter((x) => x.type === 'dateRange')"
+          :key="f.type"
+          v-model="dateRange"
+          size="small"
+          value-format="YYYY-MM-DD"
+          style="width: 240px"
+          :placeholder="[`${'label' in f ? f.label : ''}起`, `${'label' in f ? f.label : ''}迄`]"
+          @change="onFilterChange"
+        />
       </div>
 
-      <!-- 篩選列 2：日期 + 商品/訂單 ID + 分頁選取（商品垂直分類已移至規則配置頁的全局開關）-->
-      <div class="mb-2 flex flex-wrap items-center gap-3">
-        <template v-for="f in schema.filters" :key="f.type">
-          <!-- 日期區間篩選 -->
-          <a-range-picker
-            v-if="f.type === 'dateRange'"
-            v-model="dateRange"
-            size="small"
-            value-format="YYYY-MM-DD"
-            style="width: 240px"
-            :placeholder="[`${f.label}起`, `${f.label}迄`]"
-            @change="onFilterChange"
-          />
-        </template>
+      <!-- 精確查詢 + 分頁選取 + 操作（重置 / 展開收合；右側顯示生效篩選與選取計數）-->
+      <div class="mb-2 flex flex-wrap items-center gap-2">
         <a-input
           v-model="prodOidFilter"
           size="small"
@@ -259,13 +384,18 @@ onMounted(init);
           v-model="pageSpec"
           size="small"
           allow-clear
-          style="width: 200px"
-          placeholder="如 1,2,3 或 1,2~5 或 1~5"
+          style="width: 190px"
+          placeholder="分頁選取 如 1,2~5"
           @press-enter="selectPages"
         />
         <a-button size="small" @click="selectPages">選取分頁</a-button>
         <a-button v-if="runCount" size="small" @click="clearSelection">清除選擇</a-button>
+        <div class="flex-1" />
+        <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
+          已套用 {{ activeFilterCount }} 項篩選
+        </span>
         <span class="text-xs text-gray-400">每頁 {{ pageSize }} · 已選 {{ runCount }}</span>
+        <a-button size="small" type="outline" status="warning" @click="resetFilters">重置篩選</a-button>
       </div>
       <StateGuard
         :loading="loading"
@@ -275,15 +405,13 @@ onMounted(init);
       >
         <a-table
           v-bind="TABLE_DEFAULTS"
-          v-model:expanded-keys="expandedKeys"
           :data="rows"
           :columns="COLS"
           :pagination="{ ...ALL_PAGINATION, current: page, pageSize, total }"
           :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
-          :expandable="{}"
           class="min-h-0 flex-1"
           row-key="_group"
-          :scroll="{ y: '100%' }"
+          :scroll="{ x: SCROLL_X, y: '100%' }"
           @page-change="
             (p: number) => {
               page = p;
@@ -301,88 +429,189 @@ onMounted(init);
           @sorter-change="onSortChange"
         >
           <template #seq="{ record }">{{ record._seq }}</template>
-          <template #occurred="{ record }">{{ fmtDt(record.occurred_at) }}</template>
-          <template #godate="{ record }">{{ fmtDt(record.go_date, true) }}</template>
-          <template #pol="{ record }">
-            <a-tag v-if="record.polarity" size="small" :color="POLARITY_COLOR[record.polarity]">
-              {{ POLARITY_LABELS[record.polarity] || record.polarity }}
-            </a-tag>
-            <span v-else class="text-gray-300">未判</span>
-          </template>
-          <!-- 一列一 review：多條歸因收進 record.attributions，右側四欄（歸因/信心/分層/階段）
-               各自從上至下堆疊，每條歸因等高（.attr-blk min-height 對齊）→ 同一條歸因跨欄水平對齊。-->
-          <template #attr="{ record }">
-            <template v-if="record.attributions && record.attributions.length">
-              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs leading-relaxed">
-                <div><span class="text-gray-400">L1</span> {{ a.l1_label || '—' }}</div>
-                <div v-if="a.l2_label"><span class="text-gray-400">L2</span> {{ a.l2_label }}</div>
-                <div v-if="a.l3_label"><span class="text-gray-400">L3</span> {{ a.l3_label }}</div>
-              </div>
-            </template>
-            <span v-else class="text-gray-300">—</span>
-          </template>
-          <template #conf="{ record }">
-            <template v-if="record.attributions && record.attributions.length">
-              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs">
-                {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }}
-              </div>
-            </template>
-            <span v-else class="text-gray-300">—</span>
-          </template>
-          <template #tier="{ record }">
-            <template v-if="record.attributions && record.attributions.length">
-              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk text-xs">
-                {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
-              </div>
-            </template>
-            <span v-else class="text-gray-300">—</span>
-          </template>
-          <template #stage="{ record }">
-            <template v-if="record.attributions && record.attributions.length">
-              <div v-for="(a, ai) in record.attributions" :key="ai" class="attr-blk">
-                <a-tag v-if="a.judgment_stage" size="small" :color="STAGE_COLOR[a.judgment_stage]">
-                  {{ STAGE_LABELS[a.judgment_stage] || a.judgment_stage }}
-                </a-tag>
-                <span v-else class="text-gray-300">—</span>
-              </div>
-            </template>
-            <span v-else class="text-gray-300">—</span>
-          </template>
-          <!-- 展開行明細：依 schema.expandGroups 分區（每組一個帶標題 a-descriptions），預設全展開可收合 -->
-          <template #expand-row="{ record }">
-            <a-descriptions
-              v-for="(g, gi) in schema.expandGroups"
-              :key="gi"
-              class="attr-expand"
-              :class="{ 'mt-2': gi > 0 }"
-              :title="g.title"
-              :column="g.column || 4"
-              size="small"
-              bordered
-              :label-style="{ width: '88px' }"
-            >
-              <a-descriptions-item
-                v-for="f in g.fields"
-                :key="f.key"
-                :span="f.span || 1"
-                :label="f.label"
-              >
+          <!-- 反饋內容欄：星等+傾向+標題（第1行）／內容全文不省略（第2行）／#ID·時間（第3行）。 -->
+          <template #review="{ record }">
+            <div class="py-1">
+              <div class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <a-rate
-                  v-if="f.kind === 'rate'"
+                  v-if="record.score !== null && record.score !== undefined && record.score !== ''"
                   :model-value="Number(record.score) || 0"
                   readonly
                   :count="5"
+                  class="review-rate"
                 />
-                <template v-else-if="f.kind === 'traveller'">
-                  {{
-                    TRAVELLER_TYPE_LABELS[String(record.traveller_type ?? '')] ??
-                    record.traveller_type ??
-                    '—'
-                  }}
-                </template>
-                <template v-else>{{ expandFieldText(record, f.key, f.format) }}</template>
-              </a-descriptions-item>
-            </a-descriptions>
+                <a-tag v-if="record.polarity" size="small" :color="POLARITY_COLOR[record.polarity]">
+                  {{ POLARITY_LABELS[record.polarity] || record.polarity }}
+                </a-tag>
+                <span v-else class="text-xs text-gray-300">未判</span>
+                <span v-if="record.title" class="text-sm font-medium text-[var(--color-text-1)]">
+                  {{ record.title }}
+                </span>
+              </div>
+              <div v-if="record.content" class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]">
+                {{ record.content }}
+              </div>
+              <div class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
+                #{{ record.source_record_id || record.source_id || '—' }} · {{ fmtDt(record.occurred_at) || '—' }}
+              </div>
+            </div>
+          </template>
+          <!-- 判決歸因合併欄：每條歸因一塊（L1→L3 + 信心 + 分層 + 判決階段 全放一起），
+               塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
+          <template #verdict="{ record }">
+            <template v-if="record.attributions && record.attributions.length">
+              <div v-for="(a, ai) in record.attributions" :key="ai" class="verdict-blk text-xs leading-relaxed">
+                <!-- L1→L3 純文字麵包屑：L1 域藍字粗體、› 灰分隔、L2/L3 深色（乾淨不擁擠） -->
+                <div class="text-xs">
+                  <template v-if="[a.l1_label, a.l2_label, a.l3_label].some(Boolean)">
+                    <template
+                      v-for="(lvl, li) in [a.l1_label, a.l2_label, a.l3_label].filter(Boolean)"
+                      :key="li"
+                    >
+                      <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
+                      <span
+                        :class="
+                          li === 0
+                            ? 'font-semibold text-[rgb(var(--primary-6))]'
+                            : 'text-[var(--color-text-1)]'
+                        "
+                      >
+                        {{ lvl }}
+                      </span>
+                    </template>
+                  </template>
+                  <span v-else class="text-[var(--color-text-3)]">未歸因</span>
+                </div>
+                <!-- 反饋摘要（problem_summary）：該歸因標出的痛點片段，緊貼其分類（僅有值才顯示）-->
+                <div v-if="a.problem_summary" class="mt-0.5 text-[11px] leading-snug text-[var(--color-text-3)]">
+                  摘要：{{ a.problem_summary }}
+                </div>
+                <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="text-[var(--color-text-3)]">信心</span>
+                  <span class="font-semibold text-[var(--color-text-1)]">
+                    {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }}
+                  </span>
+                  <span
+                    class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]"
+                  >
+                    {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
+                  </span>
+                  <a-tag v-if="a.judgment_stage" size="small" :color="STAGE_COLOR[a.judgment_stage]">
+                    {{ STAGE_LABELS[a.judgment_stage] || a.judgment_stage }}
+                  </a-tag>
+                  <!-- 人工覆核徽章：status≠new/空 時顯示（人工軸，與 AI 階段並存）-->
+                  <a-tag
+                    v-if="a.status && a.status !== 'new'"
+                    size="small"
+                    :color="STATUS_COLOR[a.status]"
+                    bordered
+                  >
+                    {{ STATUS_LABEL[a.status] || a.status }}
+                  </a-tag>
+                  <!-- 真值標註徽章 -->
+                  <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
+                    <span class="text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
+                  </a-tooltip>
+                </div>
+                <!-- 每條歸因分開操作：確認 / 忽略（per finding_id）+ 標真值（開彈窗）；全展開不收 ⋯ -->
+                <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <a-button
+                    size="mini"
+                    :type="a.status === 'confirmed' ? 'primary' : 'outline'"
+                    @click="reviewFinding(a, 'confirmed')"
+                  >
+                    確認
+                  </a-button>
+                  <a-button
+                    size="mini"
+                    :status="a.status === 'dismissed' ? 'danger' : 'normal'"
+                    :type="a.status === 'dismissed' ? 'primary' : 'outline'"
+                    @click="reviewFinding(a, 'dismissed')"
+                  >
+                    忽略
+                  </a-button>
+                  <a-button size="mini" type="text" @click="openTrueLabel(record)">標真值</a-button>
+                </div>
+              </div>
+            </template>
+            <span v-else class="text-gray-300">—</span>
+          </template>
+          <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤（name）
+               + 右側內容（值），主要值深色、次要明細 --color-text-2（加深，避免太淺看不清）。 -->
+          <template #context="{ record }">
+            <div class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
+              <!-- 訂單 -->
+              <div class="flex gap-1.5">
+                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">訂單</span>
+                <div class="min-w-0">
+                  <div class="font-medium text-[var(--color-text-1)]">{{ cell(record.order_mid) }}</div>
+                  <div class="text-[var(--color-text-2)]">
+                    OID {{ cell(record.order_oid) }} · 出發 {{ fmtDt(record.go_date, true) || '—' }}
+                  </div>
+                </div>
+              </div>
+              <!-- 商品 -->
+              <div class="flex gap-1.5">
+                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">商品</span>
+                <div class="min-w-0">
+                  <div v-if="record.prod_name" class="font-medium text-[var(--color-text-1)]">
+                    {{ record.prod_name }}
+                  </div>
+                  <span v-else class="text-gray-300">—</span>
+                  <div class="text-[var(--color-text-2)]">
+                    OID {{ cell(record.prod_oid) }} · {{ cell(record.product_category_main) }} ·
+                    {{ cell(record.lang) }}
+                  </div>
+                </div>
+              </div>
+              <!-- 方案 -->
+              <div class="flex gap-1.5">
+                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">方案</span>
+                <div class="min-w-0">
+                  <div v-if="record.package_name" class="text-[var(--color-text-1)]">
+                    {{ record.package_name }}
+                  </div>
+                  <span v-else class="text-gray-300">—</span>
+                  <div class="text-[var(--color-text-2)]">OID {{ cell(record.pkg_oid) }}</div>
+                </div>
+              </div>
+              <!-- 供應商 -->
+              <div class="flex gap-1.5">
+                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">供應商</span>
+                <span class="text-[var(--color-text-1)]">{{ cell(record.supplier_oid) }}</span>
+              </div>
+              <!-- 旅客 -->
+              <div class="flex items-center gap-1.5">
+                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">旅客</span>
+                <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
+                  {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
+                </a-tag>
+                <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
+                  {{ record.member_uuid }}
+                </span>
+              </div>
+            </div>
+          </template>
+          <!-- 操作欄：整列級動作全展開（歸因/重判 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
+          <template #actions="{ record }">
+            <div class="flex flex-col items-stretch gap-1.5 py-1">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="isRowBusy(record._group)"
+                @click="rejudgeRow(record._group)"
+              >
+                {{ record.attributions && record.attributions.length ? '重判' : '歸因' }}
+              </a-button>
+              <a-button
+                size="small"
+                type="outline"
+                :disabled="!(record.attributions && record.attributions.length)"
+                @click="viewDetail(record)"
+              >
+                查看詳情
+              </a-button>
+            </div>
           </template>
         </a-table>
       </StateGuard>
@@ -460,57 +689,97 @@ onMounted(init);
         <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
       </div>
     </a-modal>
+
+    <!-- 操作欄：查看判決詳情彈窗（該列每條歸因的完整依據；純前端，資料取自 row.attributions）-->
+    <a-modal
+      v-model:visible="detailOpen"
+      :title="`判決詳情 · #${detailRow?.source_record_id ?? detailRow?.source_id ?? ''}`"
+      :width="720"
+      :footer="false"
+      unmount-on-close
+    >
+      <div v-if="detailRow" class="flex flex-col gap-3">
+        <div class="rounded-md bg-[var(--color-fill-1)] p-3 text-sm leading-relaxed text-[var(--color-text-1)]">
+          {{ detailRow.content || '（無評論內容）' }}
+        </div>
+        <template v-if="detailRow.attributions && detailRow.attributions.length">
+          <a-descriptions
+            v-for="(a, ai) in detailRow.attributions"
+            :key="ai"
+            :title="`歸因 ${ai + 1}`"
+            :column="1"
+            size="small"
+            bordered
+            :label-style="{ width: '96px' }"
+          >
+            <a-descriptions-item label="歸因分類">{{ attrPath(a) }}</a-descriptions-item>
+            <a-descriptions-item label="信心 / 分層">
+              {{ typeof a.confidence === 'number' ? a.confidence.toFixed(2) : '—' }} ·
+              {{ a.confidence_tier ? TIER_LABELS[a.confidence_tier] || a.confidence_tier : '—' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="判決階段">
+              {{ a.judgment_stage ? STAGE_LABELS[a.judgment_stage] || a.judgment_stage : '—' }}
+            </a-descriptions-item>
+            <!-- 反饋摘要（problem_summary）；判決理由永遠＝同一 evidence_quote 複製，故移除避免重複 -->
+            <a-descriptions-item label="反饋摘要">{{ a.problem_summary || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="建議行動">{{ a.recommended_action || '—' }}</a-descriptions-item>
+          </a-descriptions>
+        </template>
+        <a-empty v-else description="此列尚無歸因（未判 / 正向不歸因）" />
+      </div>
+    </a-modal>
+
+    <!-- 操作欄：標真值彈窗（人工為每條歸因標正確 L1 域，供準確率評估；重判依 finding_id 保留）-->
+    <a-modal
+      v-model:visible="truelabelOpen"
+      title="標註真值分類"
+      ok-text="儲存"
+      cancel-text="取消"
+      :ok-loading="truelabelSaving"
+      unmount-on-close
+      @ok="saveTrueLabels"
+    >
+      <div v-if="truelabelRow" class="flex flex-col gap-3">
+        <div class="text-xs text-[var(--color-text-3)]">
+          為每條歸因標註正確的 L1 歸因域（留空＝清除標註）。此標註供準確率評估 / 未來微調，不改變 AI 判決。
+        </div>
+        <div
+          v-for="(a, ai) in truelabelRow.attributions || []"
+          :key="ai"
+          class="flex flex-col gap-1 rounded-md border border-[var(--color-neutral-3)] p-2.5"
+        >
+          <div class="text-xs text-[var(--color-text-2)]">AI 歸因：{{ attrPath(a) }}</div>
+          <a-select
+            v-if="a.finding_id"
+            v-model="truelabelDraft[a.finding_id]"
+            size="small"
+            allow-clear
+            placeholder="選正確 L1 域（留空＝清除）"
+            :options="L1_OPTS"
+          />
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <style scoped>
-/* 一列一 review 內多歸因堆疊塊：每塊等高（min-height）→ 歸因/信心/分層/階段四欄同一條歸因
-   水平對齊；塊間細分隔線區隔各歸因。utility 無法表達「跨欄等高 + last 去邊」故用 scoped class。 */
-.attr-blk {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  /* 4.2rem：容 3 行 L1-L3（text-xs leading-relaxed ≈3.66rem）+ 上下 padding，避免溢出撐高單塊而跨欄錯位 */
-  min-height: 4.2rem;
-  padding: 4px 0;
+/* 複合評論欄星等縮小：Arco a-rate 預設星 ~20px 過大，主列精巧化縮至 14px，與傾向 tag / 標題同行不搶高。
+   :deep 觸及 Arco 內部 .arco-rate-character（utility / prop 無法觸及第三方深層 DOM）。 */
+:deep(.review-rate .arco-rate-character) {
+  font-size: 14px;
+  margin-right: 2px;
+}
+/* 判決歸因合併欄：每條歸因一塊，塊間細線分隔（單欄內堆疊，無需跨欄等高，故不設 min-height）。 */
+.verdict-blk {
+  padding: 6px 0;
   border-bottom: 1px solid var(--color-neutral-3);
 }
-.attr-blk:last-child {
+.verdict-blk:first-child {
+  padding-top: 0;
+}
+.verdict-blk:last-child {
   border-bottom: none;
-}
-
-/* 展開明細固定欄寬：Arco a-descriptions 內部為 table，預設依內容自動撐欄→每列寬度不一。
-   table-layout:fixed + 固定 label 寬，讓 3 組 label/value 欄寬跨列一致（utility/prop 無法觸及內部 table）。 */
-:deep(.attr-expand .arco-descriptions-table) {
-  table-layout: fixed;
-}
-:deep(.attr-expand .arco-descriptions-item-value) {
-  word-break: break-word;
-}
-/* 展開明細背景與表格列一致：移除 bordered 版 label 灰底(--color-fill-1)、value 底色 → descriptions
-   全透明，讓下層展開 td 背景透出。預設白；hover 時整區統一轉灰(--color-fill-1)，與表格資料列 hover
-   行為一致。用 .arco-descriptions-border 同鏈提高特異度，穩壓 Arco 原生 label 灰底規則。 */
-:deep(.attr-expand.arco-descriptions-border .arco-descriptions-item-label-block),
-:deep(.attr-expand.arco-descriptions-border .arco-descriptions-item-value-block) {
-  background-color: transparent;
-}
-/* 展開列預設底色＝表格資料列白(--color-bg-2)：Arco 給展開 td 上了 --color-fill-1 淡灰(247,248,250)做
-   區隔，覆寫為白 → 與資料列一致（descriptions cell 已透明，白會透出）；hover 時 Arco 原生高特異度
-   hover 規則仍蓋成 --color-fill-1 灰，達成「預設白、hover 統一灰」與表格資料列行為一致。 */
-:deep(.arco-table-tr-expand > .arco-table-td) {
-  background-color: var(--color-bg-2);
-}
-/* 主列 ⇄ 展開列 hover 完全同步：兩者為獨立 <tr>，Arco 原生只各自 hover。用相鄰選擇器 + :has 互相連動，
-   使滑鼠移到「主列或展開列任一」時，整則評論（主列 td + 展開列 td）同時上灰(--color-fill-1)，底色完全同步。 */
-:deep(.arco-table-tr:hover + .arco-table-tr-expand > .arco-table-td),
-:deep(.arco-table-tr:has(+ .arco-table-tr-expand:hover) > .arco-table-td) {
-  background-color: var(--color-fill-1);
-}
-/* 分組標題：預設偏大偏深，調小 + 轉次級文字色，作為分區標籤不搶眼。 */
-:deep(.attr-expand .arco-descriptions-title) {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-3);
-  margin-bottom: 6px;
+  padding-bottom: 0;
 }
 </style>

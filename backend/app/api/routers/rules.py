@@ -10,7 +10,6 @@ import json
 
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.core import auth, db
@@ -112,21 +111,20 @@ def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -
     return {"groups": product_vertical.all_groups()}
 
 
-# 註：須定義於 `/{code}` GET 之前，否則 "export.xlsx" 會被當成 code 段被 get_rule 攔截。
-@router.get("/export.xlsx")
-def export_rules_xlsx(user: dict = Depends(auth.get_current_user)) -> Response:
-    """導出全部歸因分類（C-N，每域一分頁）＋ global 判決總規範為 Excel（DB active 版本）。
+# 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。
+@router.post("/export")
+def export_rules_xlsx(user: dict = Depends(auth.get_current_user)) -> dict:
+    """啟動判決規則導出背景 job → {job_id, filename}（立即回，背景組檔）。
 
-    格式對齊 data/問題分類層級結構.xlsx（L1/L2/L3 判準逐列）；供品控 / PM 離線審閱判決法典。
+    導出全部歸因分類（C-N，每域一分頁）＋ global 判決總規範（DB active 版本），格式對齊
+    data/問題分類層級結構.xlsx（L1/L2/L3 判準逐列）；供品控 / PM 離線審閱判決法典。改背景 job：
+    與問題列表導出共用 /api/exports 進度串流 / 停止 / 取檔。
     """
-    from app.core import rule_export
+    from app.core import export_jobs, rule_export
 
-    data = rule_export.build_rules_workbook_bytes()
-    return Response(
-        content=data,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="judge_rules.xlsx"'},
-    )
+    filename = "judge_rules.xlsx"
+    job_id = export_jobs.start_export(rule_export.build_rules_workbook_bytes, filename)
+    return {"job_id": job_id, "filename": filename}
 
 
 @router.get("/{code}")

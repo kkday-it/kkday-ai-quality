@@ -14,7 +14,7 @@ import json
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -52,6 +52,11 @@ app.include_router(config_router.router)
 from app.api.routers import rules as rules_router  # noqa: E402
 
 app.include_router(rules_router.router)
+
+# ── 通用導出 job（進度串流 / 停止 / 取檔，跨領域共用）；prefix 自帶 /api/exports ──
+from app.api.routers import exports as exports_router  # noqa: E402
+
+app.include_router(exports_router.router)
 db.seed_rules_from_files()  # 初次播種：無 DB 版的 rule 以默認檔建 v1 active（冪等）
 
 
@@ -385,6 +390,8 @@ def get_problems(
     date_to: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
+    confidence_tier: str | None = None,
+    l1_domain: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
     limit: int = 100,
@@ -393,7 +400,8 @@ def get_problems(
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
-    星等 scores / 商品垂直分類 product_verticals 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    星等 scores / 商品垂直分類 product_verticals / 判決階段 stage 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    confidence_tier（信心分層）/ l1_domain（L1 歸因域）為單值 judgments.data 過濾。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
     未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
@@ -402,18 +410,29 @@ def get_problems(
         source=source,
         judged=judged,
         polarity=polarity,
-        stage=stage,
+        stage=_csv_strs(stage),
         score=_csv_ints(scores),
         product_vertical=_csv_strs(product_verticals),
         date_from=date_from,
         date_to=date_to,
         prod_oid=prod_oid,
         order_oid=order_oid,
+        confidence_tier=confidence_tier,
+        l1_domain=l1_domain,
         sort_by=sort_by,
         sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
+
+
+@app.get("/api/problems/l1_domains")
+def get_l1_domains(source: str) -> list[dict]:
+    """某來源已判資料出現過的 L1 歸因域清單（[{code,label,count}]）——供歸因列表 L1 篩選下拉。
+
+    選項直接來自 judgments.data distinct，恆與可篩內容一致（見 db.list_l1_domains）。
+    """
+    return db.list_l1_domains(source)
 
 
 class ExportProblemsIn(BaseModel):
@@ -430,29 +449,32 @@ class ExportProblemsIn(BaseModel):
 
 
 @app.post("/api/problems/export")
-def export_problems(body: ExportProblemsIn) -> Response:
-    """導出統一問題列表為**美化 xlsx**（全量·不受分頁限制；1:N 每條歸因一列、xid 第一列、不含 item_id）。
+def export_problems(body: ExportProblemsIn) -> dict:
+    """啟動問題列表導出背景 job → {job_id, filename}（立即回，背景組檔）。
 
-    item_ids 給定→只導那些 review（複選/分頁選取，可上千）；否則導符合 source/polarity/judged
-    + 星等 / 商品垂直分類 / 日期區間 篩選（與列表頁一致，避免導出與畫面不同步）全部。
+    大列表組 xlsx 可能耗時數十秒，改背景 job：前端連 SSE（/api/exports/stream）看進度、可停止，
+    完成後 /api/exports/download 取檔。item_ids 給定→只導那些 review（複選/分頁選取，可上千）；
+    否則導符合 source/polarity/judged + 星等 / 商品垂直分類 / 日期區間 篩選（與列表頁一致）全部。
     """
-    xlsx_bytes = db.export_problems_xlsx(
-        source=body.source,
-        polarity=body.polarity,
-        judged=body.judged,
-        item_ids=body.item_ids,
-        score=body.scores,
-        product_vertical=body.product_verticals,
-        date_from=body.date_from,
-        date_to=body.date_to,
-    )
-    return Response(
-        content=xlsx_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f'attachment; filename="problems_{body.source or "all"}.xlsx"'
-        },
-    )
+    from app.core import export_jobs
+
+    def _builder(ctx: export_jobs.ExportCtx) -> bytes:
+        """背景組檔：逐 review 回報進度 + 輪詢取消（ctx 穿透至 db 層 fan-out 迴圈）。"""
+        return db.export_problems_xlsx(
+            source=body.source,
+            polarity=body.polarity,
+            judged=body.judged,
+            item_ids=body.item_ids,
+            score=body.scores,
+            product_vertical=body.product_verticals,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            ctx=ctx,
+        )
+
+    filename = f"problems_{body.source or 'all'}.xlsx"
+    job_id = export_jobs.start_export(_builder, filename)
+    return {"job_id": job_id, "filename": filename}
 
 
 @app.get("/api/problems/attribution_overview")
@@ -506,6 +528,20 @@ def patch_finding_status(finding_id: str, body: StatusIn) -> dict:
     if not db.update_finding_status(finding_id, body.status):
         raise HTTPException(status_code=404, detail="finding not found")
     return {"finding_id": finding_id, "status": body.status}
+
+
+class TrueLabelIn(BaseModel):
+    """人工標註真值分類：true_label 存正確歸因（如 L1 域 code）；None/空＝清除標註。"""
+
+    true_label: str | None = None
+
+
+@app.patch("/api/findings/{finding_id}/true_label")
+def patch_finding_true_label(finding_id: str, body: TrueLabelIn) -> dict:
+    """人工標註單筆歸因的真值分類 true_label（供準確率評估 / 未來微調）。重判依 finding_id 保留。"""
+    if not db.update_finding_true_label(finding_id, body.true_label):
+        raise HTTPException(status_code=404, detail="finding not found")
+    return {"finding_id": finding_id, "true_label": body.true_label}
 
 
 # ── 預留路由 ───────────────────────────────────────────────────────

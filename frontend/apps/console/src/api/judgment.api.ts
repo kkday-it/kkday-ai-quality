@@ -1,13 +1,13 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
-import { BASE, getToken, j } from './http.api';
+import { BASE, j } from './http.api';
 
 /** 統一問題列表查詢參數（source/judged/polarity 既有；scores/productVerticals/日期區間為新增篩選）。 */
 export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
   polarity?: string;
-  /** 判決階段篩選（unjudged/judged/pending_review/pending_data/insufficient）。 */
-  stage?: string;
+  /** 判決階段篩選（多選；unjudged/judged/pending_review/pending_data/insufficient；CSV 傳後端）。 */
+  stage?: string[];
   /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
   scores?: number[];
   /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
@@ -20,6 +20,10 @@ export interface GetProblemsParams {
   prodOid?: string;
   /** 訂單 order_oid 精確過濾。 */
   orderOid?: string;
+  /** 信心分層過濾（單選；auto_accept/jury/needs_review/hold）。 */
+  confidenceTier?: string;
+  /** L1 歸因域過濾（單選；content/supplier/…，選項來自 getL1Domains）。 */
+  l1Domain?: string;
   /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
   sortBy?: string;
   /** 排序方向（asc/desc；預設 desc）。 */
@@ -34,13 +38,15 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   if (params.source) q.set('source', params.source);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity) q.set('polarity', params.polarity);
-  if (params.stage) q.set('stage', params.stage);
+  if (params.stage?.length) q.set('stage', params.stage.join(','));
   if (params.scores?.length) q.set('scores', params.scores.join(','));
   if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.orderOid) q.set('order_oid', params.orderOid);
+  if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
+  if (params.l1Domain) q.set('l1_domain', params.l1Domain);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);
   q.set('limit', String(params.limit ?? 2000));
@@ -48,8 +54,22 @@ export const getProblems = (params: GetProblemsParams = {}) => {
   return j(`${BASE}/problems?${q.toString()}`);
 };
 
-/** 導出 CSV（POST·item_ids 放 body 避免 URL 過長 431）→ 回 Blob 供前端下載。 */
-export const exportProblems = async (p: {
+/** 某來源已判資料出現過的 L1 歸因域（供列表 L1 篩選下拉；code/label/count 皆來自 judgments.data distinct）。 */
+export interface L1DomainOpt {
+  code: string;
+  label: string;
+  count: number;
+}
+
+/** 取某來源 L1 歸因域清單（選項恆與可篩內容一致，見後端 db.list_l1_domains）。 */
+export const getL1Domains = (source: string): Promise<L1DomainOpt[]> =>
+  j(`${BASE}/problems/l1_domains?source=${encodeURIComponent(source)}`);
+
+/**
+ * 啟動問題列表導出背景 job（POST·item_ids 放 body 避免 URL 過長 431）→ {job_id, filename}（立即回）。
+ * 進度走 /api/exports SSE（見 exports.api），完成後 downloadExport(job_id) 取檔；大列表可即時看進度並停止。
+ */
+export const startProblemsExport = (p: {
   source?: string;
   polarity?: string;
   judged?: boolean;
@@ -62,19 +82,12 @@ export const exportProblems = async (p: {
   date_from?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   date_to?: string;
-}): Promise<Blob> => {
-  const token = getToken();
-  const res = await fetch(`${BASE}/problems/export`, {
+}): Promise<{ job_id: string; filename: string }> =>
+  j(`${BASE}/problems/export`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(p),
   });
-  if (!res.ok) throw new Error(`導出失敗 ${res.status}`);
-  return res.blob();
-};
 
 /** 啟動初判歸因批量任務（選擇驅動：item_ids 複選 / scope=all 全部未判 + 指定模型）→ {job_id, total, model}。 */
 export const startPrejudge = (body: {

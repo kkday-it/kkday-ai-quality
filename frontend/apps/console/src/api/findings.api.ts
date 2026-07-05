@@ -16,6 +16,14 @@ export const patchStatus = (findingId: string, status: string) =>
     body: JSON.stringify({ status }),
   });
 
+/** 人工標註單筆歸因真值分類 true_label（null/空＝清除）；重判依 finding_id 保留。 */
+export const updateTrueLabel = (findingId: string, trueLabel: string | null) =>
+  j(`${BASE}/findings/${encodeURIComponent(findingId)}/true_label`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ true_label: trueLabel }),
+  });
+
 export const diagnose = (prodOid: string) =>
   j(`${BASE}/diagnose`, {
     method: 'POST',

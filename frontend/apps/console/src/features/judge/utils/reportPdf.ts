@@ -47,14 +47,29 @@ function buildHeaderEl(meta: ReportMeta): HTMLElement {
   return el;
 }
 
+/** PDF 導出進度 / 取消掛鉤（前端逐區塊回報；PDF 為客戶端生成，無後端 job）。 */
+export type PdfExportHooks = {
+  /** 每完成一區塊回報進度（done, total）；total＝blocks.length + 1（含報告頭）。 */
+  onProgress?: (done: number, total: number) => void;
+  /** 每區塊 rasterize 前輪詢；回 true 即中止（不存檔），exportBlocksToPdf 回 false。 */
+  shouldCancel?: () => boolean;
+};
+
 /**
  * 將指定 DOM 區塊依序導出為單一多頁 PDF（A4 直式）。
  * @param blocks 依視覺順序排列的可導出區塊（各面板卡片 / KPI 區）
  * @param meta 報告頭資訊
  * @param fileName 下載檔名（含 .pdf）
+ * @param hooks 進度回報 / 取消輪詢（可選；供實時進度條與停止按鈕，與後端導出 job 體驗一致）
+ * @returns 完成存檔回 true；中途被 shouldCancel 中止回 false（未存檔）
  * @throws {Error} html2canvas / jsPDF 載入或渲染失敗時拋出，由呼叫端提示
  */
-export async function exportBlocksToPdf(blocks: HTMLElement[], meta: ReportMeta, fileName: string): Promise<void> {
+export async function exportBlocksToPdf(
+  blocks: HTMLElement[],
+  meta: ReportMeta,
+  fileName: string,
+  hooks: PdfExportHooks = {},
+): Promise<boolean> {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
   // compress: 對 PDF 內容流做 zlib 壓縮（再省一截）。
   const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
@@ -93,12 +108,26 @@ export async function exportBlocksToPdf(blocks: HTMLElement[], meta: ReportMeta,
   header.style.left = '-99999px';
   header.style.top = '0';
   document.body.appendChild(header);
+  // 進度總量＝報告頭 + 各區塊；每 rasterize 一塊前先輪詢取消，取消則不存檔、回 false。
+  const total = blocks.length + 1;
+  let done = 0;
+  const report = () => hooks.onProgress?.(done, total);
+  report(); // 起始 0/total（進度條由「準備中」轉可見）
   try {
+    if (hooks.shouldCancel?.()) return false;
     await place(header);
-    for (const el of blocks) await place(el);
+    done += 1;
+    report();
+    for (const el of blocks) {
+      if (hooks.shouldCancel?.()) return false;
+      await place(el);
+      done += 1;
+      report();
+    }
   } finally {
     document.body.removeChild(header);
   }
 
   pdf.save(fileName);
+  return true;
 }

@@ -22,3 +22,6 @@ config/taxonomy/.backups/
 
 # DB 遷移前全庫備份（本地 pg_dump·數百 MB·含真實資料，禁止 commit）
 backend/backups/
+
+# CodeRAG 本地索引
+.coderag/

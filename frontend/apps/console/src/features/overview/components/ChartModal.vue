@@ -5,6 +5,7 @@
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import VChart from 'vue-echarts';
+import { ExportProgressBar } from '@/components';
 import { exportBlocksToPdf } from '@/features/judge/utils/reportPdf';
 import { exportName } from '@/features/judge/utils';
 import { buildOption } from '../registry/chartRegistry';
@@ -17,7 +18,17 @@ const props = defineProps<{ spec: ChartSpec | null; data?: unknown }>();
 const option = computed(() => (props.spec ? buildOption(props.spec.type, props.data) : null));
 const sourceUrl = computed(() => props.spec?.source?.dashboardUrl ?? '');
 const blockRef = ref<HTMLElement>();
+
+// PDF 匯出實時進度（客戶端逐區塊生成，非後端 job；與後端導出共用 ExportProgressBar 呈現）
 const exporting = ref(false);
+const exportStatus = ref(''); // running｜cancelling
+const exportProcessed = ref(0);
+const exportTotal = ref(0);
+const exportPct = computed(() =>
+  exportTotal.value ? Math.round((exportProcessed.value / exportTotal.value) * 100) : 0,
+);
+/** 取消旗標：由 exportBlocksToPdf 於每區塊前輪詢（rasterize 不可搶佔中斷，只能區塊間停）。 */
+let exportCancel = false;
 
 /** 依圖型把原始資料攤平成 a-table 的 columns / rows。 */
 const table = computed<{ columns: { title: string; dataIndex: string }[]; rows: Record<string, unknown>[] }>(() => {
@@ -74,15 +85,39 @@ const table = computed<{ columns: { title: string; dataIndex: string }[]; rows: 
 const onExport = async () => {
   if (!blockRef.value || !props.spec) return;
   exporting.value = true;
+  exportStatus.value = 'running';
+  exportProcessed.value = 0;
+  exportTotal.value = 0;
+  exportCancel = false;
   try {
     const now = new Date();
     const stamp = now.toLocaleString('zh-TW', { hour12: false });
-    await exportBlocksToPdf([blockRef.value], { title: props.spec.title, generatedAt: stamp, filters: [] }, exportName(props.spec.id, 'pdf'));
+    const ok = await exportBlocksToPdf(
+      [blockRef.value],
+      { title: props.spec.title, generatedAt: stamp, filters: [] },
+      exportName(props.spec.id, 'pdf'),
+      {
+        onProgress: (done, total) => {
+          exportProcessed.value = done;
+          exportTotal.value = total;
+        },
+        shouldCancel: () => exportCancel,
+      },
+    );
+    if (ok) Message.success('已匯出 PDF');
+    else Message.info('已停止匯出');
   } catch (e: any) {
     Message.error('匯出失敗：' + (e?.message || e));
   } finally {
     exporting.value = false;
+    exportStatus.value = '';
   }
+};
+
+/** 停止 PDF 匯出（設旗標，exportBlocksToPdf 於下個區塊前中止並回 false）。 */
+const onCancelExport = () => {
+  exportCancel = true;
+  exportStatus.value = 'cancelling';
 };
 </script>
 
@@ -101,6 +136,17 @@ const onExport = async () => {
         class="mt-3"
       />
     </div>
+    <!-- PDF 匯出實時進度：匯出中才顯示（前端逐區塊生成，可停止）-->
+    <ExportProgressBar
+      v-if="exporting"
+      class="mt-3"
+      label="匯出 PDF"
+      :status="exportStatus"
+      :processed="exportProcessed"
+      :total="exportTotal"
+      :pct="exportPct"
+      @cancel="onCancelExport"
+    />
     <div class="mt-3 flex items-center gap-3">
       <a-button type="primary" :loading="exporting" @click="onExport">匯出 PDF</a-button>
       <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener noreferrer">

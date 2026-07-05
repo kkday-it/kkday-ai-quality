@@ -119,3 +119,18 @@ def update_finding_status(finding_id: str, status: str) -> bool:
     )
     with T.get_engine().begin() as c:
         return c.execute(stmt).rowcount > 0
+
+
+def update_finding_true_label(finding_id: str, true_label: str | None) -> bool:
+    """人工標註單筆 Finding 的真值分類 true_label（供準確率評估 / 未來微調）。回傳是否命中。
+
+    true_label 存人工判定的正確歸因（如 L1 域 code）；None/空字串清除標註。
+    重判（replace_source_findings）會依 finding_id 保留此 true_label。
+    """
+    stmt = (
+        sa_update(T.judgments)
+        .where(T.judgments.c.finding_id == finding_id)
+        .values(true_label=true_label or None)
+    )
+    with T.get_engine().begin() as c:
+        return c.execute(stmt).rowcount > 0

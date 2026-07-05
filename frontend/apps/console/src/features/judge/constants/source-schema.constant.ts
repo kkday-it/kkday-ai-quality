@@ -24,44 +24,40 @@ export interface DateRangeFilterDef {
   label: string;
 }
 
-/** 傾向篩選（正向/負向/中性/傾向不明；沿用既有「僅看問題」與下拉互動）。 */
+/** 傾向篩選（正向/負向/中性/傾向不明；下拉單選）。 */
 export interface PolarityFilterDef {
   type: 'polarity';
 }
 
+/** 判決階段篩選（多選；選項來自 STAGE_LABELS，值 unjudged/judged/pending_review/pending_data/insufficient）。 */
+export interface StageFilterDef {
+  type: 'stage';
+}
+
+/** 信心分層篩選（單選；選項來自 TIER_LABELS，值 auto_accept/jury/needs_review/hold）。 */
+export interface TierFilterDef {
+  type: 'tier';
+}
+
+/** L1 歸因域篩選（單選；選項為該來源已判資料 distinct，經 getL1Domains 動態載入）。 */
+export interface L1DomainFilterDef {
+  type: 'l1Domain';
+}
+
 /** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
 export type SourceFilterDef =
-  PolarityFilterDef | ScoreFilterDef | ProductVerticalFilterDef | DateRangeFilterDef;
+  | PolarityFilterDef
+  | ScoreFilterDef
+  | StageFilterDef
+  | TierFilterDef
+  | L1DomainFilterDef
+  | ProductVerticalFilterDef
+  | DateRangeFilterDef;
 
-/** 展開行明細單一欄位定義（key 對應 `_enrich_problem` 回傳欄位；缺值防禦式顯示「—」）。 */
-export interface ExpandFieldDef {
-  /** 後端記錄欄位 key。 */
-  key: string;
-  /** a-descriptions 顯示 label。 */
-  label: string;
-  /** 特殊格式化：'datetime' 完整時間 / 'date' 僅日期 / 未指定＝原樣顯示。 */
-  format?: 'datetime' | 'date';
-  /** a-descriptions 跨欄數（:column=4 版面控制每列排布；預設 1）。 */
-  span?: number;
-  /** 特殊渲染：'rate' 星等 a-rate / 'traveller' 旅客類型映射。 */
-  kind?: 'rate' | 'traveller';
-}
-
-/** 展開行分組：每組渲染一個帶標題的 a-descriptions，讓明細分區更顯眼。 */
-export interface ExpandGroupDef {
-  /** 分組標題（a-descriptions title；空＝無標題）。 */
-  title?: string;
-  /** 該組 a-descriptions 欄數（預設 4）。 */
-  column?: number;
-  /** 組內欄位。 */
-  fields: ExpandFieldDef[];
-}
-
-/** 單一來源的歸因列表 schema：欄位 + 篩選器 + 展開行分組明細。 */
+/** 單一來源的歸因列表 schema：欄位 + 篩選器（展開行已廢除，關聯明細改複合欄位平鋪主列）。 */
 export interface SourceListSchema {
   columns: TableColumnData[];
   filters: SourceFilterDef[];
-  expandGroups: ExpandGroupDef[];
 }
 
 /** L3 候選（後端 `l3_candidates`：目前僅 code/score；label 保留給未來後端補中文名）。 */
@@ -88,6 +84,10 @@ export interface Attribution {
   problem_summary?: string;
   reason?: string;
   is_primary?: boolean;
+  /** 人工覆核 status（confirmed/dismissed/fixed）——後端 _attribution_of 回傳；覆核徽章用。 */
+  status?: string;
+  /** 人工標註真值分類 true_label（正確 L1 域 code）——標真值功能用。 */
+  true_label?: string;
 }
 
 
@@ -110,122 +110,66 @@ export interface ProblemRow {
 }
 
 /**
- * product_reviews 主列欄位：只放「判決數據」（訂單 / 傾向 / 歸因 / 信心 / 分層）；
- * 原始數據（商品名稱、評論全文等）移入展開行，主列聚焦判決結果。序號欄由 AttributionList 統一前置。
+ * 統一主列欄位（**全 5 反饋來源共用**，無展開行，複合欄合併同類資訊）。
+ * 排列原則：**源數據在前，判決數據在後**。序號欄由 AttributionList 統一前置。
+ *   1. 反饋內容（星等+傾向+標題+內容全文+ID·時間，可按反饋時間排序）
+ *   2. 關聯資料（訂單→商品→方案→供應商→旅客，各段小標籤；缺欄防禦式「—」，故各來源皆適用）
+ *   3. 判決歸因（L1→L3 + 摘要 + 信心/分層/階段 + per-歸因覆核，每條一塊）
+ *   4. 操作（整列級 歸因/重判 + 查看詳情）
+ * 複合欄（review/context/verdict/actions）以 slotName 客製渲染，欄位 key 皆 `_enrich_problem` 現成
+ * （非該來源的欄位回空 → 顯示「—」，達成「盡可能統一」的優雅降級）。
  */
-const PRODUCT_REVIEWS_COLUMNS: TableColumnData[] = [
-  { title: '訂單', dataIndex: 'order_mid' },
-  // 評論時間 / 信心走表頭點擊排序（Arco sortable）→ 後端 sort_by=occurred_at / confidence；
-  // 其餘欄後端無對應排序欄故不開。評論時間為可排序欄故留主列（不再進展開，避免重複）。
+const COMPOSITE_COLUMNS: TableColumnData[] = [
   {
-    title: '評論時間',
+    title: '反饋內容',
     dataIndex: 'occurred_at',
-    slotName: 'occurred',
+    slotName: 'review',
+    width: 320,
     sortable: { sortDirections: ['ascend', 'descend'] },
   },
-  { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
-  { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
+  { title: '關聯資料', dataIndex: 'order_mid', slotName: 'context', width: 300 },
   {
-    title: '信心',
+    title: '判決歸因',
     dataIndex: 'confidence',
-    slotName: 'conf',
+    slotName: 'verdict',
+    width: 260,
     sortable: { sortDirections: ['ascend', 'descend'] },
   },
-  { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
-  { title: '判決階段', dataIndex: 'judgment_stage', slotName: 'stage' },
+  { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/**
- * product_reviews 展開行分組（每組一個帶標題 a-descriptions，:column=4，span 合計 4）：
- * 商品 / 評論 / 旅客 / 判決 四區，分區呈現更顯眼。
- */
-const PRODUCT_REVIEWS_EXPAND_GROUPS: ExpandGroupDef[] = [
-  {
-    title: '商品資訊',
-    column: 4,
-    fields: [
-      { key: 'prod_oid', label: '商品OID', span: 1 },
-      { key: 'prod_name', label: '商品名稱', span: 2 },
-      { key: 'lang', label: '商品語系', span: 1 }, // lang_code＝商品語系（非導覽），與商品OID同列
-      { key: 'pkg_oid', label: '方案OID', span: 1 },
-      { key: 'package_name', label: '方案名稱', span: 2 },
-      { key: 'product_category_main', label: '商品分類', span: 1 },
-    ],
-  },
-  {
-    title: '評論資訊',
-    column: 4,
-    fields: [
-      { key: 'source_record_id', label: '評論ID', span: 1 },
-      { key: 'title', label: '評論標題', span: 1 },
-      { key: 'score', label: '評論星等', span: 1, kind: 'rate' },
-      { key: 'occurred_at', label: '評論時間', span: 1, format: 'datetime' },
-      // 評論內容 ‖ 問題摘要 並列：左＝完整原文、右＝主歸因標出的痛點片段（原判決資訊區的
-      // 依據/判決理由已移除——依據＝問題摘要複製、判決理由永遠空，見 prejudge 產出）。
-      { key: 'content', label: '評論內容', span: 2 },
-      { key: 'problem_summary', label: '問題摘要', span: 2 },
-    ],
-  },
-  {
-    title: '旅客資訊',
-    column: 4,
-    fields: [
-      { key: 'member_uuid', label: '會員UUID', span: 2 }, // 與旅客類型左右均分
-      { key: 'traveller_type', label: '旅客類型', span: 2, kind: 'traveller' },
-    ],
-  },
-];
+/** 有星等欄的來源（product_reviews=rec_scores / freshdesk=st_survey_rating / app_feedback=score）→ 才給星等篩選。 */
+const RATING_SOURCES = new Set(['product_reviews', 'freshdesk_tickets', 'app_feedback']);
 
-// 星等改為僅在展開明細顯示、不作列表篩選（依需求移除 score 篩選器；排序仍可用星等）。
-// 商品垂直分類已改為規則配置頁的全局開關（跨列表/縱覽共用），不再是列表本地篩選。
-const PRODUCT_REVIEWS_FILTERS: SourceFilterDef[] = [
+/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / L1域 / 日期區間。 */
+const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
-  { type: 'dateRange', field: 'occurred_at', label: '評論時間' },
+  { type: 'stage' },
+  { type: 'tier' },
+  { type: 'l1Domain' },
+  { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];
 
-/** 其餘 4 來源 fallback stub：沿用 AttributionList 舊固定欄位，僅傾向篩選（現況 1:1 對等，非新增能力）。 */
-const FALLBACK_COLUMNS: TableColumnData[] = [
-  { title: '商品ID', dataIndex: 'prod_oid' },
-  { title: '商品名稱', dataIndex: 'prod_name', ellipsis: true, tooltip: true },
-  { title: '評論 / 內容', dataIndex: 'content', ellipsis: true, tooltip: true },
-  { title: '星等', dataIndex: 'score' },
-  { title: '評論時間', dataIndex: 'occurred_at', slotName: 'occurred' },
-  { title: '出發日', dataIndex: 'go_date', slotName: 'godate' },
-  { title: '訂單', dataIndex: 'order_mid' },
-  { title: '傾向', dataIndex: 'polarity', slotName: 'pol' },
-  { title: '歸因（L1→L3）', dataIndex: 'attr', slotName: 'attr' },
-  { title: '信心', dataIndex: 'confidence' },
-  { title: '分層', dataIndex: 'confidence_tier', slotName: 'tier' },
-];
-const FALLBACK_EXPAND_GROUPS: ExpandGroupDef[] = [
-  {
-    column: 1,
-    fields: [
-      { key: 'content', label: '內容全文' },
-      { key: 'problem_summary', label: '問題摘要' }, // 依據/判決理由已移除（重複/永遠空）
-    ],
-  },
-];
-const FALLBACK_FILTERS: SourceFilterDef[] = [{ type: 'polarity' }];
-const FALLBACK_SCHEMA: SourceListSchema = {
-  columns: FALLBACK_COLUMNS,
-  filters: FALLBACK_FILTERS,
-  expandGroups: FALLBACK_EXPAND_GROUPS,
-};
+/** 組某來源的篩選：共用集 + 有星等者加星等（插在階段後、信心分層前）。 */
+function filtersFor(source: string): SourceFilterDef[] {
+  if (!RATING_SOURCES.has(source)) return BASE_FILTERS;
+  const scoreFilter: SourceFilterDef = { type: 'score', options: [1, 2, 3, 4, 5] };
+  return [BASE_FILTERS[0], BASE_FILTERS[1], scoreFilter, ...BASE_FILTERS.slice(2)];
+}
 
-/** source code → 該來源歸因列表 schema；未註冊來源一律回退 `FALLBACK_SCHEMA`。 */
-export const SOURCE_LIST_SCHEMAS: Record<string, SourceListSchema> = {
-  product_reviews: {
-    columns: PRODUCT_REVIEWS_COLUMNS,
-    filters: PRODUCT_REVIEWS_FILTERS,
-    expandGroups: PRODUCT_REVIEWS_EXPAND_GROUPS,
-  },
-};
+/** 5 反饋來源皆用統一複合欄；差異只在星等篩選（有評分欄者才有）。 */
+const _SOURCES = ['product_reviews', 'conversations', 'freshdesk_tickets', 'app_feedback', 'mixpanel_tracker'];
+export const SOURCE_LIST_SCHEMAS: Record<string, SourceListSchema> = Object.fromEntries(
+  _SOURCES.map((s) => [s, { columns: COMPOSITE_COLUMNS, filters: filtersFor(s) }]),
+);
+
+/** 未註冊來源回退：同一套統一複合欄 + 共用篩選（無星等）。 */
+const FALLBACK_SCHEMA: SourceListSchema = { columns: COMPOSITE_COLUMNS, filters: BASE_FILTERS };
 
 /**
- * 取某來源的歸因列表 schema；未註冊（其餘 4 來源尚未遷移專屬表）回退 fallback stub。
+ * 取某來源的歸因列表 schema；5 來源皆註冊為統一複合欄，未知來源回退 FALLBACK。
  * @param source 來源 code
- * @returns 該來源 columns/filters/expandFields
+ * @returns 該來源 columns/filters
  */
 export function schemaFor(source: string): SourceListSchema {
   return SOURCE_LIST_SCHEMAS[source] ?? FALLBACK_SCHEMA;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from sqlalchemy import cast as sa_cast
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import source_registry
@@ -197,6 +197,8 @@ def _attribution_of(r: dict) -> dict:
         "problem_summary": f.get("problem_summary"),
         "reason": f.get("reason") or f.get("evidence_quote"),
         "is_primary": f.get("is_primary"),
+        "status": r.get("jg_status"),  # 人工覆核狀態（confirmed/dismissed/fixed；覆核徽章用）
+        "true_label": r.get("jg_true_label"),  # 人工標註真值分類
     }
 
 
@@ -234,6 +236,8 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
                 jg.c.confidence.label("jg_confidence"),
                 jg.c.raw_confidence.label("jg_raw_confidence"),
                 jg.c.needs_review.label("jg_needs_review"),
+                jg.c.status.label("jg_status"),
+                jg.c.true_label.label("jg_true_label"),
                 jg.c.data.label("jg_data"),
             )
             .select_from(tbl.outerjoin(jg, _jg_join_cond(spec)))
@@ -263,7 +267,7 @@ def list_problems(
     source: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
-    stage: str | None = None,
+    stage: list[str] | None = None,
     limit: int = 100,
     offset: int = 0,
     score: list[int] | None = None,
@@ -273,6 +277,8 @@ def list_problems(
     date_field: str = "occurred_at",
     prod_oid: str | None = None,
     order_oid: str | None = None,
+    confidence_tier: str | None = None,
+    l1_domain: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
@@ -286,11 +292,14 @@ def list_problems(
         source: 來源 code 過濾（product_reviews…）。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
         polarity: 傾向過濾（judgments.data.polarity）。
+        stage: 判決階段多選（judgments.data.judgment_stage；'unjudged'＝無判決，多值 OR）。
         limit/offset: 分頁。
         score: 星等過濾（IN 清單；僅 source_registry 命中且有 score_col 的來源可用）。
         product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
+        confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review/hold）。
+        l1_domain: L1 歸因域過濾（judgments.data.l1_domain_code；content/supplier/…）。
 
     Returns:
         {"rows": [統一記錄], "total": 符合篩選總數}。
@@ -300,7 +309,7 @@ def list_problems(
         return {"rows": [], "total": 0}
     return _list_problems_spec(
         spec, judged, polarity, stage, limit, offset, score, product_vertical, date_from, date_to,
-        date_field, prod_oid, order_oid, sort_by, sort_dir,
+        date_field, prod_oid, order_oid, confidence_tier, l1_domain, sort_by, sort_dir,
     )
 
 
@@ -308,7 +317,7 @@ def _list_problems_spec(
     spec: source_registry.SourceSpec,
     judged: bool | None,
     polarity: str | None,
-    stage: str | None,
+    stage: list[str] | None,
     limit: int,
     offset: int,
     score: list[int] | None,
@@ -318,6 +327,8 @@ def _list_problems_spec(
     date_field: str,
     prod_oid: str | None = None,
     order_oid: str | None = None,
+    confidence_tier: str | None = None,
+    l1_domain: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
@@ -339,10 +350,26 @@ def _list_problems_spec(
             stmt = stmt.where(~has_jg)
         if polarity:
             stmt = stmt.where(_jg_exists(spec, sa_cast(jg.c.data, JSONB)["polarity"].astext == polarity))
-        if stage == "unjudged":
-            stmt = stmt.where(~has_jg)
-        elif stage:
-            stmt = stmt.where(_jg_exists(spec, sa_cast(jg.c.data, JSONB)["judgment_stage"].astext == stage))
+        if stage:
+            # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝judgment_stage IN；兩者 OR 併存
+            conds = []
+            if "unjudged" in stage:
+                conds.append(~has_jg)
+            judged_stages = [s for s in stage if s != "unjudged"]
+            if judged_stages:
+                conds.append(
+                    _jg_exists(spec, sa_cast(jg.c.data, JSONB)["judgment_stage"].astext.in_(judged_stages))
+                )
+            if conds:
+                stmt = stmt.where(or_(*conds))
+        if confidence_tier:
+            stmt = stmt.where(
+                _jg_exists(spec, sa_cast(jg.c.data, JSONB)["confidence_tier"].astext == confidence_tier)
+            )
+        if l1_domain:
+            stmt = stmt.where(
+                _jg_exists(spec, sa_cast(jg.c.data, JSONB)["l1_domain_code"].astext == l1_domain)
+            )
         if score and spec.score_col:
             # 源欄為 Text（如 rec_scores="5"）→ 星等清單轉字串比對
             stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
@@ -372,3 +399,29 @@ def _list_problems_spec(
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
     return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
+
+
+def list_l1_domains(source: str) -> list[dict]:
+    """某來源已判資料中出現過的 L1 歸因域清單（供列表 L1 篩選下拉，選項恆與資料一致）。
+
+    直接對 judgments.data 抽 distinct (l1_domain_code, l1_label)——label 與 code 同存於判決 JSON，
+    故無需另維護 code→label 對照表（SSOT 即資料本身）。按出現次數 desc 排序，空 code 剔除。
+
+    Args:
+        source: 來源 code（judgments.source 過濾）。
+
+    Returns:
+        [{"code", "label", "count"}]（count＝該域歸因筆數）。
+    """
+    jg = T.judgments
+    data = sa_cast(jg.c.data, JSONB)
+    code = data["l1_domain_code"].astext
+    label = data["l1_label"].astext
+    stmt = (
+        select(code.label("code"), label.label("label"), func.count().label("count"))
+        .where(jg.c.source == source, code != "", code.isnot(None))
+        .group_by(code, label)
+        .order_by(func.count().desc())
+    )
+    with T.get_engine().connect() as conn:
+        return [{"code": r.code, "label": r.label, "count": r.count} for r in conn.execute(stmt)]

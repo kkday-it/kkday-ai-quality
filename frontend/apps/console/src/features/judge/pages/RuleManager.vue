@@ -8,12 +8,14 @@ import { Message, Modal } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
-import { getRule, exportRulesXlsx } from '@/api/judgeRules.api';
+import { ExportProgressBar } from '@/components';
+import { getRule, startRulesExport } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryModal from '../components/RuleHistoryModal.vue';
 import { versionLabel, exportName } from '../utils';
+import { useExportJob } from '../composables';
 
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
@@ -35,7 +37,15 @@ const historyOpen = ref(false);
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
-const exporting = ref(false);
+// 導出背景 job（實時進度 + 停止；與問題列表導出共用 useExportJob）
+const {
+  exporting,
+  status: exportStatus,
+  progress: exportProgress,
+  pct: exportPct,
+  run: runExport,
+  cancel: cancelExport,
+} = useExportJob();
 
 // schema content（給 JSON 模式即時驗證；編輯 schema 自身時不套）
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
@@ -108,23 +118,9 @@ function doReset() {
   });
 }
 
-/** 導出全部判決規則為 Excel（C-N 各一分頁 + global 判決總規範；DB active 版本）→ blob 下載。 */
-async function doExport() {
-  exporting.value = true;
-  try {
-    const blob = await exportRulesXlsx();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportName('判決規則', 'xlsx');
-    a.click();
-    URL.revokeObjectURL(url);
-    Message.success('已導出規則');
-  } catch (e) {
-    Message.error(e instanceof Error ? e.message : '導出失敗');
-  } finally {
-    exporting.value = false;
-  }
+/** 導出全部判決規則為 Excel（C-N 各一分頁 + global 判決總規範；DB active 版本）→ 背景 job + 實時進度下載。 */
+function doExport() {
+  return runExport(startRulesExport, exportName('判決規則', 'xlsx'));
 }
 
 /** 恢復規則配置頁所有規則（schema + 整體規則 + C-N）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
@@ -226,6 +222,18 @@ function doResetAll() {
           儲存
         </a-button>
       </div>
+
+      <!-- 導出實時進度：導出進行中才顯示（背景 job + SSE，可停止）-->
+      <ExportProgressBar
+        v-if="exporting"
+        class="mb-3 flex-none"
+        label="導出規則"
+        :status="exportStatus"
+        :processed="exportProgress.processed"
+        :total="exportProgress.total"
+        :pct="exportPct"
+        @cancel="cancelExport"
+      />
 
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">

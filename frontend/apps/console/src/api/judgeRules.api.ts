@@ -1,6 +1,6 @@
 // 判決規則管理 API（config/ai_judge/ 的 7 rule + schema 的版本化）。
 // 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前 jsonschema 驗證，非法回 422。
-import { BASE, JSON_HEADERS, getToken, j } from './http.api';
+import { BASE, JSON_HEADERS, j } from './http.api';
 
 /** rule code：'C-1'..'C-7' | 'schema'。 */
 export type RuleCode = string;
@@ -87,15 +87,9 @@ export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipp
   });
 
 /**
- * 導出全部判決規則為 Excel（DB active 版本）：C-N 歸因分類各一分頁＋ global 判決總規範，
- * 格式對齊 data/問題分類層級結構.xlsx。回 Blob 供前端下載（非 JSON，故不走 j 包裝）。
- * @throws {Error} 非 2xx 時拋出 `導出失敗 ${status}`。
+ * 啟動判決規則導出背景 job（DB active 版本）→ {job_id, filename}（立即回）。
+ * C-N 歸因分類各一分頁＋ global 判決總規範，格式對齊 data/問題分類層級結構.xlsx。
+ * 進度走 /api/exports SSE（見 exports.api），完成後 downloadExport(job_id) 取檔。
  */
-export const exportRulesXlsx = async (): Promise<Blob> => {
-  const token = getToken();
-  const res = await fetch(`${BASE}/judge-rules/export.xlsx`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-  if (!res.ok) throw new Error(`導出失敗 ${res.status}`);
-  return res.blob();
-};
+export const startRulesExport = (): Promise<{ job_id: string; filename: string }> =>
+  j(`${BASE}/judge-rules/export`, { method: 'POST', headers: JSON_HEADERS });

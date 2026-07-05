@@ -14,6 +14,7 @@ from app.core.db.findings import (
     list_products,
     replace_source_findings,
     update_finding_status,
+    update_finding_true_label,
 )
 from app.core.db.ingest import (
     create_batch,
@@ -24,7 +25,7 @@ from app.core.db.ingest import (
     update_batch_inserted,
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
-from app.core.db.problems import list_problems
+from app.core.db.problems import list_l1_domains, list_problems
 from app.core.db.rule_versions import (
     RULE_CODES,
     default_rule_content,
@@ -67,6 +68,7 @@ __all__ = [
     "list_batches",
     "list_findings",
     "list_problems",
+    "list_l1_domains",
     "list_products",
     "list_rule_history",
     "list_rule_meta",
@@ -81,4 +83,5 @@ __all__ = [
     "seed_rules_from_files",
     "update_batch_inserted",
     "update_finding_status",
+    "update_finding_true_label",
 ]
