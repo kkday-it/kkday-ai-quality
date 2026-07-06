@@ -94,6 +94,94 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].judgment_stage == "judged"
 
 
+def test_resolve_attrs_min_confidence_gate(monkeypatch, fixed_config) -> None:
+    """attr 級最低信心閘門：低於 evidence_policy.attr_min_confidence 整條丟棄（湊數殭屍列）；0=關閉。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
+    low = {"l1_domain_code": "product_quality", "l2_code": "C-2-1", "l3_code": "", "confidence": 0.09}
+    ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
+    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(low), dict(ok)])
+    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.09 湊數列被殺
+    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0})
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 2  # 閘門關閉 → 保留（向後相容）
+
+
+def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
+    """低信心負反饋重路由：Stage B 低於閘門的域排除後重跑 Stage A 改判他域；重判結果同過閘門。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": True})
+    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    calls: list[frozenset] = []
+
+    def fake_stage_a(text, model, max_n, polarity="negative", exclude=frozenset()):
+        calls.append(exclude)
+        return ["customer"] if exclude else ["product_quality"]  # 首輪選錯域；重路由改判 customer
+
+    def fake_stage_b(item, text, domain, model):
+        conf = 0.09 if domain == "product_quality" else 0.8  # 錯域湊數低信心；正確域正常
+        return {"l1_domain_code": domain, "l2_code": "", "l3_code": "", "confidence": conf}
+
+    monkeypatch.setattr(prejudge, "_stage_a_domains_multi", fake_stage_a)
+    monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["customer"]  # 錯域被殺、重路由域成立
+    assert len(calls) == 2 and "product_quality" in calls[1]  # 第二輪帶排除集
+    # Stage B 棄權（空回）同樣觸發重路由（棄權=域選錯最常見訊號）
+    calls.clear()
+    monkeypatch.setattr(
+        prejudge, "_stage_b",
+        lambda item, text, d, model: {"l1_domain_code": "", "l2_code": "", "l3_code": "", "confidence": 0.5}
+        if d == "product_quality"
+        else {"l1_domain_code": d, "l2_code": "", "l3_code": "", "confidence": 0.8},
+    )
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["customer"] and len(calls) == 2
+    # 重路由關閉 → 只跑一輪，低信心域被閘門殺掉、不重試
+    calls.clear()
+    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": False})
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert out == [] and len(calls) == 1
+
+
+def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
+    """stage_a_level=l1l2：Stage A 直選 L2 面向 → Stage B 以 (域, l2_code) 聚焦；重路由排除集=L2 顆粒度。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(
+        global_rule, "cascade",
+        lambda: {"enabled": True, "stage_a_level": "l1l2", "reroute_on_low_conf": True},
+    )
+    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    monkeypatch.setattr(prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-1": "customer"})
+    calls: list[frozenset] = []
+
+    def fake_l2s(text, model, max_n, polarity="negative", exclude=frozenset()):
+        calls.append(exclude)
+        return ["C-6-1"] if exclude else ["C-3-4"]  # 首輪選錯面向；重路由改判 C-6-1
+
+    seen_b: list[tuple[str, str]] = []
+
+    def fake_stage_b(item, text, domain, model, l2_code=""):
+        seen_b.append((domain, l2_code))
+        conf = 0.1 if l2_code == "C-3-4" else 0.85
+        return {"l1_domain_code": domain if conf >= 0.2 else "", "l2_code": l2_code, "l3_code": "", "confidence": conf}
+
+    monkeypatch.setattr(prejudge, "_stage_a_l2s_multi", fake_l2s)
+    monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["customer"]
+    assert seen_b == [("supplier", "C-3-4"), ("customer", "C-6-1")]  # Stage B 收到面向聚焦
+    assert len(calls) == 2 and "C-3-4" in calls[1]  # 重路由排除集為 L2 code
+
+
 def test_to_findings_gate_excludes_neutral_when_config_negative_only(monkeypatch, fixed_config) -> None:
     """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
     from app.core import global_rule

@@ -325,7 +325,7 @@ def _attr_sys() -> str:
     return global_rule.attribution_guidance() or "你是客訴歸因判官，依下方六域界線鐵則與 L3 目錄選最貼切 code，輸出 JSON。"
 
 
-def _l3_catalog(domains: list[dict], *, rich: bool = False) -> str:
+def _l3_catalog(domains: list[dict], *, rich: bool = False, only_l2: str = "") -> str:
     """候選域的 L3 目錄（code | 域›面向›細項 | 判準）；Stage2/Stage B 注入。
 
     rich=False（flat 全域目錄）：每葉只印完整 canon——84+ 葉時再多欄位會稀釋注意力（實測病灶）。
@@ -333,11 +333,15 @@ def _l3_catalog(domains: list[dict], *, rich: bool = False) -> str:
     negative_cases（常見誤判→改歸哪條），並以 L2 canon 作面向分組標題——喚醒 rule tree 厚判準
     （原本 90 葉 allow/forbid/正反例 100% 填滿卻零注入，QC 編輯無效）。canon 完整注入不截斷
     （原 [:40] 曾砍掉尾段「不得…」界線導致誤判）；皆屬靜態前綴，prompt caching 攤平長度成本。
+    only_l2：僅列該 L2 面向下的葉（stage_a_level=l1l2 時 Stage B 候選縮到選中面向）。
     """
     lines: list[str] = []
     codes = [d["code"] for d in domains]
     seen_l2: set[str] = set()
-    for n in ai_judge.l3_nodes_for_domains(codes):
+    nodes = ai_judge.l3_nodes_for_domains(codes)
+    if only_l2:
+        nodes = [n for n in nodes if n.get("l2_code") == only_l2]
+    for n in nodes:
         if rich:
             l2_code = str(n.get("l2_code") or "")
             if l2_code and l2_code not in seen_l2:  # L2 面向標題（canon 非空才印）
@@ -612,9 +616,18 @@ def _stage_a_user(text: str) -> str:
     return f"進線文字：\n{text}"
 
 
-def _stage_b(item: dict, text: str, domain_code: str, model: str) -> dict:
-    """Stage B：只注入選中域的 L2/L3 canon，強制選 leaf（保證負向 ≥ L1+L2）+ L3 evidence-gate → attr dict。"""
+def _stage_b(item: dict, text: str, domain_code: str, model: str, l2_code: str = "") -> dict:
+    """Stage B：只注入選中範圍的 L2/L3 canon，選 leaf（可棄權）+ L3 evidence-gate → attr dict。
+
+    allow_empty=True（與 flat 路徑語義一致）：Stage A 選錯域時，域內沒有貼合葉可回空棄權→
+    該域整條丟棄（_sanitize_l3('') 全空 → _resolve_attrs_multi 過濾）。原 allow_empty=False
+    強制選葉會湊數——實測湊向目錄第一組（C-2-1 網路品質）產生 conf 0.09 殭屍歸因（primacy bias）。
+    負向評論若全部域都棄權 → to_findings 既有「未歸因 pending_data」兜底（誠實優於捏造）。
+    l2_code（stage_a_level=l1l2）：候選葉縮到該 L2 面向下（Stage A 已選到面向，聚焦更小目錄）。
+    """
     nodes = ai_judge.l3_nodes_for_domains([domain_code]) if domain_code else []
+    if l2_code:
+        nodes = [n for n in nodes if n.get("l2_code") == l2_code]
     candidate_codes = frozenset(n["code"] for n in nodes)
     if not candidate_codes:  # 該域無節點（逃生）：僅回域層 L1，L2/L3 空
         return {"l1_domain_code": domain_code, "l1_label": ai_judge.domain_label(domain_code),
@@ -625,10 +638,12 @@ def _stage_b(item: dict, text: str, domain_code: str, model: str) -> dict:
         base = _sanitize_l3(sorted(candidate_codes)[0], candidate_codes)
         return {**base, "confidence": 0.5, "raw_confidence": 0.5,
                 "evidence_quote": text[:120], "l3_candidates": []}
+    sb_model = global_rule.cascade().get("stageB", {}).get("model") or model  # config 覆寫，空＝沿用主模型
     out = _call(
         # rich：單域葉數少，注入 L3 forbid/誤判例 + L2 canon 標題（喚醒厚判準；flat 全目錄不 rich）
-        _attr_system(_l3_catalog([{"code": domain_code}], rich=True)), _attr_user(text), "attribute_b", model,
-        schema=_attr_schema(candidate_codes, allow_empty=False),  # 強制選 leaf → 保證 ≥ L2
+        _attr_system(_l3_catalog([{"code": domain_code}], rich=True, only_l2=l2_code)),
+        _attr_user(text), "attribute_b", sb_model,
+        schema=_attr_schema(candidate_codes, allow_empty=True),  # 可棄權：域內無貼合葉回空（寧缺勿濫）
         effort=_attr_effort(),
     )
     return _finalize_attr(item, text, out, candidate_codes)
@@ -726,40 +741,58 @@ def _stage_a_schema_multi(domain_values: list[str], max_n: int) -> dict:
     }
 
 
-def _stage_a_system_multi(max_n: int, polarity: str = "negative") -> str:
+def _stage_a_system_multi(max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()) -> str:
     """Stage A 多域分類 system：六域界線鐵則（＝_domain_boundaries，L1 canon+正反例）+ 多域輸出格式。
 
-    界線改用 _domain_boundaries（ai_judge L1 canon，與單次 Stage2 同一 SSOT），取代原
-    global_rule.decision_tree.gates + global_boundaries——後兩者已成 deprecated 平行 SSOT（無讀取點），
-    避免「改了 gates 以為生效、判決其實走 L1 canon」的 drift。
+    界線＝_domain_boundaries（ai_judge L1 canon，與單次 Stage2 同一 SSOT）；舊 global_rule
+    decision_tree.gates / global_boundaries 平行 SSOT 已於 2026-07-07 自 config 移除（曾致
+    「改了 gates 以為生效、判決其實走 L1 canon」的 drift）。
     polarity 決定收尾指令：負向強制 ≥1 域；混合中性只列有具體問題證據的域、可回空（防好評硬湊歸因）。
+    excluded_labels（低信心重路由）存在時，負向也放寬可回空——排除後可能確無他域可歸，強制反而再湊數。
     """
-    if polarity == "negative":
+    if polarity == "negative" and not excluded_labels:
         head = "這是負向評論，可能同時涉及多個歸因域。"
         tail = f"列出所有『明確涉及』的 domain（最多 {max_n} 個、各不重複、勿湊數）；負向至少一個、不得空。"
+    elif polarity == "negative":
+        head = "這是負向評論，可能同時涉及多個歸因域。"
+        tail = f"列出『明確涉及』的 domain（最多 {max_n} 個、各不重複、勿湊數）；確無合適域則回空陣列。"
     else:
         head = "這是混合傾向評論（整體滿意但提到具體問題點），只針對其中的『問題面向』分類。"
         tail = (
             f"只列出『有具體問題證據』的 domain（最多 {max_n} 個、各不重複）；"
             "被稱讚/滿意的面向不列；全文找不到明確問題點時回空陣列（寧缺勿濫）。"
         )
+    # 低信心重路由：先前選過但域內找不到貼合細項的域已被排除（負反饋），提示模型換角度重判
+    excl = (
+        f"注意：先前判入「{'、'.join(excluded_labels)}」但該域內找不到貼合細項（已排除，勿再選）；"
+        "請重新思考問題性質改判他域，或確無問題域則回空。\n"
+        if excluded_labels
+        else ""
+    )
     return (
         f"你是 KKday 旅遊商品客訴『歸因域分類器』。{head}\n"
         "先依『問題性質』（頁面描述本身 vs 現場執行/實體/兌換/客服 vs 客人主觀）判屬哪些域，非只看主題字眼。\n"
         "六域界線鐵則（先判屬哪個域）：\n" + _domain_boundaries() + "\n"
-        + tail + "輸出 JSON：{\"domains\":[\"域機器值\",...]}"
+        + excl + tail + "輸出 JSON：{\"domains\":[\"域機器值\",...]}"
     )
 
 
-def _stage_a_domains_multi(text: str, model: str, max_n: int, polarity: str = "negative") -> list[str]:
-    """Stage A 多域：判涉及的多個 L1 歸因域（machine value）；負向強制 ≥1 域、混合中性可空；multi 模式停用 self-consistency。"""
-    domain_values = [d["code"] for d in ai_judge.selectable_domains()]
+def _stage_a_domains_multi(
+    text: str, model: str, max_n: int, polarity: str = "negative", exclude: frozenset[str] = frozenset()
+) -> list[str]:
+    """Stage A 多域：判涉及的多個 L1 歸因域（machine value）；負向強制 ≥1 域、混合中性可空；multi 模式停用 self-consistency。
+
+    exclude：低信心重路由的排除域集合（schema enum 硬排除 + prompt 負反饋說明）——
+    先前選過但域內湊不出貼合細項的域，重判時不得再選。
+    """
+    domain_values = [d["code"] for d in ai_judge.selectable_domains() if d["code"] not in exclude]
     if not domain_values:
         return []
+    excluded_labels = tuple(ai_judge.domain_label(c) for c in sorted(exclude))
     casc = global_rule.cascade().get("stageA_l1", {})
     sa_model = casc.get("model") or _stage1_model(model)  # 域分類用便宜模型（nano）
     out = _call(
-        _stage_a_system_multi(max_n, polarity), _stage_a_user(text), "domain", sa_model,
+        _stage_a_system_multi(max_n, polarity, excluded_labels), _stage_a_user(text), "domain", sa_model,
         schema=_stage_a_schema_multi(domain_values, max_n),
     )
     seen: set[str] = set()
@@ -783,15 +816,47 @@ def _resolve_attrs_multi(
     """
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
         return []
-    if global_rule.cascade().get("enabled", False):
-        attrs = [_stage_b(item, text, d, model) for d in _stage_a_domains_multi(text, model, max_n, polarity)]
+    casc = global_rule.cascade()
+    amin = _as_float(global_rule.evidence_policy().get("attr_min_confidence"), 0.0)
+    if casc.get("enabled", False):
+        # Stage A 選擇顆粒度（config cascade.stage_a_level）：'l1'＝六域（預設）；'l1l2'＝直選 L2 面向
+        # （32 項含 L2 canon，Stage B 候選縮到該面向葉）。選擇/重路由的排除集顆粒度與之一致。
+        l1l2 = str(casc.get("stage_a_level") or "l1") == "l1l2"
+        if l1l2:
+            picks = _stage_a_l2s_multi(text, model, max_n, polarity)
+            attrs = [_stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c) for c in picks]
+        else:
+            picks = _stage_a_domains_multi(text, model, max_n, polarity)
+            attrs = [_stage_b(item, text, d, model) for d in picks]
+        # 低信心負反饋重路由（一次；config cascade.reroute_on_low_conf）：Stage B 棄權（空回）或
+        # 低於 attr 閘門＝「選錯、範圍內無貼合細項」的訊號 → 該些選項列入排除集重跑 Stage A
+        # （schema 硬排除+prompt 負反饋），給評論改判到正確分類的機會（僅丟棄會漏掉真問題）；
+        # 已成立選項一併排除防重複。重判結果同過閘門，確無他處可歸則回空（不硬湊）。
+        if casc.get("reroute_on_low_conf", False):
+            bad = [not a.get("l1_domain_code") or (amin and a.get("confidence", 0.0) < amin) for a in attrs]
+            rejected = {p for p, b in zip(picks, bad, strict=True) if b}
+            if rejected:
+                kept = {p for p, b in zip(picks, bad, strict=True) if not b}
+                exclude = frozenset(rejected | kept)
+                if l1l2:
+                    retry = _stage_a_l2s_multi(text, model, max_n, polarity, exclude=exclude)
+                    attrs += [_stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c)
+                              for c in retry if c not in exclude]
+                else:
+                    retry = _stage_a_domains_multi(text, model, max_n, polarity, exclude=exclude)
+                    attrs += [_stage_b(item, text, d, model) for d in retry if d not in exclude]
     else:
         attrs = _stage2_attribute_multi(item, text, model, max_n, polarity)
+    # attr 級最低信心閘門（config evidence_policy.attr_min_confidence；0＝關）：
+    # 殺「強制/湊數」型歸因（實測 conf 0.09~0.12 的目錄第一組殭屍列）——信心低到這種程度
+    # 代表模型自己都不信，留著只汙染列表與統計；正常弱信心（≥閘門）仍留給人審分層。
     by_domain: dict[str, dict] = {}
     for a in attrs:
         dom = a.get("l1_domain_code", "")
         if not dom:
             continue  # 全 abstain（無域）→ 不成一條違規線
+        if amin and a.get("confidence", 0.0) < amin:
+            continue  # 低於 attr 閘門 → 整條丟棄（視同棄權）
         if dom not in by_domain or a.get("confidence", 0.0) > by_domain[dom].get("confidence", 0.0):
             by_domain[dom] = a
     ranked = sorted(by_domain.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
@@ -987,3 +1052,86 @@ def _attribute_when() -> frozenset[str]:
     vals = [raw] if isinstance(raw, str) else list(raw or [])
     allowed = frozenset(v for v in (str(x).strip().lower() for x in vals) if v in ("negative", "neutral"))
     return allowed or frozenset({"negative"})
+
+
+def _l2_domain_map() -> dict[str, str]:
+    """L2 C-code → 所屬 L1 域機器值（自攤平葉節點推導；含 L2 葉自身）。stage_a_level=l1l2 用。"""
+    return {n["l2_code"]: n["l1_domain"] for n in ai_judge.l3_nodes_for_domains([]) if n.get("l2_code")}
+
+
+def _l2_catalog() -> str:
+    """全 32 個 L2 面向目錄（code | L1›L2 | L2 canon）；stage_a_level=l1l2 的 Stage A 注入。
+
+    L2 canon 取 ai_judge.l2_judgment（分支判準；L2 葉為其葉判準 canon），缺值留空仍列（code 可選）。
+    靜態前綴，隨 DB active 規則版本穩定 → 命中 prompt caching。
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    for n in ai_judge.l3_nodes_for_domains([]):
+        l2 = n.get("l2_code", "")
+        if not l2 or l2 in seen:
+            continue
+        seen.add(l2)
+        canon = ai_judge.l2_judgment(l2).get("canon") or ""
+        if not canon and n.get("level") == 2:  # L2 葉不在分支判準表 → 用葉自身 canon
+            canon = n.get("canon") or ""
+        lines.append(f"{l2} | {n.get('l1_label', '')}›{n.get('l2_label', '')} | {canon.strip()}")
+    return "\n".join(lines)
+
+
+def _stage_a_l2_system(max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()) -> str:
+    """Stage A（l1l2 模式）system：六域界線鐵則 + 32 L2 面向目錄 + 多選輸出格式。
+
+    與 _stage_a_system_multi（L1 模式）同構：先按問題性質判域、再於域內選最貼切面向；
+    排除/收尾語義一致（負向強制 ≥1、混合中性/重路由可回空）。
+    """
+    if polarity == "negative" and not excluded_labels:
+        head = "這是負向評論，可能同時涉及多個問題面向。"
+        tail = f"列出所有『明確涉及』的 L2 面向 code（最多 {max_n} 個、各不重複、勿湊數）；負向至少一個、不得空。"
+    elif polarity == "negative":
+        head = "這是負向評論，可能同時涉及多個問題面向。"
+        tail = f"列出『明確涉及』的 L2 面向 code（最多 {max_n} 個、各不重複、勿湊數）；確無合適面向則回空陣列。"
+    else:
+        head = "這是混合傾向評論（整體滿意但提到具體問題點），只針對其中的『問題面向』分類。"
+        tail = (
+            f"只列出『有具體問題證據』的 L2 面向 code（最多 {max_n} 個、各不重複）；"
+            "被稱讚/滿意的面向不列；全文找不到明確問題點時回空陣列（寧缺勿濫）。"
+        )
+    excl = (
+        f"注意：先前判入「{'、'.join(excluded_labels)}」但該面向內找不到貼合細項（已排除，勿再選）；"
+        "請重新思考問題性質改判其他面向，或確無問題則回空。\n"
+        if excluded_labels
+        else ""
+    )
+    return (
+        f"你是 KKday 旅遊商品客訴『歸因分類器』。{head}\n"
+        "先依『問題性質』（頁面描述本身 vs 現場執行/實體/兌換/客服 vs 客人主觀）判屬哪個域，"
+        "再於該域內選最貼切的 L2 面向，非只看主題字眼。\n"
+        "六域界線鐵則（先判屬哪個域）：\n" + _domain_boundaries() + "\n"
+        "L2 面向目錄（只能從中選 code）：\n" + _l2_catalog() + "\n"
+        + excl + tail + "輸出 JSON：{\"domains\":[\"L2 面向 code\",...]}"
+    )
+
+
+def _stage_a_l2s_multi(
+    text: str, model: str, max_n: int, polarity: str = "negative", exclude: frozenset[str] = frozenset()
+) -> list[str]:
+    """Stage A（l1l2 模式）：直選涉及的 L2 面向 code（≤max_n）；exclude＝重路由排除集（schema 硬排除）。"""
+    values = sorted(c for c in _l2_domain_map() if c not in exclude)
+    if not values:
+        return []
+    excluded_labels = tuple(ai_judge.path_label(c) or c for c in sorted(exclude))
+    casc = global_rule.cascade().get("stageA_l1", {})
+    sa_model = casc.get("model") or _stage1_model(model)  # 同 L1 模式：域/面向分類用 Stage A 模型
+    out = _call(
+        _stage_a_l2_system(max_n, polarity, excluded_labels), _stage_a_user(text), "domain", sa_model,
+        schema=_stage_a_schema_multi(values, max_n),
+    )
+    seen: set[str] = set()
+    picks: list[str] = []
+    for c in out.get("domains") or []:
+        c = str(c).strip()
+        if c in values and c not in seen:
+            seen.add(c)
+            picks.append(c)
+    return picks[:max_n]

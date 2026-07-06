@@ -1,8 +1,10 @@
 """整體規則載入器：judge_rule_versions（rule_code='global_rule'，DB）→ 判決全局規則。
 
 SSOT＝DB active 版（`db.get_rule_active('global_rule')`），config/ai_judge/global_rule.json 為初始 seed /
-無 DB 版本時 fallback。集中極性閘門 / abstain 政策 / 證據政策 / 六域決策樹 / 跨域界線 / cascade 設定，
-供 prejudge 判決主流程引用（取代散落各 rule_C-*.json forbid 與 _ATTR_SYS 的全局規則）。
+無 DB 版本時 fallback。集中極性閘門（attribute_when）/ 判官提示詞 / abstain 政策 / 證據政策
+（含 attr_min_confidence）/ cascade 設定（含 reroute_on_low_conf），供 prejudge 判決主流程引用。
+域界線 SSOT＝各 rule_C-N 的 L1 canon（ai_judge.l1_judgment），非本檔——舊 decision_tree /
+global_boundaries 已於 2026-07-07 移除（deprecated 無讀取點，歷史內容在 git / DB 舊版本可回溯）。
 
 快取：模組級 lazy 快取（判決熱路徑高頻讀）；規則寫入（存檔 / 恢復默認 / 恢復版本）後由 rules.py 呼叫
 reload() 重載，使新規則即時生效——與 ai_judge 同策略。
@@ -50,18 +52,8 @@ def evidence_policy() -> dict[str, Any]:
     return _load().get("evidence_policy", {})
 
 
-def decision_tree() -> dict[str, Any]:
-    """六域決策樹（order + gates），Stage A 域分類注入源。"""
-    return _load().get("decision_tree", {})
-
-
-def global_boundaries() -> list[str]:
-    """跨域界線清單（Stage A 注入輔助）。"""
-    return _load().get("global_boundaries", [])
-
-
 def cascade() -> dict[str, Any]:
-    """cascade 設定（enabled + stageA_l1 + stageB）。"""
+    """cascade 設定（enabled + reroute_on_low_conf + stageA_l1 + stageB）。"""
     return _load().get("cascade", {})
 
 

@@ -182,6 +182,8 @@ def main() -> None:
     ap.add_argument("--eval-set", help="評測集 JSON 路徑（run 模式必填）")
     ap.add_argument("--mode", choices=["flat", "cascade"], help="flat=單次扁平；cascade=兩階段")
     ap.add_argument("--stage-a-model", default="", help="cascade Stage A 域分類模型覆寫（方案 B）")
+    ap.add_argument("--stage-a-level", default="", choices=["", "l1", "l1l2"],
+                    help="cascade Stage A 選擇顆粒度覆寫（l1=六域；l1l2=直選 L2 面向）")
     ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM")
     ap.add_argument("--model", default="", help="主判決模型覆寫（預設用該帳號 active 配置）")
     ap.add_argument("--limit", type=int, default=0, help="pilot：只跑前 N 筆")
@@ -224,10 +226,12 @@ def main() -> None:
                 sa = dict(c.get("stageA_l1") or {})
                 sa["model"] = args.stage_a_model
                 c["stageA_l1"] = sa
+            if args.stage_a_level:
+                c["stage_a_level"] = args.stage_a_level
             return c
 
         global_rule.cascade = _patched_cascade
-        print(f"cascade 已於本 process 啟用（stage_a_model={args.stage_a_model or '(沿用)'}）")
+        print(f"cascade 已於本 process 啟用（stage_a_model={args.stage_a_model or '(沿用)'}·level={args.stage_a_level or '(沿用)'}）")
 
     with open(args.eval_set, encoding="utf-8") as f:
         evalset = json.load(f)
