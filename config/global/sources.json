@@ -8,16 +8,16 @@
       "natural_key": "session_oid"
     },
     {
-      "value": "freshdesk_tickets",
-      "label": "工單反饋",
-      "hint": "FreshDesk 工單",
-      "natural_key": "id"
-    },
-    {
       "value": "product_reviews",
       "label": "商品評論",
       "hint": "商品評論 CSV/Excel",
       "natural_key": "rec_oid"
+    },
+    {
+      "value": "freshdesk_tickets",
+      "label": "工單反饋",
+      "hint": "FreshDesk 工單",
+      "natural_key": "id"
     },
     {
       "value": "app_feedback",

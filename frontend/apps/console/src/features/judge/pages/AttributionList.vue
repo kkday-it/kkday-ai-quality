@@ -384,7 +384,7 @@ onMounted(init);
   <!-- 初判歸因控制列送進固定工具列橫帶（tab 下方），與歸因縱覽一致、恆常可見 -->
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-500">來源</span>
+      <span class="text-sm text-gray-500">反饋來源</span>
       <a-select
         v-model="source"
         size="small"

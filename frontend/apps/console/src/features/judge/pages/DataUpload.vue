@@ -154,7 +154,7 @@ onMounted(loadBatches);
 
 const batchCols = [
   { title: '批次名稱', dataIndex: 'name', slotName: 'name' },
-  { title: '來源', dataIndex: 'source', slotName: 'src', width: 130 },
+  { title: '反饋來源', dataIndex: 'source', slotName: 'src', width: 130 },
   { title: '筆數', dataIndex: 'row_count', width: 90 },
   { title: '上傳時間', dataIndex: 'uploaded_at', width: 190 },
   { title: '原始檔名', dataIndex: 'original_name', ellipsis: true, tooltip: true },
@@ -254,7 +254,7 @@ const exportBatch = (batch: any) => {
               </template>
             </a-table-column>
             <a-table-column title="工作表" data-index="sheet_name" :width="160" />
-            <a-table-column title="偵測來源" :width="120">
+            <a-table-column title="偵測反饋來源" :width="120">
               <template #cell="{ record }">{{ record.label || '—' }}</template>
             </a-table-column>
             <a-table-column title="狀態" :width="100">
