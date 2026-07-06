@@ -84,11 +84,22 @@ const {
   l3Bar,
   tierDonut,
   trend,
+  contentTable,
 } = useAttributionDashboard(() => active.value.source, {
   dateFrom: () => dateRange.value?.[0],
   dateTo: () => dateRange.value?.[1],
   granularity,
 });
+
+/** 商品內容細化表欄：L3 細項 × 多指標（筆數／負向／占比／平均信心／自動採信率）。 */
+const contentCols = [
+  { title: '細項（L3）', dataIndex: 'label', ellipsis: true, tooltip: true },
+  { title: '筆數', dataIndex: 'n', width: 72, align: 'right' as const },
+  { title: '負向', dataIndex: 'neg', width: 72, align: 'right' as const },
+  { title: '占比', slotName: 'pct', width: 88, align: 'right' as const },
+  { title: '平均信心', slotName: 'conf', width: 96, align: 'right' as const },
+  { title: '自動採信率', slotName: 'auto', width: 104, align: 'right' as const },
+];
 </script>
 
 <template>
@@ -142,6 +153,25 @@ const {
           <KpiCard label="自動採信率" :value="kpi.autoPct" unit="%" subtext="auto_accept / 已判" />
           <KpiCard label="待人工" :value="kpi.needsReview" subtext="低信心需複核" />
         </div>
+      </CardSection>
+
+      <!-- 商品內容細化：L3 細項 × 多指標表（三檢視都有；當前檢視 source 過濾）-->
+      <CardSection title="商品內容細化" hint="商品內容（L1）底下各 L3 細項的問題分布與品質指標">
+        <a-table
+          :data="contentTable"
+          :columns="contentCols"
+          size="small"
+          :pagination="{ pageSize: 8, hideOnSinglePage: true, size: 'mini' }"
+          :scroll="{ y: 320 }"
+          row-key="label"
+        >
+          <template #pct="{ record }">{{ record.pct }}%</template>
+          <template #conf="{ record }">{{ record.avgConf == null ? '—' : record.avgConf.toFixed(2) }}</template>
+          <template #auto="{ record }">{{ record.autoRate }}%</template>
+          <template #empty>
+            <a-empty description="此檢視商品內容尚無細項資料" />
+          </template>
+        </a-table>
       </CardSection>
 
       <!-- 商品內容佔比（優先關注）＋ 傾向占比 ＋ 問題量趨勢 三欄並置 -->

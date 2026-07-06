@@ -168,10 +168,15 @@ def attribution_breakdown(
         frm = jg
         extra = []
 
+    # 多指標（供商品內容細化表）：負向數 / 平均信心 / 自動採信數（占比與自動採信率由前端 n 換算）。
+    neg = func.count().filter(jg.c.polarity == "negative").label("neg")
+    avg_conf = func.avg(jg.c.conf_value).label("avg_conf")
+    auto = func.count().filter(jg.c.conf_tier == "auto_accept").label("auto")
+
     def _level(code_col, label_col):
-        """組某層（L2/L3）GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序。"""
+        """組某層（L2/L3）GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序；帶多指標。"""
         stmt = (
-            select(code_col.label("code"), label_col.label("label"), cnt)
+            select(code_col.label("code"), label_col.label("label"), cnt, neg, avg_conf, auto)
             .select_from(frm)
             .where(l1c == l1, code_col.isnot(None), code_col != "")
         )
@@ -179,11 +184,20 @@ def attribution_breakdown(
             stmt = stmt.where(w)
         return stmt.group_by(code_col, label_col).order_by(cnt.desc())
 
+    def _rows(c, stmt):
+        """執行並將 avg_conf 四捨五入（float，避免前端顯示長尾）。"""
+        out = []
+        for r in c.execute(stmt).mappings():
+            d = dict(r)
+            d["avg_conf"] = round(float(d["avg_conf"]), 3) if d["avg_conf"] is not None else None
+            out.append(d)
+        return out
+
     with T.get_engine().connect() as c:
         l1_label = (
             c.execute(select(l1l).select_from(frm).where(l1c == l1, l1l.isnot(None)).limit(1)).scalar()
             or l1
         )
-        by_l2 = [dict(r) for r in c.execute(_level(l2c, l2l)).mappings()]
-        by_l3 = [dict(r) for r in c.execute(_level(l3c, l3l)).mappings()]
+        by_l2 = _rows(c, _level(l2c, l2l))
+        by_l3 = _rows(c, _level(l3c, l3l))
     return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2, "by_l3": by_l3}

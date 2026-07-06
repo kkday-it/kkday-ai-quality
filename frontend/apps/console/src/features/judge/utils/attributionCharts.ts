@@ -53,12 +53,22 @@ export interface AttributionOverview {
   trend: TrendPayload;
 }
 
+/** L2/L3 細化列（下鑽 + 商品內容細化表用）：筆數 + 多指標。 */
+export interface BreakdownRow extends CountItem {
+  /** 負向筆數 */
+  neg: number;
+  /** 平均信心（0~1，已四捨五入 3 位；無資料為 null） */
+  avg_conf: number | null;
+  /** 自動採信筆數（auto_accept tier；自動採信率＝auto/n） */
+  auto: number;
+}
+
 /** L1 下鑽回應（GET /api/problems/attribution_breakdown）。 */
 export interface AttributionBreakdown {
   l1_code: string;
   l1_label: string;
-  by_l2: CountItem[];
-  by_l3: CountItem[];
+  by_l2: BreakdownRow[];
+  by_l3: BreakdownRow[];
 }
 
 /** 漏斗單一階段（絕對筆數語義）。 */

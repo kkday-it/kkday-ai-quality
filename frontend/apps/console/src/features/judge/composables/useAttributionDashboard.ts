@@ -72,27 +72,48 @@ export function useAttributionDashboard(
   const drillL1 = ref<{ code: string; label: string } | null>(null);
   const breakdown = ref<AttributionBreakdown | null>(null);
   const drillLoading = ref(false);
+  // ── 商品內容細化（常載·三檢視都有）：l1='content' 的 L2/L3 多指標，供細化表 ──
+  const contentBreakdown = ref<AttributionBreakdown | null>(null);
 
-  /** 載入縱覽聚合（切來源 / 重新整理共用）；同時清空下鑽狀態。 */
+  /** 載入縱覽聚合（切來源 / 重新整理共用）；同時清空下鑽狀態、常載商品內容細化。 */
   const reload = async () => {
     loading.value = true;
     error.value = '';
     drillL1.value = null;
     breakdown.value = null;
+    const q = {
+      source: toValue(source),
+      dateFrom: toValue(query.dateFrom),
+      dateTo: toValue(query.dateTo),
+      productVerticals: effVerticals(),
+    };
     try {
       data.value = (await getAttributionOverview({
-        source: toValue(source),
-        dateFrom: toValue(query.dateFrom),
-        dateTo: toValue(query.dateTo),
+        ...q,
         granularity: toValue(query.granularity),
-        productVerticals: effVerticals(),
       })) as AttributionOverview;
+      // 商品內容細化表所需（失敗不阻斷縱覽主體）
+      contentBreakdown.value = (await getAttributionBreakdown('content', q)) as AttributionBreakdown;
     } catch (e: unknown) {
       error.value = '載入失敗：' + (e instanceof Error ? e.message : String(e));
     } finally {
       loading.value = false;
     }
   };
+
+  /** 商品內容 L3 細項多指標列（供細化表）：占比＝n/細項總數、自動採信率＝auto/n。 */
+  const contentTable = computed(() => {
+    const rows = contentBreakdown.value?.by_l3 ?? [];
+    const total = rows.reduce((s, r) => s + r.n, 0);
+    return rows.map((r) => ({
+      label: r.label,
+      n: r.n,
+      neg: r.neg,
+      pct: total ? Math.round((r.n / total) * 1000) / 10 : 0,
+      avgConf: r.avg_conf,
+      autoRate: r.n ? Math.round((r.auto / r.n) * 1000) / 10 : 0,
+    }));
+  });
 
   /** 點 L1 長條 → 載該域 L2/L3 細項分布（以當前 source 過濾）。 */
   const openDrill = async (code: string, label: string) => {
@@ -252,6 +273,8 @@ export function useAttributionDashboard(
     openDrill,
     onL1Click,
     reload,
+    // 商品內容細化表（常載·三檢視都有）
+    contentTable,
     // 全局垂直分類篩選（縱覽工具列）
     verticalOptions,
     verticalGroups,
