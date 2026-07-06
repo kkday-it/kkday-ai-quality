@@ -1,6 +1,14 @@
 {
   "_comment": "商品垂直分類（product_vertical：Tour/Exp/Charter/Tix → CATEGORY_xxx 代碼）預設 seed。可編輯版本化規則（rule_code=product_vertical，走 judge_rule_versions DB 版本化，經「配置」抽屜〔商品垂直分類 tab〕編輯/歷史/恢復默認）；本檔為「恢復默認」的檔案來源。供歸因列表商品垂直分類篩選展開代碼。",
-  "_meta": { "label": "商品垂直分類" },
+  "_meta": {
+    "label": "商品垂直分類"
+  },
+  "group_order": [
+    "Tour",
+    "Exp",
+    "Charter",
+    "Tix"
+  ],
   "groups": {
     "Tour": [
       "CATEGORY_019",

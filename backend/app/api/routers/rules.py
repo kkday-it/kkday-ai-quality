@@ -70,6 +70,9 @@ def _validate(code: str, content: dict) -> None:
         for name, codes in groups.items():
             if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
                 raise HTTPException(status_code=422, detail=f"分組「{name}」的代碼須為字串清單")
+        order = content.get("group_order")  # 選填：分組顯示順序（jsonb 不保 key 序，故顯式存）
+        if order is not None and (not isinstance(order, list) or not all(isinstance(g, str) for g in order)):
+            raise HTTPException(status_code=422, detail="group_order 須為分組名字串清單")
         return
     if code == "global_rule":
         # 整體規則：驗其自身 schema（config/ai_judge/global_rule.schema.json），非 L1-L3 歸因樹 schema。
@@ -133,13 +136,15 @@ def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
 # 註：須定義於 `/{code}` GET 之前（雖然路徑段數不同不會衝突，仍比照 reset-default-all 慣例前置）。
 @router.get("/product-vertical/resolved")
 def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -> dict:
-    """取當前生效的商品垂直分類定義（{"groups": {name: [codes]}}）；讀 product_vertical active 版本，缺版本回空 groups。
+    """取當前生效的商品垂直分類定義（{"groups": {name: [codes]}, "group_order": [name,...]}）；
+    讀 product_vertical active 版本，缺版本回空 groups。
 
     供歸因列表商品垂直分類篩選下拉：顯示分組名、送分組名，CATEGORY 代碼由後端展開。
+    group_order＝分組顯示順序（顯式排序欄；jsonb 不保 object key 序，前端以此排列選項）。
     """
     from app.core import product_vertical
 
-    return {"groups": product_vertical.all_groups()}
+    return {"groups": product_vertical.all_groups(), "group_order": product_vertical.group_order()}
 
 
 # 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。

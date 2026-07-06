@@ -75,6 +75,12 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     await persist({ llm_configs: llmConfigs.value.filter((c) => c.id !== id) });
   }
 
+  /** 重排 LLM 配置順序（拖動排序）：整包持久化；消費端（歸因頁下拉等）經同 store 即時反映。 */
+  async function reorderLlmConfigs(next: LlmConfig[]): Promise<void> {
+    llmConfigs.value = [...next]; // optimistic：拖放即時反映，persist 回應再權威同步
+    await persist({ llm_configs: next });
+  }
+
   async function setActiveLlm(id: string): Promise<void> {
     await persist({ active_llm_config_id: id });
   }
@@ -96,6 +102,12 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     await persist({ qc_configs: qcConfigs.value.filter((c) => c.id !== id) });
   }
 
+  /** 重排 QC 連線順序（拖動排序）：整包持久化。 */
+  async function reorderQcConfigs(next: QcConfig[]): Promise<void> {
+    qcConfigs.value = [...next]; // optimistic：拖放即時反映，persist 回應再權威同步
+    await persist({ qc_configs: next });
+  }
+
   async function setActiveQc(id: string): Promise<void> {
     await persist({ active_qc_config_id: id });
   }
@@ -113,9 +125,11 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     loadAll,
     saveLlmConfig,
     deleteLlmConfig,
+    reorderLlmConfigs,
     setActiveLlm,
     saveQcConfig,
     deleteQcConfig,
+    reorderQcConfigs,
     setActiveQc,
   };
 });

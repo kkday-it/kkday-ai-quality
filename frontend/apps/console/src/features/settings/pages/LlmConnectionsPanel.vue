@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { AccordionGroup, StateGuard } from '@/components';
+import { useListDragSort } from '@/composables';
 import { useSettingsConfigsStore } from '@/stores';
 import { LlmConfigCard, LlmConfigEditor } from '../components';
 import { DEFAULT_LLM_FORM, PROVIDERS } from '../constants';
@@ -84,6 +85,21 @@ const onActivate = async (id: string) => {
     Message.error('切換失敗：' + (e?.message || e));
   }
 };
+
+// 卡片拖動排序：header 把手拖放 → 整包持久化順序；消費端（歸因頁模型下拉）經同 store 即時反映。
+const accordionRef = ref<InstanceType<typeof AccordionGroup> | null>(null);
+useListDragSort(
+  () => (accordionRef.value?.$el ?? null) as HTMLElement | null,
+  () => store.llmConfigs,
+  async (next) => {
+    try {
+      await store.reorderLlmConfigs(next);
+    } catch (e: any) {
+      Message.error('排序儲存失敗：' + (e?.message || e));
+    }
+  },
+  { handle: '.drag-handle', draggable: '.arco-collapse-item' }
+);
 </script>
 
 <template>
@@ -99,7 +115,11 @@ const onActivate = async (id: string) => {
       />
 
       <!-- 手風琴卡片清單（單開 + 受控展開）；編輯中者於面板 body 內就地展開編輯器，面板本身保留 -->
-      <AccordionGroup v-if="store.llmConfigs.length || isEditingNew" v-model:active="activeId">
+      <AccordionGroup
+        v-if="store.llmConfigs.length || isEditingNew"
+        ref="accordionRef"
+        v-model:active="activeId"
+      >
         <LlmConfigCard
           v-for="c in store.llmConfigs"
           :key="c.id"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IconDragDotVertical } from '@arco-design/web-vue/es/icon';
 import LlmConfigEditor from './LlmConfigEditor.vue';
 import { composeLlmLabel } from '../utils';
 import type { LlmConfig } from '../types';
@@ -27,6 +28,8 @@ defineEmits<{
   <a-collapse-item :key="itemKey">
     <!-- header：自動拼接名（唯讀，不再手動改名）。標題已含 provider+model，故不另加 preview -->
     <template #header>
+      <!-- 拖曳把手（SortableJS handle）：@click.stop 防點把手誤觸手風琴展開 -->
+      <IconDragDotVertical class="drag-handle mr-1 shrink-0 cursor-move text-[var(--color-text-3)]" @click.stop />
       <span class="truncate font-medium">{{ composeLlmLabel(config) }}</span>
       <!-- 狀態徽章：所有卡片皆顯示，僅顏色/文字依啟用狀態不同（綠＝啟用中 / 灰＝未啟用） -->
       <a-tag class="ml-2" :color="active ? 'green' : 'gray'" size="small">

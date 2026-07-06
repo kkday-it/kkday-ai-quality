@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import qcDefaults from '@config/global/qc_db.json';
 import { AccordionGroup, StateGuard } from '@/components';
+import { useListDragSort } from '@/composables';
 import { useSettingsConfigsStore } from '@/stores';
 import { QcConfigCard, QcConfigEditor } from '../components';
 import { configStamp } from '../utils';
@@ -82,6 +83,21 @@ const onActivate = async (id: string) => {
     Message.error('切換失敗：' + (e?.message || e));
   }
 };
+
+// 卡片拖動排序：header 把手拖放 → 整包持久化順序。
+const accordionRef = ref<InstanceType<typeof AccordionGroup> | null>(null);
+useListDragSort(
+  () => (accordionRef.value?.$el ?? null) as HTMLElement | null,
+  () => store.qcConfigs,
+  async (next) => {
+    try {
+      await store.reorderQcConfigs(next);
+    } catch (e: any) {
+      Message.error('排序儲存失敗：' + (e?.message || e));
+    }
+  },
+  { handle: '.drag-handle', draggable: '.arco-collapse-item' }
+);
 </script>
 
 <template>
@@ -97,7 +113,11 @@ const onActivate = async (id: string) => {
       />
 
       <!-- 手風琴卡片清單（單開 + 預設展開第一張）；編輯中者就地展開為 inline 編輯器 -->
-      <AccordionGroup v-if="store.qcConfigs.length || isEditingNew" v-model:active="activeId">
+      <AccordionGroup
+        v-if="store.qcConfigs.length || isEditingNew"
+        ref="accordionRef"
+        v-model:active="activeId"
+      >
         <QcConfigCard
           v-for="c in store.qcConfigs"
           :key="c.id"

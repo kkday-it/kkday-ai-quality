@@ -16,9 +16,10 @@ export const useVerticalFilterStore = defineStore('verticalFilter', () => {
   /** 工具列實際篩選選中（限 pool 內）；空＝尚未初始化（loadOptions 補成全 pool）。 */
   const filter = useLocalStorage<string[]>('aiq.verticalFilter.filter', []);
 
-  /** 工具列可選分類＝選項池（並限制在 allOptions 內，防 config 移除分組後殘留）。 */
+  /** 工具列可選分類＝選項池成員（順序以 allOptions＝config group_order 權威序為準，拖排即時反映；
+   *  並限制在 allOptions 內，防 config 移除分組後殘留）。 */
   const toolbarOptions = computed(() =>
-    allOptions.value.length ? pool.value.filter((g) => allOptions.value.includes(g)) : [...pool.value],
+    allOptions.value.length ? allOptions.value.filter((g) => pool.value.includes(g)) : [...pool.value],
   );
 
   /**
@@ -34,11 +35,15 @@ export const useVerticalFilterStore = defineStore('verticalFilter', () => {
     return sel.length ? [...sel] : [];
   });
 
-  /** 載入全部分組並初始化 pool / filter（首次皆預設全選）；失敗吞例外回空。 */
+  /** 載入全部分組並初始化 pool / filter（首次皆預設全選）；失敗吞例外回空。
+   *  順序以後端 group_order（顯式排序欄）為準，缺欄回退 groups keys（jsonb 序）。
+   *  可重複呼叫：商品垂直分類存檔後由設定面板主動重呼，使已掛載消費端即時反映新分組/新順序。 */
   const loadOptions = async () => {
     try {
       const r = await getProductVerticalResolved();
-      allOptions.value = Object.keys(r.groups || {});
+      const keys = Object.keys(r.groups || {});
+      const order = (r.group_order ?? []).filter((g: string) => keys.includes(g));
+      allOptions.value = [...order, ...keys.filter((g) => !order.includes(g))];
       if (!pool.value.length) pool.value = [...allOptions.value];
       if (!filter.value.length) filter.value = [...pool.value];
     } catch {

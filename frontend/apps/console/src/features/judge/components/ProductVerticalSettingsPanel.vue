@@ -10,6 +10,7 @@ import { computed, ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { useVerticalFilterStore } from '@/stores/verticalFilter.store';
 import ProductVerticalPanel from './ProductVerticalPanel.vue';
 import RuleHistoryModal from './RuleHistoryModal.vue';
 import { versionLabel } from '../utils';
@@ -50,6 +51,8 @@ async function doSave() {
   saving.value = true;
   try {
     await store.save(saveNote.value.trim());
+    // 主動刷新全局垂直分類選項（順序/分組即時反映到已掛載的歸因列表/縱覽工具列，免切頁重載）
+    await useVerticalFilterStore().loadOptions();
     Message.success('已存入 PostgreSQL（新版本）');
     saveOpen.value = false;
     saveNote.value = '';

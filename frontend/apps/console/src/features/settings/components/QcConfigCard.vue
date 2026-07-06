@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { IconDragDotVertical } from '@arco-design/web-vue/es/icon';
 import QcConfigEditor from './QcConfigEditor.vue';
 import type { QcConfig } from '../types';
 
@@ -36,6 +37,8 @@ defineEmits<{
   <a-collapse-item :key="itemKey">
     <!-- header：連線名稱（唯讀）+ 環境 + 狀態；收合時於名稱下方顯示 host/db preview -->
     <template #header>
+      <!-- 拖曳把手（SortableJS handle）：@click.stop 防點把手誤觸手風琴展開 -->
+      <IconDragDotVertical class="drag-handle mr-1 shrink-0 cursor-move text-[var(--color-text-3)]" @click.stop />
       <span class="inline-flex flex-col">
         <span class="inline-flex items-center">
           <span class="truncate font-medium">{{ config.label }}</span>

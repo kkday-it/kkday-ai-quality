@@ -35,3 +35,16 @@ def codes_for_group(group: str) -> list[str]:
         該分組的 CATEGORY_xxx 代碼清單。
     """
     return list(_groups().get(group, []))
+
+
+def group_order() -> list[str]:
+    """分組顯示順序：content.group_order 顯式排序欄為準（jsonb 不保 object key 序），
+    過濾已刪分組 + 補掛不在 order 內的新分組；舊版本內容缺欄時回退 groups keys（jsonb 序）。
+    """
+    from app.core import db
+
+    content = db.get_rule_active(RULE_CODE) or {}
+    keys = list(_groups().keys())
+    raw = content.get("group_order")
+    order = [g for g in raw if g in keys] if isinstance(raw, list) else []
+    return order + [g for g in keys if g not in order]
