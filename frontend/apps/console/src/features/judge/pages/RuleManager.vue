@@ -15,7 +15,7 @@ import { getRule, startRulesExport } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
-import RuleHistoryModal from '../components/RuleHistoryModal.vue';
+import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
 
@@ -31,8 +31,8 @@ const domainCodes = computed(() =>
 );
 // 純 JSON 編輯（無 L1-L3 樹）的置頂特殊項：一律 JSON 模式、不走 RuleTreePanel、不套 schema 驗證。
 const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment']);
-const mode = ref<'panel' | 'json'>('panel');
-const historyOpen = ref(false);
+// 編輯/檢視模式：panel 面板編輯 / json 原始編輯 / history 歷史對比（頁內展示，取代原彈窗）。
+const mode = ref<'panel' | 'json' | 'history'>('panel');
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
@@ -50,12 +50,10 @@ const {
 const schemaContent = shallowRef<Record<string, unknown> | null>(null);
 
 const isSchema = computed(() => store.activeCode === 'schema');
-// 非 L1-L3 歸因樹的規則（schema / global_rule / judgment）→ 一律 JSON 編輯、不走 RuleTreePanel。
-const isNonTree = computed(() => _NON_TREE_CODES.has(store.activeCode));
-// 是否為真正的 C-N 歸因分類（有 L1-L3 樹）。RuleTreePanel / 歸因 schema 驗證只對這些 code 生效——
-// 防禦：商品垂直分類（product_vertical）由「配置」抽屜的 ProductVerticalSettingsPanel 共用同一 store，
-// 其 selectRule('product_vertical') 會改共用 activeCode；若仍用 !isNonTree 判斷，product_vertical（不在
-// _NON_TREE_CODES）會被誤餵進 RuleTreePanel（{groups} 非樹）→ 空白錯亂樹。以 domainCodes 精準判斷即免此坑。
+// 是否為真正的 C-N 歸因分類（有 L1-L3 樹）。面板模式 / RuleTreePanel / 歸因 schema 驗證只對這些 code 生效——
+// 防禦：商品垂直分類（product_vertical）由「配置」抽屜的 ProductVerticalSettingsPanel 共用同一 store，其
+// selectRule('product_vertical') 會改共用 activeCode；以 domainCodes 精準判斷（非 !_NON_TREE_CODES）即免把
+// product_vertical 的 {groups}（非 L1-L3 樹）誤餵 RuleTreePanel 成空白錯亂樹。schema/global/judgment 亦非樹。
 const isDomainTree = computed(() => domainCodes.value.includes(store.activeCode));
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
@@ -203,32 +201,23 @@ function doResetAll() {
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="mb-3 flex flex-none items-center gap-3">
-        <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置左，與右側「當前配置」操作區隔 -->
-        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
-        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
-          <template #icon><icon-download /></template>
-          導出規則
-        </a-button>
-        <div class="flex-1" />
-        <!-- 當前配置操作（僅作用於選中的單一規則）：面板/JSON · 版本 · 歷史 · 恢復默認 · 儲存 -->
-        <!-- schema / global_rule / judgment 僅 JSON，不顯示面板/JSON 切換 -->
-        <a-radio-group v-if="!isNonTree" v-model="mode" type="button" size="small">
-          <a-radio value="panel">面板</a-radio>
+        <!-- 當前規則的檢視/編輯模式（面板編輯 / JSON 原始 / 歷史對比——歷史改頁內展示，不再彈窗）；
+             面板僅 C-N 歸因樹有（schema/global/judgment 純 JSON），歷史所有規則皆可看 -->
+        <a-radio-group v-model="mode" type="button" size="small">
+          <a-radio v-if="isDomainTree" value="panel">面板</a-radio>
           <a-radio value="json">JSON</a-radio>
+          <a-radio value="history">歷史</a-radio>
         </a-radio-group>
         <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
           {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
           <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
         </span>
-        <a-button size="small" type="text" @click="(historyOpen = true)">歷史</a-button>
-        <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
-        <a-button
-          type="primary"
-          size="small"
-          :disabled="!store.dirty"
-          @click="(saveOpen = true)"
-        >
-          儲存
+        <div class="flex-1" />
+        <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置右 -->
+        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
+        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
+          <template #icon><icon-download /></template>
+          導出規則
         </a-button>
       </div>
 
@@ -244,13 +233,26 @@ function doResetAll() {
         @cancel="cancelExport"
       />
 
+      <!-- 當前規則標頭：碼 + 名稱（左）＋ 針對「當前規則」的恢復默認 / 儲存（右），明示只作用於選中的這條 -->
+      <div class="mb-2 flex flex-none items-center gap-2">
+        <span class="rounded bg-[rgb(var(--primary-1))] px-2 py-0.5 font-mono text-xs font-semibold text-[rgb(var(--primary-6))]">
+          {{ store.activeCode }}
+        </span>
+        <span class="text-sm font-medium text-[var(--color-text-1)]">{{ store.labelFor(store.activeCode) }}</span>
+        <div class="flex-1" />
+        <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
+        <a-button type="primary" size="small" :disabled="!store.dirty" @click="(saveOpen = true)">儲存</a-button>
+      </div>
+
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
       <div class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
+          <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
+          <RuleHistoryPanel v-if="mode === 'history'" :key="`hist-${store.activeCode}`" class="h-full" />
           <!-- 只有真正的 C-N 歸因分類（isDomainTree）＋面板模式才走 RuleTreePanel；其餘（schema/global/
                judgment，及被抽屜共用 store 帶入的 product_vertical）一律 JsonEditor，歸因 schema 也僅對 C-N 套用 -->
           <RuleTreePanel
-            v-if="mode === 'panel' && isDomainTree && store.edited"
+            v-else-if="mode === 'panel' && isDomainTree && store.edited"
             :key="editorKey"
             class="h-full"
             :content="store.edited"
@@ -274,8 +276,5 @@ function doResetAll() {
     <a-modal v-model:visible="saveOpen" title="存入 PostgreSQL" :confirm-loading="saving" @ok="doSave">
       <a-textarea v-model="saveNote" placeholder="本次修改備註（選填）" :auto-size="{ minRows: 2 }" />
     </a-modal>
-
-    <!-- 歷史對比恢復 -->
-    <RuleHistoryModal v-model:visible="historyOpen" />
   </div>
 </template>
