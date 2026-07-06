@@ -25,3 +25,6 @@ backend/backups/
 
 # CodeRAG 本地索引
 .coderag/
+
+# 本地實驗產出（A/B 評測結果含真實評論文字，禁止 commit）
+/tmp/
