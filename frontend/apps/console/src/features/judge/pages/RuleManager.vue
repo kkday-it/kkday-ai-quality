@@ -203,7 +203,15 @@ function doResetAll() {
     <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="mb-3 flex flex-none items-center gap-3">
-        <!-- schema / global_rule 僅 JSON，不顯示面板/JSON 切換 -->
+        <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置左，與右側「當前配置」操作區隔 -->
+        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
+        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
+          <template #icon><icon-download /></template>
+          導出規則
+        </a-button>
+        <div class="flex-1" />
+        <!-- 當前配置操作（僅作用於選中的單一規則）：面板/JSON · 版本 · 歷史 · 恢復默認 · 儲存 -->
+        <!-- schema / global_rule / judgment 僅 JSON，不顯示面板/JSON 切換 -->
         <a-radio-group v-if="!isNonTree" v-model="mode" type="button" size="small">
           <a-radio value="panel">面板</a-radio>
           <a-radio value="json">JSON</a-radio>
@@ -212,16 +220,8 @@ function doResetAll() {
           {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
           <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
         </span>
-        <div class="flex-1" />
-        <!-- 統一操作區：以 type/status 顏色區分主次語義（見 rules/frontend-vue.md 按鈕規範）-->
         <a-button size="small" type="text" @click="(historyOpen = true)">歷史</a-button>
-        <!-- 全部恢復默認（bulk·罕用→text 低調·warning 警示）與下方每項「恢復默認」(outline) 區分 -->
-        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
         <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
-        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
-          <template #icon><icon-download /></template>
-          導出規則
-        </a-button>
         <a-button
           type="primary"
           size="small"
