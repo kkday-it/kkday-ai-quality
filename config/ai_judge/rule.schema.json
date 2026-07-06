@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kkday.com/ai-quality/schema/rule.schema.json",
-  "$comment": "AI 法官問題分類規則樹標準 v1.0（JSON Schema draft 2020-12）。配對資料檔：data/rule.json。",
+  "$comment": "AI 法官問題分類規則樹標準 v1.1（JSON Schema draft 2020-12）。配對資料檔：config/ai_judge/rule_C-1 ~ rule_C-6.json（DB active 版為執行期真相，本檔驗存檔結構）。",
   "title": "問題分類規則樹（rule.json）標準 v1.0",
-  "description": "AI 法官三層歸因分類樹的結構與規則唯一驗證標準。L1 歸因域 › L2 面向 › L3 細項；遞迴 children + 非補零 C-code（materialized path / SKOS notation）。每個葉節點扛判準四欄（meaning／canon／allow／forbid，正反例已通用化併入 allow／forbid）。欄位語義對齊 W3C SKOS（不引入 RDF）。",
+  "description": "AI 法官三層歸因分類樹的結構與規則唯一驗證標準。L1 歸因域 › L2 面向 › L3 細項；遞迴 children + 非補零 C-code（materialized path / SKOS notation）。任意層節點可帶判準五欄（canon/allow/forbid/positive_cases/negative_cases）；L1 canon+正反例+forbid 注入 Stage A 域界線、葉 canon+forbid+negative_cases 注入 Stage B rich 目錄——編輯即影響判決。欄位語義對齊 W3C SKOS（不引入 RDF）。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -92,11 +92,26 @@
       "description": "任意層葉節點（無 children）須帶的完整判準；供 l1/l2/l3 共用語意。",
       "type": "object",
       "properties": {
-        "canon": { "type": "string", "description": "SKOS definition：唯一判準（一句簡述）。" },
-        "allow": { "$ref": "#/$defs/strList", "description": "✅ 合規寫法／正面邊界。" },
-        "forbid": { "$ref": "#/$defs/strList", "description": "❌ 違規寫法／負面邊界（含跨類「情境 → 歸 X」）。" },
-        "positive_cases": { "$ref": "#/$defs/strList", "description": "好範例（few-shot：清楚屬本類的典型例）。" },
-        "negative_cases": { "$ref": "#/$defs/strList", "description": "壞範例（few-shot：看似屬本類實則他類，「『例』看似X實為Y → 歸 Z」）。" }
+        "canon": {
+          "type": "string",
+          "description": "SKOS definition：唯一判準（一句簡述）。"
+        },
+        "allow": {
+          "$ref": "#/$defs/strList",
+          "description": "✅ 合規寫法／正面邊界（目前僅 L1 層注入 prompt 之正例走 positive_cases；葉層 allow 未注入，供編輯/匯出參照）。"
+        },
+        "forbid": {
+          "$ref": "#/$defs/strList",
+          "description": "❌ 違規寫法／負面邊界（含跨類「情境 → 歸 X」）。葉層 forbid 經 Stage B rich 目錄注入判決 prompt（⛔不得），L1 層經六域界線注入——編輯即影響判決。"
+        },
+        "positive_cases": {
+          "$ref": "#/$defs/strList",
+          "description": "好範例（few-shot：清楚屬本類的典型例）。"
+        },
+        "negative_cases": {
+          "$ref": "#/$defs/strList",
+          "description": "壞範例（few-shot：看似屬本類實則他類，「『例』看似X實為Y → 歸 Z」）。葉層經 Stage B rich 目錄注入判決 prompt（❌誤判例），L1 層經六域界線注入——編輯即影響判決。"
+        }
       }
     },
     "l1": {
@@ -135,21 +150,53 @@
           ],
           "description": "歸因域英文機器值（後端判決鏈以此對齊 domains.json / pyramid）。評論導向 6 域：移除 platform/order/cs/force_majeure；新增 product_quality（產品實體品質）/redemption/service；現場人員（導遊/司機/接待）收斂於 supplier 供應商履約。"
         },
-        "label": { "$ref": "#/$defs/label" },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
         "children": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/l2" },
+          "items": {
+            "$ref": "#/$defs/l2"
+          },
           "description": "L2 面向節點清單（分支時）。"
         },
-        "canon": { "type": "string" },
-        "allow": { "$ref": "#/$defs/strList" },
-        "forbid": { "$ref": "#/$defs/strList" },
-        "positive_cases": { "$ref": "#/$defs/strList" },
-        "negative_cases": { "$ref": "#/$defs/strList" }
+        "canon": {
+          "type": "string"
+        },
+        "allow": {
+          "$ref": "#/$defs/strList"
+        },
+        "forbid": {
+          "$ref": "#/$defs/strList"
+        },
+        "positive_cases": {
+          "$ref": "#/$defs/strList"
+        },
+        "negative_cases": {
+          "$ref": "#/$defs/strList"
+        }
       },
       "allOf": [
-        { "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
+        {
+          "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入",
+          "if": {
+            "not": {
+              "required": [
+                "children"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "canon",
+              "allow",
+              "forbid",
+              "positive_cases",
+              "negative_cases"
+            ]
+          }
+        }
       ]
     },
     "l2": {
@@ -175,21 +222,53 @@
           "const": 2,
           "description": "層級＝2（面向）。"
         },
-        "label": { "$ref": "#/$defs/label" },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
         "children": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/l3" },
+          "items": {
+            "$ref": "#/$defs/l3"
+          },
           "description": "L3 細項節點清單（分支時）。"
         },
-        "canon": { "type": "string" },
-        "allow": { "$ref": "#/$defs/strList" },
-        "forbid": { "$ref": "#/$defs/strList" },
-        "positive_cases": { "$ref": "#/$defs/strList" },
-        "negative_cases": { "$ref": "#/$defs/strList" }
+        "canon": {
+          "type": "string"
+        },
+        "allow": {
+          "$ref": "#/$defs/strList"
+        },
+        "forbid": {
+          "$ref": "#/$defs/strList"
+        },
+        "positive_cases": {
+          "$ref": "#/$defs/strList"
+        },
+        "negative_cases": {
+          "$ref": "#/$defs/strList"
+        }
       },
       "allOf": [
-        { "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
+        {
+          "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入",
+          "if": {
+            "not": {
+              "required": [
+                "children"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "canon",
+              "allow",
+              "forbid",
+              "positive_cases",
+              "negative_cases"
+            ]
+          }
+        }
       ]
     },
     "l3": {

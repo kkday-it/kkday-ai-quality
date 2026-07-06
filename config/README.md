@@ -12,7 +12,7 @@
 ## ai_judge/（判準領域）
 - `rule_C-1 ~ rule_C-6.json` — 6 歸因域 L1→L2→L3 厚判準樹（canon/allow/forbid/正反例）
 - `rule.schema.json` — 規則樹結構規格（存前 jsonschema 驗證）
-- `global_rule.json`（+`.schema`）— 判決總規範（極性閘門 attribute_when / cascade / abstain policy / 判官提示詞；決策樹 gates 已 deprecated）
+- `global_rule.json`（+`.schema`）— 判決總規範（極性閘門 attribute_when / cascade 兩階段+低信心重路由 / abstain·證據政策 attr_min_confidence / 判官提示詞）；域界線 SSOT＝各 rule_C-N 的 L1 canon（舊 decision_tree/global_boundaries 已移除）
 - `judgment.json` — 信心分層閾值 + 傾向/分層/判決階段中文 label + prejudge 旋鈕 + **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**（前後端同讀；已納入 RULE_CODES＝可經 RuleManager 版本化編輯 + 存檔熱重載）
 - `source_mapping.json`（+`.schema`）— 5 來源欄位映射（源欄→canonical）+ 上傳指紋辨識
 
