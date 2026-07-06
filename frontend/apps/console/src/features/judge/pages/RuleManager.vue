@@ -150,13 +150,8 @@ function doResetAll() {
 <template>
   <div class="flex h-full gap-4">
     <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
+    <!-- 面板標題移除：頂部 tab 已是「規則配置」，此處不再重複；全部恢復默認移至右側工具列 -->
     <div class="flex h-full w-52 shrink-0 flex-col gap-3">
-      <!-- 面板標題列 + 恢復默認：獨立於 a-menu-item-group（其 title slot 內按鈕點擊會被 Arco menu 吞掉）-->
-      <div class="flex flex-none items-center justify-between px-1">
-        <span class="text-xs text-[var(--color-text-3)]">規則配置</span>
-        <a-button size="mini" type="text" @click="doResetAll">恢復默認</a-button>
-      </div>
-
       <!-- 兩組：整體配置（schema/global/judgment 純 JSON）+ 歸因分類（C-N 判準樹）-->
       <a-menu
         :selected-keys="[store.activeCode]"
@@ -220,6 +215,8 @@ function doResetAll() {
         <div class="flex-1" />
         <!-- 統一操作區：以 type/status 顏色區分主次語義（見 rules/frontend-vue.md 按鈕規範）-->
         <a-button size="small" type="text" @click="(historyOpen = true)">歷史</a-button>
+        <!-- 全部恢復默認（bulk·罕用→text 低調·warning 警示）與下方每項「恢復默認」(outline) 區分 -->
+        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
         <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
         <a-button size="small" type="outline" :loading="exporting" @click="doExport">
           <template #icon><icon-download /></template>
