@@ -6,7 +6,7 @@
 
 | loader | 讀取 | 提供 |
 |---|---|---|
-| `ai_judge.py` | DB active 版 rule_C-* + config/ai_judge fallback | L3 厚判準樹（selectable_domains / l3_nodes_for_domains / domain_action…）|
+| `ai_judge.py` | DB active 版 rule_C-* + config/ai_judge fallback | 葉判準樹（selectable_domains / l3_nodes_for_domains / domain_action…）+ **L1 域／L2 面向分支判準**（`l1_judgment` / `l2_judgment`，供 cascade 分層界線注入）|
 | `global_rule.py` | global_rule.json（DB active）| 判決總規範（decision_tree / cascade / abstain_policy / global_boundaries）|
 | `product_vertical.py` | product_vertical 規則（DB active）| 商品垂直分類分組 → CATEGORY 代碼（codes_for_group）|
 | `source_mapping.py` | source_mapping.json | 5 來源欄位映射（源欄→canonical，normalize_row）+ 上傳指紋辨識 |

@@ -149,8 +149,7 @@
         "negative_cases": { "$ref": "#/$defs/strList" }
       },
       "allOf": [
-        { "$comment": "分支：有 children 則不得帶判準", "if": { "required": ["children"] }, "then": { "not": { "required": ["canon"] } } },
-        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
+        { "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
       ]
     },
     "l2": {
@@ -190,8 +189,7 @@
         "negative_cases": { "$ref": "#/$defs/strList" }
       },
       "allOf": [
-        { "$comment": "分支：有 children 則不得帶判準", "if": { "required": ["children"] }, "then": { "not": { "required": ["canon"] } } },
-        { "$comment": "葉：無 children 則須帶完整判準", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
+        { "$comment": "葉：無 children 則須帶完整判準；分支（有 children）可選帶判準，供 cascade 分層界線（L1 域／L2 面向）注入", "if": { "not": { "required": ["children"] } }, "then": { "required": ["canon", "allow", "forbid", "positive_cases", "negative_cases"] } }
       ]
     },
     "l3": {

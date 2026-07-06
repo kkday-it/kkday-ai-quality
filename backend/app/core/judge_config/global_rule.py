@@ -63,3 +63,22 @@ def global_boundaries() -> list[str]:
 def cascade() -> dict[str, Any]:
     """cascade 設定（enabled + stageA_l1 + stageB）。"""
     return _load().get("cascade", {})
+
+
+def attribution_guidance() -> str:
+    """歸因判官提示詞（角色 + 判斷流程指引；不含輸出格式與域界線）。
+
+    判準政策 SSOT：由規則配置頁「global 整體規則」編輯即時生效，取代 prejudge 寫死的 _ATTR_SYS。
+    缺值回空字串，由呼叫端回退 code 內 default。域界線/正反例走 ai_judge L1 canon，非此處。
+    """
+    return _load().get("attribution_guidance", "")
+
+
+def polarity_guidance() -> str:
+    """極性判官提示詞（只判傾向、不歸因）；規則配置頁可編輯，缺值回空由呼叫端回退 default。"""
+    return _load().get("polarity_guidance", "")
+
+
+def polarity_gate() -> dict[str, Any]:
+    """極性閘門（attribute_when：哪些整體傾向進歸因）；prejudge._attribute_when 消費。"""
+    return _load().get("polarity_gate", {})

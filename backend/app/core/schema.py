@@ -134,8 +134,10 @@ class TicketFinding(BaseModel):
     # 判決階段（prejudge 派生；未判＝無 finding 於 enrich 層補）：
     # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充 / insufficient 資訊不足
     judgment_stage: str = ""
-    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
+    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"；ensemble 聯合判決時為 "ensemble"）
     judged_at: str = ""  # 判決時間（ISO）
+    # 多 model 聯合判決（ensemble）各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為空
+    model_votes: list[dict] = Field(default_factory=list)
 
     def to_columns(self) -> dict:
         """判決 payload → judgments typed 欄位 dict（落庫形狀 SSOT）。
@@ -167,6 +169,7 @@ class TicketFinding(BaseModel):
             "model": self.model_used,
             "is_primary": self.is_primary,
             "judged_at": self.judged_at,
+            "model_votes": self.model_votes or None,  # 單模型判決為空 → 存 NULL（僅 ensemble 落非空）
         }
 
 

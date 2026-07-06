@@ -26,6 +26,8 @@ _domain_action: dict[str, str] = {}  # code → recommended_action（自 rule _m
 _domain_owner: dict[str, str] = {}  # code → 負責單位（自 rule _meta.owner_role；值待業務填，空則不顯示）
 _cascade: list[dict[str, Any]] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域 code，L2/L3 value=C-code）
 _path_label: dict[str, str] = {}  # value（域 code / C-code）→ 可讀路徑「L1 › L2 › L3」（供標真值評分 prompt）
+_l1_judgment: dict[str, dict[str, Any]] = {}  # domain 機器值 → L1 域判準（canon/allow/forbid/正反例）；cascade Stage A 界線
+_l2_judgment: dict[str, dict[str, Any]] = {}  # L2 C-code（有 L3 者）→ L2 面向判準；cascade Stage B 界線
 _loaded = False
 
 
@@ -44,6 +46,23 @@ def _leaf_record(
         "l2_code": l2_code,
         "l2_label": l2_label,
         "l3_label": l3_label,
+        "canon": node.get("canon", ""),
+        "allow": node.get("allow", []),
+        "forbid": node.get("forbid", []),
+        "positive_cases": node.get("positive_cases", []),
+        "negative_cases": node.get("negative_cases", []),
+    }
+
+
+def _branch_judgment(node: dict[str, Any]) -> dict[str, Any]:
+    """抽取分支節點（L1 域／L2 面向）判準五欄 + code/label；供 cascade 分層界線注入（Stage A/B）。
+
+    分支節點（有 children）的判準在 schema 放寬前不存在（僅葉扛判準）；放寬後 L1/L2 可帶界線判準，
+    本函式集中抽取，缺欄以空值回退（分支判準為選填，未填時 canon 為空、prompt 端自動略過）。
+    """
+    return {
+        "code": node.get("code", ""),
+        "label": node.get("label", ""),
         "canon": node.get("canon", ""),
         "allow": node.get("allow", []),
         "forbid": node.get("forbid", []),
@@ -132,6 +151,12 @@ def _ensure_loaded() -> None:
         _l3_by_domain.setdefault(domain, []).extend(nodes)
         for n in nodes:
             _l3_by_code[n["code"]] = n
+        # 分支判準（cascade 分層界線）：L1 域判準 by domain；L2 面向判準 by C-code（僅有 L3 之 L2；
+        # L2 葉本身已在 _l3_by_code）。判準為選填，未填時 canon 空、prompt 端略過不影響現行行為。
+        _l1_judgment[domain] = _branch_judgment(l1)
+        for l2 in l1.get("children") or []:
+            if l2.get("children"):  # L2 分支（其下有 L3）；L2 葉走 _l3_by_code
+                _l2_judgment[l2.get("code", "")] = _branch_judgment(l2)
         _cascade.append(_build_cascade(l1, [], root=True))
     _loaded = True
 
@@ -165,6 +190,8 @@ def reload() -> None:
     _domain_owner.clear()
     _cascade.clear()
     _path_label.clear()
+    _l1_judgment.clear()
+    _l2_judgment.clear()
     _loaded = False
     _ensure_loaded()
 
@@ -268,3 +295,22 @@ def selectable_domains() -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def l1_judgment(domain: str) -> dict[str, Any]:
+    """域機器值（content/supplier…）→ L1 域判準（canon/allow/forbid/正反例 + label）；未設回空 dict。
+
+    供 cascade Stage A 選域時注入域界線（取代 global_rule.gates 平行 SSOT）。判準為選填，
+    分支未填判準時回傳 canon 為空的 dict，prompt 端據 canon 是否非空決定注入與否。
+    """
+    _ensure_loaded()
+    return _l1_judgment.get(domain, {})
+
+
+def l2_judgment(code: str) -> dict[str, Any]:
+    """L2 面向 C-code（如 C-1-2）→ L2 判準；未設（或該 L2 為葉、判準已在 l3_by_code）回空 dict。
+
+    供 cascade Stage B 在選中域內先以 L2 canon 定調、再列該 L2 下 L3 canon 之分組式目錄。
+    """
+    _ensure_loaded()
+    return _l2_judgment.get(code, {})
