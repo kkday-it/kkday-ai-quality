@@ -65,7 +65,8 @@ judgments = Table(
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──
-    Column("model", Text),  # 判決模型（stub 時為 "stub"）
+    Column("model", Text),  # 判決模型（stub 時為 "stub"；ensemble 聯合判決為 "ensemble"）
+    Column("model_votes", JSONB),  # ensemble 各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為 NULL
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
@@ -277,7 +278,8 @@ llm_usage = Table(
     Column("model", Text, nullable=False),  # 使用模型（cfg.model）
     Column("provider", Text),  # 供應商 id（settings.provider_id_for(base_url) 反推）
     Column("prompt_tokens", Integer),  # 輸入 token
-    Column("completion_tokens", Integer),  # 輸出 token
+    Column("completion_tokens", Integer),  # 輸出 token（reasoning model 下含 reasoning_tokens）
+    Column("reasoning_tokens", Integer),  # completion 中的 reasoning 部分（gpt-5 reasoning_effort 產；量測降 effort 空間）
     Column("cached_tokens", Integer),  # prompt 中命中 prompt cache 的部分（折扣計價）
     Column("total_tokens", Integer),  # prompt + completion
     Column("cost_usd", Float),  # pricing.cost_usd 換算（含 cache 折扣）

@@ -1,4 +1,4 @@
-"""歸因縱覽聚合（縱覽頁專用；KPI + polarity/L1-code/星等/月趨勢 + L2/L3 下鑽）。"""
+"""歸因概覽聚合（概覽頁專用；KPI + polarity/L1-code/星等/月趨勢 + L2/L3 下鑽）。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def attribution_overview(
     granularity: str = "month",
     product_vertical: str | list[str] | None = None,
 ) -> dict:
-    """歸因縱覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
+    """歸因概覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
     傾向(polarity)分布、L1 域分布、星等分布、月度時序（已判/負向）。域軸用 data.l1_domain_code。
     polarity/l1 取自 judgments.data JSON（JSONB 抽出 GROUP BY，與 list_problems 同手法）；星等取
@@ -140,7 +140,8 @@ def attribution_breakdown(
     source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
 
     Returns:
-        {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n}]。
+        {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n, neg, avg_conf, auto}]，
+        by_l3 額外帶 l2_code（父層 code，供前端點 L2 即時篩該 L2 下的 L3）。
     """
     # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
     spec = _vertical_scoped_spec(source, product_vertical)
@@ -173,16 +174,21 @@ def attribution_breakdown(
     avg_conf = func.avg(jg.c.conf_value).label("avg_conf")
     auto = func.count().filter(jg.c.conf_tier == "auto_accept").label("auto")
 
-    def _level(code_col, label_col):
-        """組某層（L2/L3）GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序；帶多指標。"""
-        stmt = (
-            select(code_col.label("code"), label_col.label("label"), cnt, neg, avg_conf, auto)
-            .select_from(frm)
-            .where(l1c == l1, code_col.isnot(None), code_col != "")
-        )
+    def _level(code_col, label_col, parent_col=None):
+        """組某層（L2/L3）GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序；帶多指標。
+
+        parent_col 非 None 時額外 carry 父層 code（L3 帶 l2_code），供前端「點左側 L2 即時
+        篩右側 L3」——一次載入全 L3、點擊時 client 端按 l2_code 過濾，免每次點擊回打後端。
+        """
+        cols = [code_col.label("code"), label_col.label("label"), cnt, neg, avg_conf, auto]
+        group = [code_col, label_col]
+        if parent_col is not None:
+            cols.insert(0, parent_col.label("l2_code"))
+            group.insert(0, parent_col)
+        stmt = select(*cols).select_from(frm).where(l1c == l1, code_col.isnot(None), code_col != "")
         for w in extra:
             stmt = stmt.where(w)
-        return stmt.group_by(code_col, label_col).order_by(cnt.desc())
+        return stmt.group_by(*group).order_by(cnt.desc())
 
     def _rows(c, stmt):
         """執行並將 avg_conf 四捨五入（float，避免前端顯示長尾）。"""
@@ -199,5 +205,5 @@ def attribution_breakdown(
             or l1
         )
         by_l2 = _rows(c, _level(l2c, l2l))
-        by_l3 = _rows(c, _level(l3c, l3l))
+        by_l3 = _rows(c, _level(l3c, l3l, parent_col=l2c))
     return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2, "by_l3": by_l3}

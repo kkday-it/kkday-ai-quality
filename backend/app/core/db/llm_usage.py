@@ -14,7 +14,7 @@ _GRAN_FMT = {"year": "YYYY", "month": "YYYY-MM", "day": "YYYY-MM-DD"}
 # 寫入時只取這些欄（其餘由 DB default / autoincrement 補），避免呼叫端多帶鍵造成錯誤。
 _INSERT_COLS = (
     "stage", "model", "provider",
-    "prompt_tokens", "completion_tokens", "cached_tokens", "total_tokens",
+    "prompt_tokens", "completion_tokens", "reasoning_tokens", "cached_tokens", "total_tokens",
     "cost_usd", "source", "source_id", "job_id",
 )
 

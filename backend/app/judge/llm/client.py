@@ -55,7 +55,7 @@ def open_usage_buffer() -> list:
     return buf
 
 
-def _record_usage(stage: str, cfg: dict, prompt: int, completion: int, cached: int) -> None:
+def _record_usage(stage: str, cfg: dict, prompt: int, completion: int, cached: int, reasoning: int = 0) -> None:
     """組單次呼叫用量列並落庫（buffer 有則 append 待批量、無則即時 insert）；失敗不阻斷判決。"""
     from app.core.judge_config import pricing
 
@@ -67,6 +67,7 @@ def _record_usage(stage: str, cfg: dict, prompt: int, completion: int, cached: i
         "provider": _settings.provider_id_for(cfg.get("base_url", "")),
         "prompt_tokens": prompt,
         "completion_tokens": completion,
+        "reasoning_tokens": reasoning,
         "cached_tokens": cached,
         "total_tokens": prompt + completion,
         "cost_usd": pricing.cost_usd(model, prompt, completion, cached),
@@ -250,6 +251,9 @@ def chat_json(
         # prompt caching 命中：cached_tokens 非零代表靜態前綴（判準法典）已重用、input 計費打折
         details = getattr(usage, "prompt_tokens_details", None)
         cached = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+        # reasoning model（gpt-5 系列）的 completion 內含 reasoning tokens；抽出供量測降 reasoning_effort 空間
+        comp_details = getattr(usage, "completion_tokens_details", None)
+        reasoning = int(getattr(comp_details, "reasoning_tokens", 0) or 0) if comp_details else 0
         if cached:
             _log.info("prompt cache 命中 stage=%s cached=%d/%d", stage, cached, prompt_tokens)
         if sink:
@@ -258,7 +262,7 @@ def chat_json(
             except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
                 _log.debug("usage sink 回報失敗 stage=%s", stage)
         try:  # per-call 落庫（AI 消耗紀錄）；失敗絕不阻斷判決
-            _record_usage(stage, cfg, prompt_tokens, completion_tokens, cached)
+            _record_usage(stage, cfg, prompt_tokens, completion_tokens, cached, reasoning)
         except Exception:  # noqa: BLE001
             _log.debug("usage 落庫失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"

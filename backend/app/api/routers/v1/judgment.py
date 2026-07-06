@@ -27,6 +27,8 @@ class PrejudgeIn(BaseModel):
     source: str | None = None
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
+    voter_config_ids: list[str] | None = None  # 跨廠 ensemble voter 模型集（低信心才複判投票；空/缺＝不 ensemble）
+    ensemble_sample_rate: float | None = None  # ④抽樣稽核：高信心筆按此比例也跑 ensemble（0/缺＝純 confidence-gate）
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
@@ -42,8 +44,15 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     設定注入：以當前 user 的 effective LLM dict（可選 llm_config_id）供 judge 路徑跨 thread 讀取。
     """
     uid = user.get("user_id", "")
-    eff = app_settings.effective_llm_dict(app_settings.load_settings(uid), config_id=body.llm_config_id)
+    s = app_settings.load_settings(uid)
+    eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
     model = eff.get("model", "")
+    # 跨廠 ensemble voter：勾選的其他 config 各組整套 effective dict（排除與主判決同一 config；空→None＝不 ensemble）
+    voter_cfgs = [
+        app_settings.effective_llm_dict(s, config_id=cid)
+        for cid in (body.voter_config_ids or [])
+        if cid and cid != body.llm_config_id
+    ] or None
 
     if body.item_ids:
         item_ids = body.item_ids
@@ -56,8 +65,10 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     else:
         item_ids = []
 
-    job_id = prejudge_batch.start_job(item_ids, eff, model, source=body.source)
-    return {"job_id": job_id, "total": len(item_ids), "model": model}
+    job_id = prejudge_batch.start_job(
+        item_ids, eff, model, source=body.source, voter_cfgs=voter_cfgs, sample_rate=body.ensemble_sample_rate or 0.0
+    )
+    return {"job_id": job_id, "total": len(item_ids), "model": model, "ensemble_voters": len(voter_cfgs or [])}
 
 
 @router.post("/prejudge/pause")

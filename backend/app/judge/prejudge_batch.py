@@ -71,7 +71,10 @@ def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
         snap["ok" if ok else "failed"] += 1
 
 
-def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
+def _work_one(
+    job_id: str, item: dict, model: str, source: str | None,
+    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
     item 為來源表列（源欄名）。先注入 canonical content + source_id + source（供 prejudge 引擎），
@@ -96,7 +99,7 @@ def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
             norm["prod_oid"] = canon.get("prod_oid") or ""
             norm["order_oid"] = canon.get("order_oid") or ""
             norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
-            findings = prejudge.to_findings(norm, model=model)
+            findings = prejudge.to_findings(norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate)
             db.replace_source_findings(src, source_id, findings)
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
@@ -104,10 +107,33 @@ def _work_one(job_id: str, item: dict, model: str, source: str | None) -> None:
             _bump(job_id, ok=False)
 
 
-def _run(job_id: str, item_ids: list[str], eff: dict, model: str, source: str | None = None) -> None:
+def _reload_judge_rules() -> None:
+    """批次判決啟動前強制 reload 各判準 loader（ai_judge 規則樹 / global_rule 整體規則 + 判官提示詞 /
+    judgment 旋鈕 / flags 閾值），保證本批每筆判決都採用『當前 DB active 版規則』。
+
+    根因：判決 server 把規則快取在 process 記憶體，規則經 UI 存檔雖由 rules._reload_judge_cache 熱重載
+    「該台 server」，但 out-of-band 改動（腳本 / migration / 別台 server 發布）不會通知本 process → 快取
+    stale → LLM 判到舊規則。批次入口再 reload 一次即成硬保證，與『每次判決用最新規則』的預期一致。
+    """
+    from app.core import ai_judge, flags, global_rule
+    from app.core.db import _shared
+    from app.judge import prejudge
+
+    for fn in (ai_judge.reload, global_rule.reload, _shared.reload_judgment_cfg, prejudge.reload, flags.reload):
+        try:
+            fn()
+        except Exception:  # noqa: BLE001  單一 loader reload 失敗不阻斷整批判決
+            pass
+
+
+def _run(
+    job_id: str, item_ids: list[str], eff: dict, model: str, source: str | None = None,
+    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
     # 在背景 thread 的 context 內 set 好兩個 contextvar，稍後每筆任務 copy_context 快照即帶上。
     app_settings.set_current(eff)
+    _reload_judge_rules()  # 硬保證：本批每筆 LLM 判決都採用『當前 DB active 版規則』（防 server 記憶體舊快取）
 
     def _sink(m: str, prompt: int, completion: int, cached: int = 0) -> None:
         """token 用量回報：累計 total_tokens 並依模型單價加總 cost_usd（cached 部分折扣計；thread-safe）。"""
@@ -144,7 +170,7 @@ def _run(job_id: str, item_ids: list[str], eff: dict, model: str, source: str | 
                     while len(in_flight) >= max_workers:
                         _, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
-                    in_flight.add(ex.submit(c.run, _work_one, job_id, item, model, source))
+                    in_flight.add(ex.submit(c.run, _work_one, job_id, item, model, source, voter_cfgs, sample_rate))
                 if cancel and cancel.is_set():
                     break
             wait(in_flight)  # drain 剩餘（正常跑完 / 取消後已提交的收斂；with 結束亦 shutdown(wait=True)）
@@ -218,7 +244,10 @@ def cancel_job(job_id: str) -> bool:
     return True
 
 
-def start_job(item_ids: list[str], eff: dict, model: str, source: str | None = None) -> str:
+def start_job(
+    item_ids: list[str], eff: dict, model: str, source: str | None = None,
+    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+) -> str:
     """註冊並背景啟動一個初判歸因批量任務；立即回 job_id（不阻塞請求）。
 
     Args:
@@ -227,6 +256,8 @@ def start_job(item_ids: list[str], eff: dict, model: str, source: str | None = N
         model: 主判決模型名（Stage2/2b；stub 模式引擎自走啟發式）。
         source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
             None＝沿用 intake_items 舊行為）。
+        voter_cfgs: 跨廠 ensemble voter 的 effective LLM config 清單（None＝不 ensemble）；穿透至
+            to_findings，主判決有低信心 attr 才對各 voter 複判投票（confidence-gated，見 prejudge._ensemble_attrs）。
 
     Returns:
         job_id（前端據此輪詢 get_job）。
@@ -239,7 +270,7 @@ def start_job(item_ids: list[str], eff: dict, model: str, source: str | None = N
         _controls[job_id] = {"gate": gate, "cancel": threading.Event()}
     threading.Thread(
         target=_run,
-        args=(job_id, item_ids, eff, model, source),
+        args=(job_id, item_ids, eff, model, source, voter_cfgs, sample_rate),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()
