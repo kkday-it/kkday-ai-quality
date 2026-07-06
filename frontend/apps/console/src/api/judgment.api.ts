@@ -17,6 +17,8 @@ export interface GetProblemsParams {
   dateFrom?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   dateTo?: string;
+  /** 評論 rec_oid 精確過濾（product_reviews 評論 id；對應各來源表 natural_key）。 */
+  recOid?: string;
   /** 商品 prod_oid 精確過濾。 */
   prodOid?: string;
   /** 訂單 order_oid 精確過濾。 */
@@ -50,6 +52,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
+  if (params.recOid) q.set('rec_oid', params.recOid);
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
@@ -155,7 +158,7 @@ export interface AttrQuery {
 }
 
 /**
- * 歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
+ * 歸因概覽聚合（概覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
  * 一次取齊，避免前端全量 fetch 29k 列再算。
  * @param opts 來源 / 日期區間 / 趨勢粒度（皆選填）
  */
@@ -183,9 +186,11 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
 
-/** 商品垂直分類解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。 */
+/** 商品垂直分類解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。
+ *  group_order＝分組顯示順序（顯式排序欄；jsonb 不保 key 序，舊版本內容可能缺欄）。 */
 export interface ProductVerticalResolved {
   groups: Record<string, string[]>;
+  group_order?: string[];
 }
 
 /**

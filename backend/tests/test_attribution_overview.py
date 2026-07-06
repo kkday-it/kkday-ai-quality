@@ -1,4 +1,4 @@
-"""歸因縱覽聚合（db.attribution_overview）測試：KPI / 傾向 / L1 域分布 + 日期區間（含 Phase 1 sargable 改動）。
+"""歸因概覽聚合（db.attribution_overview）測試：KPI / 傾向 / L1 域分布 + 日期區間（含 Phase 1 sargable 改動）。
 
 需 temp_db（隔離庫，合成拋棄列）。同時鎖定 Phase 1 效能改動語義：日期上界含當日整天、隔日排除
 （`date_col < date_to||'~'` 取代 substr）。

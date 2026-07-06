@@ -26,5 +26,5 @@
 | `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`/`list_findings`/`list_products`）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動）。 |
-| `attribution.py` | 歸因縱覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
+| `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
 | `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格）。 |

@@ -1,5 +1,5 @@
 /**
- * 歸因縱覽（AttributionOverview）資料契約 + 縱覽專屬 ECharts builder。
+ * 歸因概覽（AttributionOverview）資料契約 + 縱覽專屬 ECharts builder。
  *
  * 通用圖表（donut/bar/trend）直接複用 `@/features/overview/utils` 的既有 builder（契約吻合，
  * 不造輪子）；此處只放契約不合的新函式——count 語義漏斗（overview 的 buildFunnelOption
@@ -40,7 +40,7 @@ export interface TrendPayload {
   negative: number[];
 }
 
-/** 歸因縱覽聚合回應（GET /api/problems/attribution_overview）。 */
+/** 歸因概覽聚合回應（GET /api/problems/attribution_overview）。 */
 export interface AttributionOverview {
   total_intake: number;
   judged: number;
@@ -53,7 +53,7 @@ export interface AttributionOverview {
   trend: TrendPayload;
 }
 
-/** L2/L3 細化列（下鑽 + 商品內容細化表用）：筆數 + 多指標。 */
+/** L2/L3 細化列（下鑽 + 商品內容細化圖用）：筆數 + 多指標。 */
 export interface BreakdownRow extends CountItem {
   /** 負向筆數 */
   neg: number;
@@ -61,6 +61,8 @@ export interface BreakdownRow extends CountItem {
   avg_conf: number | null;
   /** 自動採信筆數（auto_accept tier；自動採信率＝auto/n） */
   auto: number;
+  /** 父層 L2 code（僅 by_l3 帶；供前端點 L2 即時篩該 L2 下的 L3） */
+  l2_code?: string;
 }
 
 /** L1 下鑽回應（GET /api/problems/attribution_breakdown）。 */
@@ -127,6 +129,60 @@ export function buildAttrFunnelOption(stages: FunnelStage[]) {
           itemStyle: { color: palette[i % palette.length] },
         })),
       },
+    ],
+  };
+}
+
+/** 商品內容細化橫向長條的單筆資料（含全維度：筆數 / 占比 / 平均信心 / 自動採信率）。 */
+export interface ContentBarItem {
+  /** 細項顯示名（L2 面向 / L3 細項） */
+  label: string;
+  /** 筆數（＝負向筆數：僅負向才歸類，故不再拆負向/非負向） */
+  n: number;
+  /** 占比 %（同層總數為分母，呼叫端算好） */
+  pct: number;
+  /** 平均信心（0~1；無資料為 null） */
+  avgConf: number | null;
+  /** 自動採信率 %（呼叫端算好） */
+  autoRate: number;
+}
+
+/**
+ * 商品內容細化橫向長條（L2 面向 / L3 細項共用）：單序列筆數，tooltip 展全維度
+ * （筆數 / 占比 / 平均信心 / 自動採信率）。因「僅負向才歸類」，筆數即負向數，
+ * 不再拆負向/非負向堆疊（非負向恆 0，無意義）。
+ *
+ * 不複用 overview 的 buildBarOption——後者 tooltip 僅顯單值，無法一次帶多指標。
+ * 橫向（category 在 y 軸）利於長中文細項名不截斷；資料量少故不做 dataZoom。
+ * click 事件由呼叫端綁 `@click`（params.name＝category label）→ 反查 code 切換右側 L3。
+ *
+ * @param items 依筆數降序的細項（呼叫端已排序）；空陣列回空圖（呼叫端另顯 empty）
+ * @returns ECharts option
+ */
+export function buildContentBarOption(items: ContentBarItem[]) {
+  // ECharts category y 軸 index 0 在底部 → 反轉使最大值置頂，與表格由多到少一致
+  const rev = [...items].reverse();
+  const cats = rev.map((i) => i.label);
+  const fmtConf = (v: number | null) => (v == null ? '—' : v.toFixed(2));
+  return {
+    grid: { left: 8, right: 16, top: 12, bottom: 8, containLabel: true },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      // 以 category index 反查原始細項，一次列出全維度（trigger:axis → params 為序列陣列，取首個的 dataIndex）
+      formatter: (params: Array<{ dataIndex: number }>) => {
+        const it = rev[params[0]?.dataIndex ?? 0];
+        if (!it) return '';
+        return (
+          `${it.label}<br/>筆數：${it.n} · 占比：${it.pct}%<br/>` +
+          `平均信心：${fmtConf(it.avgConf)} · 自動採信率：${it.autoRate}%`
+        );
+      },
+    },
+    xAxis: { type: 'value', minInterval: 1 },
+    yAxis: { type: 'category', data: cats, axisLabel: { fontSize: 11, width: 96, overflow: 'truncate' } },
+    series: [
+      { name: '筆數', type: 'bar', barMaxWidth: 22, itemStyle: { color: '#165dff', borderRadius: [0, 3, 3, 0] }, data: rev.map((i) => i.n) },
     ],
   };
 }

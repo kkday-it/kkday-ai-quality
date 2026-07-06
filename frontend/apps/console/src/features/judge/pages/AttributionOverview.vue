@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 歸因縱覽（Attribution Overview）多檢視數據展示頁。
+ * 歸因概覽（Attribution Overview）多檢視數據展示頁。
  *
- * 頁內次級 tab 切三檢視：縱覽（全部來源）/ 商品評論（product_reviews）/ 售前售後進線（conversations）。
- * 三檢視共用 useAttributionDashboard——各自綁定 source 取真實聚合資料，切換即自動重載。
- * 圖表按 source 差異呈現：星等分布僅商品評論類來源有資料，故僅該檢視顯示。
+ * 頁內次級 tab：縱覽（全部來源）+ 每個反饋來源各一專屬概覽頁（順序＝sources.json）。
+ * 各檢視共用 useAttributionDashboard——綁定不同 source 取真實聚合資料，切換即自動重載。
+ * 圖表按 source 差異呈現：星等分布僅有星等欄的來源（SCORE_SOURCES）顯示。
+ * 支援導出當前檢視為 PDF 報表（複用 reportPdf，抓頁內 data-report-block 面板）。
  *
  * Phase 2（後端待補，暫不呈現以免造假）：判決分布（judgments 無 verdict 欄）、
  * 標籤情感（另一資料源）、售前售後進線的訂單/工單/供應商維度（需新聚合端點）。
@@ -20,10 +21,12 @@ import {
   MarkLineComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import { IconRefresh } from '@arco-design/web-vue/es/icon';
+import { Message } from '@arco-design/web-vue';
+import { IconRefresh, IconDownload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, CardSection, KpiCard } from '@/components';
-import { SOURCE_LABEL } from '../constants';
+import { SOURCES } from '../constants';
 import { useAttributionDashboard } from '../composables';
+import { exportBlocksToPdf } from '../utils';
 
 use([
   PieChart,
@@ -37,24 +40,37 @@ use([
   CanvasRenderer,
 ]);
 
-/**
- * 檢視目錄：每個檢視綁定固定 source（縱覽=全部即 undefined），並宣告該 source 有無星等資料。
- * source 值對齊 config/global/sources.json 與 SOURCES 常數；
- * conversations（售前售後進線）無 score 映射 → showScore=false，不顯示星等分布。
- */
-const VIEWS = [
-  { key: 'overview', source: undefined, showScore: false },
-  { key: 'reviews', source: 'product_reviews', showScore: true },
-  { key: 'intake', source: 'conversations', showScore: false },
-] as const;
+/** 有星等欄的來源（product_reviews=rec_scores / freshdesk=st_survey_rating / app_feedback=score）→ 才顯示星等分布。 */
+const SCORE_SOURCES = new Set(['product_reviews', 'freshdesk_tickets', 'app_feedback']);
 
-/** 檢視顯示名：綁定 source 者取 SOURCE_LABEL（SSOT＝sources.json），縱覽（無 source）為固定「縱覽」。 */
-function viewLabel(v: (typeof VIEWS)[number]): string {
-  return v.source ? (SOURCE_LABEL[v.source] ?? v.source) : '縱覽';
+/** 單一檢視：key（＝source code 或 'overview'）/ source（undefined＝縱覽全部）/ 顯示名 / 有無星等。 */
+interface DashView {
+  key: string;
+  source: string | undefined;
+  label: string;
+  showScore: boolean;
 }
 
-const view = ref<(typeof VIEWS)[number]['key']>('overview');
-const active = computed(() => VIEWS.find((v) => v.key === view.value)!);
+/**
+ * 檢視目錄：縱覽（全部來源）+ 每個反饋來源各一專屬概覽頁。
+ * 順序與 tab 標籤皆衍生自 config/global/sources.json（SSOT＝SOURCES）——新增/調整來源只改該檔，
+ * 本頁自動同步，不平行維護第二份順序；showScore 決定該檢視是否顯示星等分布。
+ */
+const VIEWS: DashView[] = [
+  { key: 'overview', source: undefined, label: '整體概覽', showScore: false },
+  ...SOURCES.map((s) => ({
+    key: s.value,
+    source: s.value,
+    label: s.label,
+    showScore: SCORE_SOURCES.has(s.value),
+  })),
+];
+
+const view = ref<string>('overview');
+const active = computed(() => VIEWS.find((v) => v.key === view.value) ?? VIEWS[0]);
+
+// 歸因佔比圖表切換（圓餅＝占比視角 / 長條＝排名視角）
+const shareChart = ref<'donut' | 'bar'>('donut');
 
 // 日期區間（a-range-picker，'YYYY-MM-DD' 陣列）+ 趨勢粒度（年/月/日），驅動所有面板重載
 const dateRange = ref<string[]>([]);
@@ -75,8 +91,8 @@ const {
   verticalOptions,
   verticalGroups,
   onVerticalChange,
-  polarityDonut,
-  contentRatioDonut,
+  attributionShareDonut,
+  attributionShareBar,
   scoreBar,
   funnel,
   l1Bar,
@@ -84,29 +100,62 @@ const {
   l3Bar,
   tierDonut,
   trend,
-  contentTable,
+  selectedL2,
+  contentL2Bar,
+  contentL3Bar,
+  onContentL2Click,
 } = useAttributionDashboard(() => active.value.source, {
   dateFrom: () => dateRange.value?.[0],
   dateTo: () => dateRange.value?.[1],
   granularity,
 });
 
-/** 商品內容細化表欄：L3 細項 × 多指標（筆數／負向／占比／平均信心／自動採信率）。 */
-const contentCols = [
-  { title: '細項（L3）', dataIndex: 'label', ellipsis: true, tooltip: true },
-  { title: '筆數', dataIndex: 'n', width: 72, align: 'right' as const },
-  { title: '負向', dataIndex: 'neg', width: 72, align: 'right' as const },
-  { title: '占比', slotName: 'pct', width: 88, align: 'right' as const },
-  { title: '平均信心', slotName: 'conf', width: 96, align: 'right' as const },
-  { title: '自動採信率', slotName: 'auto', width: 104, align: 'right' as const },
-];
+// ── 導出報表（PDF）：抓當前頁已渲染的各面板（data-report-block）依序成報，複用 reportPdf ──
+const reportRef = ref<HTMLElement | null>(null);
+const exporting = ref(false);
+
+/**
+ * 導出當前概覽頁為 PDF：收集頁內標記 data-report-block 的面板卡片依視覺順序成報。
+ * 只抓「當前已渲染」區塊（如下鑽面板未展開就不含），報告頭帶當前檢視 / 篩選 / 粒度描述。
+ */
+const onExport = async () => {
+  const root = reportRef.value;
+  if (!root) return;
+  const blocks = Array.from(root.querySelectorAll<HTMLElement>('[data-report-block]'));
+  if (!blocks.length) return;
+  exporting.value = true;
+  try {
+    const now = new Date();
+    const stamp = now.toLocaleString('zh-TW', { hour12: false });
+    const ymd = now.toISOString().slice(0, 10);
+    // 當前篩選描述（供報告頭）：檢視 / 垂直分類（非全選才列）/ 日期區間 / 趨勢粒度
+    const filters: string[] = [`檢視：${active.value.label}`];
+    if (verticalGroups.value.length && verticalGroups.value.length < verticalOptions.value.length)
+      filters.push(`垂直分類：${verticalGroups.value.join('、')}`);
+    if (dateRange.value?.[0] && dateRange.value?.[1])
+      filters.push(`日期：${dateRange.value[0]} ~ ${dateRange.value[1]}`);
+    filters.push(`趨勢粒度：${granLabel.value}`);
+    const summary = kpi.value
+      ? `總反饋 ${kpi.value.total} · 已歸因 ${kpi.value.judged} · 問題占比 ${kpi.value.problemPct}%`
+      : undefined;
+    await exportBlocksToPdf(
+      blocks,
+      { title: `歸因概覽 - ${active.value.label}`, generatedAt: stamp, filters, summary },
+      `歸因概覽-${active.value.label}-${ymd}.pdf`,
+    );
+  } catch (e: unknown) {
+    Message.error('導出失敗：' + (e instanceof Error ? e.message : String(e)));
+  } finally {
+    exporting.value = false;
+  }
+};
 </script>
 
 <template>
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
       <a-radio-group v-model="view" type="button" size="small">
-        <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ viewLabel(v) }}</a-radio>
+        <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ v.label }}</a-radio>
       </a-radio-group>
       <!-- 商品垂直分類複選（與歸因列表同一 SSOT；嚴格限定縱覽數據範圍在所選分類內，含分類的來源才計入）-->
       <a-select
@@ -134,6 +183,16 @@ const contentCols = [
         <template #icon><icon-refresh /></template>
         重新整理
       </a-button>
+      <a-button
+        size="small"
+        type="outline"
+        :loading="exporting"
+        :disabled="!hasData"
+        @click="onExport"
+      >
+        <template #icon><icon-download /></template>
+        導出報表
+      </a-button>
     </div>
   </Teleport>
 
@@ -143,9 +202,9 @@ const contentCols = [
     :empty="!hasData"
     empty-text="此來源尚無歸因資料，請先到「歸因列表」進行初判歸因"
   >
-    <div v-if="kpi" class="flex flex-col gap-4">
+    <div v-if="kpi" ref="reportRef" class="flex flex-col gap-4">
       <!-- ── 核心指標 ── -->
-      <CardSection title="核心指標" hint="整體反饋結構：反饋量、歸因進度與問題比率">
+      <CardSection data-report-block title="核心指標" hint="整體反饋結構：反饋量、歸因進度與問題比率">
         <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
           <KpiCard label="總反饋" :value="kpi.total" subtext="全部錄入標的" />
           <KpiCard label="已歸因" :value="kpi.judged" subtext="已完成初判歸因" />
@@ -155,39 +214,50 @@ const contentCols = [
         </div>
       </CardSection>
 
-      <!-- 商品內容細化：L3 細項 × 多指標表（三檢視都有；當前檢視 source 過濾）-->
-      <CardSection title="商品內容細化" hint="商品內容（L1）底下各 L3 細項的問題分布與品質指標">
-        <a-table
-          :data="contentTable"
-          :columns="contentCols"
-          size="small"
-          :pagination="{ pageSize: 8, hideOnSinglePage: true, size: 'mini' }"
-          :scroll="{ y: 320 }"
-          row-key="label"
-        >
-          <template #pct="{ record }">{{ record.pct }}%</template>
-          <template #conf="{ record }">{{ record.avgConf == null ? '—' : record.avgConf.toFixed(2) }}</template>
-          <template #auto="{ record }">{{ record.autoRate }}%</template>
-          <template #empty>
-            <a-empty description="此檢視商品內容尚無細項資料" />
-          </template>
-        </a-table>
+      <!-- 商品內容細化：左 L2 面向（可點）→ 右 L3 細項即時更新；長條堆疊負向 + tooltip 全維度 -->
+      <CardSection
+        data-report-block
+        title="商品內容細化"
+        hint="點左側 L2 面向 · 右側即時切換其 L3 細項"
+        desc="商品內容（L1）底下的 L2 面向 / L3 細項問題分布（僅負向才歸類，長條即負向筆數）。滑鼠移入看完整維度（筆數 / 占比 / 平均信心 / 自動採信率）。點左側任一 L2，右側即時更新為該 L2 底下的 L3 細項。"
+      >
+        <a-row :gutter="16" align="stretch">
+          <a-col :span="12">
+            <div class="mb-1 text-xs text-gray-500">L2 面向（點擊切換右側）</div>
+            <v-chart :option="contentL2Bar" class="h-[360px]" autoresize @click="onContentL2Click" />
+          </a-col>
+          <a-col :span="12">
+            <div class="mb-1 text-xs text-gray-500">
+              L3 細項<span v-if="selectedL2">：{{ selectedL2.label }}</span>
+            </div>
+            <v-chart :option="contentL3Bar" class="h-[360px]" autoresize />
+          </a-col>
+        </a-row>
       </CardSection>
 
-      <!-- 商品內容佔比（優先關注）＋ 傾向占比 ＋ 問題量趨勢 三欄並置 -->
+      <!-- 歸因佔比（全部 L1 域組成·可切圓餅/長條）＋ 問題量趨勢 -->
       <a-row :gutter="[16, 16]" align="stretch">
-        <a-col :span="8">
-          <CardSection title="商品內容佔比" hint="商品內容問題佔全部歸因域比重 · 優先關注">
-            <v-chart :option="contentRatioDonut" class="h-[320px]" autoresize />
+        <a-col :span="12">
+          <CardSection
+            data-report-block
+            title="歸因佔比"
+            desc="全部 L1 歸因域的問題組成佔比（僅負向才歸類，故＝負向問題的域分布）。可切換圓餅（占比視角）／長條（排名視角）；下方「L1 歸因域分布」可點長條下鑽 L2/L3。"
+          >
+            <template #extra>
+              <a-radio-group v-model="shareChart" type="button" size="mini">
+                <a-radio value="donut">圓餅</a-radio>
+                <a-radio value="bar">長條</a-radio>
+              </a-radio-group>
+            </template>
+            <v-chart
+              :option="shareChart === 'donut' ? attributionShareDonut : attributionShareBar"
+              class="h-[320px]"
+              autoresize
+            />
           </CardSection>
         </a-col>
-        <a-col :span="8">
-          <CardSection title="傾向分布" hint="正向 / 負向 / 中性 / 傾向不明 占比">
-            <v-chart :option="polarityDonut" class="h-[320px]" autoresize />
-          </CardSection>
-        </a-col>
-        <a-col :span="8">
-          <CardSection :title="`問題量趨勢（${granLabel}）`" hint="依評論時間聚合 · 已判 vs 負向問題量">
+        <a-col :span="12">
+          <CardSection data-report-block :title="`問題量趨勢（${granLabel}）`" hint="依評論時間聚合 · 已判 vs 負向問題量">
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
@@ -196,12 +266,12 @@ const contentCols = [
       <!-- ── 問題歸因 ── -->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col :span="12">
-          <CardSection title="歸因漏斗" hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂">
+          <CardSection data-report-block title="歸因漏斗" hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂">
             <v-chart :option="funnel" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="12">
-          <CardSection title="L1 歸因域分布" hint="負向問題的七大歸因域 · 點長條下鑽 L2/L3">
+          <CardSection data-report-block title="L1 歸因域分布" hint="負向問題的六大歸因域 · 點長條下鑽 L2/L3">
             <v-chart :option="l1Bar" class="h-[320px]" autoresize @click="onL1Click" />
           </CardSection>
         </a-col>
@@ -209,6 +279,7 @@ const contentCols = [
 
       <CardSection
         v-if="drillL1"
+        data-report-block
         :title="`下鑽：${drillL1.label}（L2 / L3 細項）`"
         hint="該歸因域下的二、三層細項分布"
       >
@@ -236,12 +307,12 @@ const contentCols = [
       <!-- 星等分布（僅商品評論類有 score）＋ 信心分層；無星等時信心占整寬 -->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col v-if="active.showScore" :span="12">
-          <CardSection title="星等分布" hint="全量反饋星等（高星綠 · 低星紅）">
+          <CardSection data-report-block title="星等分布" hint="全量反饋星等（高星綠 · 低星紅）">
             <v-chart :option="scoreBar" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="active.showScore ? 12 : 24">
-          <CardSection title="信心分層" hint="自動採信 / 陪審 / 待人工 三段分流">
+          <CardSection data-report-block title="信心分層" hint="自動採信 / 陪審 / 待人工 三段分流">
             <v-chart :option="tierDonut" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>

@@ -241,6 +241,7 @@ def list_problems(
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: str = "occurred_at",
+    rec_oid: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
@@ -275,7 +276,7 @@ def list_problems(
         return {"rows": [], "total": 0}
     return _list_problems_spec(
         spec, judged, polarity, stage, limit, offset, score, product_vertical, date_from, date_to,
-        date_field, prod_oid, order_oid, confidence_tier, l1_domain, sort_by, sort_dir,
+        date_field, rec_oid, prod_oid, order_oid, confidence_tier, l1_domain, sort_by, sort_dir,
     )
 
 
@@ -291,6 +292,7 @@ def _list_problems_spec(
     date_from: str | None,
     date_to: str | None,
     date_field: str,
+    rec_oid: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
@@ -338,6 +340,9 @@ def _list_problems_spec(
             if codes:
                 # product_category 為 raw JSON（{"main":"CATEGORY_..","sub":[]}）→ 抽 main 比對
                 stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(codes))
+        if rec_oid and spec.natural_key in tbl.c:
+            # rec_oid＝評論 id（各來源表 natural_key，product_reviews→rec_oid）；查來源表本身主鍵欄
+            stmt = stmt.where(tbl.c[spec.natural_key] == rec_oid)
         if prod_oid and "prod_oid" in tbl.c:
             stmt = stmt.where(tbl.c.prod_oid == prod_oid)
         if order_oid and "order_oid" in tbl.c:

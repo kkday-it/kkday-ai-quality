@@ -1,4 +1,4 @@
-"""統一問題列表 + 歸因縱覽聚合 + 列表導出端點；全路徑自帶 /api。"""
+"""統一問題列表 + 歸因概覽聚合 + 列表導出端點；全路徑自帶 /api。"""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ def get_problems(
     product_verticals: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    rec_oid: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
@@ -54,7 +55,7 @@ def get_problems(
     星等 scores / 商品垂直分類 product_verticals / 判決階段 stage 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     confidence_tier（信心分層）/ l1_domain（L1 歸因域）為單值 judgments.data 過濾。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
-    prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
+    rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
     未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
     """
     return db.list_problems(
@@ -66,6 +67,7 @@ def get_problems(
         product_vertical=_csv_strs(product_verticals),
         date_from=date_from,
         date_to=date_to,
+        rec_oid=rec_oid,
         prod_oid=prod_oid,
         order_oid=order_oid,
         confidence_tier=confidence_tier,
@@ -136,7 +138,7 @@ def get_attribution_overview(
     granularity: str = "month",
     product_verticals: str | None = None,
 ) -> dict:
-    """歸因縱覽聚合（縱覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
+    """歸因概覽聚合（概覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
 
     可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）；
     product_verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）。
