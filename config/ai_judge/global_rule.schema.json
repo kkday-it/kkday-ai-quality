@@ -21,18 +21,33 @@
       "type": "object",
       "additionalProperties": true
     },
+    "attribution_guidance": {
+      "type": "string",
+      "description": "歸因判官提示詞（角色 + 判斷流程；不含域界線/正反例，那些走 rule tree L1 canon）。空＝prejudge 回退 code default。"
+    },
+    "polarity_guidance": {
+      "type": "string",
+      "description": "極性判官提示詞（只判傾向、不歸因）。空＝prejudge 回退 code default。"
+    },
     "polarity_gate": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "attribute_only_when"
+        "attribute_when"
       ],
       "properties": {
-        "attribute_only_when": {
-          "type": "string",
-          "enum": [
-            "negative"
-          ]
+        "attribute_when": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "negative",
+              "neutral"
+            ]
+          },
+          "description": "哪些整體傾向進歸因（positive/unknown 恆 non_issue，不可列入）。"
         },
         "note": {
           "type": "string"

@@ -42,17 +42,70 @@ def test_tier_for_boundaries(fixed_config) -> None:
 
 
 def test_derive_stage_all_branches() -> None:
-    """判決階段派生五分支。"""
+    """判決階段派生（歸因 finding 專用；混合中性歸因與負向同規則，polarity 僅 unknown 特判）。"""
     assert prejudge._derive_stage("unknown", "", "jury", False) == "insufficient"
-    assert prejudge._derive_stage("positive", "", "auto_accept", False) == "judged"
-    assert prejudge._derive_stage("neutral", "", "jury", False) == "judged"
-    # 負向：無 L3 或 evidence-cap → pending_data
+    # 無 L3 或 evidence-cap → pending_data（不分負向/混合中性）
     assert prejudge._derive_stage("negative", "", "auto_accept", False) == "pending_data"
+    assert prejudge._derive_stage("neutral", "", "jury", False) == "pending_data"
     assert prejudge._derive_stage("negative", "L3-1", "auto_accept", True) == "pending_data"
-    # 負向 + 有 L3 + 未 cap：高信心 judged、否則 pending_review
+    # 有 L3 + 未 cap：高信心 judged、否則 pending_review
     assert prejudge._derive_stage("negative", "L3-1", "auto_accept", False) == "judged"
+    assert prejudge._derive_stage("neutral", "L3-1", "auto_accept", False) == "judged"
     assert prejudge._derive_stage("negative", "L3-1", "jury", False) == "pending_review"
     assert prejudge._derive_stage("negative", "L3-1", "needs_review", False) == "pending_review"
+
+
+def test_attribute_when_parses_config(monkeypatch) -> None:
+    """極性閘門 config 解析：清單/legacy 字串皆收；只認 negative/neutral；缺失回退 {negative}。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]})
+    assert prejudge._attribute_when() == frozenset({"negative", "neutral"})
+    # legacy 單值字串（attribute_only_when）
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_only_when": "negative"})
+    assert prejudge._attribute_when() == frozenset({"negative"})
+    # 誤填 positive → 過濾；全無效回退保守舊行為
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["positive"]})
+    assert prejudge._attribute_when() == frozenset({"negative"})
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {})
+    assert prejudge._attribute_when() == frozenset({"negative"})
+
+
+def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> None:
+    """gate 含 neutral 時：混合中性評論進歸因；有問題點→歸因列帶 polarity=neutral，無→non_issue。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]})
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: "neutral")
+    monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
+    attr = {
+        "l1_domain_code": "supplier", "l1_label": "供應商履約", "l2_code": "C-3-2",
+        "l2_label": "成團履約", "l3_code": "C-3-2-1", "l3_label": "行程縮水",
+        "confidence": 0.85, "raw_confidence": 0.85, "evidence_quote": "船沒搭到", "l3_candidates": [],
+    }
+    monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [dict(attr)])
+    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t1", "content": "整體很棒，只是船沒搭到"}, model="m")
+    assert len(fs) == 1 and fs[0].polarity == "neutral" and fs[0].l1_domain_code == "supplier"
+    assert fs[0].judgment_stage == "judged"  # 有 L3+高信心：與負向同規則派生
+    # 混合中性但找不到具體問題點 → 純 non_issue（judged，非 pending_data）
+    monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [])
+    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t2", "content": "整體很棒"}, model="m")
+    assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].judgment_stage == "judged"
+
+
+def test_to_findings_gate_excludes_neutral_when_config_negative_only(monkeypatch, fixed_config) -> None:
+    """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative"]})
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: "neutral")
+    monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
+    called = []
+    monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])
+    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t3", "content": "還行"}, model="m")
+    assert len(fs) == 1 and fs[0].l1_domain_code == "" and not called
 
 
 def test_evidence_capped_supplier_needs_order() -> None:
