@@ -205,7 +205,7 @@ export function useAttributionDashboard(
     if (!d) return buildAttrFunnelOption([]);
     const neg = d.by_polarity.find((p) => p.polarity === 'negative')?.n ?? 0;
     return buildAttrFunnelOption([
-      { name: '進線', value: d.total_intake },
+      { name: '反饋', value: d.total_intake },
       { name: '已判', value: d.judged },
       { name: POLARITY_LABELS.negative, value: neg },
       { name: '已歸因', value: d.attributed },

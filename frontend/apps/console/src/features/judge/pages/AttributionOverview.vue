@@ -134,9 +134,9 @@ const {
   >
     <div v-if="kpi" class="flex flex-col gap-4">
       <!-- ── 核心指標 ── -->
-      <CardSection title="核心指標" hint="整體進線結構：進線量、歸因進度與問題比率">
+      <CardSection title="核心指標" hint="整體反饋結構：反饋量、歸因進度與問題比率">
         <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <KpiCard label="總進線" :value="kpi.total" subtext="全部錄入標的" />
+          <KpiCard label="總反饋" :value="kpi.total" subtext="全部錄入標的" />
           <KpiCard label="已歸因" :value="kpi.judged" subtext="已完成初判歸因" />
           <KpiCard label="問題占比" :value="kpi.problemPct" unit="%" subtext="負向 / 已判" />
           <KpiCard label="自動採信率" :value="kpi.autoPct" unit="%" subtext="auto_accept / 已判" />
@@ -166,7 +166,7 @@ const {
       <!-- ── 問題歸因 ── -->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col :span="12">
-          <CardSection title="歸因漏斗" hint="進線 → 已判 → 負向 → 已歸因，逐級收斂">
+          <CardSection title="歸因漏斗" hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂">
             <v-chart :option="funnel" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
@@ -206,7 +206,7 @@ const {
       <!-- 星等分布（僅商品評論類有 score）＋ 信心分層；無星等時信心占整寬 -->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col v-if="active.showScore" :span="12">
-          <CardSection title="星等分布" hint="全量進線星等（高星綠 · 低星紅）">
+          <CardSection title="星等分布" hint="全量反饋星等（高星綠 · 低星紅）">
             <v-chart :option="scoreBar" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
