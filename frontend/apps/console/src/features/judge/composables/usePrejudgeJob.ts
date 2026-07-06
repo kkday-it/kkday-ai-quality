@@ -230,7 +230,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       });
       await _poll(r.job_id);
       await reload();
-      Message.success('已完成歸因');
+      Message.success(`已完成歸因（模型 ${r.model}）`);
     } catch (e: any) {
       Message.error('歸因失敗：' + (e?.message || e));
     } finally {

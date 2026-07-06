@@ -76,6 +76,7 @@ const {
   l1Filter,
   l1Options,
   dateRange,
+  recOidFilter,
   prodOidFilter,
   orderOidFilter,
   verticalOptions,
@@ -87,6 +88,8 @@ const {
   resetFilters,
   llmConfigId,
   llmConfigs,
+  activeLlmId,
+  setActiveLlm,
   rows,
   total,
   unjudged,
@@ -343,6 +346,32 @@ const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ')
 
 const LLM_OPTS = computed(() => llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })));
 
+/** 本次判決將使用的模型 label（llmConfigId 跟隨全域啟用中，modal 可臨時覆寫）；無配置回空。 */
+const currentLlmLabel = computed(() => {
+  const c = llmConfigs.value.find((x) => x.id === llmConfigId.value);
+  return c ? composeLlmLabel(c) : '';
+});
+
+// 工具列全域模型切換：持久化 active_llm_config_id（與設定抽屜同一寫入路徑，雙向即時同步）
+const switchingLlm = ref(false);
+const onSwitchLlm = async (id: unknown) => {
+  switchingLlm.value = true;
+  try {
+    await setActiveLlm(String(id));
+    Message.success(`歸因模型已切換：${currentLlmLabel.value || String(id)}`);
+  } catch (e: any) {
+    Message.error('模型切換失敗：' + (e?.message || e));
+  } finally {
+    switchingLlm.value = false;
+  }
+};
+
+/** 單列重判二次確認文案（附當前模型，判前提醒用什麼 model 歸因）。 */
+const rejudgeConfirmText = computed(
+  () =>
+    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」重新判決並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定重判？`
+);
+
 /** schema 是否含某篩選 type（控制篩選 UI 條件渲染）。 */
 const hasFilter = (t: string) => schema.value.filters.some((f) => f.type === t);
 /** 篩選下拉選項（由既有 label SSOT 衍生，勿另造）。 */
@@ -381,7 +410,7 @@ onMounted(init);
 </script>
 
 <template>
-  <!-- 初判歸因控制列送進固定工具列橫帶（tab 下方），與歸因縱覽一致、恆常可見 -->
+  <!-- 初判歸因控制列送進固定工具列橫帶（tab 下方），與歸因概覽一致、恆常可見 -->
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
       <span class="text-sm text-gray-500">反饋來源</span>
@@ -403,6 +432,17 @@ onMounted(init);
         placeholder="選分類分組"
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
+      />
+      <!-- 歸因模型全域切換：值＝啟用中配置（與設定抽屜雙向即時同步）；切換即持久化 active_llm_config_id -->
+      <span class="text-sm text-gray-500">歸因模型</span>
+      <a-select
+        :model-value="activeLlmId"
+        size="small"
+        style="width: 230px"
+        :options="LLM_OPTS"
+        :loading="switchingLlm"
+        placeholder="無 LLM 配置（去設定新增）"
+        @change="onSwitchLlm"
       />
       <!-- 統一操作區：主行為 primary、次要 outline（見 rules/frontend-vue.md 按鈕規範）-->
       <a-button type="primary" size="small" :loading="running" @click="openPrejudge">
@@ -542,6 +582,15 @@ onMounted(init);
 
       <!-- 精確查詢 + 分頁選取 + 操作（重置 / 展開收合；右側顯示生效篩選與選取計數）-->
       <div class="mb-2 flex flex-wrap items-center gap-2">
+        <a-input
+          v-model="recOidFilter"
+          size="small"
+          allow-clear
+          style="width: 140px"
+          placeholder="評論 rec_oid"
+          @press-enter="onFilterChange"
+          @clear="onFilterChange"
+        />
         <a-input
           v-model="prodOidFilter"
           size="small"
@@ -811,7 +860,7 @@ onMounted(init);
               <!-- 重判＝破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次「歸因」無覆寫，直接執行不製造確認疲勞 -->
               <a-popconfirm
                 v-if="record.attributions && record.attributions.length"
-                content="重判會用 AI 重新判決並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定重判？"
+                :content="rejudgeConfirmText"
                 ok-text="重判"
                 cancel-text="取消"
                 @ok="onRejudge(record._group)"
@@ -900,11 +949,13 @@ onMounted(init);
 
         <div class="text-sm text-[var(--color-text-1)]">
           將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
-          筆進行初判歸因（正向不分類，只有負向歸 L1→L3）。
+          筆進行初判歸因（正向不分類；負向與含問題點的中性評論歸 L1→L3）。
         </div>
 
         <div>
-          <div class="mb-1 text-xs text-gray-500">LLM 模型配置（同「設定 › LLM 模型連線」）</div>
+          <div class="mb-1 text-xs text-gray-500">
+            LLM 模型配置（同「設定 › LLM 模型連線」；本次使用：<b>{{ currentLlmLabel || '未選' }}</b>）
+          </div>
           <a-select
             v-model="llmConfigId"
             style="width: 100%"

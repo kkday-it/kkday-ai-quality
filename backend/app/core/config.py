@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
-    ai_judge_model: str = "gpt-5-nano"  # fallback 預設＝最省（對齊 llm_model.json defaultModel）；下拉見 defaultModels（minVersion 已降至 5）
+    ai_judge_model: str = "gpt-5-mini"  # fallback 預設＝最低可用模型（nano 已下架，對齊 llm_model.json defaultModel）
     llm_max_retries: int = 5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
     # LLM gateway：'openai'（預設，OpenAI SDK 直呼）| 'litellm'（統一 gateway，得 cost/fallback/語意快取路徑）。
     # 增量 strangler：預設走既有 openai 路徑（proven）；設 LLM_GATEWAY=litellm 切換，可回滾。語意快取/fallback/

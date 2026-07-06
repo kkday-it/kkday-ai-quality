@@ -88,7 +88,7 @@ def _ensure_id(cfg: dict) -> dict:
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-nano"),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
+    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-mini"),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh

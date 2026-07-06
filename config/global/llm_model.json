@@ -19,23 +19,11 @@
       "label": "GPT (OpenAI)",
       "short_label": "OpenAI",
       "base_url": "https://api.openai.com/v1",
-      "defaultModel": "gpt-5-nano",
+      "defaultModel": "gpt-5-mini",
       "defaultModels": [
         {
-          "id": "gpt-5-nano",
-          "desc": "最省 · 高量預判首選·caching+batch 近免費 · $0.05/$0.40",
-          "input": 0.05,
-          "output": 0.4
-        },
-        {
-          "id": "gpt-5.4-nano",
-          "desc": "極省 · 分類/抽取/排序 · $0.20/$1.25",
-          "input": 0.2,
-          "output": 1.25
-        },
-        {
           "id": "gpt-5-mini",
-          "desc": "極省 · 初代·比 5.4-mini 省 3x · $0.25/$2.00",
+          "desc": "最省（最低可用）· 高量預判首選 · $0.25/$2.00",
           "input": 0.25,
           "output": 2.0
         },

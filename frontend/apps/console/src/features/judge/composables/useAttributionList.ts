@@ -57,6 +57,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     }
   };
   const dateRange = ref<string[]>([]);
+  const recOidFilter = ref('');
   const prodOidFilter = ref('');
   const orderOidFilter = ref('');
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
@@ -64,8 +65,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 生效的 polarity 篩選（送後端；空＝不篩）。「僅看問題」已移除，傾向下拉直接涵蓋負向。 */
   const effPolarity = computed(() => polarityFilter.value || undefined);
 
-  // ── LLM 模型（已保存配置）──下沉 useLlmConfigs（載入/選中）；同源「設定 › LLM 模型連線」。
-  const { llmConfigId, llmConfigs, loadConfigs } = useLlmConfigs();
+  // ── LLM 模型（已保存配置）──下沉 useLlmConfigs（載入/選中/全域切換）；同源「設定 › LLM 模型連線」。
+  const { llmConfigId, llmConfigs, activeLlmId, loadConfigs, setActiveLlm } = useLlmConfigs();
 
   // ── 伺服器端分頁 ──
   const rows = ref<ProblemRow[]>([]);
@@ -92,6 +93,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       productVerticals: effVerticals.value,
       dateFrom: dateRange.value?.[0] || undefined,
       dateTo: dateRange.value?.[1] || undefined,
+      recOid: recOidFilter.value.trim() || undefined,
       prodOid: prodOidFilter.value.trim() || undefined,
       orderOid: orderOidFilter.value.trim() || undefined,
       sortBy: sortBy || undefined,
@@ -134,6 +136,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       (tierFilter.value ? 1 : 0) +
       (l1Filter.value ? 1 : 0) +
       (dateRange.value?.length ? 1 : 0) +
+      (recOidFilter.value.trim() ? 1 : 0) +
       (prodOidFilter.value.trim() ? 1 : 0) +
       (orderOidFilter.value.trim() ? 1 : 0),
   );
@@ -146,6 +149,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     tierFilter.value = '';
     l1Filter.value = '';
     dateRange.value = [];
+    recOidFilter.value = '';
     prodOidFilter.value = '';
     orderOidFilter.value = '';
     sortValue.value = 'occurred_at:desc';
@@ -184,7 +188,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       if (!filterTypes.has('tier')) tierFilter.value = '';
       if (!filterTypes.has('l1Domain')) l1Filter.value = '';
       if (!filterTypes.has('dateRange')) dateRange.value = [];
-      // prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
+      // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
+      recOidFilter.value = '';
       prodOidFilter.value = '';
       orderOidFilter.value = '';
       sortValue.value = 'occurred_at:desc';
@@ -269,6 +274,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     l1Filter,
     l1Options,
     dateRange,
+    recOidFilter,
     prodOidFilter,
     orderOidFilter,
     verticalOptions,
@@ -281,6 +287,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     // 模型
     llmConfigId,
     llmConfigs,
+    activeLlmId,
+    setActiveLlm,
     // 分頁資料
     rows,
     total,

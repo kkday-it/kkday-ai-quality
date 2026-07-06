@@ -71,9 +71,9 @@ def _true_label_cfg() -> dict:
 
 
 def _evaluate_model(cfg_judgment: dict) -> str:
-    """標真值評分模型：judgment.true_label.evaluate_model → 回退 prejudge.stage1_model → gpt-5-nano。"""
+    """標真值評分模型：judgment.true_label.evaluate_model → 回退 prejudge.stage1_model → gpt-5-mini。"""
     tl = cfg_judgment.get("true_label", {})
-    return tl.get("evaluate_model") or cfg_judgment.get("prejudge", {}).get("stage1_model") or "gpt-5-nano"
+    return tl.get("evaluate_model") or cfg_judgment.get("prejudge", {}).get("stage1_model") or "gpt-5-mini"
 
 
 class EvaluateIn(BaseModel):

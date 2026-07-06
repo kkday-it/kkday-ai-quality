@@ -38,8 +38,9 @@
     "insufficient": "資訊不足"
   },
   "prejudge": {
-    "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（product_reviews 專用）一則評論最多輸出幾條獨立違規歸因，防過度歸因（硬上限 3）。",
-    "stage1_model": "gpt-5-nano",
+    "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門用的便宜模型（同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（product_reviews 專用）一則評論最多輸出幾條獨立違規歸因，防過度歸因（硬上限 3）；attribute_reasoning_effort：attribute 階段獨立 reasoning_effort（null＝沿用主 config；降如 low/minimal 省 completion 大頭，但須先 true_label A/B 驗準再調）。",
+    "stage1_model": "gpt-5-mini",
+    "attribute_reasoning_effort": null,
     "enable_stage0_skip": true,
     "stage0_max_comment_len": 8,
     "enable_adaptive_rejudge": true,
