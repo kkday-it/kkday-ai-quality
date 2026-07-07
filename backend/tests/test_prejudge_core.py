@@ -25,9 +25,14 @@ _FIXED_CFG = {
 
 @pytest.fixture
 def fixed_config(monkeypatch):
-    """固定閾值 + prejudge 旋鈕（與 config 漂移解耦）。"""
+    """固定閾值 + prejudge 旋鈕（與 config 漂移解耦）。
+
+    prejudge_depth 亦 pin 在 l3：本檔基準線鎖 cascade/flat 完整路徑行為；
+    DB active 切 l2（初判只判 L1+L2）不應改變這批測試的走向。
+    """
     monkeypatch.setattr(prejudge, "_tiers", lambda: dict(_FIXED_TIERS))
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: dict(_FIXED_CFG))
+    monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
 
 
 # ── 純 helper ──────────────────────────────────────────────────────────
@@ -478,9 +483,10 @@ def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
 
 @pytest.fixture
 def non_stub(monkeypatch):
-    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）。"""
+    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）+ pin l3 深度。"""
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge.global_rule, "cascade", lambda: {"enabled": False})
+    monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
 
 
 def test_resolve_attrs_multi_dedup_keeps_highest_and_drops_abstain(non_stub, monkeypatch) -> None:
