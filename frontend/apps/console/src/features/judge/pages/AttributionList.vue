@@ -30,8 +30,8 @@ import {
 } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
+import { AttributionDetailDrawer } from '../components';
 import {
-  ACTION_LABEL,
   ALL_PAGINATION,
   POLARITY_LABELS,
   SOURCES,
@@ -967,46 +967,8 @@ onMounted(init);
       </div>
     </a-modal>
 
-    <!-- 操作欄：查看判決詳情彈窗（該列每條歸因的完整依據；純前端，資料取自 row.attributions）-->
-    <a-modal
-      v-model:visible="detailOpen"
-      :title="`判決詳情 · #${detailRow?.source_record_id ?? detailRow?.source_id ?? ''}`"
-      :width="720"
-      :footer="false"
-      unmount-on-close
-    >
-      <div v-if="detailRow" class="flex flex-col gap-3">
-        <div class="rounded-md bg-[var(--color-fill-1)] p-3 text-sm leading-relaxed text-[var(--color-text-1)]">
-          {{ detailRow.content || '（無評論內容）' }}
-        </div>
-        <template v-if="detailRow.attributions && detailRow.attributions.length">
-          <a-descriptions
-            v-for="(a, ai) in detailRow.attributions"
-            :key="ai"
-            :title="`歸因 ${ai + 1}`"
-            :column="1"
-            size="small"
-            bordered
-            :label-style="{ width: '96px' }"
-          >
-            <a-descriptions-item label="歸因分類">{{ attrPath(a) }}</a-descriptions-item>
-            <a-descriptions-item label="信心 / 分層">
-              {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }} ·
-              {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="判決階段">
-              {{ a.stage ? STAGE_LABELS[a.stage] || a.stage : '—' }}
-            </a-descriptions-item>
-            <!-- 反饋摘要（content.summary）；判決理由永遠＝同一 evidence 複製，故移除避免重複 -->
-            <a-descriptions-item label="反饋摘要">{{ a.content?.summary || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="建議行動">
-              {{ a.content?.action ? ACTION_LABEL[a.content.action] || a.content.action : '—' }}
-            </a-descriptions-item>
-          </a-descriptions>
-        </template>
-        <a-empty v-else description="此列尚無歸因（未判 / 正向不歸因）" />
-      </div>
-    </a-modal>
+    <!-- 操作欄：查看判決詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
+    <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
 
     <!-- 操作欄：標真值彈窗（級聯選 → LLM 評分把關 → 低信心填理由 → 標註；重判依 finding_id 保留）-->
     <a-modal
