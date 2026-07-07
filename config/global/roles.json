@@ -1,0 +1,5 @@
+{
+  "_note": "輕量 RBAC（單機內網·兩級）：admins 名單內 email＝admin（規則發布/config 編輯/恢復默認）；其餘登入者＝defaultRole。每請求即時派生（非 JWT claim），改名單免重新登入即生效。",
+  "admins": ["alvin.bian@kkday.com"],
+  "defaultRole": "qc"
+}

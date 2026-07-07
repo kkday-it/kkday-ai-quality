@@ -28,6 +28,8 @@ def _public_user(user: dict) -> dict:
         "user_id": user["user_id"],
         "email": user["email"],
         "created_at": user.get("created_at"),
+        "role": user.get("role")
+        or auth.role_for(user.get("email")),  # login 路徑 user 來自 DB 無 role
     }
 
 

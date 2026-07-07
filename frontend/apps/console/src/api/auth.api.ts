@@ -5,6 +5,8 @@ export interface AuthUser {
   user_id: string;
   email: string;
   created_at?: string;
+  /** 輕量 RBAC 角色（後端 config/global/roles.json 白名單即時派生）：admin｜qc。 */
+  role?: 'admin' | 'qc';
 }
 
 export interface AuthResult {

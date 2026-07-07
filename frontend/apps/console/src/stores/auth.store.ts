@@ -1,6 +1,6 @@
 // 全域認證狀態（Pinia）：token + 當前 user，token 與 localStorage 同步（真相源在 http 層）。
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import {
   clearToken,
   getToken,
@@ -50,5 +50,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, isAuthed, login, register, logout, fetchMe };
+  /** 是否 admin（規則發布 / config 編輯 / 恢復默認）；未載入 user 時保守視為非 admin。 */
+  const isAdmin = computed(() => user.value?.role === 'admin');
+
+  return { token, user, isAuthed, isAdmin, login, register, logout, fetchMe };
 });

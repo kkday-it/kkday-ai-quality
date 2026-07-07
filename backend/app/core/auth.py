@@ -92,4 +92,61 @@ def get_current_user(
     user = db.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="使用者不存在")
+    user["role"] = role_for(user.get("email"))  # config 白名單即時派生（見檔末 RBAC 區）
     return user
+
+
+# ── 輕量 RBAC（config 白名單驅動·零 migration）─────────────────────────────
+# 角色每請求由 config/global/roles.json 即時派生（非 JWT claim）：改名單免重簽 token 即生效。
+# 兩級：admin（規則發布 / config 編輯 / 恢復默認）｜qc（覆核 / 標真值 / 查看 / 上傳）。
+_ROLES_CACHE: dict | None = None
+
+
+def _roles_cfg() -> dict:
+    """讀 roles.json（lazy 快取；檔缺/壞回空 → 全員 defaultRole，不阻斷登入）。"""
+    global _ROLES_CACHE
+    if _ROLES_CACHE is None:
+        import json
+
+        from app.core.paths import GLOBAL_DIR
+
+        try:
+            _ROLES_CACHE = json.loads((GLOBAL_DIR / "roles.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _log.warning("roles.json 缺失或格式錯誤，全員視為 defaultRole（qc）")
+            _ROLES_CACHE = {}
+    return _ROLES_CACHE
+
+
+def reload_roles() -> None:
+    """清 roles 快取（編輯 roles.json 後呼叫；或重啟 server）。"""
+    global _ROLES_CACHE
+    _ROLES_CACHE = None
+
+
+def role_for(email: str | None) -> str:
+    """email → 角色（admins 名單比對不分大小寫；其餘 defaultRole，預設 qc）。"""
+    cfg = _roles_cfg()
+    admins = {str(e).strip().lower() for e in (cfg.get("admins") or [])}
+    if email and email.strip().lower() in admins:
+        return "admin"
+    return str(cfg.get("defaultRole") or "qc")
+
+
+def require_role(*roles: str):
+    """FastAPI 依賴工廠：角色不符回 403（掛破壞性端點；回傳 user dict 供 handler 沿用）。
+
+    用法：`user: dict = Depends(auth.require_role("admin"))`——先過 get_current_user 認證，
+    再比對 role_for(email)；admin 永遠隱含通過（單機兩級，admin ⊇ qc 權限）。
+    """
+
+    def _dep(user: dict = Depends(get_current_user)) -> dict:
+        role = role_for(user.get("email"))
+        if role not in roles and role != "admin":
+            raise HTTPException(
+                status_code=403, detail=f"需要 {'/'.join(roles)} 權限（當前 {role}）"
+            )
+        user["role"] = role
+        return user
+
+    return _dep

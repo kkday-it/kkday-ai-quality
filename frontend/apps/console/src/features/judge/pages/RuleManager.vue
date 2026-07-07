@@ -7,6 +7,8 @@
  */
 import { computed, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
+import { storeToRefs } from 'pinia';
+import { useAuthStore } from '@/stores';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
@@ -18,6 +20,9 @@ import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
+
+// 輕量 RBAC：非 admin 顯示唯讀提示（寫入端點後端 403 為權威，前端提示避免做白工）
+const { isAdmin } = storeToRefs(useAuthStore());
 
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
@@ -146,7 +151,11 @@ function doResetAll() {
 </script>
 
 <template>
-  <div class="flex h-full gap-4">
+  <div class="flex h-full flex-col gap-2">
+    <a-alert v-if="!isAdmin" type="warning" banner>
+      唯讀模式：規則發布／恢復默認需 admin 權限（config/global/roles.json 名單）；儲存將被後端拒絕（403）。
+    </a-alert>
+  <div class="flex min-h-0 flex-1 gap-4">
     <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
     <!-- 面板標題移除：頂部 tab 已是「規則配置」，此處不再重複；全部恢復默認移至右側工具列 -->
     <div class="flex h-full w-52 shrink-0 flex-col gap-3">
@@ -276,5 +285,6 @@ function doResetAll() {
     <a-modal v-model:visible="saveOpen" title="存入 PostgreSQL" :confirm-loading="saving" @ok="doSave">
       <a-textarea v-model="saveNote" placeholder="本次修改備註（選填）" :auto-size="{ minRows: 2 }" />
     </a-modal>
+  </div>
   </div>
 </template>

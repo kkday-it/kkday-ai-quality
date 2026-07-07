@@ -96,7 +96,9 @@ def read_file(name: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
 
 @router.put("/files/{name:path}")
-def write_file(name: str, body: ConfigWriteIn, _: dict = Depends(auth.get_current_user)) -> dict:
+def write_file(
+    name: str, body: ConfigWriteIn, _: dict = Depends(auth.require_role("admin"))
+) -> dict:
     """覆寫單一 config 檔：先備份 .backups/，再以 2-space/unicode 格式寫入，最後 reload taxonomy。
 
     Returns:

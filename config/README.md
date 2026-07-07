@@ -8,12 +8,13 @@
 - `sources.json` — 5 來源 code → label / natural_key（sources loader）
 - `product_vertical.json` — 商品垂直分類分組 → CATEGORY 代碼 + `group_order` 顯示順序（jsonb 不保 key 序，故顯式存；product_vertical 默認 seed）
 - `qc_db.json` — QC DB 連線預設
+- `roles.json` — 輕量 RBAC 白名單（admins email 清單 + defaultRole；後端 auth.role_for 每請求即時派生，改名單免重登入）
 
 ## ai_judge/（判準領域）
 - `rule_C-1 ~ rule_C-6.json` — 6 歸因域 L1→L2→L3 厚判準樹（canon/allow/forbid/正反例）
 - `rule.schema.json` — 規則樹結構規格（存前 jsonschema 驗證）
 - `global_rule.json`（+`.schema`）— 判決總規範（極性閘門 attribute_when / cascade 兩階段+低信心重路由 / abstain·證據政策 attr_min_confidence / 判官提示詞）；域界線 SSOT＝各 rule_C-N 的 L1 canon（舊 decision_tree/global_boundaries 已移除）
-- `judgment.json` — 信心分層閾值 + 傾向/分層/判決階段中文 label + prejudge 旋鈕 + **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**（前後端同讀；已納入 RULE_CODES＝可經 RuleManager 版本化編輯 + 存檔熱重載）
+- `judgment.json` — 信心分層閾值 + 傾向/分層/判決階段中文 label + prejudge 旋鈕（per-stage `*_reasoning_effort` 省 token 旋鈕：polarity／stage_a／attribute，null＝沿用主 config；`batch_service_tier`：批次判決 serving tier，"flex"＝OpenAI flex processing -50% 計價換變動延遲、429 自動回退標準、`flex_min_items` 以下小批走標準）+ **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**（前後端同讀；已納入 RULE_CODES＝可經 RuleManager 版本化編輯 + 存檔熱重載）
 - `source_mapping.json`（+`.schema`）— 5 來源欄位映射（源欄→canonical）+ 上傳指紋辨識
 
 ## overview/（總覽儀表板）

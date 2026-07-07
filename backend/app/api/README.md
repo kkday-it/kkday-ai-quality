@@ -11,9 +11,9 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 | `routers/settings.py` | 設定（/api/settings：get/update/raw/test-llm）+ QC DB 連線測試（/api/datasource/qc-db/test）；含 `load_user_context` 守衛 + `_activate_settings`（contextvar 注入 judge 路徑）。 |
 | `routers/findings.py` | 判決結果（/api/findings、/api/products）+ 單筆歸因人工動作（PATCH /api/findings/{id}/status｜/true_label）。 |
 | `routers/problems.py` | 統一問題列表 / 縱覽聚合（/api/problems*）+ 列表導出（POST /api/problems/export → 背景 job）。 |
-| `routers/v1/` | `judgment.py`（初判歸因批次：prejudge 啟動/SSE 串流/暫停/恢復/停止）；`__init__` 聚合於 `/api/v1`。 |
+| `routers/v1/` | `judgment.py`（初判歸因批次：prejudge 啟動/SSE 串流/暫停/恢復/停止 + 歸因歷史 GET `/runs`·`/runs/{job_id}`——run 級 LLM 使用紀錄，執行中列 overlay in-mem 即時進度）；`__init__` 聚合於 `/api/v1`。 |
 | `routers/config.py` | config JSON 線上編輯（讀寫 config/ai_judge，寫後 reload loader）。 |
-| `routers/rules.py` | 判決規則版本化 CRUD（/api/judge-rules：list/active/history/save/restore/reset + jsonschema 驗證）；POST `/export` 啟動規則 xlsx 導出背景 job。 |
+| `routers/rules.py` | 判決規則版本化 CRUD（/api/judge-rules：list/active/history/save/restore/reset + jsonschema 驗證）；POST `/export` 啟動規則 xlsx 導出背景 job。**寫入端點（save/restore/reset×2）掛 admin 守衛（403）**。 |
 | `routers/exports.py` | 通用導出 job 端點（/api/exports：SSE `stream` 進度 / `download` 取檔 / `cancel` 停止），搭 `app/core/export_jobs` 全域 registry，問題列表 / 判決規則導出共用。 |
 | `routers/overview.py` | 質檢概覽真實指標（GET /api/overview/ai-judge：judgments 內容類占比月趨勢 + 總量；「縮窄真接」——外部系統指標不在此，前端維持示意）。 |
 
