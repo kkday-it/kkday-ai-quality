@@ -6,7 +6,11 @@ prejudge_targets / attribution / export + _shared 共用）；此 barrel re-expo
 schema：`init_db()` 用 metadata.create_all（dev/測試）；prod schema 演進交 Alembic（見 alembic/）。
 """
 
-from app.core.db.attribution import attribution_breakdown, attribution_overview
+from app.core.db.attribution import (
+    ai_judge_overview_stats,
+    attribution_breakdown,
+    attribution_overview,
+)
 from app.core.db.export import export_problems_xlsx
 from app.core.db.findings import (
     add_finding_note,
@@ -59,6 +63,7 @@ from app.core.db.users import (
 __all__ = [
     "RULE_CODES",
     "DuplicateEmailError",
+    "ai_judge_overview_stats",
     "attribution_breakdown",
     "attribution_overview",
     "create_batch",

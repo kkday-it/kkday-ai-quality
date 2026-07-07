@@ -7,13 +7,25 @@
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ChartCard, ChartModal, SectionTitle } from '../components';
+import { useAiJudgeOverview } from '../composables';
 import { resolveChartData } from '../utils';
 import dashboard from '@config/overview/dashboard.json';
 import mock3 from '../mock/overview.mock3.json';
 import type { ChartSpec, DashboardConfig, Overview3, SectionSpec, ViewSpec } from '../dashboard.types';
 
 const config = dashboard as unknown as DashboardConfig;
-const data = mock3 as unknown as Overview3;
+// 縮窄真接（2026-07-07 拍板）：AI 法官指標（引擎卡/intake_content_ratio/laggingTrend）patch 真值；
+// 外部系統指標（審品 Sheet/CVR Tableau/售後 Looker）維持示意值，header tag 分別標註。
+const { data: mergedData, state: realState } = useAiJudgeOverview(mock3 as unknown as Overview3);
+const data = computed(() => mergedData.value);
+
+/** AI 法官真接指標的三態 tag（loading / ok / error→fallback 示意）。 */
+const REAL_TAG = {
+  loading: { color: 'gray', text: 'AI 法官指標：載入中…' },
+  ok: { color: 'green', text: 'AI 法官指標：真實資料' },
+  error: { color: 'red', text: 'AI 法官指標：載入失敗（顯示示意值）' },
+} as const;
+const realTag = computed(() => REAL_TAG[realState.value]);
 
 const route = useRoute();
 const viewKey = computed(() => {
@@ -32,7 +44,7 @@ const specsOf = (section: SectionSpec): ChartSpec[] =>
       return spec;
     })
     .filter(Boolean);
-const resolveData = (spec: ChartSpec): unknown => resolveChartData(spec, data);
+const resolveData = (spec: ChartSpec): unknown => resolveChartData(spec, data.value);
 
 // 單圖放大（Feature 1）
 const modalOpen = ref(false);
@@ -52,7 +64,10 @@ const onZoom = (spec: ChartSpec) => {
         <h1 class="m-0 text-xl font-semibold text-[#1d2129]">{{ view.label }}</h1>
         <p class="mt-1 text-sm text-[#86909c]">{{ data.meta.subtitle }} · {{ data.meta.period }}</p>
       </div>
-      <a-tag color="orange" size="small" bordered>Demo · mock 資料</a-tag>
+      <div class="flex items-center gap-1.5">
+        <a-tag :color="realTag.color" size="small" bordered>{{ realTag.text }}</a-tag>
+        <a-tag color="orange" size="small" bordered>外部指標：示意（Sheet/Tableau/Looker 手動）</a-tag>
+      </div>
     </header>
 
     <section v-for="(sec, i) in sections" :key="i" class="mb-6">

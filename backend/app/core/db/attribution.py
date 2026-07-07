@@ -209,3 +209,61 @@ def attribution_breakdown(
         by_l2 = _rows(c, _level(l2c, l2l))
         by_l3 = _rows(c, _level(l3c, l3l, parent_col=l2c))
     return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2, "by_l3": by_l3}
+
+
+def ai_judge_overview_stats(months: int = 6) -> dict:
+    """AI 法官真實指標（overview 首頁「縮窄真接」範圍）：內容類占比月趨勢 + 總量。
+
+    口徑（誠實標註）：以 judgments.judged_at 判決時間分組（非來源進線時間——跨 5 來源的
+    進線時間欄各異，統一軸以判決時間為準）；一則進線＝distinct (source, source_id)：
+    - ratio ＝ 該月「含 content 主因歸因的進線數」/「該月已判進線數」（1:N 多歸因不重複計）。
+    - substr 用於月分組 label（顯示分組非過濾，同 attribution_overview 趨勢註解）。
+
+    Args:
+        months: 回傳最近 N 個月（trend/spark 消費端固定 6 點）。
+
+    Returns:
+        {monthly: [{ym, judged, content, ratio_pct}], totals: {judged_items, attributed_rows,
+         content_items, content_share_pct}}；空庫時 monthly=[]、totals 全 0。
+    """
+    from sqlalchemy import distinct
+
+    jg = T.judgments
+    item = jg.c.source + ":" + jg.c.source_id  # distinct 進線鍵（1:N 多歸因去重）
+    ym = func.substr(jg.c.judged_at, 1, 7).label("ym")
+    with T.get_engine().connect() as c:
+        rows = c.execute(
+            select(
+                ym,
+                func.count(distinct(item)).label("judged"),
+                func.count(distinct(item)).filter(jg.c.l1_code == "content").label("content"),
+            )
+            .where(jg.c.judged_at.isnot(None), jg.c.judged_at != "")
+            .group_by(ym)
+            .order_by(ym.asc())
+        ).mappings().all()
+        judged_items = c.execute(select(func.count(distinct(item)))).scalar() or 0
+        attributed_rows = c.execute(
+            select(func.count()).select_from(jg).where(jg.c.l1_code.isnot(None), jg.c.l1_code != "")
+        ).scalar() or 0
+        content_items = c.execute(
+            select(func.count(distinct(item))).where(jg.c.l1_code == "content")
+        ).scalar() or 0
+    monthly = [
+        {
+            "ym": r["ym"],
+            "judged": int(r["judged"]),
+            "content": int(r["content"]),
+            "ratio_pct": round(r["content"] / r["judged"] * 100, 2) if r["judged"] else 0.0,
+        }
+        for r in rows[-months:]
+    ]
+    return {
+        "monthly": monthly,
+        "totals": {
+            "judged_items": int(judged_items),
+            "attributed_rows": int(attributed_rows),
+            "content_items": int(content_items),
+            "content_share_pct": round(content_items / judged_items * 100, 2) if judged_items else 0.0,
+        },
+    }

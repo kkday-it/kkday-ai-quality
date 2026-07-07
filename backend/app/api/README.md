@@ -15,5 +15,6 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 | `routers/config.py` | config JSON 線上編輯（讀寫 config/ai_judge，寫後 reload loader）。 |
 | `routers/rules.py` | 判決規則版本化 CRUD（/api/judge-rules：list/active/history/save/restore/reset + jsonschema 驗證）；POST `/export` 啟動規則 xlsx 導出背景 job。 |
 | `routers/exports.py` | 通用導出 job 端點（/api/exports：SSE `stream` 進度 / `download` 取檔 / `cancel` 停止），搭 `app/core/export_jobs` 全域 registry，問題列表 / 判決規則導出共用。 |
+| `routers/overview.py` | 質檢概覽真實指標（GET /api/overview/ai-judge：judgments 內容類占比月趨勢 + 總量；「縮窄真接」——外部系統指標不在此，前端維持示意）。 |
 
 > 認證：JWT（Bearer header）；capability-token 端點（prejudge / 導出 SSE `stream`）以 job_id 免 header，其餘（cancel / download）仍需 Bearer。
