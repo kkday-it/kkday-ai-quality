@@ -84,6 +84,8 @@ def attribution_overview(
                 if score_col is not None else []
             )
             by_tier = _by_tier(c.execute(_src(select(jg.c.conf_value.label("confidence")).select_from(j).where(jg.c.conf_value.isnot(None)))).mappings())
+            # substr 僅用於「月/日分組 label」（GROUP BY 顯示分組，非 WHERE 過濾）——過濾已全走上方
+            # sargable 比較（見 _src），此處 substr 不影響索引使用，勿誤判為效能 bug 改寫。
             ym = func.substr(date_col, 1, glen).label("ym")
             trend_rows = c.execute(_src(
                 select(ym, func.count(jg.c.finding_id).label("judged"), func.count().filter(pol == "negative").label("negative"))
