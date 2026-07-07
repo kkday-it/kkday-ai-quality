@@ -1,0 +1,21 @@
+# pre-commit：本地 commit 前跑與 CI 同套檢查（ruff + eslint），把紅燈提前到 commit 時。
+# 啟用（一次性）：cd backend && .venv/bin/pip install pre-commit && cd .. && backend/.venv/bin/pre-commit install
+# 全量檢查：backend/.venv/bin/pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff-check
+        files: ^backend/
+        args: [--fix]
+      - id: ruff-format
+        files: ^backend/
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        # pnpm -C 定錨 console；只在前端檔變動時觸發，pass_filenames=false 走專案級檢查
+        entry: pnpm -C frontend/apps/console lint
+        language: system
+        files: ^frontend/.*\.(ts|vue|js)$
+        pass_filenames: false

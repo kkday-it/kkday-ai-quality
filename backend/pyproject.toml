@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
+    "pre-commit>=4.0.0",  # commit 前本地閘門（.pre-commit-config.yaml：ruff check/format + eslint）
 ]
 # 信心度準確度「深度版」選用依賴（輕量版不需要）：
 #   - 線上格式/編碼校驗：現以 pydantic + 白名單（arbiter/prejudge）等效 Guardrails ValidChoices（零額外 LLM）。
