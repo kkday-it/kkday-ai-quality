@@ -16,4 +16,7 @@
 - `judgment.json` — 信心分層閾值 + 傾向/分層/判決階段中文 label + prejudge 旋鈕 + **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**（前後端同讀；已納入 RULE_CODES＝可經 RuleManager 版本化編輯 + 存檔熱重載）
 - `source_mapping.json`（+`.schema`）— 5 來源欄位映射（源欄→canonical）+ 上傳指紋辨識
 
+## overview/（總覽儀表板）
+- `dashboard.json` — 質檢概覽 config-驅動版面（views 分區 + charts catalog）；前端 `@config/overview/dashboard.json` 讀取（DashboardView），業務可調版面免改碼
+
 > **live 真相在 DB**（`judge_rule_versions` append-only 版本化，經 RuleManager 面板編輯）；本目錄檔＝git 版控的**默認 seed**（恢復默認來源），非執行期讀取的 active 版。

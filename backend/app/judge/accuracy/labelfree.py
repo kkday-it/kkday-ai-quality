@@ -8,12 +8,9 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import Any
 
-# repo 根：backend/app/judge/accuracy/labelfree.py → parents[4]
-_ROOT = Path(__file__).resolve().parents[4]
-_REPORTS_DIR = _ROOT / "data" / "reports"
+from app.core.paths import REPO_ROOT as _ROOT
 
 # 分析門檻：類別數 / 樣本數過低時 Cleanlab 統計無意義，直接 skip（避免假精確）。
 _MIN_SAMPLES = 20

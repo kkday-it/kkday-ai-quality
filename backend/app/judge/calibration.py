@@ -22,12 +22,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.paths import REPO_ROOT
+from app.core.paths import CALIBRATION_DIR as _CALIB_DIR
 
 _log = logging.getLogger(__name__)
 
-# 持久化位置（派生產物，非 config；data/ 已 gitignore）。
-_CALIB_DIR = REPO_ROOT / "data" / "calibration"
+# 持久化位置（派生產物，非 config；data/ 已 gitignore）：paths SSOT，勿在此自拼 REPO_ROOT。
 _CALIB_FILE = _CALIB_DIR / "calibration.json"
 
 # 校準最少標註樣本：少於此 sklearn 擬合噪音過大、ECE 無意義 → skip（避免假校準）。

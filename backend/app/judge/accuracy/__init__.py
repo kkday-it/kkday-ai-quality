@@ -14,13 +14,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.paths import REPORTS_DIR as _REPORTS_DIR
+
 from .ensemble_agreement import (
     _write_ensemble_md,
     analyze_model_agreement,
     ensemble_report,
 )
 from .labelfree import (
-    _REPORTS_DIR,
     _write_md,
     analyze,
     build_report,

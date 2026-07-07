@@ -10,7 +10,7 @@
 - **後端**：Python 3.10+ / FastAPI + SQLAlchemy Core + **PostgreSQL**（Alembic 遷移）+ OpenAI SDK（Structured Outputs）+ Pydantic
 - **前端**：Vue3 + Vite + **Arco Design Vue** + Pinia + vue-echarts
 - **LLM**：OpenAI gpt-5 系列（無 key 時走 stub 啟發式，可零 key 走通閉環）
-- 選型/輪子清單見 [docs/TECH-STACK.md](./docs/TECH-STACK.md)；各面向 spec 見 [docs/specs/](./docs/specs/)
+- 文檔地圖見 [docs/README.md](./docs/README.md)（歷史選型與早期 spec 已封存於 `docs/archive/`，僅供追溯非現行契約）
 
 ## 核心流程
 ```
@@ -40,7 +40,7 @@ frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
   apps/console/src/features/ # judge / settings / overview / auth（feature-based）
   packages/types
 scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
-docs/                        # TECH-STACK · UPSTREAM-REFS · specs/
+docs/                        # 文檔地圖（README）· UPSTREAM-REFS · archive/（過時 spec 封存）
 ```
 
 ## 🚀 啟動

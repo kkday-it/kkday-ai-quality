@@ -9,3 +9,6 @@
 ## labels/
 代碼 → 中文文案字典（如 `guide_lang` 導覽語系、`traveller_type` 旅客類型），源自 kkday-member-ci。
 檔名 `<name>.constant.json`。
+
+> 目前僅 `labels/` 一個維度、檔案少屬**刻意設計**（固定字典本就低頻新增）——勿因檔少把本目錄
+> 併進 `config/`；新維度（如狀態碼字典）比照 `labels/` 加子資料夾即可。
