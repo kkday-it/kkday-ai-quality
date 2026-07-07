@@ -5,7 +5,7 @@
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import VChart from 'vue-echarts';
-import { exportBlocksToPdf } from '@/features/judge/utils/reportPdf';
+import { exportBlocksToPdf } from '@/shared/charts';
 import { buildOption } from '../registry/chartRegistry';
 import type { ChartSpec, GaugeData, BarData } from '../dashboard.types';
 import type { TrendData, IntakeBreakdown, ReviewFunnel, CategoryCoverageRow } from '../types';

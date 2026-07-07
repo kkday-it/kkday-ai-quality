@@ -2,7 +2,8 @@
 
 每個 feature 自成一夾，內含 `pages/` `components/` `composables/` `utils/` `constants/` `routes/` `types/`
 （各有 barrel `index.ts`；對外從夾根 import、內部相對 import）。跨 feature 共用元件在 `src/components/`、
-共用 store 在 `src/stores/`、API 層在 `src/api/`。
+共用 store 在 `src/stores/`、API 層在 `src/api/`、**共用圖表層在 `src/shared/charts/`**（ECharts builders +
+圖表契約 + PDF 導出；feature → shared 單向依賴，禁 feature 互相 import）。
 
 | feature | 內容 |
 |---|---|

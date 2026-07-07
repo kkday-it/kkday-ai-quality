@@ -1,9 +1,7 @@
 // AI 消耗聚合 composable：抓 /api/llm-usage/overview → 餵 overviewCharts 現成 builder（不造輪子）。
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import { getUsageOverview, type UsageGroupRow, type UsageOverview, type UsageQuery } from '@/api';
-import { buildBarOption, buildTrendOption } from '@/features/overview/utils';
-import type { BarData } from '@/features/overview/dashboard.types';
-import type { TrendData } from '@/features/overview/types';
+import { buildBarOption, buildTrendOption, type BarData, type TrendData } from '@/shared/charts';
 
 /** 群組列 → buildBarOption 的 BarData（value 取成本 USD，依成本降冪已由後端排好）。 */
 function toBar(rows: UsageGroupRow[] | undefined, title: string): BarData {

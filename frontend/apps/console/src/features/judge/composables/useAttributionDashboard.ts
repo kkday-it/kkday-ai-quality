@@ -1,7 +1,7 @@
 import { ref, computed, watch, toValue, type MaybeRefOrGetter } from 'vue';
 import { getAttributionOverview, getAttributionBreakdown } from '@/api';
 import { useVerticalFilterStore } from '@/stores';
-import { buildDonutOption, buildBarOption, buildTrendOption } from '@/features/overview/utils';
+import { buildDonutOption, buildBarOption, buildTrendOption } from '@/shared/charts';
 import {
   buildAttrFunnelOption,
   buildContentBarOption,

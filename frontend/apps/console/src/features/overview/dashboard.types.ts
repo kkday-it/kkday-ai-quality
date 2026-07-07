@@ -3,6 +3,7 @@
  * 三個業務目標（content/presale/postsale）＋ 總覽（all）；圖表由 dashboard.json catalog 定義，
  * 資料由 goal-keyed 資料集（mock → /api/overview）提供。沿用既有 overview/types.ts 的圖表資料型別。
  */
+import type { BarData, GaugeData } from '@/shared/charts';
 import type {
   EngineCard,
   IntakeBreakdown,
@@ -85,26 +86,8 @@ export interface GoalData {
   sources: SourceRow[];
 }
 
-/** 水平分類長條資料（各項 + 可選目標線）。 */
-export interface BarData {
-  title: string;
-  unit: string;
-  /** 目標基準線（垂直虛線）。 */
-  target?: number;
-  items: { name: string; value: number; color?: string }[];
-}
-
-/** 達成率儀表資料（gauge）。 */
-export interface GaugeData {
-  title: string;
-  unit: string;
-  value: number;
-  /** 量表上限（如 CVR 目標 1.8 → max 可設 2）。 */
-  max: number;
-  /** 目標基準（達標門檻）。 */
-  target?: number;
-  baseline?: number;
-}
+// BarData / GaugeData 已下沉 @/shared/charts（被 judge/usage 共用）；re-export 保持消費面不變。
+export type { BarData, GaugeData } from '@/shared/charts';
 
 /** 3-goal 概覽資料集（mock / GET /api/overview 同形狀）。 */
 export interface Overview3 {

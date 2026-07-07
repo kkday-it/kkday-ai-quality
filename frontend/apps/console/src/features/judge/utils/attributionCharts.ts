@@ -1,9 +1,9 @@
 /**
  * 歸因概覽（AttributionOverview）資料契約 + 縱覽專屬 ECharts builder。
  *
- * 通用圖表（donut/bar/trend）直接複用 `@/features/overview/utils` 的既有 builder（契約吻合，
- * 不造輪子）；此處只放契約不合的新函式——count 語義漏斗（overview 的 buildFunnelOption
- * label 寫死「%」，無法呈現絕對筆數）。配色與 overviewCharts 的品牌色一致。
+ * 通用圖表（donut/bar/trend）直接複用 `@/shared/charts` 的既有 builder（契約吻合，
+ * 不造輪子）；此處只放契約不合的新函式——count 語義漏斗（shared 的 buildFunnelOption
+ * label 寫死「%」，無法呈現絕對筆數）。配色與 shared/charts builders 的品牌色一致。
  */
 
 /** L1/L2/L3 等帶 code 的計數項（歸因域 / 細項分布）。 */

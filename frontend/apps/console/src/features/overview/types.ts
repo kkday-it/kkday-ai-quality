@@ -23,19 +23,9 @@ export interface NorthStarMetric {
   spark: number[];
 }
 
-/** 售後進線結構分布（甜甜圈）。 */
-export interface IntakeBreakdown {
-  title: string;
-  unit: string;
-  items: { name: string; value: number; color: string }[];
-}
-
-/** 審品攔截漏斗（必填→前審→後審→複核）。 */
-export interface ReviewFunnel {
-  title: string;
-  unit: string;
-  stages: { name: string; value: number }[];
-}
+// 圖表通用契約（IntakeBreakdown / ReviewFunnel / TrendData）已下沉 @/shared/charts（被 judge/usage
+// 共用）；此處 re-export 保持 overview 內部 `../types` 消費面不變。
+export type { IntakeBreakdown, ReviewFunnel, TrendData } from '@/shared/charts';
 
 /** 閉環引擎單一環節（流程圖步驟卡）。 */
 export interface LoopStep {
@@ -68,16 +58,6 @@ export interface EngineCard {
   /** 可跳轉路由（無則卡片不可點，顯示 cta 為狀態文字） */
   route: string | null;
   cta: string;
-}
-
-/** 趨勢圖資料（落後 / 領先共用）。 */
-export interface TrendData {
-  title: string;
-  unit: string;
-  months: string[];
-  /** 目標基準線（僅落後指標有） */
-  target?: number;
-  series: { name: string; data: number[] }[];
 }
 
 /** 商品類別覆蓋列。 */

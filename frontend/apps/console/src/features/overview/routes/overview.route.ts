@@ -1,7 +1,9 @@
 // 📊 質檢概覽模組路由：三業務目標 content / presale / postsale（共用 DashboardView，dashboard.json config 驅動）。
 // 父路由無 component（僅重導至 content）；子路由於殼層 <router-view> 渲染，tab 由 children meta.text 衍生。
 import type { RouteRecordRaw } from 'vue-router';
-import DashboardView from '../pages/DashboardView.vue';
+
+// route-level code splitting（對齊其他 feature 的 lazy import 慣例）；三子路由共用同一元件＝同一 chunk。
+const DashboardView = () => import('../pages/DashboardView.vue');
 
 export const overviewRoutes: RouteRecordRaw = {
   path: '/overview',
