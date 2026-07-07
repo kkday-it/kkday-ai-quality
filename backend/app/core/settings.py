@@ -21,7 +21,7 @@ import contextvars
 import json
 import uuid
 
-from app.core import db
+from app.core import crypto, db
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 # 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
@@ -218,7 +218,7 @@ def load_settings(user_id: str) -> dict:
         return _blank_settings()
     if _is_legacy_format(data):
         migrated = _migrate_legacy(data)
-        db.save_user_settings(user_id, migrated)  # 持久化一次，使 uuid 穩定
+        _persist(user_id, migrated)  # 持久化一次，使 uuid 穩定（機密加密落庫）
         return migrated
     # 補缺 key + 深複本（避免改到 _NEW_DEFAULT 內的 mutable）
     cur = {**_NEW_DEFAULT, **data}
@@ -229,6 +229,7 @@ def load_settings(user_id: str) -> dict:
     cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
     cur["taxonomy_overrides"] = dict(cur.get("taxonomy_overrides") or {})
     cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
+    _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
     return cur
 
 
@@ -326,7 +327,7 @@ def save_settings(user_id: str, patch: dict) -> dict:
         cur["active_overview_board_id"] = patch["active_overview_board_id"]
 
     _sanitize(cur)
-    db.save_user_settings(user_id, cur)
+    _persist(user_id, cur)
     return masked(user_id)
 
 
@@ -373,3 +374,23 @@ def current() -> dict:
     """judge 路徑取當前生效設定；未注入時回 stub 預設（_DEFAULT_LLM + 空 provider_tokens）。"""
     s = _current.get()
     return s if s is not None else effective_llm_dict(_blank_settings())
+
+
+def _decrypt_secret_maps(data: dict) -> None:
+    """就地把機密 map（provider_tokens / qc_passwords）由 at-rest 密文轉回明文。
+
+    舊明文列直通（crypto.decrypt_secret 對非密文原樣返回），支撐漸進遷移。
+    """
+    for key in ("provider_tokens", "qc_passwords"):
+        data[key] = {k: crypto.decrypt_secret(v) for k, v in (data.get(key) or {}).items()}
+
+
+def _persist(user_id: str, data: dict) -> None:
+    """落庫唯一出口：機密 map 加密後寫 DB（AIQ_SECRET_KEY 未設時明文直通）。
+
+    加密作用在複本，入參 data（呼叫端後續仍持有的明文版）不被污染。
+    """
+    stored = dict(data)
+    for key in ("provider_tokens", "qc_passwords"):
+        stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
+    db.save_user_settings(user_id, stored)

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     app_env: str = "development"  # development / staging / production；非 development 缺 JWT secret 拒啟動
     # ── 認證 ──
     aiq_jwt_secret: str | None = None
+    # user_settings 機密（provider_tokens/qc_passwords）at-rest 加密 passphrase；
+    # 未設＝明文落庫（dev 相容），設定後新寫入即加密、舊列跑 scripts/tools/encrypt_user_secrets.py。
+    aiq_secret_key: str | None = None
     jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
     min_password_length: int = 6  # 註冊密碼最短長度（安全政策，可依合規調整）
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
