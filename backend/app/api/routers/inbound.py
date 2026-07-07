@@ -42,8 +42,12 @@ async def validate_inbound(file: UploadFile = File(...)) -> dict:
         if src is None:
             report.append(
                 {
-                    "sheet_name": sh["sheet_name"], "detected_source": None, "label": "",
-                    "status": "unknown", "missing_headers": [], "row_count": len(sh["rows"]),
+                    "sheet_name": sh["sheet_name"],
+                    "detected_source": None,
+                    "label": "",
+                    "status": "unknown",
+                    "missing_headers": [],
+                    "row_count": len(sh["rows"]),
                     "reason": "表頭無法對應任何已知來源（非 5 反饋源，略過）",
                 }
             )
@@ -51,10 +55,12 @@ async def validate_inbound(file: UploadFile = File(...)) -> dict:
         missing = srcmap.validate_headers(src, headers)
         report.append(
             {
-                "sheet_name": sh["sheet_name"], "detected_source": src,
+                "sheet_name": sh["sheet_name"],
+                "detected_source": src,
                 "label": srcmap.source_label(src),
                 "status": "ok" if not missing else "fail",
-                "missing_headers": missing, "row_count": len(sh["rows"]),
+                "missing_headers": missing,
+                "row_count": len(sh["rows"]),
                 "reason": "" if not missing else f"缺必備欄：{'、'.join(missing)}",
             }
         )
@@ -105,7 +111,11 @@ async def upload_inbound_stream(job_id: str) -> StreamingResponse:
     return StreamingResponse(
         _events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

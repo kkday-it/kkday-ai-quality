@@ -48,7 +48,7 @@ class JudgeConfigProvider(AbstractProvider):
 
     def resolve_float_details(self, flag_key, default_value, evaluation_context=None):
         """judge.<tier> → confidence_tiers[tier]（缺 / 非數值 → default）。"""
-        name = flag_key[len(_FLAG_PREFIX):] if flag_key.startswith(_FLAG_PREFIX) else flag_key
+        name = flag_key[len(_FLAG_PREFIX) :] if flag_key.startswith(_FLAG_PREFIX) else flag_key
         v = _tiers().get(name)
         if isinstance(v, (int, float)):
             return FlagResolutionDetails(value=float(v), reason=Reason.STATIC)

@@ -41,9 +41,7 @@ def _editable_files() -> list[Path]:
     out: list[Path] = []
     for base in _DIRS:
         out += [
-            p
-            for p in base.rglob("*.json")
-            if _BACKUP_DIR not in p.parents and not _is_versioned(p)
+            p for p in base.rglob("*.json") if _BACKUP_DIR not in p.parents and not _is_versioned(p)
         ]
     return sorted(out)
 
@@ -98,9 +96,7 @@ def read_file(name: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
 
 @router.put("/files/{name:path}")
-def write_file(
-    name: str, body: ConfigWriteIn, _: dict = Depends(auth.get_current_user)
-) -> dict:
+def write_file(name: str, body: ConfigWriteIn, _: dict = Depends(auth.get_current_user)) -> dict:
     """覆寫單一 config 檔：先備份 .backups/，再以 2-space/unicode 格式寫入，最後 reload taxonomy。
 
     Returns:
@@ -133,4 +129,9 @@ def write_file(
     except Exception:  # noqa: BLE001  reload 失敗（如改壞結構）不應吞掉寫入成功事實
         reloaded = False
 
-    return {"ok": True, "name": name, "bytes": len(serialized.encode("utf-8")), "reloaded": reloaded}
+    return {
+        "ok": True,
+        "name": name,
+        "bytes": len(serialized.encode("utf-8")),
+        "reloaded": reloaded,
+    }

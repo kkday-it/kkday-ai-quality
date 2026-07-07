@@ -11,7 +11,11 @@ from app.core import db, product_vertical
 
 def _seed(monkeypatch, groups: dict) -> None:
     """注入 db.get_rule_active('product_vertical') 回傳 {"groups": ...}，模擬 active 版本內容。"""
-    monkeypatch.setattr(db, "get_rule_active", lambda code: {"groups": groups} if code == "product_vertical" else None)
+    monkeypatch.setattr(
+        db,
+        "get_rule_active",
+        lambda code: {"groups": groups} if code == "product_vertical" else None,
+    )
 
 
 def test_codes_for_group_returns_seeded_codes(monkeypatch) -> None:

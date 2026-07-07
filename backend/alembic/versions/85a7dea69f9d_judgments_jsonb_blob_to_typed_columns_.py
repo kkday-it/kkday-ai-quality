@@ -11,15 +11,14 @@ DTO SSOT＝app.core.db._shared.attribution_dto。遷移前已 pg_dump（backend/
 """
 
 from collections.abc import Sequence
-from typing import Union
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "85a7dea69f9d"
-down_revision: Union[str, Sequence[str], None] = "7c05d105e825"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "7c05d105e825"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # 新增 typed 判決欄（型別對齊 tables.judgments）。
 _ADD_COLS = [
@@ -83,7 +82,9 @@ _BTREE_INDEXES = {
 
 def upgrade() -> None:
     """JSONB blob → typed 欄：加欄 → 回填 → needs_review 轉 bool → drop JSONB 索引/data → btree 索引。"""
-    op.execute("ALTER TABLE judgments " + ", ".join(f"ADD COLUMN IF NOT EXISTS {c}" for c in _ADD_COLS))
+    op.execute(
+        "ALTER TABLE judgments " + ", ".join(f"ADD COLUMN IF NOT EXISTS {c}" for c in _ADD_COLS)
+    )
     op.execute(_BACKFILL)
     # needs_review integer(0/1) → boolean
     op.execute(
@@ -130,7 +131,15 @@ def downgrade() -> None:
         "ALTER COLUMN needs_review TYPE integer USING (needs_review::int), "
         "ALTER COLUMN needs_review SET DEFAULT 0"
     )
-    op.execute("CREATE INDEX IF NOT EXISTS idx_judgments_polarity ON judgments ((data::jsonb->>'polarity'))")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_judgments_stage ON judgments ((data::jsonb->>'stage'))")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_judgments_l1 ON judgments ((data::jsonb->'attribution'->'l1'->>'code'))")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_judgments_tier ON judgments ((data::jsonb->'confidence'->>'tier'))")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_judgments_polarity ON judgments ((data::jsonb->>'polarity'))"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_judgments_stage ON judgments ((data::jsonb->>'stage'))"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_judgments_l1 ON judgments ((data::jsonb->'attribution'->'l1'->>'code'))"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_judgments_tier ON judgments ((data::jsonb->'confidence'->>'tier'))"
+    )

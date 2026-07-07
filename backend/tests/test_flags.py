@@ -35,7 +35,9 @@ def test_threshold_reads_confidence_tiers(monkeypatch) -> None:
 
 def test_threshold_default_for_unknown_tier(monkeypatch) -> None:
     """配置缺該 tier → 回呼叫端 default（provider DEFAULT reason）。"""
-    monkeypatch.setattr(_shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.8}})
+    monkeypatch.setattr(
+        _shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.8}}
+    )
     flags.reload()
     assert flags.threshold("nonexistent", 0.42) == 0.42
 
@@ -49,7 +51,9 @@ def test_threshold_builtin_default_when_no_tiers(monkeypatch) -> None:
 
 def test_provider_float_only(monkeypatch) -> None:
     """provider 僅 float 職責：boolean/string 旗標回 default（不越權）。"""
-    monkeypatch.setattr(_shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.9}})
+    monkeypatch.setattr(
+        _shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.9}}
+    )
     flags.reload()
     c = flags._client()
     assert c.get_boolean_value("judge.auto_accept", True) is True

@@ -16,13 +16,30 @@ from app.judge import dspy_engine as D  # noqa: E402
 from app.judge import prejudge  # noqa: E402
 
 _ATTR_CONTENT = {
-    "l1_domain_code": "content", "l1_label": "商品內容", "l2_code": "L2", "l2_label": "描述",
-    "l3_code": "L3", "l3_label": "不符", "confidence": 0.9, "raw_confidence": 0.9,
-    "evidence_quote": "描述不符", "l3_candidates": [], "evidence_capped": False,
+    "l1_domain_code": "content",
+    "l1_label": "商品內容",
+    "l2_code": "L2",
+    "l2_label": "描述",
+    "l3_code": "L3",
+    "l3_label": "不符",
+    "confidence": 0.9,
+    "raw_confidence": 0.9,
+    "evidence_quote": "描述不符",
+    "l3_candidates": [],
+    "evidence_capped": False,
 }
 _ATTR_ABSTAIN = {
-    "l1_domain_code": "", "l1_label": "", "l2_code": "", "l2_label": "", "l3_code": "", "l3_label": "",
-    "confidence": 0.4, "raw_confidence": 0.4, "evidence_quote": "", "l3_candidates": [], "evidence_capped": False,
+    "l1_domain_code": "",
+    "l1_label": "",
+    "l2_code": "",
+    "l2_label": "",
+    "l3_code": "",
+    "l3_label": "",
+    "confidence": 0.4,
+    "raw_confidence": 0.4,
+    "evidence_quote": "",
+    "l3_candidates": [],
+    "evidence_capped": False,
 }
 
 
@@ -42,7 +59,12 @@ def test_attribution_metric_exact_match() -> None:
     assert D.attribution_metric(SimpleNamespace(l1_code="content"), got_content) is True
     assert D.attribution_metric(SimpleNamespace(l1_code="supplier"), got_content) is False
     assert D.attribution_metric(SimpleNamespace(l1_code=""), got_content) is False  # 無 gold
-    assert D.attribution_metric(SimpleNamespace(l1_code="content"), [SimpleNamespace(l1_domain_code="")]) is False
+    assert (
+        D.attribution_metric(
+            SimpleNamespace(l1_code="content"), [SimpleNamespace(l1_domain_code="")]
+        )
+        is False
+    )
 
 
 def test_dspy_judge_positive_non_issue() -> None:
@@ -60,7 +82,9 @@ def test_dspy_judge_negative_abstain_pending_data(monkeypatch) -> None:
     monkeypatch.setattr(prejudge, "_finalize_attr", lambda *a, **k: dict(_ATTR_ABSTAIN))
     j = D.DspyJudge()
     j.polarity = lambda review: SimpleNamespace(polarity="negative")
-    j.attribute = lambda review, catalog: SimpleNamespace(l3_code="", confidence=0.4, evidence_quote="")
+    j.attribute = lambda review, catalog: SimpleNamespace(
+        l3_code="", confidence=0.4, evidence_quote=""
+    )
     out = j.forward(_item())
     assert len(out) == 1
     f = out[0]
@@ -74,7 +98,9 @@ def test_dspy_judge_negative_attributed(monkeypatch) -> None:
     monkeypatch.setattr(prejudge, "_finalize_attr", lambda *a, **k: dict(_ATTR_CONTENT))
     j = D.DspyJudge()
     j.polarity = lambda review: SimpleNamespace(polarity="negative")
-    j.attribute = lambda review, catalog: SimpleNamespace(l3_code="L3", confidence=0.9, evidence_quote="描述不符")
+    j.attribute = lambda review, catalog: SimpleNamespace(
+        l3_code="L3", confidence=0.9, evidence_quote="描述不符"
+    )
     out = j.forward(_item())
     assert len(out) == 1
     assert out[0].polarity == "negative"

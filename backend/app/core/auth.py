@@ -38,7 +38,9 @@ def _secret() -> str:
     """取 JWT 簽名 secret。正式環境缺 secret 已在模組載入時拒啟動，此處僅 development 回 dev fallback。"""
     s = env.aiq_jwt_secret
     if not s:
-        _log.warning("AIQ_JWT_SECRET 未設定，使用開發預設 secret（僅限 development）；正式環境務必設定。")
+        _log.warning(
+            "AIQ_JWT_SECRET 未設定，使用開發預設 secret（僅限 development）；正式環境務必設定。"
+        )
         return _DEV_SECRET
     return s
 

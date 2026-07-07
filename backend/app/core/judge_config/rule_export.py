@@ -135,7 +135,9 @@ def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
     wb.remove(wb.active)  # 移除預設空表
 
     c_codes = [c for c in db.RULE_CODES if c.startswith("C-")]
-    total = len(c_codes) + 1  # C-N 各一分頁 + global 一分頁（進度總量近似，跳過的空 code 亦計入步進）
+    total = (
+        len(c_codes) + 1
+    )  # C-N 各一分頁 + global 一分頁（進度總量近似，跳過的空 code 亦計入步進）
     done = 0
     if ctx is not None:
         ctx.report(0, total)

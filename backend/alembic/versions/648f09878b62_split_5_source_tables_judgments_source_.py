@@ -8,43 +8,111 @@ Create Date: 2026-07-03
 移除 item_id 複合鍵 + intake_items 通用表。資料以 raw JSON（原始源列，key=源欄名）忠實重建。
 downgrade 不支援（結構性大改）——回滾請用 pg_dump 備份還原。
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "648f09878b62"
-down_revision: Union[str, Sequence[str], None] = "8ff0b8cfc8f2"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "8ff0b8cfc8f2"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # 各來源表欄位 → raw JSON key（多數同名；mixpanel $ / 大寫欄名淨化，故 (表欄, raw鍵) 成對）
-_CONV = [(c, c) for c in [
-    "session_oid", "zendesk_ticket_id", "session_create_date", "order_oid", "order_mid",
-    "sessionable_type", "sessionable_id", "prod_oid", "session_direction", "supplier_oid",
-    "msg_handler", "aggregated_messages", "prod_bd_tag_note", "prod_name_zh_tw", "order_profit",
-]]
-_FRESH = [(c, c) for c in [
-    "id", "display_id", "ticket_type", "subject", "description", "notes", "attachments",
-    "st_survey_rating", "product_id", "custom_field", "tags", "status_name", "priority_name",
-    "source_name", "created_at", "updated_at", "requester_id", "parent_ticket_id",
-]]
-_APPF = [(c, c) for c in ["oid", "created_datetime", "comment", "score", "source", "lang_code", "version"]]
-_MIX = [
-    ("event", "event"), ("time", "time"), ("insert_id", "$insert_id"), ("distinct_id", "$distinct_id"),
-    ("feedback_signal", "feedback_signal"), ("negative_items", "negative_items"),
-    ("display_style", "display_style"), ("order_mid", "order_mid"), ("order_status", "order_status"),
-    ("order_master_mid", "order_master_mid"), ("is_marketplace", "is_marketplace"),
-    ("prod_mid", "prod_mid"), ("pkg_oid", "pkg_oid"), ("prod_city_code", "prod_city_code"),
-    ("prod_country_code", "prod_country_code"), ("prod_info", "prod_info"), ("bd_tag", "bd_tag"),
-    ("msg_handler", "msg_handler"), ("current_url", "$current_url"), ("platform", "Platform"),
-    ("mp_country_code", "mp_country_code"), ("os", "$os"),
+_CONV = [
+    (c, c)
+    for c in [
+        "session_oid",
+        "zendesk_ticket_id",
+        "session_create_date",
+        "order_oid",
+        "order_mid",
+        "sessionable_type",
+        "sessionable_id",
+        "prod_oid",
+        "session_direction",
+        "supplier_oid",
+        "msg_handler",
+        "aggregated_messages",
+        "prod_bd_tag_note",
+        "prod_name_zh_tw",
+        "order_profit",
+    ]
 ]
-_PR = [(c, c) for c in [
-    "rec_oid", "member_uuid", "create_date", "rec_title", "rec_desc", "rec_scores", "traveller_type",
-    "lang_code", "prod_oid", "pkg_oid", "order_oid", "order_mid", "supplier_oid", "order_snap_json",
-    "lst_dt_go", "product_category",
-]]
+_FRESH = [
+    (c, c)
+    for c in [
+        "id",
+        "display_id",
+        "ticket_type",
+        "subject",
+        "description",
+        "notes",
+        "attachments",
+        "st_survey_rating",
+        "product_id",
+        "custom_field",
+        "tags",
+        "status_name",
+        "priority_name",
+        "source_name",
+        "created_at",
+        "updated_at",
+        "requester_id",
+        "parent_ticket_id",
+    ]
+]
+_APPF = [
+    (c, c)
+    for c in ["oid", "created_datetime", "comment", "score", "source", "lang_code", "version"]
+]
+_MIX = [
+    ("event", "event"),
+    ("time", "time"),
+    ("insert_id", "$insert_id"),
+    ("distinct_id", "$distinct_id"),
+    ("feedback_signal", "feedback_signal"),
+    ("negative_items", "negative_items"),
+    ("display_style", "display_style"),
+    ("order_mid", "order_mid"),
+    ("order_status", "order_status"),
+    ("order_master_mid", "order_master_mid"),
+    ("is_marketplace", "is_marketplace"),
+    ("prod_mid", "prod_mid"),
+    ("pkg_oid", "pkg_oid"),
+    ("prod_city_code", "prod_city_code"),
+    ("prod_country_code", "prod_country_code"),
+    ("prod_info", "prod_info"),
+    ("bd_tag", "bd_tag"),
+    ("msg_handler", "msg_handler"),
+    ("current_url", "$current_url"),
+    ("platform", "Platform"),
+    ("mp_country_code", "mp_country_code"),
+    ("os", "$os"),
+]
+_PR = [
+    (c, c)
+    for c in [
+        "rec_oid",
+        "member_uuid",
+        "create_date",
+        "rec_title",
+        "rec_desc",
+        "rec_scores",
+        "traveller_type",
+        "lang_code",
+        "prod_oid",
+        "pkg_oid",
+        "order_oid",
+        "order_mid",
+        "supplier_oid",
+        "order_snap_json",
+        "lst_dt_go",
+        "product_category",
+    ]
+]
 
 # 4 未拆表來源：(source code, 表名, 欄位對, PK 表欄, PK raw鍵)
 _SOURCES = [
@@ -55,7 +123,9 @@ _SOURCES = [
 ]
 
 
-def _insert_sql(table: str, src_table: str, pairs, pk_col: str, pk_raw: str, where_src: str | None) -> str:
+def _insert_sql(
+    table: str, src_table: str, pairs, pk_col: str, pk_raw: str, where_src: str | None
+) -> str:
     """組 `INSERT INTO table (cols) SELECT raw::jsonb->>'key'... FROM src [WHERE source=X] ON CONFLICT DO NOTHING`。"""
     cols = ", ".join(f'"{tc}"' for tc, _ in pairs)
     sel = ", ".join(f"raw::jsonb->>'{rk}'" for _, rk in pairs)
@@ -89,18 +159,26 @@ def upgrade() -> None:
     op.rename_table("product_reviews", "product_reviews_old")
     # 改名不會改索引名 → 舊索引仍叫 idx_product_reviews_* 會與新表撞名，先刪（IF EXISTS 容錯）
     for _idx in (
-        "idx_product_reviews_score", "idx_product_reviews_category_main",
-        "idx_product_reviews_occurred_at", "idx_product_reviews_prod_oid",
+        "idx_product_reviews_score",
+        "idx_product_reviews_category_main",
+        "idx_product_reviews_occurred_at",
+        "idx_product_reviews_prod_oid",
     ):
         op.execute(f'DROP INDEX IF EXISTS "{_idx}"')
     T.product_reviews.create(bind, checkfirst=True)
-    op.execute(_insert_sql("product_reviews", "product_reviews_old", _PR, "rec_oid", "rec_oid", where_src=None))
+    op.execute(
+        _insert_sql(
+            "product_reviews", "product_reviews_old", _PR, "rec_oid", "rec_oid", where_src=None
+        )
+    )
     op.drop_table("product_reviews_old")
 
     # 4. judgments 換關聯鍵：加 source_id → re-key → 換索引 → 刪 item_id
     op.add_column("judgments", sa.Column("source_id", sa.Text(), nullable=True))
     # product_reviews：item_id=`product_reviews-{rec_oid}` → source_id=rec_oid（strip 前綴）
-    op.execute("UPDATE judgments SET source_id = regexp_replace(item_id, '^product_reviews-', '') WHERE source='product_reviews'")
+    op.execute(
+        "UPDATE judgments SET source_id = regexp_replace(item_id, '^product_reviews-', '') WHERE source='product_reviews'"
+    )
     # 其餘來源：item_id 為雜湊，無法反推 → join intake_items 由 raw 取特徵 id 原值（趁 intake 未刪）
     for source, _table, _pairs, _pk_col, pk_raw in _SOURCES:
         op.execute(

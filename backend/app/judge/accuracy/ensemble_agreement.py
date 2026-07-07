@@ -14,7 +14,9 @@ from .supervised import _MIN_SUPERVISED
 _CONFUSION_WATCH = ("content", "supplier")  # 重點監看的易混淆 L1 域對
 
 
-def analyze_model_agreement(preds_by_model: dict[str, list[str]], true: list[str]) -> dict[str, Any]:
+def analyze_model_agreement(
+    preds_by_model: dict[str, list[str]], true: list[str]
+) -> dict[str, Any]:
     """多 voter 的 L1 域預測 vs true_label 比較評估（ensemble 準確率判定核心）。
 
     Args:
@@ -30,13 +32,21 @@ def analyze_model_agreement(preds_by_model: dict[str, list[str]], true: list[str
     models = sorted(preds_by_model)
     n = len(true)
     if n < _MIN_SUPERVISED or len(models) < 2:
-        return {"status": "skipped", "reason": "insufficient_labels_or_models", "n": n, "models": models}
+        return {
+            "status": "skipped",
+            "reason": "insufficient_labels_or_models",
+            "n": n,
+            "models": models,
+        }
     import math
 
     try:
         from sklearn.metrics import accuracy_score, cohen_kappa_score
     except ImportError as exc:
-        return {"status": "skipped", "reason": f"sklearn 未安裝（pip install -e '.[accuracy]'）：{exc}"}
+        return {
+            "status": "skipped",
+            "reason": f"sklearn 未安裝（pip install -e '.[accuracy]'）：{exc}",
+        }
 
     per_model_acc = {m: round(float(accuracy_score(true, preds_by_model[m])), 4) for m in models}
 
@@ -47,12 +57,18 @@ def analyze_model_agreement(preds_by_model: dict[str, list[str]], true: list[str
 
     # 模型間一致性（pairwise Cohen's κ）：扣除隨機一致，類別不平衡下比 % agreement 更誠實
     pairwise = [
-        {"a": models[i], "b": models[j], "kappa": _kappa(preds_by_model[models[i]], preds_by_model[models[j]])}
+        {
+            "a": models[i],
+            "b": models[j],
+            "kappa": _kappa(preds_by_model[models[i]], preds_by_model[models[j]]),
+        }
         for i in range(len(models))
         for j in range(i + 1, len(models))
     ]
     # 聯合＝逐筆 L1 眾數（多數決；平手取 Counter.most_common 首個，順序穩定）
-    ensemble_pred = [Counter(preds_by_model[m][k] for m in models).most_common(1)[0][0] for k in range(n)]
+    ensemble_pred = [
+        Counter(preds_by_model[m][k] for m in models).most_common(1)[0][0] for k in range(n)
+    ]
     ensemble_acc = round(float(accuracy_score(true, ensemble_pred)), 4)
     best_model = max(models, key=lambda m: per_model_acc[m])
     best_acc = per_model_acc[best_model]
@@ -61,7 +77,8 @@ def analyze_model_agreement(preds_by_model: dict[str, list[str]], true: list[str
         {"true": a, "pred": b, "count": cnt}
         for a in _CONFUSION_WATCH
         for b in _CONFUSION_WATCH
-        if a != b and (cnt := sum(1 for t, p in zip(true, ensemble_pred, strict=True) if t == a and p == b))
+        if a != b
+        and (cnt := sum(1 for t, p in zip(true, ensemble_pred, strict=True) if t == a and p == b))
     ]
     return {
         "status": "ok",
@@ -71,7 +88,9 @@ def analyze_model_agreement(preds_by_model: dict[str, list[str]], true: list[str
         "pairwise_kappa": pairwise,
         "ensemble_accuracy": ensemble_acc,
         "best_single": {"model": best_model, "accuracy": best_acc},
-        "ensemble_gain": round(ensemble_acc - best_acc, 4),  # 聯合較最佳單模型的準確率增益（可能為負）
+        "ensemble_gain": round(
+            ensemble_acc - best_acc, 4
+        ),  # 聯合較最佳單模型的準確率增益（可能為負）
         "watch_confusion": watch,
     }
 
@@ -123,7 +142,10 @@ def ensemble_report() -> dict[str, Any]:
     """撈 model_votes 標註列 → analyze_model_agreement；DB 不可達 / 無 ensemble 資料回 skipped。"""
     data = _load_model_votes_labeled()
     if data is None:
-        return {"status": "skipped", "reason": "無 ensemble model_votes + true_label 資料（尚未跑聯合判決或未標真值）"}
+        return {
+            "status": "skipped",
+            "reason": "無 ensemble model_votes + true_label 資料（尚未跑聯合判決或未標真值）",
+        }
     return analyze_model_agreement(*data)
 
 
@@ -146,11 +168,23 @@ def _write_ensemble_md(rep: dict[str, Any]) -> str:
     ]
     for m, acc in rep["per_model_accuracy"].items():
         lines.append(f"| {m} | {acc:.1%} |")
-    lines += ["", "## 模型間一致性（pairwise Cohen's κ）", "", "| model A | model B | κ |", "|---|---|---|"]
+    lines += [
+        "",
+        "## 模型間一致性（pairwise Cohen's κ）",
+        "",
+        "| model A | model B | κ |",
+        "|---|---|---|",
+    ]
     for p in rep["pairwise_kappa"]:
         lines.append(f"| {p['a']} | {p['b']} | {p['kappa']} |")
     if rep["watch_confusion"]:
-        lines += ["", "## 重點易混淆域熱點（聯合 pred；content↔supplier）", "", "| 真值 | 誤判為 | 次數 |", "|---|---|---|"]
+        lines += [
+            "",
+            "## 重點易混淆域熱點（聯合 pred；content↔supplier）",
+            "",
+            "| 真值 | 誤判為 | 次數 |",
+            "|---|---|---|",
+        ]
         for c in rep["watch_confusion"]:
             lines.append(f"| {c['true']} | {c['pred']} | {c['count']} |")
     lines.append("")

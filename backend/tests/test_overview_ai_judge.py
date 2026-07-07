@@ -29,14 +29,23 @@ def _finding(sid: str, l1_code: str, judged_at: str, suffix: str = "") -> Ticket
 
 def _seed(temp_db) -> None:
     """6 月：A(content)/B(supplier)/C(non_issue)；7 月：D(content)/E(content+supplier 雙歸因)。"""
-    db.replace_source_findings("product_reviews", "A", [_finding("A", "content", "2026-06-10T08:00:00", "content")])
-    db.replace_source_findings("product_reviews", "B", [_finding("B", "supplier", "2026-06-11T08:00:00", "supplier")])
-    db.replace_source_findings("product_reviews", "C", [_finding("C", "", "2026-06-12T08:00:00")])
-    db.replace_source_findings("product_reviews", "D", [_finding("D", "content", "2026-07-01T08:00:00", "content")])
     db.replace_source_findings(
-        "product_reviews", "E",
-        [_finding("E", "content", "2026-07-02T08:00:00", "content"),
-         _finding("E", "supplier", "2026-07-02T08:00:00", "supplier")],
+        "product_reviews", "A", [_finding("A", "content", "2026-06-10T08:00:00", "content")]
+    )
+    db.replace_source_findings(
+        "product_reviews", "B", [_finding("B", "supplier", "2026-06-11T08:00:00", "supplier")]
+    )
+    db.replace_source_findings("product_reviews", "C", [_finding("C", "", "2026-06-12T08:00:00")])
+    db.replace_source_findings(
+        "product_reviews", "D", [_finding("D", "content", "2026-07-01T08:00:00", "content")]
+    )
+    db.replace_source_findings(
+        "product_reviews",
+        "E",
+        [
+            _finding("E", "content", "2026-07-02T08:00:00", "content"),
+            _finding("E", "supplier", "2026-07-02T08:00:00", "supplier"),
+        ],
     )
 
 
@@ -72,7 +81,10 @@ def test_empty_db_graceful(temp_db) -> None:
     out = db.ai_judge_overview_stats()
     assert out["monthly"] == []
     assert out["totals"] == {
-        "judged_items": 0, "attributed_rows": 0, "content_items": 0, "content_share_pct": 0.0,
+        "judged_items": 0,
+        "attributed_rows": 0,
+        "content_items": 0,
+        "content_share_pct": 0.0,
     }
 
 

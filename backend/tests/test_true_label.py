@@ -2,6 +2,7 @@
 
 皆走 ai_judge 的 seed 檔 fallback（DB 無 active 版時讀 config/ai_judge/rule_C-*.json），故免測試庫。
 """
+
 from app.core.judge_config import ai_judge
 from app.judge import prejudge
 

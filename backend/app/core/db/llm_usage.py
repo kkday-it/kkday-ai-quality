@@ -2,6 +2,7 @@
 
 寫入由 llm.client.chat_json 的 usage recorder 呼叫（批次 bulk / 單次即時）；聚合供 /api/llm-usage/overview。
 """
+
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -13,9 +14,18 @@ _GRAN_FMT = {"year": "YYYY", "month": "YYYY-MM", "day": "YYYY-MM-DD"}
 
 # 寫入時只取這些欄（其餘由 DB default / autoincrement 補），避免呼叫端多帶鍵造成錯誤。
 _INSERT_COLS = (
-    "stage", "model", "provider",
-    "prompt_tokens", "completion_tokens", "reasoning_tokens", "cached_tokens", "total_tokens",
-    "cost_usd", "source", "source_id", "job_id",
+    "stage",
+    "model",
+    "provider",
+    "prompt_tokens",
+    "completion_tokens",
+    "reasoning_tokens",
+    "cached_tokens",
+    "total_tokens",
+    "cost_usd",
+    "source",
+    "source_id",
+    "job_id",
 )
 
 
@@ -69,22 +79,42 @@ def llm_usage_overview(
 
     def _grouped(dim):
         """依某維度欄聚合 [{key,cost,tokens,calls}]（依成本降冪；空 key→'（未標）'）。"""
-        rows = c.execute(
-            _filtered(
-                select(func.coalesce(dim, "").label("key"), cost.label("c"), toks.label("t"), calls.label("n"))
-                .group_by(func.coalesce(dim, ""))
-                .order_by(cost.desc())
+        rows = (
+            c.execute(
+                _filtered(
+                    select(
+                        func.coalesce(dim, "").label("key"),
+                        cost.label("c"),
+                        toks.label("t"),
+                        calls.label("n"),
+                    )
+                    .group_by(func.coalesce(dim, ""))
+                    .order_by(cost.desc())
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         return [
-            {"key": r["key"] or "（未標）", "cost": round(float(r["c"]), 6), "tokens": int(r["t"]), "calls": int(r["n"])}
+            {
+                "key": r["key"] or "（未標）",
+                "cost": round(float(r["c"]), 6),
+                "tokens": int(r["t"]),
+                "calls": int(r["n"]),
+            }
             for r in rows
         ]
 
     with T.get_engine().connect() as c:
-        krow = c.execute(
-            _filtered(select(cost.label("c"), toks.label("t"), calls.label("n"), cached.label("ca")))
-        ).mappings().first()
+        krow = (
+            c.execute(
+                _filtered(
+                    select(cost.label("c"), toks.label("t"), calls.label("n"), cached.label("ca"))
+                )
+            )
+            .mappings()
+            .first()
+        )
         kpi = {
             "cost": round(float(krow["c"]), 6),
             "tokens": int(krow["t"]),
@@ -92,16 +122,30 @@ def llm_usage_overview(
             "cached": int(krow["ca"]),
         }
         trend = [
-            {"bucket": r["b"], "cost": round(float(r["c"]), 6), "tokens": int(r["t"]), "calls": int(r["n"])}
+            {
+                "bucket": r["b"],
+                "cost": round(float(r["c"]), 6),
+                "tokens": int(r["t"]),
+                "calls": int(r["n"]),
+            }
             for r in c.execute(
                 _filtered(
                     select(bucket.label("b"), cost.label("c"), toks.label("t"), calls.label("n"))
-                    .group_by(bucket).order_by(bucket.asc())
+                    .group_by(bucket)
+                    .order_by(bucket.asc())
                 )
-            ).mappings().all()
+            )
+            .mappings()
+            .all()
         ]
         by_model = _grouped(u.c.model)
         by_stage = _grouped(u.c.stage)
         by_source = _grouped(u.c.source)
 
-    return {"kpi": kpi, "trend": trend, "by_model": by_model, "by_stage": by_stage, "by_source": by_source}
+    return {
+        "kpi": kpi,
+        "trend": trend,
+        "by_model": by_model,
+        "by_stage": by_stage,
+        "by_source": by_source,
+    }

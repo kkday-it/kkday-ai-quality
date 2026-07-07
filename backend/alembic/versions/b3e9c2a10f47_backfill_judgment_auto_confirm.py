@@ -5,17 +5,19 @@ Revises: 85a7dea69f9d
 Create Date: 2026-07-05
 
 """
+
 import json
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b3e9c2a10f47"
-down_revision: Union[str, Sequence[str], None] = "85a7dea69f9d"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "85a7dea69f9d"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # G1 自動確認旋鈕預設（對齊 config/ai_judge/judgment.json；migration 為時點快照，內嵌不讀檔避免路徑漂移）。
 _AUTO_CONFIRM_DEFAULT = {
@@ -54,7 +56,9 @@ def upgrade() -> None:
         return  # 冪等：已含旋鈕不重複補
     merged = {**content, "auto_confirm": _AUTO_CONFIRM_DEFAULT}
     bind.execute(
-        sa.text("UPDATE judge_rule_versions SET is_active=false WHERE rule_code='judgment' AND is_active")
+        sa.text(
+            "UPDATE judge_rule_versions SET is_active=false WHERE rule_code='judgment' AND is_active"
+        )
     )
     bind.execute(
         sa.text(

@@ -5,17 +5,18 @@ Revises: df57def04797
 Create Date: 2026-07-01 14:23:42.884748
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'c7ae2e2be254'
-down_revision: Union[str, Sequence[str], None] = 'df57def04797'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "c7ae2e2be254"
+down_revision: str | Sequence[str] | None = "df57def04797"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # 8 面向 code（prod_quality / pkg_quality 各有一組 {code}_verdict 欄）

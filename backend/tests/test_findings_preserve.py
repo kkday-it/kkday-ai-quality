@@ -94,7 +94,9 @@ def test_date_to_includes_same_day_with_time_component(temp_db) -> None:
             _pr_row("D2", create_date="2026-07-01 00:00:00"),
         ],
     )
-    result = db.list_problems(source="product_reviews", date_from="2026-06-01", date_to="2026-06-30")
+    result = db.list_problems(
+        source="product_reviews", date_from="2026-06-01", date_to="2026-06-30"
+    )
     assert result["total"] == 1
     assert result["rows"][0]["_group"] == "D1"
 

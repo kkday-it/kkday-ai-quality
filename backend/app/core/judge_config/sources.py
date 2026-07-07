@@ -14,9 +14,9 @@ import json
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 # 模組載入時讀一次（非機密、變動極少；改檔需重啟後端，與其他 config/global 一致）。
-_SOURCES: list[dict] = json.loads(
-    (_GLOBAL_DIR / "sources.json").read_text(encoding="utf-8")
-).get("sources", [])
+_SOURCES: list[dict] = json.loads((_GLOBAL_DIR / "sources.json").read_text(encoding="utf-8")).get(
+    "sources", []
+)
 
 _BY_VALUE: dict[str, dict] = {s["value"]: s for s in _SOURCES}
 

@@ -21,7 +21,9 @@ def _pr(rec_oid: str, create_date: str) -> dict:
     }
 
 
-def _finding(rec_oid: str, polarity: str, l1_code: str = "", l1_label: str = "", conf: float = 0.9) -> TicketFinding:
+def _finding(
+    rec_oid: str, polarity: str, l1_code: str = "", l1_label: str = "", conf: float = 0.9
+) -> TicketFinding:
     return TicketFinding(
         finding_id=f"fd_product_reviews_{rec_oid}__{l1_code or 'none'}",
         ticket_id=rec_oid,
@@ -48,16 +50,24 @@ def _seed(temp_db) -> None:
             _pr("R4", "2026-07-05 00:00:00"),  # 隔月·應被日期區間排除
         ],
     )
-    db.replace_source_findings("product_reviews", "R1", [_finding("R1", "negative", "content", "商品內容")])
+    db.replace_source_findings(
+        "product_reviews", "R1", [_finding("R1", "negative", "content", "商品內容")]
+    )
     db.replace_source_findings("product_reviews", "R2", [_finding("R2", "positive")])
-    db.replace_source_findings("product_reviews", "R3", [_finding("R3", "negative", "supplier", "供應商履約", 0.6)])
-    db.replace_source_findings("product_reviews", "R4", [_finding("R4", "negative", "content", "商品內容")])
+    db.replace_source_findings(
+        "product_reviews", "R3", [_finding("R3", "negative", "supplier", "供應商履約", 0.6)]
+    )
+    db.replace_source_findings(
+        "product_reviews", "R4", [_finding("R4", "negative", "content", "商品內容")]
+    )
 
 
 def test_attribution_overview_kpi_and_distributions(temp_db) -> None:
     """6 月區間：total_intake/judged/attributed KPI + 傾向 / L1 分布正確（R4 因日期排除）。"""
     _seed(temp_db)
-    ov = db.attribution_overview(source="product_reviews", date_from="2026-06-01", date_to="2026-06-30")
+    ov = db.attribution_overview(
+        source="product_reviews", date_from="2026-06-01", date_to="2026-06-30"
+    )
     assert ov["total_intake"] == 3  # R1/R2/R3（R4 隔月排除）
     assert ov["judged"] == 3  # 皆有 finding
     assert ov["attributed"] == 2  # R1 content + R3 supplier（R2 正向無 l1）
@@ -70,7 +80,9 @@ def test_attribution_overview_kpi_and_distributions(temp_db) -> None:
 def test_attribution_overview_date_upper_bound_includes_full_day(temp_db) -> None:
     """上界含當日整天：date_to=2026-06-20 仍納入 R3（'…20 23:00'），排除隔月 R4（Phase 1 sargable 語義）。"""
     _seed(temp_db)
-    ov = db.attribution_overview(source="product_reviews", date_from="2026-06-20", date_to="2026-06-20")
+    ov = db.attribution_overview(
+        source="product_reviews", date_from="2026-06-20", date_to="2026-06-20"
+    )
     assert ov["total_intake"] == 1  # 僅 R3（當日有時間分量仍入選）
     assert ov["attributed"] == 1
     assert {r["code"] for r in ov["by_l1"]} == {"supplier"}

@@ -45,7 +45,11 @@ async def export_stream(job_id: str) -> StreamingResponse:
     return StreamingResponse(
         _events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -58,7 +62,9 @@ def export_cancel(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict
 
 
 @router.get("/download")
-def export_download(job_id: str, filename: str | None = None, _: dict = Depends(auth.get_current_user)) -> Response:
+def export_download(
+    job_id: str, filename: str | None = None, _: dict = Depends(auth.get_current_user)
+) -> Response:
     """取回已完成導出 job 的 xlsx 位元組（attachment）；一次性，取後即清 job 與結果。
 
     Args:
@@ -68,7 +74,9 @@ def export_download(job_id: str, filename: str | None = None, _: dict = Depends(
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job 不存在或已取走：{job_id}")
     if snap["status"] != "done":
-        raise HTTPException(status_code=409, detail=f"job 尚未完成（status={snap['status']}），無法下載")
+        raise HTTPException(
+            status_code=409, detail=f"job 尚未完成（status={snap['status']}），無法下載"
+        )
     data = export_jobs.pop_result(job_id)
     if data is None:
         raise HTTPException(status_code=404, detail="結果已取走或不存在")

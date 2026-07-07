@@ -49,7 +49,12 @@ def analyze_supervised(pred: list[str], true: list[str]) -> dict[str, Any]:
     """
     n = len(pred)
     if n < _MIN_SUPERVISED:
-        return {"status": "skipped", "reason": "insufficient_labels", "n": n, "min": _MIN_SUPERVISED}
+        return {
+            "status": "skipped",
+            "reason": "insufficient_labels",
+            "n": n,
+            "min": _MIN_SUPERVISED,
+        }
     try:
         from sklearn.metrics import (
             accuracy_score,
@@ -58,7 +63,10 @@ def analyze_supervised(pred: list[str], true: list[str]) -> dict[str, Any]:
             precision_recall_fscore_support,
         )
     except ImportError as exc:
-        return {"status": "skipped", "reason": f"sklearn 未安裝（pip install -e '.[accuracy]'）：{exc}"}
+        return {
+            "status": "skipped",
+            "reason": f"sklearn 未安裝（pip install -e '.[accuracy]'）：{exc}",
+        }
 
     labels = sorted(set(true) | set(pred))
     acc = float(accuracy_score(true, pred))
@@ -114,7 +122,13 @@ def _write_supervised_md(rep: dict[str, Any]) -> str:
         f"- 樣本 **{rep['n']}** · 準確率 **{rep['accuracy']:.1%}**"
         f" · macro P/R/F1 **{rep['macro_precision']:.1%} / {rep['macro_recall']:.1%} / {rep['macro_f1']:.1%}**"
     )
-    lines += ["", "## 每類指標（L1 域）", "", "| 域 | precision | recall | f1 | support |", "|---|---|---|---|---|"]
+    lines += [
+        "",
+        "## 每類指標（L1 域）",
+        "",
+        "| 域 | precision | recall | f1 | support |",
+        "|---|---|---|---|---|",
+    ]
     for lbl, s in rep["per_class"].items():
         lines.append(f"| {lbl} | {s['precision']} | {s['recall']} | {s['f1']} | {s['support']} |")
     lines += ["", "## 最常誤判對（true → pred）", "", "| 真值 | 誤判為 | 次數 |", "|---|---|---|"]

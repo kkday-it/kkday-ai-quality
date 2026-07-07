@@ -1,15 +1,18 @@
 """反饋摘要語系 map：LLM 陣列正規化 + DTO 對表格取 zh-tw 字串（免 DB）。"""
+
 from app.core.db._shared import attribution_dto
 from app.judge.prejudge import _summary_map
 
 
 def test_summary_map_array_dedup_and_zhtw() -> None:
     """LLM [{lang,text}] 陣列 → map：去重（同 lang 保第一）+ 確保含 zh-tw。"""
-    m = _summary_map([
-        {"lang": "ja", "text": "日文摘要"},
-        {"lang": "zh-tw", "text": "繁中摘要"},
-        {"lang": "JA", "text": "重複應丟"},
-    ])
+    m = _summary_map(
+        [
+            {"lang": "ja", "text": "日文摘要"},
+            {"lang": "zh-tw", "text": "繁中摘要"},
+            {"lang": "JA", "text": "重複應丟"},
+        ]
+    )
     assert m == {"ja": "日文摘要", "zh-tw": "繁中摘要"}
 
 

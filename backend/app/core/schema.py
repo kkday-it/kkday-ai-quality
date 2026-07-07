@@ -61,6 +61,7 @@ EvidenceLevel = Literal["symptom_only", "with_product_page", "with_order", "with
 # 嚴重度（軸B · ITIL Priority）
 Severity = Literal["P0", "P1", "P2", "P3"]
 
+
 class AdequacyResult(BaseModel):
     """L3 充分度檢查結果（第二意見）。"""
 
@@ -128,13 +129,19 @@ class TicketFinding(BaseModel):
     l2_label: str = ""  # L2 面向中文名
     l3_code: str = ""  # L3 細項 C-code（C-x-y-z；config/ai_judge 白名單）
     l3_label: str = ""  # L3 細項中文名
-    l3_candidates: list[dict] = Field(default_factory=list)  # top-3 符合度 [{code,label,score}]（透明檢視）
-    polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral / unknown(傾向不明)
+    l3_candidates: list[dict] = Field(
+        default_factory=list
+    )  # top-3 符合度 [{code,label,score}]（透明檢視）
+    polarity: str = (
+        ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral / unknown(傾向不明)
+    )
     confidence_tier: str = ""  # 信心分層：auto_accept / jury / needs_review
     # 判決階段（prejudge 派生；未判＝無 finding 於 enrich 層補）：
     # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充 / insufficient 資訊不足
     judgment_stage: str = ""
-    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"；ensemble 聯合判決時為 "ensemble"）
+    model_used: str = (
+        ""  # 判決使用的 LLM 模型（stub 時為 "stub"；ensemble 聯合判決時為 "ensemble"）
+    )
     judged_at: str = ""  # 判決時間（ISO）
     # 多 model 聯合判決（ensemble）各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為空
     model_votes: list[dict] = Field(default_factory=list)
@@ -169,7 +176,6 @@ class TicketFinding(BaseModel):
             "model": self.model_used,
             "is_primary": self.is_primary,
             "judged_at": self.judged_at,
-            "model_votes": self.model_votes or None,  # 單模型判決為空 → 存 NULL（僅 ensemble 落非空）
+            "model_votes": self.model_votes
+            or None,  # 單模型判決為空 → 存 NULL（僅 ensemble 落非空）
         }
-
-

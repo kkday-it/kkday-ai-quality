@@ -45,13 +45,23 @@ def attribution_overview(
     _GRAN_LEN = {"year": 4, "month": 7, "day": 10}
     glen = _GRAN_LEN.get(granularity, 7)
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
-    _ALL_TABLES = (T.product_reviews, T.conversations, T.freshdesk_tickets, T.app_feedback, T.mixpanel_tracker)
+    _ALL_TABLES = (
+        T.product_reviews,
+        T.conversations,
+        T.freshdesk_tickets,
+        T.app_feedback,
+        T.mixpanel_tracker,
+    )
 
     def _by_tier(conf_rows) -> dict:
         bt = {"auto_accept": 0, "jury": 0, "needs_review": 0}
         for r in conf_rows:
             conf = r["confidence"]
-            bt["auto_accept" if conf >= tiers["auto_accept"] else ("jury" if conf >= tiers["jury_low"] else "needs_review")] += 1
+            bt[
+                "auto_accept"
+                if conf >= tiers["auto_accept"]
+                else ("jury" if conf >= tiers["jury_low"] else "needs_review")
+            ] += 1
         return bt
 
     with T.get_engine().connect() as c:
@@ -71,35 +81,130 @@ def attribution_overview(
                 if date_to:
                     stmt = stmt.where(date_col < date_to + "~")
                 if _v_codes:
-                    stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes))
+                    stmt = stmt.where(
+                        sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes)
+                    )
                 return stmt
 
             total_intake = c.execute(_src(select(cnt).select_from(tbl))).scalar() or 0
-            judged = c.execute(_src(select(cnt).select_from(j).where(jg.c.finding_id.isnot(None)))).scalar() or 0
-            attributed = c.execute(_src(select(cnt).select_from(j).where(l1c.isnot(None), l1c != ""))).scalar() or 0
-            by_polarity_raw = c.execute(_src(select(pol.label("k"), cnt).select_from(j).where(jg.c.finding_id.isnot(None)).group_by(pol).order_by(cnt.desc()))).mappings().all()
-            by_l1_raw = c.execute(_src(select(l1c.label("code"), l1l.label("label"), cnt).select_from(j).where(l1c.isnot(None), l1c != "").group_by(l1c, l1l).order_by(cnt.desc()))).mappings().all()
-            by_score_raw = (
-                c.execute(_src(select(score_col.label("score"), cnt).select_from(tbl).where(score_col.isnot(None)).group_by(score_col).order_by(score_col.asc()))).mappings().all()
-                if score_col is not None else []
+            judged = (
+                c.execute(
+                    _src(select(cnt).select_from(j).where(jg.c.finding_id.isnot(None)))
+                ).scalar()
+                or 0
             )
-            by_tier = _by_tier(c.execute(_src(select(jg.c.conf_value.label("confidence")).select_from(j).where(jg.c.conf_value.isnot(None)))).mappings())
+            attributed = (
+                c.execute(
+                    _src(select(cnt).select_from(j).where(l1c.isnot(None), l1c != ""))
+                ).scalar()
+                or 0
+            )
+            by_polarity_raw = (
+                c.execute(
+                    _src(
+                        select(pol.label("k"), cnt)
+                        .select_from(j)
+                        .where(jg.c.finding_id.isnot(None))
+                        .group_by(pol)
+                        .order_by(cnt.desc())
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_l1_raw = (
+                c.execute(
+                    _src(
+                        select(l1c.label("code"), l1l.label("label"), cnt)
+                        .select_from(j)
+                        .where(l1c.isnot(None), l1c != "")
+                        .group_by(l1c, l1l)
+                        .order_by(cnt.desc())
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_score_raw = (
+                c.execute(
+                    _src(
+                        select(score_col.label("score"), cnt)
+                        .select_from(tbl)
+                        .where(score_col.isnot(None))
+                        .group_by(score_col)
+                        .order_by(score_col.asc())
+                    )
+                )
+                .mappings()
+                .all()
+                if score_col is not None
+                else []
+            )
+            by_tier = _by_tier(
+                c.execute(
+                    _src(
+                        select(jg.c.conf_value.label("confidence"))
+                        .select_from(j)
+                        .where(jg.c.conf_value.isnot(None))
+                    )
+                ).mappings()
+            )
             # substr 僅用於「月/日分組 label」（GROUP BY 顯示分組，非 WHERE 過濾）——過濾已全走上方
             # sargable 比較（見 _src），此處 substr 不影響索引使用，勿誤判為效能 bug 改寫。
             ym = func.substr(date_col, 1, glen).label("ym")
-            trend_rows = c.execute(_src(
-                select(ym, func.count(jg.c.finding_id).label("judged"), func.count().filter(pol == "negative").label("negative"))
-                .select_from(j).where(date_col.isnot(None), date_col != "", jg.c.finding_id.isnot(None)).group_by(ym).order_by(ym.asc())
-            )).mappings().all()
+            trend_rows = (
+                c.execute(
+                    _src(
+                        select(
+                            ym,
+                            func.count(jg.c.finding_id).label("judged"),
+                            func.count().filter(pol == "negative").label("negative"),
+                        )
+                        .select_from(j)
+                        .where(date_col.isnot(None), date_col != "", jg.c.finding_id.isnot(None))
+                        .group_by(ym)
+                        .order_by(ym.asc())
+                    )
+                )
+                .mappings()
+                .all()
+            )
         else:
             # 縱覽（source=None，無 vertical）：judgments 直接聚合（含全 5 來源）；total_intake=5 表和；無 date/星等/趨勢
-            total_intake = sum((c.execute(select(func.count()).select_from(t)).scalar() or 0) for t in _ALL_TABLES)
+            total_intake = sum(
+                (c.execute(select(func.count()).select_from(t)).scalar() or 0) for t in _ALL_TABLES
+            )
             judged = c.execute(select(cnt).select_from(jg)).scalar() or 0
-            attributed = c.execute(select(cnt).select_from(jg).where(l1c.isnot(None), l1c != "")).scalar() or 0
-            by_polarity_raw = c.execute(select(pol.label("k"), cnt).select_from(jg).group_by(pol).order_by(cnt.desc())).mappings().all()
-            by_l1_raw = c.execute(select(l1c.label("code"), l1l.label("label"), cnt).select_from(jg).where(l1c.isnot(None), l1c != "").group_by(l1c, l1l).order_by(cnt.desc())).mappings().all()
+            attributed = (
+                c.execute(select(cnt).select_from(jg).where(l1c.isnot(None), l1c != "")).scalar()
+                or 0
+            )
+            by_polarity_raw = (
+                c.execute(
+                    select(pol.label("k"), cnt).select_from(jg).group_by(pol).order_by(cnt.desc())
+                )
+                .mappings()
+                .all()
+            )
+            by_l1_raw = (
+                c.execute(
+                    select(l1c.label("code"), l1l.label("label"), cnt)
+                    .select_from(jg)
+                    .where(l1c.isnot(None), l1c != "")
+                    .group_by(l1c, l1l)
+                    .order_by(cnt.desc())
+                )
+                .mappings()
+                .all()
+            )
             by_score_raw = []
-            by_tier = _by_tier(c.execute(select(jg.c.conf_value.label("confidence")).select_from(jg).where(jg.c.conf_value.isnot(None))).mappings())
+            by_tier = _by_tier(
+                c.execute(
+                    select(jg.c.conf_value.label("confidence"))
+                    .select_from(jg)
+                    .where(jg.c.conf_value.isnot(None))
+                ).mappings()
+            )
             trend_rows = []
 
     by_polarity = [
@@ -203,7 +308,9 @@ def attribution_breakdown(
 
     with T.get_engine().connect() as c:
         l1_label = (
-            c.execute(select(l1l).select_from(frm).where(l1c == l1, l1l.isnot(None)).limit(1)).scalar()
+            c.execute(
+                select(l1l).select_from(frm).where(l1c == l1, l1l.isnot(None)).limit(1)
+            ).scalar()
             or l1
         )
         by_l2 = _rows(c, _level(l2c, l2l))
@@ -232,23 +339,33 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
     item = jg.c.source + ":" + jg.c.source_id  # distinct 進線鍵（1:N 多歸因去重）
     ym = func.substr(jg.c.judged_at, 1, 7).label("ym")
     with T.get_engine().connect() as c:
-        rows = c.execute(
-            select(
-                ym,
-                func.count(distinct(item)).label("judged"),
-                func.count(distinct(item)).filter(jg.c.l1_code == "content").label("content"),
+        rows = (
+            c.execute(
+                select(
+                    ym,
+                    func.count(distinct(item)).label("judged"),
+                    func.count(distinct(item)).filter(jg.c.l1_code == "content").label("content"),
+                )
+                .where(jg.c.judged_at.isnot(None), jg.c.judged_at != "")
+                .group_by(ym)
+                .order_by(ym.asc())
             )
-            .where(jg.c.judged_at.isnot(None), jg.c.judged_at != "")
-            .group_by(ym)
-            .order_by(ym.asc())
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         judged_items = c.execute(select(func.count(distinct(item)))).scalar() or 0
-        attributed_rows = c.execute(
-            select(func.count()).select_from(jg).where(jg.c.l1_code.isnot(None), jg.c.l1_code != "")
-        ).scalar() or 0
-        content_items = c.execute(
-            select(func.count(distinct(item))).where(jg.c.l1_code == "content")
-        ).scalar() or 0
+        attributed_rows = (
+            c.execute(
+                select(func.count())
+                .select_from(jg)
+                .where(jg.c.l1_code.isnot(None), jg.c.l1_code != "")
+            ).scalar()
+            or 0
+        )
+        content_items = (
+            c.execute(select(func.count(distinct(item))).where(jg.c.l1_code == "content")).scalar()
+            or 0
+        )
     monthly = [
         {
             "ym": r["ym"],
@@ -264,6 +381,8 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
             "judged_items": int(judged_items),
             "attributed_rows": int(attributed_rows),
             "content_items": int(content_items),
-            "content_share_pct": round(content_items / judged_items * 100, 2) if judged_items else 0.0,
+            "content_share_pct": round(content_items / judged_items * 100, 2)
+            if judged_items
+            else 0.0,
         },
     }

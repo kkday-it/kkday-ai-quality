@@ -34,6 +34,7 @@ LLM_MODEL_MIN_VERSION: str = _LLM_DEFAULTS.get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
 LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
 
+
 def qc_db_env_name(env_id: str | None) -> str:
     """回某 QC DB 環境（sit/stage）的 bootstrap database 名（測試連線/列舉 database 的起手庫）。
 
@@ -88,7 +89,9 @@ def _ensure_id(cfg: dict) -> dict:
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get("defaultModel", "gpt-5-mini"),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
+    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get(
+        "defaultModel", "gpt-5-mini"
+    ),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
     "thinking": "default",  # default | on | off
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
@@ -264,7 +267,9 @@ def _sanitize(cur: dict) -> None:
     """就地修正一致性：dangling active_id 回退首項/None；清除孤立 qc_passwords（config 已不存在）。"""
     llm_ids = {c.get("id") for c in cur.get("llm_configs") or []}
     if cur.get("active_llm_config_id") not in llm_ids:
-        cur["active_llm_config_id"] = cur["llm_configs"][0]["id"] if cur.get("llm_configs") else None
+        cur["active_llm_config_id"] = (
+            cur["llm_configs"][0]["id"] if cur.get("llm_configs") else None
+        )
     qc_ids = {c.get("id") for c in cur.get("qc_configs") or []}
     if cur.get("active_qc_config_id") not in qc_ids:
         cur["active_qc_config_id"] = cur["qc_configs"][0]["id"] if cur.get("qc_configs") else None
@@ -349,7 +354,9 @@ def masked(user_id: str) -> dict:
     cur = load_settings(user_id)
     cur["has_token"] = _has_active_token(cur)
     cur["has_qc_db_password"] = _has_active_qc_password(cur)
-    cur["provider_tokens"] = {p: _mask_secret(t) for p, t in (cur.get("provider_tokens") or {}).items()}
+    cur["provider_tokens"] = {
+        p: _mask_secret(t) for p, t in (cur.get("provider_tokens") or {}).items()
+    }
     cur["qc_passwords"] = {c: _mask_secret(p) for c, p in (cur.get("qc_passwords") or {}).items()}
     return cur
 

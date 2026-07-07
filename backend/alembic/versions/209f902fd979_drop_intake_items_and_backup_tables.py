@@ -5,6 +5,7 @@ Revises: 648f09878b62
 Create Date: 2026-07-04 09:19:22.875169
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -12,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '209f902fd979'
-down_revision: str | Sequence[str] | None = '648f09878b62'
+revision: str = "209f902fd979"
+down_revision: str | Sequence[str] | None = "648f09878b62"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

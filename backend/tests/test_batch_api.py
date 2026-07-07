@@ -1,4 +1,5 @@
 """③ OpenAI Batch API 封裝純函式測試（build_batch_line / build_batch_jsonl）：離線，不呼叫 OpenAI。"""
+
 import json
 
 from app.judge import batch_api

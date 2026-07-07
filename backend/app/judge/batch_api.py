@@ -8,6 +8,7 @@
 省成本定位：Batch −50% 與 prompt caching −50% 是不同機制、場景互補——caching 適即時（靜態法典前綴
 重用），Batch 適離線（可等 24h 的大批量）。build_* 為純函式可離線單元測；submit/poll/fetch 需 token。
 """
+
 from __future__ import annotations
 
 import json

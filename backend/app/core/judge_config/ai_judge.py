@@ -23,16 +23,32 @@ _domain_label: dict[str, str] = {}  # code → 中文域名（自 rule tree[0].l
 _domain_order: list[str] = []  # 域顯示順序（rule 檔名排序，穩定）
 _domain_excluded: set[str] = set()  # _meta.intake_excluded=true 的域（不進預判候選）
 _domain_action: dict[str, str] = {}  # code → recommended_action（自 rule _meta.recommended_action）
-_domain_owner: dict[str, str] = {}  # code → 負責單位（自 rule _meta.owner_role；值待業務填，空則不顯示）
-_cascade: list[dict[str, Any]] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域 code，L2/L3 value=C-code）
-_path_label: dict[str, str] = {}  # value（域 code / C-code）→ 可讀路徑「L1 › L2 › L3」（供標真值評分 prompt）
-_l1_judgment: dict[str, dict[str, Any]] = {}  # domain 機器值 → L1 域判準（canon/allow/forbid/正反例）；cascade Stage A 界線
-_l2_judgment: dict[str, dict[str, Any]] = {}  # L2 C-code（有 L3 者）→ L2 面向判準；cascade Stage B 界線
+_domain_owner: dict[
+    str, str
+] = {}  # code → 負責單位（自 rule _meta.owner_role；值待業務填，空則不顯示）
+_cascade: list[
+    dict[str, Any]
+] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域 code，L2/L3 value=C-code）
+_path_label: dict[
+    str, str
+] = {}  # value（域 code / C-code）→ 可讀路徑「L1 › L2 › L3」（供標真值評分 prompt）
+_l1_judgment: dict[
+    str, dict[str, Any]
+] = {}  # domain 機器值 → L1 域判準（canon/allow/forbid/正反例）；cascade Stage A 界線
+_l2_judgment: dict[
+    str, dict[str, Any]
+] = {}  # L2 C-code（有 L3 者）→ L2 面向判準；cascade Stage B 界線
 _loaded = False
 
 
 def _leaf_record(
-    node: dict[str, Any], l1_domain: str, l1_label: str, *, l2_code: str, l2_label: str, l3_label: str
+    node: dict[str, Any],
+    l1_domain: str,
+    l1_label: str,
+    *,
+    l2_code: str,
+    l2_label: str,
+    l3_label: str,
 ) -> dict[str, Any]:
     """組單一葉節點的攤平記錄（帶 L1/L2 上下文 + 判準欄位）。
 
@@ -93,12 +109,21 @@ def _flatten_l3(l1: dict[str, Any]) -> list[dict[str, Any]]:
         l2_label = l2.get("label", "")
         l2_children = l2.get("children") or []
         if not l2_children:  # L2 葉（面向即最終歸因層，不細分 L3）
-            out.append(_leaf_record(l2, l1_domain, l1_label, l2_code=l2_code, l2_label=l2_label, l3_label=""))
+            out.append(
+                _leaf_record(
+                    l2, l1_domain, l1_label, l2_code=l2_code, l2_label=l2_label, l3_label=""
+                )
+            )
             continue
         for l3 in l2_children:  # L3 葉（最深層，恆為葉）
             out.append(
                 _leaf_record(
-                    l3, l1_domain, l1_label, l2_code=l2_code, l2_label=l2_label, l3_label=l3.get("label", "")
+                    l3,
+                    l1_domain,
+                    l1_label,
+                    l2_code=l2_code,
+                    l2_label=l2_label,
+                    l3_label=l3.get("label", ""),
                 )
             )
     return out

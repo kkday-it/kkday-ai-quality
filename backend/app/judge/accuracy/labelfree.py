@@ -32,13 +32,15 @@ def _load_attributed() -> list[dict[str, Any]] | None:
 
         from app.core import ai_judge  # noqa: PLC0415
         from app.core.db import tables as T  # noqa: PLC0415
+
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:
             jg = T.judgments
             # 攤平後判決欄皆 typed 欄，直接 select（l3_code / conf_raw / 關聯鍵）
             rows = c.execute(
-                select(jg.c.finding_id, jg.c.source_id, jg.c.l3_code, jg.c.conf_raw)
-                .where(jg.c.l3_code.isnot(None), jg.c.l3_code != "", jg.c.conf_raw.isnot(None))
+                select(jg.c.finding_id, jg.c.source_id, jg.c.l3_code, jg.c.conf_raw).where(
+                    jg.c.l3_code.isnot(None), jg.c.l3_code != "", jg.c.conf_raw.isnot(None)
+                )
             )
             for fid, sid, code, raw_conf in rows:
                 # l3_candidates 於攤平時移除（實測全庫恆空，候選機制未落庫）→ candidates 恆空，行為不變
@@ -104,7 +106,10 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
         from cleanlab.filter import find_label_issues  # noqa: PLC0415
         from cleanlab.rank import get_label_quality_scores  # noqa: PLC0415
     except ImportError as exc:
-        return {"status": "skipped", "reason": f"cleanlab/numpy 未安裝（pip install -e '.[accuracy]'）：{exc}"}
+        return {
+            "status": "skipped",
+            "reason": f"cleanlab/numpy 未安裝（pip install -e '.[accuracy]'）：{exc}",
+        }
 
     built = _build_matrix(findings)
     if built is None:
@@ -144,8 +149,10 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
         a["n"] += 1
         a["q_sum"] += float(quality[i])
     worst_l3 = sorted(
-        ({"l3_code": c, "n": a["n"], "avg_quality": round(a["q_sum"] / a["n"], 3)}
-         for c, a in l3_agg.items()),
+        (
+            {"l3_code": c, "n": a["n"], "avg_quality": round(a["q_sum"] / a["n"], 3)}
+            for c, a in l3_agg.items()
+        ),
         key=lambda r: r["avg_quality"],
     )[:20]
 
@@ -201,16 +208,31 @@ def _write_md(rep: dict[str, Any]) -> str:
         f"- 樣本數 **{rep['n']}** · 類別數 **{rep['k']}** · 估可疑標註 **{rep['est_issue_count']}**"
         f" · 一致性代理準確度 **{rep['proxy_accuracy']:.1%}**"
     )
-    lines += ["", "## 各域一致性（品質分均值升序，低者最可疑）", "",
-              "| 域 | 樣本 | 品質分均值 | 疑問率 |", "|---|---|---|---|"]
+    lines += [
+        "",
+        "## 各域一致性（品質分均值升序，低者最可疑）",
+        "",
+        "| 域 | 樣本 | 品質分均值 | 疑問率 |",
+        "|---|---|---|---|",
+    ]
     for dom, s in rep["by_domain"].items():
         lines.append(f"| {dom} | {s['n']} | {s['avg_quality']} | {s['issue_rate']} |")
-    lines += ["", "## 最可疑 L3（品質分均值最低 20 類）", "",
-              "| L3 code | 樣本 | 品質分均值 |", "|---|---|---|"]
+    lines += [
+        "",
+        "## 最可疑 L3（品質分均值最低 20 類）",
+        "",
+        "| L3 code | 樣本 | 品質分均值 |",
+        "|---|---|---|",
+    ]
     for r in rep["worst_l3"]:
         lines.append(f"| {r['l3_code']} | {r['n']} | {r['avg_quality']} |")
-    lines += ["", "## 低品質樣本人審清單（品質分最低 50 筆）", "",
-              "| finding_id | L3 code | 原始信心 | 品質分 | 疑問 |", "|---|---|---|---|---|"]
+    lines += [
+        "",
+        "## 低品質樣本人審清單（品質分最低 50 筆）",
+        "",
+        "| finding_id | L3 code | 原始信心 | 品質分 | 疑問 |",
+        "|---|---|---|---|---|",
+    ]
     for r in rep["low_quality_samples"]:
         flag = "⚠️" if r["is_issue"] else ""
         lines.append(

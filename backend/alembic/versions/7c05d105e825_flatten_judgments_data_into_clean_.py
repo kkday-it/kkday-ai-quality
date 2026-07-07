@@ -74,8 +74,7 @@ def upgrade() -> None:
     """攤平 data → 分組物件 → drop 重複/死欄 → 建 JSONB expression 索引。"""
     op.execute(_REGROUP_SQL)
     op.execute(
-        "ALTER TABLE judgments "
-        + ", ".join(f"DROP COLUMN IF EXISTS {c}" for c in _DROP_COLS)
+        "ALTER TABLE judgments " + ", ".join(f"DROP COLUMN IF EXISTS {c}" for c in _DROP_COLS)
     )
     for name, expr in _INDEXES.items():
         op.execute(f"CREATE INDEX IF NOT EXISTS {name} ON judgments {expr}")

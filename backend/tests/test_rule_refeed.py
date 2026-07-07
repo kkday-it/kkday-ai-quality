@@ -1,4 +1,5 @@
 """rule 反哺純函式測試（find_boundary_cases / update_node_canon）：合成資料，不碰 DB。"""
+
 from app.judge import rule_refeed
 
 
@@ -13,7 +14,10 @@ def test_find_boundary_cases_watch_priority_and_examples():
     ]
     r = rule_refeed.find_boundary_cases(rows)
     assert r[0] == {
-        "true": "content", "pred": "supplier", "count": 2, "watch": True,
+        "true": "content",
+        "pred": "supplier",
+        "count": 2,
+        "watch": True,
         "examples": ["描述不符", "寫的和實際不一樣"],
     }
     assert any(x["pred"] == "quality" and x["count"] == 1 and x["watch"] is False for x in r)
@@ -34,11 +38,22 @@ def test_find_boundary_cases_min_count_filter():
 def test_update_node_canon_targets_only_canon_and_is_pure():
     """遞迴找 code 節點只改 canon，不動 allow/forbid/其他欄；深拷貝原物件不變。"""
     content = {
-        "code": "C-1", "level": 1,
+        "code": "C-1",
+        "level": 1,
         "children": [
-            {"code": "C-1-1", "level": 2, "children": [
-                {"code": "C-1-1-4", "level": 3, "canon": "舊定義", "allow": ["x"], "forbid": ["y"]},
-            ]},
+            {
+                "code": "C-1-1",
+                "level": 2,
+                "children": [
+                    {
+                        "code": "C-1-1-4",
+                        "level": 3,
+                        "canon": "舊定義",
+                        "allow": ["x"],
+                        "forbid": ["y"],
+                    },
+                ],
+            },
         ],
     }
     new, hit = rule_refeed.update_node_canon(content, "C-1-1-4", "新定義")

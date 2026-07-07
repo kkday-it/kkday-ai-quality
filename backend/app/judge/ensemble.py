@@ -7,6 +7,7 @@ confidence-gated：只有主判決信心低於 auto_accept 閾值的 finding 才
 投票單位＝L1 歸因域（判決為多歸因、action/owner 為域級）。合併輸出：聯合判決（每保留域一條）+ 一致度
 （agreement，label-free 準確率代理）+ 分歧旗標（disputed，交 arbiter 仲裁）+ 攤平票（model_votes 落庫）。
 """
+
 from __future__ import annotations
 
 from collections import Counter

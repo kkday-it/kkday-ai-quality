@@ -72,7 +72,9 @@ def update_batch_inserted(batch_id: str, inserted_count: int) -> None:
     """回填批次實際落庫筆數（背景上傳 job 逐塊處理完後更新，使批次記錄準確）。"""
     with T.get_engine().begin() as c:
         c.execute(
-            T.batches.update().where(T.batches.c.batch_id == batch_id).values(inserted_count=inserted_count)
+            T.batches.update()
+            .where(T.batches.c.batch_id == batch_id)
+            .values(inserted_count=inserted_count)
         )
 
 

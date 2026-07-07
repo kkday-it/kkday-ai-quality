@@ -5,18 +5,19 @@ Revises: c7ae2e2be254
 Create Date: 2026-07-01 00:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '3771110d1d2d'
-down_revision: Union[str, Sequence[str], None] = 'c7ae2e2be254'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "3771110d1d2d"
+down_revision: str | Sequence[str] | None = "c7ae2e2be254"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -56,9 +57,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("source_record_id", name="uq_product_reviews_source_record_id"),
         sa.UniqueConstraint("item_id", name="uq_product_reviews_item_id"),
     )
-    op.create_index(
-        "idx_product_reviews_score", "product_reviews", ["score"], unique=False
-    )
+    op.create_index("idx_product_reviews_score", "product_reviews", ["score"], unique=False)
     op.create_index(
         "idx_product_reviews_category_main",
         "product_reviews",
@@ -68,9 +67,7 @@ def upgrade() -> None:
     op.create_index(
         "idx_product_reviews_occurred_at", "product_reviews", ["occurred_at"], unique=False
     )
-    op.create_index(
-        "idx_product_reviews_prod_oid", "product_reviews", ["prod_oid"], unique=False
-    )
+    op.create_index("idx_product_reviews_prod_oid", "product_reviews", ["prod_oid"], unique=False)
 
 
 def downgrade() -> None:

@@ -61,7 +61,9 @@ def run() -> dict[str, Any]:
         json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     sup = supervised_report()
-    (_REPORTS_DIR / "accuracy_supervised.md").write_text(_write_supervised_md(sup), encoding="utf-8")
+    (_REPORTS_DIR / "accuracy_supervised.md").write_text(
+        _write_supervised_md(sup), encoding="utf-8"
+    )
     (_REPORTS_DIR / "accuracy_supervised.json").write_text(
         json.dumps(sup, ensure_ascii=False, indent=2), encoding="utf-8"
     )

@@ -2,6 +2,7 @@
 
 judgment / schema / global_rule / product_vertical 分支於套歸因 schema（需 DB）前即 return，故純函式可測、免 DB。
 """
+
 import json
 
 import pytest
@@ -58,4 +59,7 @@ def test_audit_sample_rate_out_of_range_or_non_number_rejected(judgment_seed, ra
 def test_audit_sample_rate_boundaries_pass(judgment_seed) -> None:
     """audit_sample_rate 邊界 0 與 1 皆合法（全不抽樣 / 全抽樣）。"""
     for rate in (0, 1, 0.5):
-        _validate("judgment", {**judgment_seed, "auto_confirm": {"enabled": False, "audit_sample_rate": rate}})
+        _validate(
+            "judgment",
+            {**judgment_seed, "auto_confirm": {"enabled": False, "audit_sample_rate": rate}},
+        )

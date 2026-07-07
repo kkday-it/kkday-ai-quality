@@ -5,16 +5,18 @@ Revises: c4f1a7d20e83
 Create Date: 2026-07-06
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d5a2f9c34b16"
-down_revision: Union[str, Sequence[str], None] = "c4f1a7d20e83"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "c4f1a7d20e83"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -28,7 +30,9 @@ def upgrade() -> None:
         sa.Column("finding_id", sa.Text(), nullable=False),
         sa.Column("author", sa.Text(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_finding_notes_finding", "finding_notes", ["finding_id"])

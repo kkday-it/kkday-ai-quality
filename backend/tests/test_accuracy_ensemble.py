@@ -1,4 +1,5 @@
 """多 model 聯合判決比較（accuracy.analyze_model_agreement）純函式測試：合成 preds + true，不碰 DB/LLM。"""
+
 from app.judge import accuracy
 
 
@@ -25,11 +26,17 @@ def test_watch_confusion_when_majority_wrong():
     preds = {"a": ["content"] * 40, "b": ["content"] * 40, "c": true[:]}
     r = accuracy.analyze_model_agreement(preds, true)
     assert r["ensemble_accuracy"] == 0.5
-    assert any(w["true"] == "supplier" and w["pred"] == "content" and w["count"] == 20 for w in r["watch_confusion"])
+    assert any(
+        w["true"] == "supplier" and w["pred"] == "content" and w["count"] == 20
+        for w in r["watch_confusion"]
+    )
 
 
 def test_skipped_too_few_models_or_labels():
     """單 model 或樣本 < 30 → skipped（一致性/準確率不穩不出數）。"""
-    assert accuracy.analyze_model_agreement({"a": ["content"] * 40}, ["content"] * 40)["status"] == "skipped"
+    assert (
+        accuracy.analyze_model_agreement({"a": ["content"] * 40}, ["content"] * 40)["status"]
+        == "skipped"
+    )
     two_small = {"a": ["content"] * 10, "b": ["content"] * 10}
     assert accuracy.analyze_model_agreement(two_small, ["content"] * 10)["status"] == "skipped"

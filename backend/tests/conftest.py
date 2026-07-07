@@ -54,3 +54,13 @@ def temp_db():
             c.execute(tbl.delete())
     yield
     T._engine = saved
+
+
+@pytest.fixture(autouse=True)
+def _no_llm_exact_cache(monkeypatch):
+    """全測試預設停用 LLM exact-cache：測試間共用相同假 prompt，開快取會互相汙染判斷
+    （前測寫入→後測命中短路 _complete，assertions 全歪）且寫髒真實 data/llm_cache。
+    快取行為專屬測試自行以 tmp 目錄重新開啟（見 test_llm_gateway 的 cache 組）。"""
+    from app.core.config import env as _env
+
+    monkeypatch.setattr(_env, "llm_exact_cache", False)

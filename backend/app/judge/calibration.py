@@ -98,7 +98,11 @@ def fit_curve(confidences: Any, correct: Any, method: str = "isotonic") -> dict:
         from sklearn.linear_model import LogisticRegression
 
         lr = LogisticRegression().fit(conf.reshape(-1, 1), corr)
-        return {"method": "platt", "coef": float(lr.coef_[0][0]), "intercept": float(lr.intercept_[0])}
+        return {
+            "method": "platt",
+            "coef": float(lr.coef_[0][0]),
+            "intercept": float(lr.intercept_[0]),
+        }
     raise ValueError(f"未知校準 method：{method}")
 
 

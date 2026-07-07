@@ -9,6 +9,7 @@ canon → 寫回 DB active 版（`refeed_node_canon` → `save_rule_version` + `
 故本模組聚焦精煉 canon（立即有效）。canon 濃縮由呼叫端提供（真環境可接 LLM），本模組負責「挑候選」與
 「安全寫回 + 熱重載」兩端純機制，故純函式部分可離線單元測。
 """
+
 from __future__ import annotations
 
 import copy
@@ -77,7 +78,9 @@ def update_node_canon(content: dict, code: str, new_canon: str) -> tuple[dict, b
     return clone, hit[0]
 
 
-def refeed_node_canon(rule_code: str, node_code: str, new_canon: str, *, note: str = "", author: str = "") -> dict:
+def refeed_node_canon(
+    rule_code: str, node_code: str, new_canon: str, *, note: str = "", author: str = ""
+) -> dict:
     """把精煉後的 canon 寫回某 rule node 的 DB active 版並熱重載（反哺飛輪的寫入端）。
 
     取 rule_code 的 active content（無 DB 版則取 default）→ 遞迴改 node_code 的 canon → save 新 active 版
@@ -104,6 +107,8 @@ def refeed_node_canon(rule_code: str, node_code: str, new_canon: str, *, note: s
     new_content, updated = update_node_canon(content, node_code, new_canon)
     if not updated:
         return {"rule_code": rule_code, "version": None, "node_code": node_code, "updated": False}
-    saved = db.save_rule_version(rule_code, new_content, note=note or f"反哺精煉 {node_code} canon", author=author)
+    saved = db.save_rule_version(
+        rule_code, new_content, note=note or f"反哺精煉 {node_code} canon", author=author
+    )
     ai_judge.reload()  # 熱重載：_l3_catalog 下次判決取新 canon 生效
     return {**saved, "node_code": node_code, "updated": True}

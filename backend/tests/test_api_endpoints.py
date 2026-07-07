@@ -40,8 +40,14 @@ def test_register_returns_token_and_public_user(client) -> None:
 
 
 def test_register_rejects_bad_email_or_short_password(client) -> None:
-    assert client.post("/api/auth/register", json={"email": "noat", "password": "secret1"}).status_code == 400
-    assert client.post("/api/auth/register", json={"email": "a@b.com", "password": "x"}).status_code == 400
+    assert (
+        client.post("/api/auth/register", json={"email": "noat", "password": "secret1"}).status_code
+        == 400
+    )
+    assert (
+        client.post("/api/auth/register", json={"email": "a@b.com", "password": "x"}).status_code
+        == 400
+    )
 
 
 def test_register_duplicate_email_conflict(client) -> None:
@@ -52,8 +58,18 @@ def test_register_duplicate_email_conflict(client) -> None:
 
 def test_login_success_and_wrong_password(client) -> None:
     client.post("/api/auth/register", json={"email": "u@kkday.com", "password": "secret1"})
-    assert client.post("/api/auth/login", json={"email": "u@kkday.com", "password": "secret1"}).status_code == 200
-    assert client.post("/api/auth/login", json={"email": "u@kkday.com", "password": "wrong"}).status_code == 401
+    assert (
+        client.post(
+            "/api/auth/login", json={"email": "u@kkday.com", "password": "secret1"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/auth/login", json={"email": "u@kkday.com", "password": "wrong"}
+        ).status_code
+        == 401
+    )
 
 
 def test_me_requires_auth(client, auth_headers) -> None:
@@ -72,18 +88,37 @@ def test_settings_masked_with_stub_mode(client, auth_headers) -> None:
 # ── findings：狀態 / 真值標註 ──────────────────────────────────────
 def _seed_one_finding() -> str:
     """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態/真值端點成功路徑測試）。"""
-    db.insert_source_batch("product_reviews", [{"rec_oid": "R1", "create_date": "2026-06-01 10:00:00", "prod_oid": "P1", "order_snap_json": "{}"}])
+    db.insert_source_batch(
+        "product_reviews",
+        [
+            {
+                "rec_oid": "R1",
+                "create_date": "2026-06-01 10:00:00",
+                "prod_oid": "P1",
+                "order_snap_json": "{}",
+            }
+        ],
+    )
     fid = "fd_product_reviews_R1__content"
     db.replace_source_findings(
         "product_reviews",
         "R1",
-        [TicketFinding(finding_id=fid, ticket_id="R1", dimension="non_content", recommended_action="no_action")],
+        [
+            TicketFinding(
+                finding_id=fid,
+                ticket_id="R1",
+                dimension="non_content",
+                recommended_action="no_action",
+            )
+        ],
     )
     return fid
 
 
 def test_patch_finding_status_not_found_and_success(client, auth_headers) -> None:
-    assert client.patch("/api/findings/nope/status", json={"status": "confirmed"}).status_code == 404
+    assert (
+        client.patch("/api/findings/nope/status", json={"status": "confirmed"}).status_code == 404
+    )
     fid = _seed_one_finding()
     r = client.patch(f"/api/findings/{fid}/status", json={"status": "confirmed"})
     assert r.status_code == 200 and r.json()["status"] == "confirmed"
@@ -95,7 +130,10 @@ def test_patch_finding_status_rejects_invalid_value(client) -> None:
 
 
 def test_patch_true_label_not_found_and_success(client) -> None:
-    assert client.patch("/api/findings/nope/true_label", json={"true_label": "content"}).status_code == 404
+    assert (
+        client.patch("/api/findings/nope/true_label", json={"true_label": "content"}).status_code
+        == 404
+    )
     fid = _seed_one_finding()
     r = client.patch(f"/api/findings/{fid}/true_label", json={"true_label": "content"})
     assert r.status_code == 200 and r.json()["true_label"] == "content"

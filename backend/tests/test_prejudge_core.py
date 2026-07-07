@@ -59,7 +59,9 @@ def test_attribute_when_parses_config(monkeypatch) -> None:
     """極性閘門 config 解析：清單/legacy 字串皆收；只認 negative/neutral；缺失回退 {negative}。"""
     from app.core import global_rule
 
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]})
+    monkeypatch.setattr(
+        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+    )
     assert prejudge._attribute_when() == frozenset({"negative", "neutral"})
     # legacy 單值字串（attribute_only_when）
     monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_only_when": "negative"})
@@ -75,22 +77,36 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     """gate 含 neutral 時：混合中性評論進歸因；有問題點→歸因列帶 polarity=neutral，無→non_issue。"""
     from app.core import global_rule
 
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]})
+    monkeypatch.setattr(
+        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+    )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: "neutral")
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     attr = {
-        "l1_domain_code": "supplier", "l1_label": "供應商履約", "l2_code": "C-3-2",
-        "l2_label": "成團履約", "l3_code": "C-3-2-1", "l3_label": "行程縮水",
-        "confidence": 0.85, "raw_confidence": 0.85, "evidence_quote": "船沒搭到", "l3_candidates": [],
+        "l1_domain_code": "supplier",
+        "l1_label": "供應商履約",
+        "l2_code": "C-3-2",
+        "l2_label": "成團履約",
+        "l3_code": "C-3-2-1",
+        "l3_label": "行程縮水",
+        "confidence": 0.85,
+        "raw_confidence": 0.85,
+        "evidence_quote": "船沒搭到",
+        "l3_candidates": [],
     }
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [dict(attr)])
-    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t1", "content": "整體很棒，只是船沒搭到"}, model="m")
+    fs = prejudge.to_findings(
+        {"source": "product_reviews", "source_id": "t1", "content": "整體很棒，只是船沒搭到"},
+        model="m",
+    )
     assert len(fs) == 1 and fs[0].polarity == "neutral" and fs[0].l1_domain_code == "supplier"
     assert fs[0].judgment_stage == "judged"  # 有 L3+高信心：與負向同規則派生
     # 混合中性但找不到具體問題點 → 純 non_issue（judged，非 pending_data）
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [])
-    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t2", "content": "整體很棒"}, model="m")
+    fs = prejudge.to_findings(
+        {"source": "product_reviews", "source_id": "t2", "content": "整體很棒"}, model="m"
+    )
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].judgment_stage == "judged"
 
 
@@ -100,7 +116,12 @@ def test_resolve_attrs_min_confidence_gate(monkeypatch, fixed_config) -> None:
 
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
-    low = {"l1_domain_code": "product_quality", "l2_code": "C-2-1", "l3_code": "", "confidence": 0.09}
+    low = {
+        "l1_domain_code": "product_quality",
+        "l2_code": "C-2-1",
+        "l3_code": "",
+        "confidence": 0.09,
+    }
     ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
     monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(low), dict(ok)])
     monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
@@ -116,7 +137,9 @@ def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
     from app.core import global_rule
 
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": True})
+    monkeypatch.setattr(
+        global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": True}
+    )
     monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
     calls: list[frozenset] = []
 
@@ -136,8 +159,14 @@ def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
     # Stage B 棄權（空回）同樣觸發重路由（棄權=域選錯最常見訊號）
     calls.clear()
     monkeypatch.setattr(
-        prejudge, "_stage_b",
-        lambda item, text, d, model: {"l1_domain_code": "", "l2_code": "", "l3_code": "", "confidence": 0.5}
+        prejudge,
+        "_stage_b",
+        lambda item, text, d, model: {
+            "l1_domain_code": "",
+            "l2_code": "",
+            "l3_code": "",
+            "confidence": 0.5,
+        }
         if d == "product_quality"
         else {"l1_domain_code": d, "l2_code": "", "l3_code": "", "confidence": 0.8},
     )
@@ -145,7 +174,9 @@ def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
     assert [a["l1_domain_code"] for a in out] == ["customer"] and len(calls) == 2
     # 重路由關閉 → 只跑一輪，低信心域被閘門殺掉、不重試
     calls.clear()
-    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": False})
+    monkeypatch.setattr(
+        global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": False}
+    )
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert out == [] and len(calls) == 1
 
@@ -156,11 +187,14 @@ def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
 
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(
-        global_rule, "cascade",
+        global_rule,
+        "cascade",
         lambda: {"enabled": True, "stage_a_level": "l1l2", "reroute_on_low_conf": True},
     )
     monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
-    monkeypatch.setattr(prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-1": "customer"})
+    monkeypatch.setattr(
+        prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-1": "customer"}
+    )
     calls: list[frozenset] = []
 
     def fake_l2s(text, model, max_n, polarity="negative", exclude=frozenset()):
@@ -172,7 +206,12 @@ def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
     def fake_stage_b(item, text, domain, model, l2_code=""):
         seen_b.append((domain, l2_code))
         conf = 0.1 if l2_code == "C-3-4" else 0.85
-        return {"l1_domain_code": domain if conf >= 0.2 else "", "l2_code": l2_code, "l3_code": "", "confidence": conf}
+        return {
+            "l1_domain_code": domain if conf >= 0.2 else "",
+            "l2_code": l2_code,
+            "l3_code": "",
+            "confidence": conf,
+        }
 
     monkeypatch.setattr(prejudge, "_stage_a_l2s_multi", fake_l2s)
     monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
@@ -182,7 +221,9 @@ def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
     assert len(calls) == 2 and "C-3-4" in calls[1]  # 重路由排除集為 L2 code
 
 
-def test_to_findings_gate_excludes_neutral_when_config_negative_only(monkeypatch, fixed_config) -> None:
+def test_to_findings_gate_excludes_neutral_when_config_negative_only(
+    monkeypatch, fixed_config
+) -> None:
     """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
     from app.core import global_rule
 
@@ -192,7 +233,9 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(monkeypatch
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     called = []
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])
-    fs = prejudge.to_findings({"source": "product_reviews", "source_id": "t3", "content": "還行"}, model="m")
+    fs = prejudge.to_findings(
+        {"source": "product_reviews", "source_id": "t3", "content": "還行"}, model="m"
+    )
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and not called
 
 
@@ -306,10 +349,26 @@ def test_to_findings_unknown_polarity_insufficient(stub_engine) -> None:
 
 # 假 L3 節點解析（避開 ai_judge config 依賴，使斷言確定）。
 _L3_NODES = {
-    "L3-content": {"l1_domain_code": "content", "l1_label": "商品內容", "l2_code": "L2c", "l2_label": "描述", "l3_code": "L3-content", "l3_label": "不符"},
-    "L3-supplier": {"l1_domain_code": "supplier", "l1_label": "供應商", "l2_code": "L2s", "l2_label": "履約", "l3_code": "L3-supplier", "l3_label": "遲到"},
+    "L3-content": {
+        "l1_domain_code": "content",
+        "l1_label": "商品內容",
+        "l2_code": "L2c",
+        "l2_label": "描述",
+        "l3_code": "L3-content",
+        "l3_label": "不符",
+    },
+    "L3-supplier": {
+        "l1_domain_code": "supplier",
+        "l1_label": "供應商",
+        "l2_code": "L2s",
+        "l2_label": "履約",
+        "l3_code": "L3-supplier",
+        "l3_label": "遲到",
+    },
 }
-_EMPTY_NODE = {k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")}
+_EMPTY_NODE = {
+    k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
+}
 
 
 def _fake_sanitize(code: str, _cands) -> dict:
@@ -321,9 +380,13 @@ def finalize_env(monkeypatch, fixed_config):
     """固定 _finalize_attr 的 config 依賴（L3 解析 / 證據・abstain 政策），使斷言與 config 解耦。"""
     monkeypatch.setattr(prejudge, "_sanitize_l3", _fake_sanitize)
     monkeypatch.setattr(
-        prejudge.global_rule, "evidence_policy", lambda: {"require_quote_grounded": True, "l3_min_confidence": 0.5}
+        prejudge.global_rule,
+        "evidence_policy",
+        lambda: {"require_quote_grounded": True, "l3_min_confidence": 0.5},
     )
-    monkeypatch.setattr(prejudge.global_rule, "abstain_policy", lambda: {"l3": "allow_empty_low_evidence"})
+    monkeypatch.setattr(
+        prejudge.global_rule, "abstain_policy", lambda: {"l3": "allow_empty_low_evidence"}
+    )
 
 
 def test_evidence_grounded() -> None:
@@ -341,7 +404,12 @@ def test_finalize_attr_grounded_high_conf_keeps_l3(finalize_env) -> None:
     attr = prejudge._finalize_attr(
         {"source": "pr", "source_id": "R1"},
         "商品頁描述與實際完全不符很誤導",
-        {"l3_code": "L3-content", "confidence": 0.9, "evidence_quote": "描述與實際完全不符", "candidates": []},
+        {
+            "l3_code": "L3-content",
+            "confidence": 0.9,
+            "evidence_quote": "描述與實際完全不符",
+            "candidates": [],
+        },
         frozenset({"L3-content"}),
     )
     assert attr["l1_domain_code"] == "content"
@@ -354,7 +422,12 @@ def test_finalize_attr_ungrounded_drops_l3_and_presses_conf(finalize_env) -> Non
     attr = prejudge._finalize_attr(
         {"source": "pr", "source_id": "R1"},
         "完全不同的評論內容跟證據無關",
-        {"l3_code": "L3-content", "confidence": 0.9, "evidence_quote": "這是編造的假證據", "candidates": []},
+        {
+            "l3_code": "L3-content",
+            "confidence": 0.9,
+            "evidence_quote": "這是編造的假證據",
+            "candidates": [],
+        },
         frozenset({"L3-content"}),
     )
     assert attr["l1_domain_code"] == "content"  # L1/L2 保留
@@ -367,7 +440,12 @@ def test_finalize_attr_abstain_backfills_from_candidate(finalize_env) -> None:
     attr = prejudge._finalize_attr(
         {"source": "pr", "source_id": "R1"},
         "商品描述與實際不符誤導消費",
-        {"l3_code": "", "confidence": 0.7, "evidence_quote": "描述與實際不符", "candidates": [{"code": "L3-content", "score": 0.8}]},
+        {
+            "l3_code": "",
+            "confidence": 0.7,
+            "evidence_quote": "描述與實際不符",
+            "candidates": [{"code": "L3-content", "score": 0.8}],
+        },
         frozenset({"L3-content"}),
     )
     assert attr["l1_domain_code"] == "content"  # 從候選回填
@@ -380,7 +458,12 @@ def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
     attr = prejudge._finalize_attr(
         {"source": "pr", "source_id": "R1"},  # 無 order_oid
         "供應商臨時取消還遲到接送",
-        {"l3_code": "L3-supplier", "confidence": 0.95, "evidence_quote": "臨時取消還遲到", "candidates": []},
+        {
+            "l3_code": "L3-supplier",
+            "confidence": 0.95,
+            "evidence_quote": "臨時取消還遲到",
+            "candidates": [],
+        },
         frozenset({"L3-supplier"}),
     )
     assert attr["l1_domain_code"] == "supplier"
@@ -435,7 +518,9 @@ def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:
 # ── G1 自動確認路由（_route_status / to_findings status）──────────────────────
 def test_route_status_auto_confirm(monkeypatch) -> None:
     """auto_accept + judged → auto_confirmed（免人工佇列）；其餘 tier/stage → new。"""
-    monkeypatch.setattr(prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05})
+    monkeypatch.setattr(
+        prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05}
+    )
     monkeypatch.setattr(prejudge.random, "random", lambda: 0.5)  # > rate → 不抽樣
     assert prejudge._route_status("auto_accept", "judged") == "auto_confirmed"
     assert prejudge._route_status("jury", "judged") == "new"
@@ -445,20 +530,26 @@ def test_route_status_auto_confirm(monkeypatch) -> None:
 
 def test_route_status_sampled_back_to_new(monkeypatch) -> None:
     """auto_accept+judged 命中 audit_sample_rate 抽樣 → 回 new 交人工複核（防自動化偏誤）。"""
-    monkeypatch.setattr(prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05})
+    monkeypatch.setattr(
+        prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05}
+    )
     monkeypatch.setattr(prejudge.random, "random", lambda: 0.01)  # < rate → 抽樣
     assert prejudge._route_status("auto_accept", "judged") == "new"
 
 
 def test_route_status_disabled_falls_back_to_new(monkeypatch) -> None:
     """停用自動確認 → 一律 new（回退舊行為）。"""
-    monkeypatch.setattr(prejudge, "_auto_confirm_cfg", lambda: {"enabled": False, "audit_sample_rate": 0.05})
+    monkeypatch.setattr(
+        prejudge, "_auto_confirm_cfg", lambda: {"enabled": False, "audit_sample_rate": 0.05}
+    )
     assert prejudge._route_status("auto_accept", "judged") == "new"
 
 
 def test_to_findings_positive_routed_auto_confirmed(stub_engine, monkeypatch) -> None:
     """正向（auto_accept+judged）經 _route → status=auto_confirmed（不進人工佇列）。"""
-    monkeypatch.setattr(prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.0})
+    monkeypatch.setattr(
+        prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.0}
+    )
     out = prejudge.to_findings(_item(5, "整體體驗很好值得推薦給朋友"), model="gpt-5-nano")
     assert out[0].status == "auto_confirmed"
 

@@ -73,7 +73,11 @@ def _true_label_cfg() -> dict:
 def _evaluate_model(cfg_judgment: dict) -> str:
     """標真值評分模型：judgment.true_label.evaluate_model → 回退 prejudge.stage1_model → gpt-5-mini。"""
     tl = cfg_judgment.get("true_label", {})
-    return tl.get("evaluate_model") or cfg_judgment.get("prejudge", {}).get("stage1_model") or "gpt-5-mini"
+    return (
+        tl.get("evaluate_model")
+        or cfg_judgment.get("prejudge", {}).get("stage1_model")
+        or "gpt-5-mini"
+    )
 
 
 class EvaluateIn(BaseModel):
@@ -97,8 +101,12 @@ def evaluate_true_label(
         raise HTTPException(status_code=404, detail="finding not found")
     # 於 handler 同一 thread 注入該 user 的 active LLM 設定（否則 score_true_label 走預設/stub·用錯 model）；
     # 並設用量落庫情境（true_label 階段即時單列 insert）——修此端點原本漏設 settings/usage 的缺口。
-    app_settings.set_current(app_settings.effective_llm_dict(app_settings.load_settings(user["user_id"])))
-    _client.set_usage_context({"source": finding.get("source"), "source_id": finding.get("source_id")})
+    app_settings.set_current(
+        app_settings.effective_llm_dict(app_settings.load_settings(user["user_id"]))
+    )
+    _client.set_usage_context(
+        {"source": finding.get("source"), "source_id": finding.get("source_id")}
+    )
     text = _review_text(finding)
     if not text:
         raise HTTPException(status_code=422, detail="無法取得反饋原文，無法評分")
@@ -141,9 +149,17 @@ def patch_finding_true_label(finding_id: str, body: TrueLabelIn) -> dict:
     if setting and body.llm_conf is not None:
         original = finding.get("conf_value")
         threshold = float(_true_label_cfg().get("reason_required_drop", 0.15))
-        if original is not None and (original - body.llm_conf) > threshold and not (body.reason or "").strip():
-            raise HTTPException(status_code=422, detail="LLM 對此真值信心明顯偏低，需填寫修改理由才能標註")
-    db.update_finding_true_label(finding_id, body.true_label, reason=body.reason, llm_conf=body.llm_conf)
+        if (
+            original is not None
+            and (original - body.llm_conf) > threshold
+            and not (body.reason or "").strip()
+        ):
+            raise HTTPException(
+                status_code=422, detail="LLM 對此真值信心明顯偏低，需填寫修改理由才能標註"
+            )
+    db.update_finding_true_label(
+        finding_id, body.true_label, reason=body.reason, llm_conf=body.llm_conf
+    )
     return {"finding_id": finding_id, "true_label": body.true_label}
 
 
@@ -169,4 +185,6 @@ def add_finding_note(
         raise HTTPException(status_code=422, detail="備註內容不可為空")
     if db.get_finding(finding_id) is None:
         raise HTTPException(status_code=404, detail="finding not found")
-    return db.add_finding_note(finding_id, author=user.get("email") or user.get("user_id") or "unknown", content=content)
+    return db.add_finding_note(
+        finding_id, author=user.get("email") or user.get("user_id") or "unknown", content=content
+    )

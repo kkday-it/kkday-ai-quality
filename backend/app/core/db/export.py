@@ -26,7 +26,11 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("商品ID", "prod_oid", 12),
     ("商品名稱", "prod_name", 28),
     ("評論", "content", 48),
-    ("問題摘要", "summary", 40),  # 緊接評論後：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
+    (
+        "問題摘要",
+        "summary",
+        40,
+    ),  # 緊接評論後：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
     ("星等", "score", 8),
     ("評論時間", "occurred_at", 20),
     ("出發日", "go_date", 14),
@@ -79,7 +83,9 @@ def _flat_attr(a: dict) -> dict:
     }
 
 
-def _export_sheet_title(source: str | None, rows: list[dict], date_from: str | None, date_to: str | None) -> str:
+def _export_sheet_title(
+    source: str | None, rows: list[dict], date_from: str | None, date_to: str | None
+) -> str:
     """工作表名＝來源 label + 時間區間（如「商品評論 20260601~20260701」）。
 
     時間區間優先取日期篩選 date_from/date_to；未篩選則由匯出資料的 occurred_at 最小/最大值推導。
@@ -160,10 +166,17 @@ def export_problems_xlsx(
     ws.append([c[0] for c in _EXPORT_XLSX_COLS])
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級
     _attr_keys = {
-        "l1_label", "l2_label", "l3_label", "confidence", "confidence_tier",
-        "judgment_stage", "summary",
+        "l1_label",
+        "l2_label",
+        "l3_label",
+        "confidence",
+        "confidence_tier",
+        "judgment_stage",
+        "summary",
     }
-    review_col_idx = [ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys]
+    review_col_idx = [
+        ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys
+    ]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
     r_excel = 2  # 資料起始列（表頭列 1）
     for ri, r in enumerate(rows):

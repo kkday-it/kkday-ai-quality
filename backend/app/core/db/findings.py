@@ -78,7 +78,11 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
             }
             for r in c.execute(
                 select(
-                    jg.c.finding_id, jg.c.true_label, jg.c.true_label_reason, jg.c.true_label_conf, jg.c.status
+                    jg.c.finding_id,
+                    jg.c.true_label,
+                    jg.c.true_label_reason,
+                    jg.c.true_label_conf,
+                    jg.c.status,
                 )
                 .where(key)
                 .with_for_update()
@@ -87,10 +91,14 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
         new_ids = {f.finding_id for f in findings}
         # 審計：舊列有人工覆核/真值、但新判決不再產出該域（finding_id 無承接）→ 靜默隨整組刪除消失，留 log 可追。
         for fid, old in preserved.items():
-            if fid not in new_ids and (old["status"] in ("confirmed", "dismissed", "fixed") or old["true_label"]):
+            if fid not in new_ids and (
+                old["status"] in ("confirmed", "dismissed", "fixed") or old["true_label"]
+            ):
                 _log.warning(
                     "重判丟棄含人工覆核的舊歸因列 finding_id=%s status=%s true_label=%s（新判決不再產出此域）",
-                    fid, old["status"], old["true_label"],
+                    fid,
+                    old["status"],
+                    old["true_label"],
                 )
         c.execute(sa_delete(jg).where(key))
         for f in findings:
@@ -101,7 +109,11 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
                     values["true_label"] = old["true_label"]
                     values["true_label_reason"] = old["true_label_reason"]
                     values["true_label_conf"] = old["true_label_conf"]
-                if old["status"] in ("confirmed", "dismissed", "fixed"):  # 僅保留人工覆核；new/auto_confirmed 重算
+                if old["status"] in (
+                    "confirmed",
+                    "dismissed",
+                    "fixed",
+                ):  # 僅保留人工覆核；new/auto_confirmed 重算
                     values["status"] = old["status"]
             c.execute(sa_insert(jg).values(**values))
     return len(findings)
@@ -153,7 +165,11 @@ def update_finding_status(finding_id: str, status: str) -> bool:
 
 
 def update_finding_true_label(
-    finding_id: str, true_label: str | None, *, reason: str | None = None, llm_conf: float | None = None
+    finding_id: str,
+    true_label: str | None,
+    *,
+    reason: str | None = None,
+    llm_conf: float | None = None,
 ) -> bool:
     """人工標註單筆 Finding 的真值分類 true_label（+把關 audit：修改理由 + LLM 契合信心）。回傳是否命中。
 
@@ -182,7 +198,11 @@ def get_finding(finding_id: str) -> dict | None:
         judgments 列 mapping（含 source/source_id/conf_value/l1_code/true_label…），或 None。
     """
     with T.get_engine().connect() as c:
-        r = c.execute(select(T.judgments).where(T.judgments.c.finding_id == finding_id)).mappings().first()
+        r = (
+            c.execute(select(T.judgments).where(T.judgments.c.finding_id == finding_id))
+            .mappings()
+            .first()
+        )
         return dict(r) if r else None
 
 

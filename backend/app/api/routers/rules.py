@@ -66,12 +66,17 @@ def _validate(code: str, content: dict) -> None:
     if code == "product_vertical":
         groups = content.get("groups")
         if not isinstance(groups, dict):
-            raise HTTPException(status_code=422, detail="product_vertical 需含 groups: {分組名: [CATEGORY 代碼,...]}")
+            raise HTTPException(
+                status_code=422,
+                detail="product_vertical 需含 groups: {分組名: [CATEGORY 代碼,...]}",
+            )
         for name, codes in groups.items():
             if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
                 raise HTTPException(status_code=422, detail=f"分組「{name}」的代碼須為字串清單")
         order = content.get("group_order")  # 選填：分組顯示順序（jsonb 不保 key 序，故顯式存）
-        if order is not None and (not isinstance(order, list) or not all(isinstance(g, str) for g in order)):
+        if order is not None and (
+            not isinstance(order, list) or not all(isinstance(g, str) for g in order)
+        ):
             raise HTTPException(status_code=422, detail="group_order 須為分組名字串清單")
         return
     if code == "global_rule":
@@ -79,7 +84,9 @@ def _validate(code: str, content: dict) -> None:
         from app.core.paths import AI_JUDGE_DIR
 
         try:
-            gschema = json.loads((AI_JUDGE_DIR / "global_rule.schema.json").read_text(encoding="utf-8"))
+            gschema = json.loads(
+                (AI_JUDGE_DIR / "global_rule.schema.json").read_text(encoding="utf-8")
+            )
         except (OSError, ValueError):
             return  # 無 schema 檔 → 跳過結構驗（後端仍為最終閘）
         gerrs = sorted(
@@ -122,9 +129,7 @@ def _validate(code: str, content: dict) -> None:
     )
     if errs:
         msgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in errs[:8]]
-        raise HTTPException(
-            status_code=422, detail={"errors": msgs, "count": len(errs)}
-        )
+        raise HTTPException(status_code=422, detail={"errors": msgs, "count": len(errs)})
 
 
 @router.get("")
@@ -169,7 +174,9 @@ def get_rule(
 ) -> dict:
     """取某 rule 的 active content（或 ?version=N 取特定版）。"""
     _check_code(code)
-    content = db.get_rule_version(code, version) if version is not None else db.get_rule_active(code)
+    content = (
+        db.get_rule_version(code, version) if version is not None else db.get_rule_active(code)
+    )
     if content is None:
         raise HTTPException(status_code=404, detail="無此版本（或尚未 seed）")
     return {"rule_code": code, "version": version, "content": content}
@@ -183,9 +190,7 @@ def get_history(code: str, user: dict = Depends(auth.get_current_user)) -> list[
 
 
 @router.get("/{code}/versions/{version}")
-def get_version(
-    code: str, version: int, user: dict = Depends(auth.get_current_user)
-) -> dict:
+def get_version(code: str, version: int, user: dict = Depends(auth.get_current_user)) -> dict:
     """取特定版本完整 content（diff/恢復用）。"""
     _check_code(code)
     content = db.get_rule_version(code, version)
@@ -207,25 +212,25 @@ def reset_default_all(user: dict = Depends(auth.get_current_user)) -> dict:
 
 
 @router.post("/{code}")
-def save_rule(
-    code: str, body: SaveIn, user: dict = Depends(auth.get_current_user)
-) -> dict:
+def save_rule(code: str, body: SaveIn, user: dict = Depends(auth.get_current_user)) -> dict:
     """存檔（先 jsonschema 驗證 → 新版 active）。"""
     _check_code(code)
     _validate(code, body.content)
-    res = db.save_rule_version(code, body.content, note=body.note, author=user.get("email") or user.get("user_id", ""))
+    res = db.save_rule_version(
+        code, body.content, note=body.note, author=user.get("email") or user.get("user_id", "")
+    )
     _reload_judge_cache()
     return res
 
 
 @router.post("/{code}/restore/{version}")
-def restore_rule(
-    code: str, version: int, user: dict = Depends(auth.get_current_user)
-) -> dict:
+def restore_rule(code: str, version: int, user: dict = Depends(auth.get_current_user)) -> dict:
     """恢復某歷史版本（複製為新 active 版）。"""
     _check_code(code)
     try:
-        res = db.restore_rule_version(code, version, author=user.get("email") or user.get("user_id", ""))
+        res = db.restore_rule_version(
+            code, version, author=user.get("email") or user.get("user_id", "")
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     _reload_judge_cache()

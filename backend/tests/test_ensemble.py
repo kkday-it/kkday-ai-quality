@@ -1,4 +1,5 @@
 """多 model 聯合判決（ensemble.merge_votes / should_ensemble）純函式測試：合成 voter 結果，不呼叫 LLM。"""
+
 from app.judge import ensemble
 
 
@@ -16,7 +17,10 @@ def test_should_ensemble_gate():
 
 def test_merge_unanimous():
     """3 voter 全一致 → 一條聯合判決、agreement=1.0、不分歧、3 票攤平；conf＝各 voter 平均。"""
-    vr = [{"model": m, "attrs": [_attr("content", "C-1-1-1", 0.6)]} for m in ("nano", "gemini", "seed")]
+    vr = [
+        {"model": m, "attrs": [_attr("content", "C-1-1-1", 0.6)]}
+        for m in ("nano", "gemini", "seed")
+    ]
     r = ensemble.merge_votes(vr)
     assert [a["l1_domain_code"] for a in r["merged"]] == ["content"]
     assert r["merged"][0]["l3_code"] == "C-1-1-1"
@@ -56,8 +60,14 @@ def test_merge_l3_mode_beats_high_conf():
 def test_merge_multi_attribution_per_voter():
     """多歸因：每 voter 可投多個域；各域獨立統計一致度。"""
     vr = [
-        {"model": "a", "attrs": [_attr("content", "C-1-1-1", 0.6), _attr("supplier", "C-2-1-1", 0.5)]},
-        {"model": "b", "attrs": [_attr("content", "C-1-1-1", 0.7), _attr("supplier", "C-2-1-1", 0.6)]},
+        {
+            "model": "a",
+            "attrs": [_attr("content", "C-1-1-1", 0.6), _attr("supplier", "C-2-1-1", 0.5)],
+        },
+        {
+            "model": "b",
+            "attrs": [_attr("content", "C-1-1-1", 0.7), _attr("supplier", "C-2-1-1", 0.6)],
+        },
     ]
     r = ensemble.merge_votes(vr)
     doms = sorted(a["l1_domain_code"] for a in r["merged"])
@@ -68,4 +78,9 @@ def test_merge_multi_attribution_per_voter():
 
 def test_merge_empty():
     """空輸入 → 空結果，不炸。"""
-    assert ensemble.merge_votes([]) == {"merged": [], "agreement": 0.0, "disputed": False, "model_votes": []}
+    assert ensemble.merge_votes([]) == {
+        "merged": [],
+        "agreement": 0.0,
+        "disputed": False,
+        "model_votes": [],
+    }

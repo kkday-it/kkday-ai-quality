@@ -5,17 +5,16 @@ Revises: 31c690f0dd74
 Create Date: 2026-07-02 11:11:00.376611
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision: str = '663fbf45e97c'
-down_revision: Union[str, Sequence[str], None] = '31c690f0dd74'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "663fbf45e97c"
+down_revision: str | Sequence[str] | None = "31c690f0dd74"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # roster 主檔 / 質檢彙總 / 進線 / 校準 — 功能永久下線，只保留來源數據

@@ -77,10 +77,16 @@ class DspyJudge(dspy.Module):
         attr = prejudge._finalize_attr(
             item,
             text,
-            {"l3_code": out.l3_code, "confidence": out.confidence, "evidence_quote": out.evidence_quote},
+            {
+                "l3_code": out.l3_code,
+                "confidence": out.confidence,
+                "evidence_quote": out.evidence_quote,
+            },
             candidate_codes,
         )
-        if not attr["l1_domain_code"]:  # 全 abstain（無域）→ 負向未歸因 pending_data（同 to_findings）
+        if not attr[
+            "l1_domain_code"
+        ]:  # 全 abstain（無域）→ 負向未歸因 pending_data（同 to_findings）
             f = prejudge._non_issue_finding(item, "negative", "dspy")
             f.judgment_stage = "pending_data"
             f.confidence_tier = "needs_review"
@@ -124,6 +130,7 @@ def load_trainset() -> list[dspy.Example] | None:
             rows = c.execute(stmt).all()
     except Exception:  # noqa: BLE001  DB 未就緒 / 表缺 → 交呼叫端 skip
         return None
+
     # summary 現為語系 map（JSONB）→ 取 zh-tw 文字當訓練用 review；優先 evidence 原文。
     def _txt(r) -> str:
         return r.evidence or (r.summary or {}).get("zh-tw") or ""
@@ -170,7 +177,12 @@ def compile_and_persist(method: str = "bootstrap") -> dict[str, Any]:
     if train is None:
         return {"status": "skipped", "reason": "db_unavailable"}
     if len(train) < _MIN_TRAIN:
-        return {"status": "skipped", "reason": "insufficient_labels", "n": len(train), "min": _MIN_TRAIN}
+        return {
+            "status": "skipped",
+            "reason": "insufficient_labels",
+            "n": len(train),
+            "min": _MIN_TRAIN,
+        }
     if not configure_lm():
         return {"status": "skipped", "reason": "no_llm_key", "n": len(train)}
     try:
@@ -182,10 +194,16 @@ def compile_and_persist(method: str = "bootstrap") -> dict[str, Any]:
         else:
             from dspy.teleprompt import BootstrapFewShot
 
-            opt = BootstrapFewShot(metric=attribution_metric, max_bootstrapped_demos=4, max_labeled_demos=16)
+            opt = BootstrapFewShot(
+                metric=attribution_metric, max_bootstrapped_demos=4, max_labeled_demos=16
+            )
             compiled = opt.compile(DspyJudge(), trainset=train)
     except Exception as e:  # noqa: BLE001  編譯失敗（LLM 錯 / 樣本病態）優雅回報
-        return {"status": "skipped", "reason": f"compile_error: {str(e).splitlines()[0][:160]}", "n": len(train)}
+        return {
+            "status": "skipped",
+            "reason": f"compile_error: {str(e).splitlines()[0][:160]}",
+            "n": len(train),
+        }
     if _COMPILED_FILE is not None:
         _COMPILED_FILE.parent.mkdir(parents=True, exist_ok=True)
         compiled.save(str(_COMPILED_FILE))

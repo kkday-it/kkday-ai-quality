@@ -32,7 +32,9 @@ def _set_status(job_id: str, status: str) -> None:
             _jobs[job_id]["status"] = status
 
 
-def _bump_sheet(job_id: str, idx: int, *, add: dict | None = None, set_: dict | None = None) -> None:
+def _bump_sheet(
+    job_id: str, idx: int, *, add: dict | None = None, set_: dict | None = None
+) -> None:
     """更新第 idx 張工作表進度（add=累加欄位 / set_=覆寫欄位；thread-safe）。"""
     with _jobs_lock:
         snap = _jobs.get(job_id)
@@ -83,7 +85,8 @@ def _process_source(job_id: str, idx: int, source: str, rows: list[dict]) -> int
         inserted = db.insert_source_batch(source, chunk, errors=errs)
         total += inserted
         _bump_sheet(
-            job_id, idx,
+            job_id,
+            idx,
             add={"processed": len(chunk), "inserted": inserted, "failed": len(chunk) - inserted},
         )
         _append_errors(job_id, idx, errs)
@@ -139,19 +142,44 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
         source = sel.get("source") or ""
         sh = sheets.get(name)
         if sh is None:
-            sheets_meta.append({"sheet_name": name, "source": source, "label": source,
-                                 "total": 0, "valid": False, "reason": "工作表不存在"})
+            sheets_meta.append(
+                {
+                    "sheet_name": name,
+                    "source": source,
+                    "label": source,
+                    "total": 0,
+                    "valid": False,
+                    "reason": "工作表不存在",
+                }
+            )
             continue
         missing = srcmap.validate_headers(source, sh["headers"])
         if missing:
-            sheets_meta.append({"sheet_name": name, "source": source, "label": source,
-                                "total": len(sh["rows"]), "valid": False,
-                                "reason": f"缺必備欄：{'、'.join(missing)}"})
+            sheets_meta.append(
+                {
+                    "sheet_name": name,
+                    "source": source,
+                    "label": source,
+                    "total": len(sh["rows"]),
+                    "valid": False,
+                    "reason": f"缺必備欄：{'、'.join(missing)}",
+                }
+            )
             continue
         label = srcmap.source_label(source)
-        sheets_meta.append({"sheet_name": name, "source": source, "label": label,
-                            "total": len(sh["rows"]), "valid": True, "reason": ""})
-        sheets_data.append({"sheet_name": name, "source": source, "label": label, "rows": sh["rows"]})
+        sheets_meta.append(
+            {
+                "sheet_name": name,
+                "source": source,
+                "label": label,
+                "total": len(sh["rows"]),
+                "valid": True,
+                "reason": "",
+            }
+        )
+        sheets_data.append(
+            {"sheet_name": name, "source": source, "label": label, "rows": sh["rows"]}
+        )
 
     job_id = f"up_{uuid.uuid4().hex[:12]}"
     with _jobs_lock:
@@ -160,9 +188,18 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
             "total_sheets": len(sheets_data),
             "done_sheets": 0,
             "sheets": [
-                {"sheet_name": d["sheet_name"], "source": d["source"], "label": d["label"],
-                 "total": len(d["rows"]), "processed": 0, "inserted": 0, "failed": 0,
-                 "status": "pending", "batch_id": None, "errors": []}
+                {
+                    "sheet_name": d["sheet_name"],
+                    "source": d["source"],
+                    "label": d["label"],
+                    "total": len(d["rows"]),
+                    "processed": 0,
+                    "inserted": 0,
+                    "failed": 0,
+                    "status": "pending",
+                    "batch_id": None,
+                    "errors": [],
+                }
                 for d in sheets_data
             ],
             # 無效表也回報（不處理，供前端顯示原因）
