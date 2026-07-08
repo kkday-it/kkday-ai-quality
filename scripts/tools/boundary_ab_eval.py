@@ -184,6 +184,15 @@ def main() -> None:
     ap.add_argument("--stage-a-model", default="", help="cascade Stage A 域分類模型覆寫（方案 B）")
     ap.add_argument("--stage-a-level", default="", choices=["", "l1", "l1l2"],
                     help="cascade Stage A 選擇顆粒度覆寫（l1=六域；l1l2=直選 L2 面向）")
+    ap.add_argument("--depth", default="", choices=["", "l2", "l3"],
+                    help="prejudge_depth 覆寫（l2=只判 L1+L2 單呼叫；l3=完整 cascade；空＝沿用 config）")
+    _EFFORTS = ["", "minimal", "low", "medium", "high"]
+    ap.add_argument("--effort-polarity", default="", choices=_EFFORTS,
+                    help="polarity 階段 reasoning_effort 覆寫（省 token A/B；空＝沿用 config）")
+    ap.add_argument("--effort-stage-a", default="", choices=_EFFORTS,
+                    help="cascade Stage A 階段 reasoning_effort 覆寫")
+    ap.add_argument("--effort-attribute", default="", choices=_EFFORTS,
+                    help="attribute（Stage2/Stage B）階段 reasoning_effort 覆寫")
     ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM")
     ap.add_argument("--model", default="", help="主判決模型覆寫（預設用該帳號 active 配置）")
     ap.add_argument("--limit", type=int, default=0, help="pilot：只跑前 N 筆")
@@ -233,6 +242,26 @@ def main() -> None:
         global_rule.cascade = _patched_cascade
         print(f"cascade 已於本 process 啟用（stage_a_model={args.stage_a_model or '(沿用)'}·level={args.stage_a_level or '(沿用)'}）")
 
+    if args.depth:  # prejudge_depth 覆寫（僅本 process；l2=單呼叫 L1+L2、l3=完整 cascade）
+        from app.core import global_rule as _gr
+
+        _depth = args.depth
+        _gr.prejudge_depth = lambda: _depth
+        print(f"prejudge_depth 覆寫：{_depth}")
+
+    # per-stage reasoning_effort 覆寫（僅本 process 記憶體，不寫 DB；語義同 judgment.json prejudge.*_reasoning_effort）
+    efforts = {k: v for k, v in {
+        "polarity_reasoning_effort": args.effort_polarity,
+        "stage_a_reasoning_effort": args.effort_stage_a,
+        "attribute_reasoning_effort": args.effort_attribute,
+    }.items() if v}
+    if efforts:
+        from app.judge import prejudge
+
+        _orig_pcfg = prejudge._prejudge_cfg
+        prejudge._prejudge_cfg = lambda: {**_orig_pcfg(), **efforts}
+        print(f"reasoning_effort 覆寫：{efforts}")
+
     with open(args.eval_set, encoding="utf-8") as f:
         evalset = json.load(f)
     if args.limit:
@@ -240,6 +269,7 @@ def main() -> None:
 
     model = args.model or eff.get("model", "")
     workers = args.workers or min(8, env.prejudge_max_workers)
+    client.set_llm_cache_read(False)  # 評測量測 run-to-run 真實行為，禁讀 exact-cache（寫入照常回填）
     usage_buf = client.open_usage_buffer()  # 批次結束一次 bulk insert
     client.set_usage_context({"job_id": f"boundary_ab_{args.mode}"})
     try:

@@ -27,6 +27,9 @@ WITH chatbot_agg AS (
         STRING_AGG(CONCAT(message_sender, ': ', COALESCE(message_content, '')), '\n'
                    ORDER BY create_date ASC) AS chatbot_conversation
     FROM `kkday-data-dap.dw_kkdb_chatbot.chatbot_messages`
+    -- 時間下推：STRING_AGG+GROUP BY 擋住主查詢 WHERE 的 pushdown，缺此行會全表聚合（掃描 ∝ 天數）；
+    -- 窗須涵蓋主查詢窗，跨日邊界對話會截斷，可兩端各放寬一天
+    WHERE DATE(create_date) BETWEEN '2026-04-01' AND '2026-04-02'
     GROUP BY session_id
     HAVING COUNTIF(message_sender = 'user') >= 1
 ),
@@ -40,6 +43,9 @@ order_msg_agg AS (
     FROM `kkday-data-dap.dw_kkdb.message_session` AS ms
     INNER JOIN `kkday-data-dap.dw_kkdb.message` AS m
         ON m.order_oid = ms.order_oid AND m.msg_oid BETWEEN ms.start_msg_oid AND ms.end_msg_oid
+    -- 時間下推：message ~15.6GB/日，聚合前剪枝；窗同 chatbot_agg（涵蓋主查詢窗、可放寬防截斷）
+    WHERE DATE(ms.create_date) BETWEEN '2026-04-01' AND '2026-04-02'
+      AND DATE(m.create_date)  BETWEEN '2026-04-01' AND '2026-04-02'
     GROUP BY ms.session_oid, ms.session_direction, ms.supplier_oid
 )
 SELECT
@@ -67,7 +73,7 @@ LEFT JOIN (
 LEFT JOIN chatbot_agg cb ON sm.sessionable_id = cb.session_id
 LEFT JOIN order_msg_agg oma ON SAFE_CAST(sm.sessionable_id AS INT64) = oma.session_oid
 LEFT JOIN `kkday-data-dap.dw_kkdb.supplier` AS sup ON oma.supplier_oid = sup.supplier_oid
-WHERE DATE(s.create_date) BETWEEN '2026-04-01' AND '2026-04-02'   -- 依需求調整區間
+WHERE DATE(s.create_date) BETWEEN '2026-04-01' AND '2026-04-02'   -- 依需求調整區間（⚠️ 三窗同動：chatbot_agg / order_msg_agg 的 WHERE 須一併改）
   AND ((sm.sessionable_type = 'chatbot' AND cb.chatbot_conversation IS NOT NULL)
     OR (sm.sessionable_type = 'order_message' AND oma.order_conversation IS NOT NULL))
 ORDER BY s.create_date DESC;
