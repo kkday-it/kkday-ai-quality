@@ -86,7 +86,7 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: "neutral")
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     attr = {
         "l1_domain_code": "supplier",
@@ -234,7 +234,7 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(
 
     monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative"]})
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: "neutral")
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     called = []
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])
@@ -276,16 +276,19 @@ def test_has_neg_kw(fixed_config) -> None:
 
 
 def test_stub_polarity_heuristic(fixed_config) -> None:
-    """stub 極性：rating≤2 負 / ≥4 正 / 中間看負向詞 / 無詞有字 unknown / 無字 neutral。"""
+    """stub 極性：回 (polarity, sentiment 1-5)。rating≤2 負(1-2) / ≥4 正(4-5) / 中間看負向詞 / 無詞有字 unknown / 無字 neutral(3)。"""
     pol = prejudge._stub_polarity
-    assert pol({"rating": 1}, "隨便") == "negative"
-    assert pol({"rating": 2}, "隨便") == "negative"
-    assert pol({"rating": 5}, "隨便") == "positive"
-    assert pol({"rating": 4}, "隨便") == "positive"
-    assert pol({"rating": 3}, "要退款") == "negative"  # 中間 + 負向詞
-    assert pol({"rating": 3}, "普通") == "unknown"  # 中間 + 無負向詞 + 有字
-    assert pol({}, "誤導消費者") == "negative"  # 無 rating 靠負向詞
-    assert pol({}, "") == "neutral"  # 無 rating 無字
+    assert pol({"rating": 1}, "隨便") == ("negative", 1)
+    assert pol({"rating": 2}, "隨便") == ("negative", 2)
+    assert pol({"rating": 5}, "隨便") == ("positive", 5)
+    assert pol({"rating": 4}, "隨便") == ("positive", 4)
+    assert pol({"rating": 3}, "要退款") == (
+        "negative",
+        1,
+    )  # 中間 + 負向詞（無 rating 區間，預設 1）
+    assert pol({"rating": 3}, "普通") == ("unknown", 0)  # 中間 + 無負向詞 + 有字
+    assert pol({}, "誤導消費者") == ("negative", 1)  # 無 rating 靠負向詞
+    assert pol({}, "") == ("neutral", 3)  # 無 rating 無字
 
 
 def test_skip0_pure_good_review(fixed_config) -> None:

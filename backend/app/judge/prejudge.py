@@ -68,14 +68,30 @@ def _prejudge_cfg() -> dict:
     return _cfg().get("prejudge", {})
 
 
-def _attr_effort() -> str | None:
-    """attribute 階段 reasoning_effort override（① 收緊輸出旋鈕；None＝沿用 config 預設·零行為改變）。
+def _stage_effort(key: str) -> str | None:
+    """讀 judgment.json prejudge 的 per-stage reasoning_effort 旋鈕（None＝沿用主 config·零行為改變）。
 
-    QC 可在 judgment.json prejudge.attribute_reasoning_effort 調降（如 "low"/"minimal"）省 completion；
-    降 effort 可能傷準確度，須先以 true_label A/B 驗證再調——故預設不設（None）。
+    成本病灶實測（2026-07-06 llm_usage：3716 筆全量重判 ~$21，reasoning tokens 佔總費 ~62%）——
+    gpt-5 系列預設 reasoning effort（medium）在極性三分類 / 域選擇這類窄任務上大量空轉。
+    QC 可分段調降（"minimal"/"low"）省 completion；降 effort 可能傷準確度，須先以 A/B 驗準再調。
     """
-    v = _prejudge_cfg().get("attribute_reasoning_effort")
+    v = _prejudge_cfg().get(key)
     return str(v) if v else None
+
+
+def _attr_effort() -> str | None:
+    """attribute（Stage2/Stage B 歸因）階段 reasoning_effort override。"""
+    return _stage_effort("attribute_reasoning_effort")
+
+
+def _polarity_effort() -> str | None:
+    """polarity（Stage1 極性閘門）階段 reasoning_effort override（三分類窄任務，降檔空間最大）。"""
+    return _stage_effort("polarity_reasoning_effort")
+
+
+def _stage_a_effort() -> str | None:
+    """Stage A（cascade 域/面向分類）階段 reasoning_effort override。"""
+    return _stage_effort("stage_a_reasoning_effort")
 
 
 def _auto_confirm_cfg() -> dict:
@@ -232,7 +248,15 @@ def _stage1_model(main_model: str) -> str:
     return _prejudge_cfg().get("stage1_model") or main_model
 
 
-def _call(system: str, user: str, stage: str, model: str, *, schema: dict | None = None, effort: str | None = None) -> dict:
+def _call(
+    system: str,
+    user: str,
+    stage: str,
+    model: str,
+    *,
+    schema: dict | None = None,
+    effort: str | None = None,
+) -> dict:
     """呼叫 LLM；暫時覆寫 contextvar 的 model（及可選 reasoning_effort）為本階段值，呼叫後還原（thread-local 安全）。
 
     schema 傳入時走 Structured Outputs（強制 l3_code 只吐候選白名單合法 code）。
@@ -322,7 +346,10 @@ def _polarity_sys() -> str:
 def _attr_sys() -> str:
     """歸因判官提示詞（SSOT＝global_rule.attribution_guidance，規則配置頁可編輯）；域界線/正反例另由
     _domain_boundaries 動態拼接；config 全缺時回極簡緊急字串防空 prompt。"""
-    return global_rule.attribution_guidance() or "你是客訴歸因判官，依下方六域界線鐵則與 L3 目錄選最貼切 code，輸出 JSON。"
+    return (
+        global_rule.attribution_guidance()
+        or "你是客訴歸因判官，依下方六域界線鐵則與 L3 目錄選最貼切 code，輸出 JSON。"
+    )
 
 
 def _l3_catalog(domains: list[dict], *, rich: bool = False, only_l2: str = "") -> str:
@@ -352,7 +379,9 @@ def _l3_catalog(domains: list[dict], *, rich: bool = False, only_l2: str = "") -
                     lines.append(f"— {n.get('l2_label', '')}（{l2_code}）：{l2_canon}")
         desc = (n.get("canon") or "").strip()
         # 變深度：路徑動態串接（L2 葉無 l3_label → 只印 域›面向），省略空層
-        path = "›".join(p for p in (n.get("l1_label", ""), n.get("l2_label", ""), n.get("l3_label", "")) if p)
+        path = "›".join(
+            p for p in (n.get("l1_label", ""), n.get("l2_label", ""), n.get("l3_label", "")) if p
+        )
         lines.append(f"{n['code']} | {path} | {desc}")
         if rich:
             forbid = [f for f in (n.get("forbid") or []) if f]
@@ -401,13 +430,13 @@ def _attr_system(catalog: str) -> str:
         f"{_attr_sys()}\n\n"
         f"六域界線鐵則（先判屬哪個域，再選細項 code）：\n{_domain_boundaries()}\n\n"
         f"問題分類 L3 目錄（只能從中選 code）：\n{catalog}\n\n"
-        "輸出 JSON：{\"l3_code\":\"最貼切的一條 code（無法歸類回空字串）\","
-        "\"confidence\":0~1 浮點,"
-        "\"summary\":[{\"lang\":\"語言碼\",\"text\":\"該語言的簡明摘要\"},...]（1~3 條·去重）——"
-        "務必含一條 lang=\"zh-tw\"（台灣繁體中文書面語，一句話簡明扼要、總結到位，不論原文何種語言）；"
+        '輸出 JSON：{"l3_code":"最貼切的一條 code（無法歸類回空字串）",'
+        '"confidence":0~1 浮點,'
+        '"summary":[{"lang":"語言碼","text":"該語言的簡明摘要"},...]（1~3 條·去重）——'
+        '務必含一條 lang="zh-tw"（台灣繁體中文書面語，一句話簡明扼要、總結到位，不論原文何種語言）；'
         "若原文非繁中，另附一條 lang=原文語言碼（如 ja/ko/en/th）的簡明摘要；每條 text 都要簡明扼要，"
-        "\"evidence_quote\":\"進線中最能佐證的原文片段（保留原文語言，逐字不改寫）\","
-        "\"candidates\":[{\"code\":\"code\",\"score\":0~1},...最多3條]}"
+        '"evidence_quote":"進線中最能佐證的原文片段（保留原文語言，逐字不改寫）",'
+        '"candidates":[{"code":"code","score":0~1},...最多3條]}'
     )
 
 
@@ -417,17 +446,22 @@ def _attr_user(text: str) -> str:
 
 
 # ── stub 啟發式（無 token 時零 key 跑通閉環；佔位非真值）─────────────────────
-def _stub_polarity(item: dict, text: str) -> str:
-    """rating + 負向關鍵詞 啟發式極性（stub）。"""
+def _stub_polarity(item: dict, text: str) -> tuple[str, int]:
+    """rating + 負向關鍵詞 啟發式極性（stub）；回 (polarity, sentiment 1-5)。
+
+    sentiment 取 rating 細分並夾區間：rating≤2→負向(1-2)、≥4→正向(4-5)、中間看負向詞。
+    """
     r = item.get("rating")
     if isinstance(r, int):
         if r <= 2:
-            return "negative"
+            return "negative", max(1, min(2, r))  # rating 1→1、2→2
         if r >= 4:
-            return "positive"
+            return "positive", min(5, r)  # rating 4→4、5→5
     if _has_neg_kw(text):
-        return "negative"
-    return "neutral" if not text else "unknown"
+        return "negative", 1
+    if not text:
+        return "neutral", 3
+    return "unknown", 0
 
 
 # ── 解析與淨化 ──────────────────────────────────────────────────────────────
@@ -454,7 +488,9 @@ def _sanitize_l3(l3_code: str, candidate_codes: frozenset[str]) -> dict[str, str
             "l3_code": l3_code if is_l3_leaf else "",
             "l3_label": n.get("l3_label", "") if is_l3_leaf else "",
         }
-    return {k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")}
+    return {
+        k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
+    }
 
 
 # ── finding 組裝 ────────────────────────────────────────────────────────────
@@ -475,14 +511,15 @@ def _base_kwargs(item: dict) -> dict:
     }
 
 
-def _non_issue_finding(item: dict, polarity: str, model: str) -> TicketFinding:
-    """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。"""
+def _non_issue_finding(item: dict, polarity: str, model: str, sentiment: int = 0) -> TicketFinding:
+    """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。sentiment＝情緒分 1-5（0＝未判）。"""
     conf = 1.0 if polarity in ("positive", "neutral") else 0.5
     return TicketFinding(
         **_base_kwargs(item),
         dimension="non_content",
         recommended_action="no_action",
         polarity=polarity,
+        sentiment_score=sentiment,
         confidence=conf,
         raw_confidence=conf,
         confidence_tier="auto_accept" if polarity != "unknown" else "needs_review",
@@ -492,23 +529,35 @@ def _non_issue_finding(item: dict, polarity: str, model: str) -> TicketFinding:
 
 
 def _attributed_finding(
-    item: dict, attr: dict, model: str, *, enhanced: bool, polarity: str = "negative"
+    item: dict,
+    attr: dict,
+    model: str,
+    *,
+    enhanced: bool,
+    polarity: str = "negative",
+    sentiment: int = 0,
 ) -> TicketFinding:
     """歸因 finding（Stage2/2b 產出 → TicketFinding）。attr 為淨化後 dict。
 
     polarity＝整則評論傾向（列上可辨識歸因來自負向或混合中性評論）；歸因面向本身必為問題點。
+    sentiment＝整則情緒分 1-5（與 polarity 同段判；0＝未帶）。
     """
     conf = attr["confidence"]
     tier = _tier_for(conf)
-    stage = _derive_stage(polarity, attr["l3_code"], tier, attr.get("evidence_capped", False))
+    # 判決落點：l3 深度＝L3 葉（空＝abstain→pending_data）；l2 深度＝L2 面向即為本階段終點
+    # （L3 本來就留白待深判，不得因此誤標 pending_data——高信心 L2 歸因照走 judged/G1 路由）。
+    landing = attr["l3_code"] or (attr["l2_code"] if global_rule.prejudge_depth() == "l2" else "")
+    stage = _derive_stage(polarity, landing, tier, attr.get("evidence_capped", False))
     return TicketFinding(
         **_base_kwargs(item),
         dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
         # 語系→摘要 map；LLM 未產則回退原文片段包成 {zh-tw: …}（表格恆有顯示值）
-        summary=attr.get("summary") or ({"zh-tw": attr["evidence_quote"][:200]} if attr.get("evidence_quote") else {}),
+        summary=attr.get("summary")
+        or ({"zh-tw": attr["evidence_quote"][:200]} if attr.get("evidence_quote") else {}),
         evidence_quote=attr.get("evidence_quote", ""),
         polarity=polarity,
+        sentiment_score=sentiment,
         confidence=conf,
         raw_confidence=attr.get("raw_confidence", conf),
         confidence_tier=tier,
@@ -541,18 +590,39 @@ def _skip0(item: dict, text: str) -> bool:
     )
 
 
-def _stage1_polarity(item: dict, text: str, main_model: str) -> str:
-    """Stage1 極性閘門：stub 走啟發式，否則便宜模型 LLM。"""
+def _clamp_sentiment(raw: Any, polarity: str) -> int:
+    """LLM 情緒分正規化為 1-5，並夾進 polarity 對應區間確保與傾向一致（負面 1-2 / 中立 3 / 正面 4-5）。
+
+    區間鉗制：保證我方 polarity（驅動歸因）與 sentiment 不矛盾，同時保留正/負向內 1-2、4-5 的細分；
+    中立恆為 3（doc 定義單點）；unknown 回 0（未判）。raw 缺失/非法時取該區間預設中值。
+    """
+    try:
+        v = int(round(float(raw)))
+    except (TypeError, ValueError):
+        v = 0
+    if polarity == "positive":
+        return min(5, max(4, v)) if v else 5
+    if polarity == "negative":
+        return min(2, max(1, v)) if v else 1
+    if polarity == "neutral":
+        return 3
+    return 0  # unknown
+
+
+def _stage1_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
+    """Stage1 極性閘門：回 (polarity, sentiment 1-5)。LLM 同段輸出細分情緒分，夾進 polarity 區間。"""
     if client.is_stub():
         return _stub_polarity(item, text)
     out = _call(
         _polarity_sys(),
-        f"文字：\n{text}\n\n輸出 JSON：{{\"polarity\":\"positive|negative|neutral\"}}",
+        f'文字：\n{text}\n\n輸出 JSON：{{"polarity":"positive|negative|neutral","sentiment":1-5}}',
         "polarity",
         _stage1_model(main_model),
+        effort=_polarity_effort(),
     )
     pol = str(out.get("polarity", "")).strip().lower()
-    return pol if pol in ("positive", "negative", "neutral") else "unknown"
+    pol = pol if pol in ("positive", "negative", "neutral") else "unknown"
+    return pol, _clamp_sentiment(out.get("sentiment"), pol)
 
 
 def _summary_map(raw) -> dict[str, str]:
@@ -605,9 +675,15 @@ def _finalize_attr(item: dict, text: str, out: dict, candidate_codes: frozenset[
     if resolved["l3_code"] and l3_abstain_on and (not grounded or conf < l3_min):
         resolved = {**resolved, "l3_code": "", "l3_label": ""}
         conf = min(conf, l3_min - 0.01)
-    return {**resolved, "confidence": conf, "raw_confidence": raw_conf,
-            "summary": summary, "evidence_quote": evidence, "l3_candidates": cands,
-            "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item)}
+    return {
+        **resolved,
+        "confidence": conf,
+        "raw_confidence": raw_conf,
+        "summary": summary,
+        "evidence_quote": evidence,
+        "l3_candidates": cands,
+        "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item),
+    }
 
 
 # ── cascade（global_rule.cascade.enabled）：Stage A 多域 → Stage B 逐域 L2/L3（見 _resolve_attrs_multi）──
@@ -630,20 +706,40 @@ def _stage_b(item: dict, text: str, domain_code: str, model: str, l2_code: str =
         nodes = [n for n in nodes if n.get("l2_code") == l2_code]
     candidate_codes = frozenset(n["code"] for n in nodes)
     if not candidate_codes:  # 該域無節點（逃生）：僅回域層 L1，L2/L3 空
-        return {"l1_domain_code": domain_code, "l1_label": ai_judge.domain_label(domain_code),
-                "l2_code": "", "l2_label": "", "l3_code": "", "l3_label": "",
-                "confidence": 0.4, "raw_confidence": 0.4, "evidence_quote": text[:120], "l3_candidates": [],
-                "evidence_capped": _evidence_capped(domain_code, item)}  # 對齊正常路徑，缺外部佐證仍封頂
+        return {
+            "l1_domain_code": domain_code,
+            "l1_label": ai_judge.domain_label(domain_code),
+            "l2_code": "",
+            "l2_label": "",
+            "l3_code": "",
+            "l3_label": "",
+            "confidence": 0.4,
+            "raw_confidence": 0.4,
+            "evidence_quote": text[:120],
+            "l3_candidates": [],
+            "evidence_capped": _evidence_capped(domain_code, item),
+        }  # 對齊正常路徑，缺外部佐證仍封頂
     if client.is_stub():  # stub：給該域首個 leaf（負向必 L1+L2）
         base = _sanitize_l3(sorted(candidate_codes)[0], candidate_codes)
-        return {**base, "confidence": 0.5, "raw_confidence": 0.5,
-                "evidence_quote": text[:120], "l3_candidates": []}
-    sb_model = global_rule.cascade().get("stageB", {}).get("model") or model  # config 覆寫，空＝沿用主模型
+        return {
+            **base,
+            "confidence": 0.5,
+            "raw_confidence": 0.5,
+            "evidence_quote": text[:120],
+            "l3_candidates": [],
+        }
+    sb_model = (
+        global_rule.cascade().get("stageB", {}).get("model") or model
+    )  # config 覆寫，空＝沿用主模型
     out = _call(
         # rich：單域葉數少，注入 L3 forbid/誤判例 + L2 canon 標題（喚醒厚判準；flat 全目錄不 rich）
         _attr_system(_l3_catalog([{"code": domain_code}], rich=True, only_l2=l2_code)),
-        _attr_user(text), "attribute_b", sb_model,
-        schema=_attr_schema(candidate_codes, allow_empty=True),  # 可棄權：域內無貼合葉回空（寧缺勿濫）
+        _attr_user(text),
+        "attribute_b",
+        sb_model,
+        schema=_attr_schema(
+            candidate_codes, allow_empty=True
+        ),  # 可棄權：域內無貼合葉回空（寧缺勿濫）
         effort=_attr_effort(),
     )
     return _finalize_attr(item, text, out, candidate_codes)
@@ -701,8 +797,8 @@ def _attr_system_multi(catalog: str, max_n: int, polarity: str = "negative") -> 
         f"問題分類 L3 目錄（只能從中選 code）：\n{catalog}\n\n"
         + lead
         + "每條一個 code）：不同問題各歸一條、同一問題勿拆多條、勿為湊數硬加、寧缺勿濫；無法歸類回空陣列。\n"
-        "輸出 JSON：{\"attributions\":[{\"l3_code\":\"code\",\"confidence\":0~1 浮點,"
-        "\"evidence_quote\":\"進線中最能佐證的原文片段\"},...]}"
+        '輸出 JSON：{"attributions":[{"l3_code":"code","confidence":0~1 浮點,'
+        '"evidence_quote":"進線中最能佐證的原文片段"},...]}'
     )
 
 
@@ -715,8 +811,12 @@ def _stage2_attribute_multi(
         n["code"] for n in ai_judge.l3_nodes_for_domains([d["code"] for d in domains])
     )
     out = _call(
-        _attr_system_multi(_l3_catalog(domains), max_n, polarity), _attr_user(text), "attribute", model,
-        schema=_attr_schema_multi(candidate_codes, max_n), effort=_attr_effort(),
+        _attr_system_multi(_l3_catalog(domains), max_n, polarity),
+        _attr_user(text),
+        "attribute",
+        model,
+        schema=_attr_schema_multi(candidate_codes, max_n),
+        effort=_attr_effort(),
     )
     return [
         _finalize_attr(item, text, a, candidate_codes)
@@ -741,7 +841,9 @@ def _stage_a_schema_multi(domain_values: list[str], max_n: int) -> dict:
     }
 
 
-def _stage_a_system_multi(max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()) -> str:
+def _stage_a_system_multi(
+    max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()
+) -> str:
     """Stage A 多域分類 system：六域界線鐵則（＝_domain_boundaries，L1 canon+正反例）+ 多域輸出格式。
 
     界線＝_domain_boundaries（ai_judge L1 canon，與單次 Stage2 同一 SSOT）；舊 global_rule
@@ -772,13 +874,21 @@ def _stage_a_system_multi(max_n: int, polarity: str = "negative", excluded_label
     return (
         f"你是 KKday 旅遊商品客訴『歸因域分類器』。{head}\n"
         "先依『問題性質』（頁面描述本身 vs 現場執行/實體/兌換/客服 vs 客人主觀）判屬哪些域，非只看主題字眼。\n"
-        "六域界線鐵則（先判屬哪個域）：\n" + _domain_boundaries() + "\n"
-        + excl + tail + "輸出 JSON：{\"domains\":[\"域機器值\",...]}"
+        "六域界線鐵則（先判屬哪個域）：\n"
+        + _domain_boundaries()
+        + "\n"
+        + excl
+        + tail
+        + '輸出 JSON：{"domains":["域機器值",...]}'
     )
 
 
 def _stage_a_domains_multi(
-    text: str, model: str, max_n: int, polarity: str = "negative", exclude: frozenset[str] = frozenset()
+    text: str,
+    model: str,
+    max_n: int,
+    polarity: str = "negative",
+    exclude: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Stage A 多域：判涉及的多個 L1 歸因域（machine value）；負向強制 ≥1 域、混合中性可空；multi 模式停用 self-consistency。
 
@@ -792,8 +902,12 @@ def _stage_a_domains_multi(
     casc = global_rule.cascade().get("stageA_l1", {})
     sa_model = casc.get("model") or _stage1_model(model)  # 域分類用便宜模型（nano）
     out = _call(
-        _stage_a_system_multi(max_n, polarity, excluded_labels), _stage_a_user(text), "domain", sa_model,
+        _stage_a_system_multi(max_n, polarity, excluded_labels),
+        _stage_a_user(text),
+        "domain",
+        sa_model,
         schema=_stage_a_schema_multi(domain_values, max_n),
+        effort=_stage_a_effort(),
     )
     seen: set[str] = set()
     doms: list[str] = []
@@ -818,13 +932,19 @@ def _resolve_attrs_multi(
         return []
     casc = global_rule.cascade()
     amin = _as_float(global_rule.evidence_policy().get("attr_min_confidence"), 0.0)
-    if casc.get("enabled", False):
+    if global_rule.prejudge_depth() == "l2":
+        # L2 深度：初判只依評論文字，L3 缺商品/訂單佐證不可靠 → 單呼叫 32 面向目錄判到 L1+L2
+        # 即收手（省掉整段 Stage B 選葉）；L3 留待接上外部佐證的深判階段。低信心負反饋在函式內。
+        attrs = _attrs_l2_multi(item, text, model, max_n, polarity)
+    elif casc.get("enabled", False):
         # Stage A 選擇顆粒度（config cascade.stage_a_level）：'l1'＝六域（預設）；'l1l2'＝直選 L2 面向
         # （32 項含 L2 canon，Stage B 候選縮到該面向葉）。選擇/重路由的排除集顆粒度與之一致。
         l1l2 = str(casc.get("stage_a_level") or "l1") == "l1l2"
         if l1l2:
             picks = _stage_a_l2s_multi(text, model, max_n, polarity)
-            attrs = [_stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c) for c in picks]
+            attrs = [
+                _stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c) for c in picks
+            ]
         else:
             picks = _stage_a_domains_multi(text, model, max_n, polarity)
             attrs = [_stage_b(item, text, d, model) for d in picks]
@@ -833,15 +953,21 @@ def _resolve_attrs_multi(
         # （schema 硬排除+prompt 負反饋），給評論改判到正確分類的機會（僅丟棄會漏掉真問題）；
         # 已成立選項一併排除防重複。重判結果同過閘門，確無他處可歸則回空（不硬湊）。
         if casc.get("reroute_on_low_conf", False):
-            bad = [not a.get("l1_domain_code") or (amin and a.get("confidence", 0.0) < amin) for a in attrs]
+            bad = [
+                not a.get("l1_domain_code") or (amin and a.get("confidence", 0.0) < amin)
+                for a in attrs
+            ]
             rejected = {p for p, b in zip(picks, bad, strict=True) if b}
             if rejected:
                 kept = {p for p, b in zip(picks, bad, strict=True) if not b}
                 exclude = frozenset(rejected | kept)
                 if l1l2:
                     retry = _stage_a_l2s_multi(text, model, max_n, polarity, exclude=exclude)
-                    attrs += [_stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c)
-                              for c in retry if c not in exclude]
+                    attrs += [
+                        _stage_b(item, text, _l2_domain_map().get(c, ""), model, l2_code=c)
+                        for c in retry
+                        if c not in exclude
+                    ]
                 else:
                     retry = _stage_a_domains_multi(text, model, max_n, polarity, exclude=exclude)
                     attrs += [_stage_b(item, text, d, model) for d in retry if d not in exclude]
@@ -896,8 +1022,13 @@ def _sample_hit(item: dict, rate: float) -> bool:
 
 
 def _ensemble_attrs(
-    item: dict, text: str, base_attrs: list[dict], base_model: str, voter_cfgs: list[dict],
-    sample_rate: float = 0.0, polarity: str = "negative",
+    item: dict,
+    text: str,
+    base_attrs: list[dict],
+    base_model: str,
+    voter_cfgs: list[dict],
+    sample_rate: float = 0.0,
+    polarity: str = "negative",
 ) -> tuple[list[dict], list[dict]]:
     """confidence-gated 聯合判決：低信心 or 抽樣命中才跨廠複判 → merge_votes；否則原樣回（省 token）。
 
@@ -931,7 +1062,11 @@ def _ensemble_attrs(
 
 
 def to_findings(
-    item: dict, *, model: str, voter_cfgs: list[dict] | None = None, ensemble_sample_rate: float = 0.0
+    item: dict,
+    *,
+    model: str,
+    voter_cfgs: list[dict] | None = None,
+    ensemble_sample_rate: float = 0.0,
 ) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
@@ -963,10 +1098,11 @@ def to_findings(
 
     # 各 return 皆過 _route：依 finding 的 tier+stage 設 status（G1 自動確認路由）。
     if _skip0(item, text):
-        return _route([_non_issue_finding(item, "positive", "heuristic")])
-    polarity = _stage1_polarity(item, text, model)
+        # skip0＝高星短好評（rating≥5）→ 正向、情緒分 5
+        return _route([_non_issue_finding(item, "positive", "heuristic", sentiment=5)])
+    polarity, sentiment = _stage1_polarity(item, text, model)
     if polarity not in _attribute_when():  # config 驅動（global_rule.polarity_gate）
-        return _route([_non_issue_finding(item, polarity, used_model)])
+        return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
     attrs = _resolve_attrs_multi(item, text, model, _max_attributions(), polarity)
     # confidence-gated ensemble：voter_cfgs 提供且主判決有低信心 attr 時才跨廠複判（高信心直接採信·省 token）
@@ -976,9 +1112,13 @@ def to_findings(
             item, text, attrs, model, voter_cfgs, ensemble_sample_rate, polarity
         )
     if not attrs:
-        if polarity != "negative":  # 混合中性但未找到具體問題點 → 純 non_issue（整體無礙，無需補數據）
-            return _route([_non_issue_finding(item, polarity, used_model)])
-        f = _non_issue_finding(item, "negative", used_model)  # 負向但全無法歸類 → 單筆未歸因（pending_data）
+        if (
+            polarity != "negative"
+        ):  # 混合中性但未找到具體問題點 → 純 non_issue（整體無礙，無需補數據）
+            return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
+        f = _non_issue_finding(
+            item, "negative", used_model, sentiment=sentiment
+        )  # 負向但全無法歸類 → 單筆未歸因（pending_data）
         f.judgment_stage = "pending_data"
         f.confidence_tier = "needs_review"
         f.needs_review = True
@@ -987,8 +1127,12 @@ def to_findings(
     findings: list[TicketFinding] = []
     ensemble_model = "ensemble" if model_votes else used_model  # ensemble 觸發 → model 標 ensemble
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同域去重
-        f = _attributed_finding(item, attr, ensemble_model, enhanced=False, polarity=polarity)
-        f.finding_id = f"fd_{src}_{source_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
+        f = _attributed_finding(
+            item, attr, ensemble_model, enhanced=False, polarity=polarity, sentiment=sentiment
+        )
+        f.finding_id = (
+            f"fd_{src}_{source_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
+        )
         f.is_primary = i == 0  # 信心最高一條為主歸因
         f.model_votes = model_votes  # ensemble 各 voter 攤平票（單模型判決為空）
         findings.append(f)
@@ -1050,13 +1194,17 @@ def _attribute_when() -> frozenset[str]:
     gate = global_rule.polarity_gate()
     raw = gate.get("attribute_when") or gate.get("attribute_only_when") or []
     vals = [raw] if isinstance(raw, str) else list(raw or [])
-    allowed = frozenset(v for v in (str(x).strip().lower() for x in vals) if v in ("negative", "neutral"))
+    allowed = frozenset(
+        v for v in (str(x).strip().lower() for x in vals) if v in ("negative", "neutral")
+    )
     return allowed or frozenset({"negative"})
 
 
 def _l2_domain_map() -> dict[str, str]:
     """L2 C-code → 所屬 L1 域機器值（自攤平葉節點推導；含 L2 葉自身）。stage_a_level=l1l2 用。"""
-    return {n["l2_code"]: n["l1_domain"] for n in ai_judge.l3_nodes_for_domains([]) if n.get("l2_code")}
+    return {
+        n["l2_code"]: n["l1_domain"] for n in ai_judge.l3_nodes_for_domains([]) if n.get("l2_code")
+    }
 
 
 def _l2_catalog() -> str:
@@ -1079,7 +1227,9 @@ def _l2_catalog() -> str:
     return "\n".join(lines)
 
 
-def _stage_a_l2_system(max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()) -> str:
+def _stage_a_l2_system(
+    max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()
+) -> str:
     """Stage A（l1l2 模式）system：六域界線鐵則 + 32 L2 面向目錄 + 多選輸出格式。
 
     與 _stage_a_system_multi（L1 模式）同構：先按問題性質判域、再於域內選最貼切面向；
@@ -1108,13 +1258,43 @@ def _stage_a_l2_system(max_n: int, polarity: str = "negative", excluded_labels: 
         "先依『問題性質』（頁面描述本身 vs 現場執行/實體/兌換/客服 vs 客人主觀）判屬哪個域，"
         "再於該域內選最貼切的 L2 面向，非只看主題字眼。\n"
         "六域界線鐵則（先判屬哪個域）：\n" + _domain_boundaries() + "\n"
-        "L2 面向目錄（只能從中選 code）：\n" + _l2_catalog() + "\n"
-        + excl + tail + "輸出 JSON：{\"domains\":[\"L2 面向 code\",...]}"
+        "L2 面向目錄（只能從中選 code）：\n"
+        + _l2_catalog()
+        + "\n"
+        + excl
+        + tail
+        + '輸出 JSON：{"domains":["L2 面向 code",...]}'
     )
 
 
+def batch_service_tier(n_items: int) -> str | None:
+    """批次判決的 serving tier（judgment.json prejudge.batch_service_tier；None＝標準）。
+
+    "flex"＝OpenAI flex processing：計價 -50%（Batch 同級）換變動延遲，適合背景批次；
+    小批次（< flex_min_items，如單筆重判＝使用者在等結果）不套 flex 保互動延遲。
+    僅 OpenAI provider 生效（client 端依 base_url 反推守門），429 資源不足自動回退標準 tier。
+
+    Args:
+        n_items: 本批標的筆數（小於門檻不套 flex）。
+
+    Returns:
+        tier 字串（"flex"）或 None（沿用標準）。
+    """
+    cfg = _prejudge_cfg()
+    tier = cfg.get("batch_service_tier")
+    if not tier:
+        return None
+    if n_items < int(cfg.get("flex_min_items", 10) or 0):
+        return None
+    return str(tier)
+
+
 def _stage_a_l2s_multi(
-    text: str, model: str, max_n: int, polarity: str = "negative", exclude: frozenset[str] = frozenset()
+    text: str,
+    model: str,
+    max_n: int,
+    polarity: str = "negative",
+    exclude: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Stage A（l1l2 模式）：直選涉及的 L2 面向 code（≤max_n）；exclude＝重路由排除集（schema 硬排除）。"""
     values = sorted(c for c in _l2_domain_map() if c not in exclude)
@@ -1124,8 +1304,12 @@ def _stage_a_l2s_multi(
     casc = global_rule.cascade().get("stageA_l1", {})
     sa_model = casc.get("model") or _stage1_model(model)  # 同 L1 模式：域/面向分類用 Stage A 模型
     out = _call(
-        _stage_a_l2_system(max_n, polarity, excluded_labels), _stage_a_user(text), "domain", sa_model,
+        _stage_a_l2_system(max_n, polarity, excluded_labels),
+        _stage_a_user(text),
+        "domain",
+        sa_model,
         schema=_stage_a_schema_multi(values, max_n),
+        effort=_stage_a_effort(),
     )
     seen: set[str] = set()
     picks: list[str] = []
@@ -1135,3 +1319,198 @@ def _stage_a_l2s_multi(
             seen.add(c)
             picks.append(c)
     return picks[:max_n]
+
+
+# ── L2 深度（global_rule.prejudge_depth="l2"）：單呼叫 32 面向目錄多歸因 ────────────
+# 初判只依評論文字，L3 細項常缺商品/訂單佐證而不可靠 → 判到 L1+L2 即收手（整段 Stage B 選葉
+# 延後），L3 留待接上外部佐證的深判階段。省 token 主力：每條歸因少一次 4-6k prompt 的 Stage B 呼叫。
+def _l2_label_map() -> dict[str, tuple[str, str, str]]:
+    """L2 面向 code → (l1_domain, l1_label, l2_label)（自攤平葉推導；含 L2 葉自身）。"""
+    out: dict[str, tuple[str, str, str]] = {}
+    for n in ai_judge.l3_nodes_for_domains([]):
+        c = str(n.get("l2_code") or "")
+        if c and c not in out:
+            out[c] = (n.get("l1_domain", ""), n.get("l1_label", ""), n.get("l2_label", ""))
+    return out
+
+
+def _sanitize_l2(code: str, valid: dict[str, tuple[str, str, str]]) -> dict[str, str]:
+    """校驗 l2_code ∈ 面向白名單並回填 l1/l2 label；非法回全空（未歸類）。L3 恆空（留待深判）。"""
+    info = valid.get(code)
+    if not info:
+        return {
+            k: ""
+            for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
+        }
+    l1, l1_label, l2_label = info
+    return {
+        "l1_domain_code": l1,
+        "l1_label": l1_label,
+        "l2_code": code,
+        "l2_label": l2_label,
+        "l3_code": "",
+        "l3_label": "",
+    }
+
+
+def _attr_schema_l2_multi(codes: frozenset[str], max_n: int) -> dict:
+    """L2 多歸因輸出 schema：attributions 陣列（≤max_n），每條一個面向 code + 信心 + 摘要 + 佐證。
+
+    summary 沿用 Stage B 語系陣列格式（表格「摘要」欄消費）；enum 白名單使生成階段即不吐非法 code。
+    """
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["attributions"],
+        "properties": {
+            "attributions": {
+                "type": "array",
+                "maxItems": max_n,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["l2_code", "confidence", "summary", "evidence_quote"],
+                    "properties": {
+                        "l2_code": {"type": "string", "enum": sorted(codes)},
+                        "confidence": {"type": "number"},
+                        "summary": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["lang", "text"],
+                                "properties": {
+                                    "lang": {"type": "string"},
+                                    "text": {"type": "string"},
+                                },
+                            },
+                        },
+                        "evidence_quote": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+
+def _attr_system_l2_multi(
+    max_n: int, polarity: str = "negative", excluded_labels: tuple[str, ...] = ()
+) -> str:
+    """L2 多歸因 system prompt：判官指引 + 六域界線 + 32 面向目錄 + 多條輸出格式（靜態前綴命中 caching）。
+
+    與 _attr_system_multi（L3 版）同構；差異＝目錄只到 L2（初判不選 L3——細項缺商品/訂單佐證，
+    留待深判）。excluded_labels＝低信心負反饋重問時的排除說明（schema enum 已硬排除）。
+    """
+    if polarity == "negative":
+        lead = f"這則負向評論可能同時違反多個問題面向。列出所有『明確且互相獨立』的問題歸因（最多 {max_n} 條，"
+    else:
+        lead = (
+            "這是混合傾向評論（整體滿意但提到具體問題點）：只歸因其中的『具體問題點』，"
+            f"被稱讚/滿意的面向不歸因。列出問題歸因（最多 {max_n} 條，"
+        )
+    excl = (
+        f"注意：先前判入「{'、'.join(excluded_labels)}」但信心過低（已排除，勿再選）；"
+        "請重新思考問題性質改判其他面向，或確無合適面向則回空陣列。\n"
+        if excluded_labels
+        else ""
+    )
+    return (
+        f"{_attr_sys()}\n\n"
+        f"六域界線鐵則（先判屬哪個域，再選面向）：\n{_domain_boundaries()}\n\n"
+        f"問題面向目錄（只判到面向層，只能從中選 code）：\n{_l2_catalog()}\n\n"
+        + excl
+        + lead
+        + "每條一個面向 code）：不同問題各歸一條、同一問題勿拆多條、勿為湊數硬加、寧缺勿濫；無法歸類回空陣列。\n"
+        '輸出 JSON：{"attributions":[{"l2_code":"面向 code","confidence":0~1 浮點,'
+        '"summary":[{"lang":"語言碼","text":"該語言的簡明摘要"},...]（1~3 條·去重·務必含一條 lang="zh-tw"'
+        "台灣繁體中文書面語，一句話簡明扼要；原文非繁中另附一條原文語言碼摘要）,"
+        '"evidence_quote":"進線中最能佐證的原文片段（保留原文語言，逐字不改寫）"},...]}'
+    )
+
+
+def _finalize_attr_l2(
+    item: dict, text: str, out: dict, valid: dict[str, tuple[str, str, str]]
+) -> dict:
+    """L2 歸因輸出 → 淨化 attr dict：白名單校驗 + evidence grounding + 證據封頂（與 L3 版同政策）。
+
+    grounding 不落地（evidence_quote 非原文逐字片段）→ 信心壓到 needs_review 帶交人審——
+    「低信心反饋」的第一環（第二環＝attr_min_confidence 閘門整條丟棄、第三環＝負反饋重問）。
+    """
+    resolved = _sanitize_l2(str(out.get("l2_code", "")).strip(), valid)
+    raw_conf = _as_float(out.get("confidence"), 0.5)
+    conf = _evidence_cap(resolved["l1_domain_code"], item, raw_conf)
+    evidence = str(out.get("evidence_quote", ""))[:300]
+    summary = _summary_map(out.get("summary"))
+    ev = global_rule.evidence_policy()
+    grounded = (not ev.get("require_quote_grounded", True)) or _evidence_grounded(text, evidence)
+    if resolved["l2_code"] and not grounded:
+        conf = min(
+            conf, _tiers().get("jury_low", 0.5) - 0.01
+        )  # 證據不落地 → 壓入人審帶（不強行採信）
+    return {
+        **resolved,
+        "confidence": conf,
+        "raw_confidence": raw_conf,
+        "summary": summary,
+        "evidence_quote": evidence,
+        "l3_candidates": [],
+        "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item),
+    }
+
+
+def _attrs_l2_multi(
+    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
+) -> list[dict]:
+    """L2 深度主流程：單呼叫 32 面向目錄多歸因 → 淨化；低信心負反饋重問一次（同 cascade 開關）。
+
+    低信心反饋（cascade.reroute_on_low_conf 同一開關·語義對齊 cascade 重路由）：首輪有面向
+    低於 attr_min_confidence（＝選錯訊號）→ 排除「低信心+已成立」面向後重問一次
+    （schema enum 硬排除 + prompt 負反饋），給評論改判到正確面向的機會；重問結果同過
+    _resolve_attrs_multi 共用閘門，確無合適面向則不硬湊。
+    """
+    valid = _l2_label_map()
+    codes = frozenset(valid)
+    if not codes:
+        return []
+    out = _call(
+        _attr_system_l2_multi(max_n, polarity),
+        _attr_user(text),
+        "attribute",
+        model,
+        schema=_attr_schema_l2_multi(codes, max_n),
+        effort=_attr_effort(),
+    )
+    attrs = [
+        _finalize_attr_l2(item, text, a, valid)
+        for a in (out.get("attributions") or [])[:max_n]
+        if isinstance(a, dict)
+    ]
+    if global_rule.cascade().get("reroute_on_low_conf", False):
+        amin = _as_float(global_rule.evidence_policy().get("attr_min_confidence"), 0.0)
+        rejected = {
+            a["l2_code"]
+            for a in attrs
+            if a.get("l2_code") and amin and a.get("confidence", 0.0) < amin
+        }
+        if rejected:
+            kept = {
+                a["l2_code"] for a in attrs if a.get("l2_code") and a["l2_code"] not in rejected
+            }
+            exclude = rejected | kept
+            retry_codes = frozenset(c for c in codes if c not in exclude)
+            if retry_codes:
+                excluded_labels = tuple(ai_judge.path_label(c) or c for c in sorted(exclude))
+                out2 = _call(
+                    _attr_system_l2_multi(max_n, polarity, excluded_labels),
+                    _attr_user(text),
+                    "attribute",
+                    model,
+                    schema=_attr_schema_l2_multi(retry_codes, max_n),
+                    effort=_attr_effort(),
+                )
+                attrs += [
+                    _finalize_attr_l2(item, text, a, valid)
+                    for a in (out2.get("attributions") or [])[:max_n]
+                    if isinstance(a, dict) and str(a.get("l2_code", "")) not in exclude
+                ]
+    return attrs

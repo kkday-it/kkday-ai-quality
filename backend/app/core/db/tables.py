@@ -48,6 +48,9 @@ judgments = Table(
     Column("dimension", Text),
     # ── 傾向 / 階段 ──
     Column("polarity", Text),  # positive | negative | neutral | unknown
+    # 情緒分 1-5（LLM 讀原文判；與 polarity 同段輸出：負面1-2/中立3/正面4-5）——與外部評論 sentiment
+    # 同尺度，供評論對比表逐則比對；null＝未判/傾向不明。
+    Column("sentiment_score", Integer),
     Column("stage", Text),  # judged / pending_review / pending_data / insufficient
     # ── 歸因分類 L1→L3（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
     Column("l1_code", Text),
@@ -61,12 +64,16 @@ judgments = Table(
     Column("conf_raw", Float),  # arbiter LLM 原始信心
     Column("conf_tier", Text),  # auto_accept / jury / needs_review
     # ── 判決內容 ──
-    Column("summary", JSONB),  # 反饋摘要（語系→簡明摘要 map；務必含 zh-tw·表格只顯示 zh-tw；逐字原文佐證另存 evidence）
+    Column(
+        "summary", JSONB
+    ),  # 反饋摘要（語系→簡明摘要 map；務必含 zh-tw·表格只顯示 zh-tw；逐字原文佐證另存 evidence）
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──
     Column("model", Text),  # 判決模型（stub 時為 "stub"；ensemble 聯合判決為 "ensemble"）
-    Column("model_votes", JSONB),  # ensemble 各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為 NULL
+    Column(
+        "model_votes", JSONB
+    ),  # ensemble 各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為 NULL
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
@@ -109,6 +116,13 @@ product_reviews = Table(
     Column("order_snap_json", Text),  # 多語商品名快照 JSON（enrich 解析 prod_name/package_name）
     Column("lst_dt_go", Text),  # canonical go_date（出發日）
     Column("product_category", Text),  # 商品分類（enrich 解析 main/sub）
+    Column(
+        "review_external_lst_oid", Text
+    ),  # 外部評論號（評論系統 rec_oid 對橋回查鍵；無對應為 NULL）
+    Column("sentiment", Text),  # 外部 LLM 情緒分 1-5（輔助訊號·傾向以原文判定為準）
+    Column(
+        "free_tag", Text
+    ),  # 外部 LLM 面向標籤 JSON 字串 [{tag_name,tag_value,tag_list}]（輔助訊號）
     Index("idx_product_reviews_create_date", "create_date"),
     Index("idx_product_reviews_prod_oid", "prod_oid"),
     Index("idx_product_reviews_product_category", "product_category"),
@@ -212,6 +226,7 @@ batches = Table(
     Column("row_count", Integer),
     Column("inserted_count", Integer),
     Column("uploaded_at", Text),
+    Column("note", Text),  # 用戶上傳時輸入的備註（每工作表一則，隨批次保存）
 )
 
 users = Table(
@@ -279,7 +294,9 @@ llm_usage = Table(
     Column("provider", Text),  # 供應商 id（settings.provider_id_for(base_url) 反推）
     Column("prompt_tokens", Integer),  # 輸入 token
     Column("completion_tokens", Integer),  # 輸出 token（reasoning model 下含 reasoning_tokens）
-    Column("reasoning_tokens", Integer),  # completion 中的 reasoning 部分（gpt-5 reasoning_effort 產；量測降 effort 空間）
+    Column(
+        "reasoning_tokens", Integer
+    ),  # completion 中的 reasoning 部分（gpt-5 reasoning_effort 產；量測降 effort 空間）
     Column("cached_tokens", Integer),  # prompt 中命中 prompt cache 的部分（折扣計價）
     Column("total_tokens", Integer),  # prompt + completion
     Column("cost_usd", Float),  # pricing.cost_usd 換算（含 cache 折扣）
@@ -290,6 +307,38 @@ llm_usage = Table(
     Index("idx_llm_usage_created_at", "created_at"),
     Index("idx_llm_usage_model", "model"),
     Index("idx_llm_usage_stage", "stage"),
+)
+
+# 歸因歷史（run 級：每次觸發 LLM 歸因的動作——批量初判 / 選取多筆 / 單筆重判——落一列）。
+# 與 llm_usage（call 級）以 job_id 關聯：run 存業務語境（誰/何時/範圍/參數/結果統計），
+# per-stage token/費用明細由 llm_usage 聚合（job 結束 flush 後可查）。寫入點＝prejudge_batch。
+judgment_runs = Table(
+    "judgment_runs",
+    metadata,
+    Column("job_id", Text, primary_key=True),  # 批次任務 id（pj_*；與 llm_usage.job_id 對齊）
+    Column(
+        "kind", Text, nullable=False
+    ),  # 觸發型態：batch（scope=all 目標選取）/ selected（顯式多筆）/ single（單筆）
+    Column(
+        "rejudge", Boolean
+    ),  # 標的先前已有判決 → 重判（single/selected 查 judgments；batch 依 stages 含已判階段）
+    Column("source", Text),  # 反饋來源 code（product_reviews…）
+    Column("model", Text),  # 主判決模型
+    Column("ensemble_voters", Integer),  # 跨廠 ensemble voter 數（0＝單模型）
+    Column(
+        "params", JSONB
+    ),  # 發起參數快照（stages/verticals/傾向/信心上限/voter 配置…；item_ids 只留樣本）
+    Column("status", Text, nullable=False),  # running/paused/cancelling → 終態 done/error/cancelled
+    Column("total", Integer),  # 標的筆數
+    Column("processed", Integer),  # 已處理（終態回寫；執行中由 in-mem 快照 overlay）
+    Column("ok", Integer),  # 成功筆數
+    Column("failed", Integer),  # 失敗筆數
+    Column("total_tokens", BigInteger),  # 本 run 累計 token（usage sink 加總）
+    Column("cost_usd", Float),  # 本 run 累計費用（pricing 換算）
+    Column("triggered_by", Text),  # 觸發人（user email）
+    Column("started_at", DateTime(timezone=True), server_default=func.now()),
+    Column("finished_at", DateTime(timezone=True)),  # 終態時間（執行中為空）
+    Index("idx_judgment_runs_started_at", "started_at"),
 )
 
 
@@ -332,5 +381,3 @@ def upsert(table: Table, values: dict, pk: list[str]):
     stmt = _pg_insert(table).values(**values)
     update = {k: stmt.excluded[k] for k in values if k not in pk}
     return stmt.on_conflict_do_update(index_elements=pk, set_=update)
-
-
