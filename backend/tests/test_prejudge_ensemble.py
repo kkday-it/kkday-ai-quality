@@ -1,4 +1,5 @@
 """confidence-gated ensemble 接線（prejudge._ensemble_attrs）測試：monkeypatch voter 判決，不呼叫真 LLM。"""
+
 from contextlib import nullcontext
 
 from app.judge import prejudge
@@ -23,7 +24,9 @@ def test_ensemble_triggers_on_low_conf(monkeypatch):
     )
     monkeypatch.setattr(prejudge, "_use_config", lambda cfg: nullcontext())
     low = [{"l1_domain_code": "content", "confidence": 0.6, "l3_code": "C-1-1-1"}]
-    attrs, votes = prejudge._ensemble_attrs({}, "t", low, "nano", [{"model": "gemini"}, {"model": "seed"}])
+    attrs, votes = prejudge._ensemble_attrs(
+        {}, "t", low, "nano", [{"model": "gemini"}, {"model": "seed"}]
+    )
     assert attrs[0]["l1_domain_code"] == "content"
     assert len(votes) == 3
     assert {v["model"] for v in votes} == {"nano", "gemini", "seed"}
@@ -31,14 +34,18 @@ def test_ensemble_triggers_on_low_conf(monkeypatch):
 
 def test_ensemble_falls_back_when_all_disputed(monkeypatch):
     """全分歧（各 voter 判不同域、無過半域）→ merged 空 → 保底回原 attrs（不因 ensemble 丟失判決）。"""
-    seq = iter([
-        [{"l1_domain_code": "supplier", "confidence": 0.7, "l3_code": ""}],  # voter1
-        [{"l1_domain_code": "quality", "confidence": 0.7, "l3_code": ""}],  # voter2
-    ])
+    seq = iter(
+        [
+            [{"l1_domain_code": "supplier", "confidence": 0.7, "l3_code": ""}],  # voter1
+            [{"l1_domain_code": "quality", "confidence": 0.7, "l3_code": ""}],  # voter2
+        ]
+    )
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: next(seq))
     monkeypatch.setattr(prejudge, "_use_config", lambda cfg: nullcontext())
     base = [{"l1_domain_code": "content", "confidence": 0.6, "l3_code": "C-1-1-1"}]
-    attrs, votes = prejudge._ensemble_attrs({}, "t", base, "nano", [{"model": "gemini"}, {"model": "seed"}])
+    attrs, votes = prejudge._ensemble_attrs(
+        {}, "t", base, "nano", [{"model": "gemini"}, {"model": "seed"}]
+    )
     # 3 voter 各 1/3（content/supplier/quality）皆 < 0.5 → 全丟棄 → 保底回原 attrs
     assert attrs == base
     assert len(votes) == 3
@@ -60,23 +67,40 @@ def test_ensemble_sampling_audits_high_conf(monkeypatch):
     monkeypatch.setattr(
         prejudge,
         "_resolve_attrs_multi",
-        lambda *a, **k: called.append(1) or [{"l1_domain_code": "content", "confidence": 0.9, "l3_code": "C-1-1-1"}],
+        lambda *a, **k: called.append(1)
+        or [{"l1_domain_code": "content", "confidence": 0.9, "l3_code": "C-1-1-1"}],
     )
     monkeypatch.setattr(prejudge, "_use_config", lambda cfg: nullcontext())
     high = [{"l1_domain_code": "content", "confidence": 0.95, "l3_code": "C-1-1-1"}]
-    _, votes = prejudge._ensemble_attrs({"source_id": "x"}, "t", high, "nano", [{"model": "gemini"}], sample_rate=1.0)
+    _, votes = prejudge._ensemble_attrs(
+        {"source_id": "x"}, "t", high, "nano", [{"model": "gemini"}], sample_rate=1.0
+    )
     assert len(votes) == 2 and called == [1]  # 主 + 1 voter（抽樣命中觸發）
     called.clear()
-    _, votes0 = prejudge._ensemble_attrs({"source_id": "x"}, "t", high, "nano", [{"model": "gemini"}], sample_rate=0.0)
+    _, votes0 = prejudge._ensemble_attrs(
+        {"source_id": "x"}, "t", high, "nano", [{"model": "gemini"}], sample_rate=0.0
+    )
     assert votes0 == [] and called == []  # 高信心 + 未抽樣 → 不跑
 
 
 def test_attr_effort_reads_config(monkeypatch):
-    """① reasoning_effort 旋鈕：judgment.json prejudge.attribute_reasoning_effort 讀取（null→None＝不 override）。"""
-    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {"attribute_reasoning_effort": "low"})
+    """① reasoning_effort 旋鈕：judgment.json prejudge.*_reasoning_effort per-stage 讀取（null→None＝不 override）。"""
+    monkeypatch.setattr(
+        prejudge,
+        "_prejudge_cfg",
+        lambda: {
+            "attribute_reasoning_effort": "low",
+            "polarity_reasoning_effort": "minimal",
+            "stage_a_reasoning_effort": "low",
+        },
+    )
     assert prejudge._attr_effort() == "low"
+    assert prejudge._polarity_effort() == "minimal"
+    assert prejudge._stage_a_effort() == "low"
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
     assert prejudge._attr_effort() is None
+    assert prejudge._polarity_effort() is None
+    assert prejudge._stage_a_effort() is None
 
 
 def test_call_effort_override_and_restore(monkeypatch):
@@ -84,8 +108,23 @@ def test_call_effort_override_and_restore(monkeypatch):
     from app.core import settings as app_settings
 
     seen: dict = {}
-    monkeypatch.setattr(prejudge.client, "chat_json", lambda *a, **k: seen.update(app_settings.current()) or {})
+    monkeypatch.setattr(
+        prejudge.client, "chat_json", lambda *a, **k: seen.update(app_settings.current()) or {}
+    )
     before = dict(app_settings.current())
     prejudge._call("s", "u", "attribute", before.get("model", ""), effort="low")
     assert seen.get("reasoning_effort") == "low"  # 呼叫期間帶 low
-    assert app_settings.current().get("reasoning_effort") == before.get("reasoning_effort")  # 已還原
+    assert app_settings.current().get("reasoning_effort") == before.get(
+        "reasoning_effort"
+    )  # 已還原
+
+
+def test_batch_service_tier_reads_config(monkeypatch):
+    """batch_service_tier：讀 judgment.json prejudge.batch_service_tier；小批（< flex_min_items）不套 flex。"""
+    monkeypatch.setattr(
+        prejudge, "_prejudge_cfg", lambda: {"batch_service_tier": "flex", "flex_min_items": 10}
+    )
+    assert prejudge.batch_service_tier(100) == "flex"
+    assert prejudge.batch_service_tier(9) is None  # 單筆重判等小批走標準 tier 保互動延遲
+    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
+    assert prejudge.batch_service_tier(100) is None  # 未設＝標準（零行為改變）

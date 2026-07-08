@@ -1,51 +1,52 @@
 {
-  "$schema": "./global_rule.schema.json",
-  "_meta": {
-    "version": "1.1",
-    "label": "整體規則",
-    "about": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when：negative+neutral 進歸因）＋判官提示詞（attribution/polarity_guidance，規則配置頁編輯即時生效）＋abstain/證據政策（L3 降階＋attr_min_confidence 整條閘門）＋cascade 兩階段（Stage A 六域分類→Stage B 域內細項·低信心/棄權負反饋重路由）。域界線 SSOT＝各 rule_C-N 的 L1 canon＋正反例，非本檔。"
+ "$schema": "./global_rule.schema.json",
+ "_meta": {
+  "version": "1.1",
+  "label": "整體規則",
+  "about": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when：negative+neutral 進歸因）＋判官提示詞（attribution/polarity_guidance，規則配置頁編輯即時生效）＋abstain/證據政策（L3 降階＋attr_min_confidence 整條閘門）＋cascade 兩階段（Stage A 六域分類→Stage B 域內細項·低信心/棄權負反饋重路由）。域界線 SSOT＝各 rule_C-N 的 L1 canon＋正反例，非本檔。"
+ },
+ "polarity_gate": {
+  "attribute_when": [
+   "negative",
+   "neutral"
+  ],
+  "note": "哪些整體傾向進歸因（清單；positive/unknown 恆 non_issue 不歸因）。neutral 涵蓋『整體滿意但含具體問題點』的混合評論——其問題面向也要歸因（kiki 2026-07-06 反饋：好評裡的問題訊號不能被整體語氣蓋掉）；歸因後找不到具體問題點時仍回 non_issue。"
+ },
+ "abstain_policy": {
+  "l1": "force_for_negative",
+  "l2": "force_for_negative",
+  "l3": "allow_empty_low_evidence",
+  "note": "負向評論必落 L1（域）+ L2（面向）；低信心仍給 L2 但標 needs_review（不留空）。L3（細項）僅證據充足才給，證據不足留空、不硬判。"
+ },
+ "evidence_policy": {
+  "require_quote_grounded": true,
+  "l3_min_confidence": 0.5,
+  "attr_min_confidence": 0.2,
+  "caps": [
+   {
+    "domain": "supplier",
+    "require": "order_oid",
+    "cap": "jury_low",
+    "note": "判供應商履約缺訂單佐證→信心封頂"
+   }
+  ],
+  "note": "evidence_quote 須為進線原文逐字片段才採信；未命中或 L3 信心 < l3_min_confidence → L3 降階留空。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage A 選錯域時 Stage B 湊數列 conf 常 <0.15，如 C-2-1 網路品質殭屍歸因；0＝關閉）。"
+ },
+ "prejudge_depth": "l3",
+ "cascade": {
+  "enabled": true,
+  "reroute_on_low_conf": true,
+  "stage_a_level": "l1l2",
+  "stageA_l1": {
+   "model": "gpt-5-mini",
+   "note": "L1 域分類：注入六域 L1 canon 界線（rule_C-N，含鏡像正反例+forbid）。model 空＝沿用主模型/config stage1_model。域判斷是 content 誤判的關鍵層，用 gpt-5-mini（2026-07-06 A/B：nano Stage A content FP 32.4% vs mini 10.8%，每則約 $0.0014）。"
   },
-  "polarity_gate": {
-    "attribute_when": [
-      "negative",
-      "neutral"
-    ],
-    "note": "哪些整體傾向進歸因（清單；positive/unknown 恆 non_issue 不歸因）。neutral 涵蓋『整體滿意但含具體問題點』的混合評論——其問題面向也要歸因（kiki 2026-07-06 反饋：好評裡的問題訊號不能被整體語氣蓋掉）；歸因後找不到具體問題點時仍回 non_issue。"
+  "stageB": {
+   "model": "",
+   "note": "Stage B 域內細項判決模型；空＝沿用主判決模型。目錄注入固定為選中域 rich 判準（葉 canon+forbid+誤判例+L2 canon 標題），非配置項。可棄權（域內無貼合細項回空→觸發重路由）。"
   },
-  "abstain_policy": {
-    "l1": "force_for_negative",
-    "l2": "force_for_negative",
-    "l3": "allow_empty_low_evidence",
-    "note": "負向評論必落 L1（域）+ L2（面向）；低信心仍給 L2 但標 needs_review（不留空）。L3（細項）僅證據充足才給，證據不足留空、不硬判。"
-  },
-  "evidence_policy": {
-    "require_quote_grounded": true,
-    "l3_min_confidence": 0.5,
-    "attr_min_confidence": 0.2,
-    "caps": [
-      {
-        "domain": "supplier",
-        "require": "order_oid",
-        "cap": "jury_low",
-        "note": "判供應商履約缺訂單佐證→信心封頂"
-      }
-    ],
-    "note": "evidence_quote 須為進線原文逐字片段才採信；未命中或 L3 信心 < l3_min_confidence → L3 降階留空。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage A 選錯域時 Stage B 湊數列 conf 常 <0.15，如 C-2-1 網路品質殭屍歸因；0＝關閉）。"
-  },
-  "cascade": {
-    "enabled": true,
-    "reroute_on_low_conf": true,
-    "stage_a_level": "l1l2",
-    "stageA_l1": {
-      "model": "gpt-5-mini",
-      "note": "L1 域分類：注入六域 L1 canon 界線（rule_C-N，含鏡像正反例+forbid）。model 空＝沿用主模型/config stage1_model。域判斷是 content 誤判的關鍵層，用 gpt-5-mini（2026-07-06 A/B：nano Stage A content FP 32.4% vs mini 10.8%，每則約 $0.0014）。"
-    },
-    "stageB": {
-      "model": "",
-      "note": "Stage B 域內細項判決模型；空＝沿用主判決模型。目錄注入固定為選中域 rich 判準（葉 canon+forbid+誤判例+L2 canon 標題），非配置項。可棄權（域內無貼合細項回空→觸發重路由）。"
-    },
-    "note": "enabled=false 時判決走現行單次 Stage2（可回退）；true 時走 L1→L2/L3 cascade。2026-07-06 A/B 實測（n=123·silver 雙盲三票）：content 誤判率 flat 54.1% → cascade+mini 10.8%，primary 準確率 0.395→0.644，故預設啟用。reroute_on_low_conf：低信心負反饋重路由——Stage B 產出低於 evidence_policy.attr_min_confidence 的域視為選錯，排除後重跑一次 Stage A 改判他域（重判結果同過閘門；僅丟棄會漏掉真問題）。 stage_a_level：Stage A 選擇顆粒度——l1=六域；l1l2=直選 L2 面向（32 項含 canon，Stage B 候選縮到該面向葉；2026-07-07 A/B：dev acc 0.654→0.704·holdout 0.786→0.821·L3 填充率 +4.8pp，故預設 l1l2）。"
-  },
-  "attribution_guidance": "你是 KKday 旅遊商品客訴歸因判官。依下方『六域界線鐵則』與『問題分類 L3 目錄』把這則評論中的『具體問題面向』嚴格且精準歸到最貼切的一條 code，並給信心。評論可能整體負向、也可能是『整體滿意但含具體問題點』的混合傾向——混合評論只歸因其提到的具體問題點，被稱讚的面向不歸因；全文找不到具體問題點時回空（寧缺勿濫）。\n判斷流程：①先依『六域界線鐵則』定主體問題域——看評論抱怨的『問題性質』（頁面描述本身有缺陷 vs 現場執行/實體/兌換/客服 vs 客人主觀期待），**非只看主題字眼**：評論提到時長/費用/停留/集合，不代表就是商品內容；要看是「頁面描述寫得不對」還是「實際發生的事」。②再依 L3 目錄細項定義選最貼切 code。\n各域的界線、正例（屬本域）、反例（常見誤判→改歸哪域）皆列於『六域界線鐵則』——那是當前版本規則（QC 於規則配置頁編輯即時生效），據以判斷、勿自行臆造。\n多個問題時取最核心、最直接的抱怨點，勿被次要問題誤導。只能從目錄內選 code；無法明確歸類時 l3_code 回空字串（寧缺勿濫）。輸出 JSON。",
-  "polarity_guidance": "你是 KKday 旅遊商品進線極性判官。只判斷整體情緒傾向，不做任何歸因。三態嚴格語義：\npositive＝全文找不到任何具體問題點、遺憾或未達成事項的純好評。\nneutral＝混合或平淡——整體滿意但提到至少一個具體問題、遺憾或落差（例：『整體來說很棒，只是船沒搭到有點可惜』『很順的行程，雖然啤酒廠沒有開』『網頁介紹寫得有點亂，實際體驗其實相當好』都是 neutral），或純資訊性陳述無明顯情緒。\nnegative＝主基調是抱怨、不滿或客訴。\n鐵則：不得因整體語氣正面就蓋掉具體問題訊號——含具體問題點的高分好評是 neutral，不是 positive。輸出 JSON。"
+  "note": "enabled=false 時判決走現行單次 Stage2（可回退）；true 時走 L1→L2/L3 cascade。2026-07-06 A/B 實測（n=123·silver 雙盲三票）：content 誤判率 flat 54.1% → cascade+mini 10.8%，primary 準確率 0.395→0.644，故預設啟用。reroute_on_low_conf：低信心負反饋重路由——Stage B 產出低於 evidence_policy.attr_min_confidence 的域視為選錯，排除後重跑一次 Stage A 改判他域（重判結果同過閘門；僅丟棄會漏掉真問題）。 stage_a_level：Stage A 選擇顆粒度——l1=六域；l1l2=直選 L2 面向（32 項含 canon，Stage B 候選縮到該面向葉；2026-07-07 A/B：dev acc 0.654→0.704·holdout 0.786→0.821·L3 填充率 +4.8pp，故預設 l1l2）。"
+ },
+ "attribution_guidance": "你是 KKday 旅遊商品客訴歸因判官。依下方『六域界線鐵則』與『問題分類 L3 目錄』把這則評論中的『具體問題面向』嚴格且精準歸到最貼切的一條 code，並給信心。評論可能整體負向、也可能是『整體滿意但含具體問題點』的混合傾向——混合評論只歸因其提到的具體問題點，被稱讚的面向不歸因；全文找不到具體問題點時回空（寧缺勿濫）。\n判斷流程：①先依『六域界線鐵則』定主體問題域——看評論抱怨的『問題性質』（頁面描述本身有缺陷 vs 現場執行/實體/兌換/客服 vs 客人主觀期待），**非只看主題字眼**：評論提到時長/費用/停留/集合，不代表就是商品內容；要看是「頁面描述寫得不對」還是「實際發生的事」。②再依 L3 目錄細項定義選最貼切 code。\n各域的界線、正例（屬本域）、反例（常見誤判→改歸哪域）皆列於『六域界線鐵則』——那是當前版本規則（QC 於規則配置頁編輯即時生效），據以判斷、勿自行臆造。\n多個問題時取最核心、最直接的抱怨點，勿被次要問題誤導。只能從目錄內選 code；無法明確歸類時 l3_code 回空字串（寧缺勿濫）。輸出 JSON。",
+ "polarity_guidance": "你是 KKday 旅遊商品進線極性判官。只判斷整體情緒傾向，不做任何歸因。三態嚴格語義：\npositive＝全文找不到任何具體問題點、遺憾或未達成事項的純好評。\nneutral＝混合或平淡——整體滿意但提到至少一個具體問題、遺憾或落差（例：『整體來說很棒，只是船沒搭到有點可惜』『很順的行程，雖然啤酒廠沒有開』『網頁介紹寫得有點亂，實際體驗其實相當好』都是 neutral），或純資訊性陳述無明顯情緒。\nnegative＝主基調是抱怨、不滿或客訴。\n鐵則：不得因整體語氣正面就蓋掉具體問題訊號——含具體問題點的高分好評是 neutral，不是 positive。輸出 JSON。"
 }

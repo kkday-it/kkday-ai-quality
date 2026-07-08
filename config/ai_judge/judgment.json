@@ -27,7 +27,7 @@
  "polarity_labels": {
   "positive": "正向",
   "negative": "負向",
-  "neutral": "中性",
+  "neutral": "中立",
   "unknown": "傾向不明"
  },
  "stage_labels": {
@@ -38,9 +38,13 @@
   "insufficient": "資訊不足"
  },
  "prejudge": {
-  "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門＋cascade Stage A 域分類的 fallback 模型（cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者（同域換葉；跨域重路由另見 global_rule cascade.reroute_on_low_conf）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；attribute_reasoning_effort：attribute 階段獨立 reasoning_effort（null＝沿用主 config；降檔省 completion 須先 A/B 驗準）。",
+  "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門＋cascade Stage A 域分類的 fallback 模型（cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者（同域換葉；跨域重路由另見 global_rule cascade.reroute_on_low_conf）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝cascade 域分類／attribute＝歸因；null＝沿用主 config；gpt-5 系列預設 effort 的 reasoning tokens 佔全量重判總費 ~62%（2026-07-06 實測），降檔省 completion 須先 A/B 驗準）；batch_service_tier：批次判決 serving tier（null＝標準；\"flex\"＝OpenAI flex processing -50% 計價換變動延遲·僅 OpenAI provider 生效·429 資源不足自動回退標準）；flex_min_items：套 flex 的最小批量（小批次如單筆重判走標準 tier 保互動延遲）。",
   "stage1_model": "gpt-5-mini",
+  "polarity_reasoning_effort": "minimal",
+  "stage_a_reasoning_effort": null,
   "attribute_reasoning_effort": null,
+  "batch_service_tier": "flex",
+  "flex_min_items": 10,
   "enable_stage0_skip": true,
   "stage0_max_comment_len": 8,
   "enable_adaptive_rejudge": true,

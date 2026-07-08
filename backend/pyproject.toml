@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "openai>=1.50.0",
     "litellm>=1.90.0",       # LLM gateway（env.llm_gateway=litellm 啟用；統一介面 + cost，fallback/語意快取待 Phase 7）
+    "diskcache>=5.6.0",      # LLM exact-match 結果快取（同 prompt+model 重用判決；重判未變部分零 token。顯式宣告，勿依賴 litellm 傳遞依賴）
     "openfeature-sdk>=0.10",  # 判決閾值旗標標準介面（避供應商鎖定；provider 包 judgment 配置，Phase 7 換 Flagsmith）
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",  # pydantic-settings 解析 env_file 所需

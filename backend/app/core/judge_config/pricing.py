@@ -23,6 +23,10 @@ _default: dict = {"input": 0.0, "output": 0.0}
 # 若日後需 per-model 精確，改於 llm_model.json 各 model 加 `cached_input` 欄並在此讀取。
 _CACHED_INPUT_MULT = 0.5
 
+# flex serving tier（service_tier="flex"）計價倍率：OpenAI flex＝Batch 同級 -50%（input/output 皆半價）。
+# 屬 provider 定價事實、非業務可調值，故具名常數留碼內（同 _CACHED_INPUT_MULT 慣例）。
+_FLEX_MULT = 0.5
+
 
 def _load() -> dict[str, dict]:
     """lazy 建 model→單價 索引並快取；缺檔/壞檔回空表（不中斷判決，花費顯示 0）。"""
@@ -49,7 +53,14 @@ def price_for(model: str) -> dict:
     return _load().get(model) or _default
 
 
-def cost_usd(model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> float:
+def cost_usd(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int = 0,
+    *,
+    service_tier: str | None = None,
+) -> float:
     """token 用量 → 花費 USD（依模型單價；6 位小數）。
 
     prompt caching 命中的 cached_tokens 以折扣價（`_CACHED_INPUT_MULT`）計入 input，使花費顯示
@@ -60,6 +71,7 @@ def cost_usd(model: str, prompt_tokens: int, completion_tokens: int, cached_toke
         prompt_tokens: 輸入 token 數（含 cached 部分）。
         completion_tokens: 輸出 token 數。
         cached_tokens: prompt_tokens 中命中 prompt cache 的部分（折扣計價）。
+        service_tier: 本次呼叫實際 serving tier（"flex"＝整筆 ×`_FLEX_MULT`；其餘標準計價）。
 
     Returns:
         估算花費 USD（單價缺失時以 price_default 計，仍可能為 0）。
@@ -70,4 +82,7 @@ def cost_usd(model: str, prompt_tokens: int, completion_tokens: int, cached_toke
     cached = min(max(cached_tokens, 0), prompt_tokens)  # 防呆：夾在 [0, prompt_tokens]
     fresh_in = prompt_tokens - cached
     input_cost = (fresh_in / 1_000_000 * inp) + (cached / 1_000_000 * inp * _CACHED_INPUT_MULT)
-    return round(input_cost + completion_tokens / 1_000_000 * out, 6)
+    total = input_cost + completion_tokens / 1_000_000 * out
+    if service_tier == "flex":
+        total *= _FLEX_MULT
+    return round(total, 6)

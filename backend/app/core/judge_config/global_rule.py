@@ -74,3 +74,14 @@ def polarity_guidance() -> str:
 def polarity_gate() -> dict[str, Any]:
     """極性閘門（attribute_when：哪些整體傾向進歸因）；prejudge._attribute_when 消費。"""
     return _load().get("polarity_gate", {})
+
+
+def prejudge_depth() -> str:
+    """初判歸因深度（"l3"＝完整 L1→L3 cascade；"l2"＝只判 L1+L2）。
+
+    "l2"：初判僅依評論文字，L3 細項常缺商品/訂單佐證而不可靠——改走單呼叫 32 面向目錄
+    多歸因（省掉整段 Stage B 選葉），L3 留待接上商品/訂單數據的深判階段補判。
+    預設 "l3"（未設＝零行為改變）；非法值回退 "l3"。
+    """
+    v = str(_load().get("prejudge_depth") or "l3").lower()
+    return v if v in ("l2", "l3") else "l3"

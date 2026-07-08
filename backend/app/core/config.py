@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     )
 
     # ── 環境 ──
-    app_env: str = "development"  # development / staging / production；非 development 缺 JWT secret 拒啟動
+    app_env: str = (
+        "development"  # development / staging / production；非 development 缺 JWT secret 拒啟動
+    )
     # ── 認證 ──
     aiq_jwt_secret: str | None = None
     # user_settings 機密（provider_tokens/qc_passwords）at-rest 加密 passphrase；
@@ -44,11 +46,23 @@ class Settings(BaseSettings):
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）
+    llm_timeout_flex: int = (
+        900  # flex tier 單次呼叫 timeout 秒（官方建議 15 分鐘：flex 延遲變動大易逾時）
+    )
+    # LLM exact-match 結果快取（diskcache·data/llm_cache）：key=model+messages+response_format+effort 的
+    # 雜湊——prompt 內嵌規則正文，規則一改 key 即變（失效粒度自動精準）；命中＝重用先前判決、零 token 零延遲。
+    # 重判密集工作流（規則微調→全量重判）下未變更部分全免費；語義中性（同輸入同規則＝同判決），不影響準確度。
+    llm_exact_cache: bool = True
+    llm_cache_ttl_days: int = 30  # 快取條目存活天數（過期自動失效；目錄可整刪重生）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
-    ai_judge_model: str = "gpt-5-mini"  # fallback 預設＝最低可用模型（nano 已下架，對齊 llm_model.json defaultModel）
-    llm_max_retries: int = 5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
+    ai_judge_model: str = (
+        "gpt-5-mini"  # fallback 預設＝最低可用模型（nano 已下架，對齊 llm_model.json defaultModel）
+    )
+    llm_max_retries: int = (
+        5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
+    )
     # LLM gateway：'openai'（預設，OpenAI SDK 直呼）| 'litellm'（統一 gateway，得 cost/fallback/語意快取路徑）。
     # 增量 strangler：預設走既有 openai 路徑（proven）；設 LLM_GATEWAY=litellm 切換，可回滾。語意快取/fallback/
     # OTel 等進階能力需 Phase 7 服務（Redis/Router/collector）；現階段 litellm 路徑得統一介面 + cost 正規化。
