@@ -1,8 +1,8 @@
-"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment 的 live + 版本化）。
+"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment + source_mapping 的 live + 版本化）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
-（歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment 各自結構驗），
-不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
+（歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment/source_mapping
+各自結構驗），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def _reload_judge_cache() -> None:
     （信心閾值 / 顯示 label / prejudge 旋鈕）即時反映新規則（對齊 config.py；ai_judge / global_rule /
     judgment 皆讀 DB active 版，reload 後 prejudge 立即採用；reload 失敗不阻斷已成功的寫入）。"""
     try:
-        from app.core import ai_judge, flags, global_rule
+        from app.core import ai_judge, flags, global_rule, source_mapping
         from app.core.db import _shared
         from app.judge import prejudge
 
@@ -34,6 +34,7 @@ def _reload_judge_cache() -> None:
         _shared.reload_judgment_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
         prejudge.reload()  # 初判 prejudge 旋鈕快取
         flags.reload()  # OpenFeature 判決閾值 cache（auto_accept/jury_*）
+        source_mapping.reload()  # 上傳表頭校驗 + 欄位映射（/inbound/validate 即時採新版）
     except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
         pass
 
@@ -96,6 +97,31 @@ def _validate(code: str, content: dict) -> None:
         if gerrs:
             gmsgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in gerrs[:8]]
             raise HTTPException(status_code=422, detail={"errors": gmsgs, "count": len(gerrs)})
+        return
+    if code == "source_mapping":
+        # 上傳表頭校驗 + 欄位映射：驗自身 schema（source_mapping.schema.json），非 L1-L3 歸因樹。
+        from app.core.paths import AI_JUDGE_DIR
+
+        try:
+            sschema = json.loads(
+                (AI_JUDGE_DIR / "source_mapping.schema.json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return  # 無 schema 檔 → 跳過結構驗（後端仍為最終閘）
+        serrs = sorted(
+            jsonschema.Draft202012Validator(sschema).iter_errors(content),
+            key=lambda e: list(e.path),
+        )
+        if serrs:
+            smsgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in serrs[:8]]
+            raise HTTPException(status_code=422, detail={"errors": smsgs, "count": len(serrs)})
+        # 指紋唯一性：required_headers 同時是自動辨識指紋，兩來源指紋完全相同會使辨識歧義 → 擋。
+        fps = [tuple(sorted(m.get("required_headers", []))) for m in content["sources"].values()]
+        if len(fps) != len(set(fps)):
+            raise HTTPException(
+                status_code=422,
+                detail="兩個來源的 required_headers 完全相同——自動辨識將無法區分，請至少保留一個獨有欄",
+            )
         return
     if code == "judgment":
         # 判決配置（顯示 label / 信心閾值 / prejudge 旋鈕）非 L1-L3 歸因樹 → 不套歸因 schema；輕量結構驗。

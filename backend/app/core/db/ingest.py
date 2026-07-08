@@ -18,11 +18,16 @@ def init_db() -> None:
 
 
 def create_batch(
-    source: str, source_label: str, original_name: str, row_count: int, inserted_count: int
+    source: str,
+    source_label: str,
+    original_name: str,
+    row_count: int,
+    inserted_count: int,
+    note: str = "",
 ) -> dict:
     """建立上傳批次記錄，自動命名「{來源} YYYYMMDD{當天序號:02d}」。
 
-    例：售前售後進線 2026062301（當天該來源第 1 批）。回傳批次 dict。
+    例：售前售後進線 2026062301（當天該來源第 1 批）。note＝用戶上傳時輸入的備註。回傳批次 dict。
     """
     now = datetime.now(timezone.utc).astimezone()
     date_iso = now.strftime("%Y-%m-%d")
@@ -53,6 +58,7 @@ def create_batch(
                     "row_count": row_count,
                     "inserted_count": inserted_count,
                     "uploaded_at": uploaded_at,
+                    "note": note,
                 },
                 ["batch_id"],
             )
@@ -65,6 +71,7 @@ def create_batch(
         "row_count": row_count,
         "inserted_count": inserted_count,
         "uploaded_at": uploaded_at,
+        "note": note,
     }
 
 

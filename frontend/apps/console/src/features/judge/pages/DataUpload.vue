@@ -30,6 +30,7 @@ const importing = ref(false);
 const modalVisible = ref(false);
 const sheets = ref<SheetValidation[]>([]);
 const selectedKeys = ref<string[]>([]); // 勾選的 sheet_name（僅 ok 可選）
+const sheetNotes = ref<Record<string, string>>({}); // 每工作表用戶備註（隨批次保存）
 
 const okSheets = computed(() => sheets.value.filter((s) => s.status === 'ok'));
 
@@ -51,6 +52,7 @@ const onPick = (option: any) => {
       sheets.value = r.sheets;
       // 預選所有通過的工作表
       selectedKeys.value = r.sheets.filter((s) => s.status === 'ok').map((s) => s.sheet_name);
+      sheetNotes.value = {}; // 換檔重置備註
       modalVisible.value = true;
       onSuccess(r);
     })
@@ -92,7 +94,11 @@ const confirmImport = async () => {
   try {
     const { job_id } = await uploadInbound(
       pendingFile.value!,
-      picked.map((s) => ({ sheet_name: s.sheet_name, source: s.detected_source as string })),
+      picked.map((s) => ({
+        sheet_name: s.sheet_name,
+        source: s.detected_source as string,
+        note: (sheetNotes.value[s.sheet_name] || '').trim(),
+      })),
     );
     closeStream();
     // 原生 EventSource 接收 server 推送（單向，免前端輪詢）；status≠running 即收尾關閉連線
@@ -158,6 +164,7 @@ const batchCols = [
   { title: '筆數', dataIndex: 'row_count', width: 90 },
   { title: '上傳時間', dataIndex: 'uploaded_at', width: 190 },
   { title: '原始檔名', dataIndex: 'original_name', ellipsis: true, tooltip: true },
+  { title: '備註', dataIndex: 'note', ellipsis: true, tooltip: true, width: 160 },
   { title: '操作', slotName: 'op', width: 170, fixed: 'right' as const },
 ];
 
@@ -201,7 +208,7 @@ const exportBatch = (batch: any) => {
   <div>
     <CardSection
       title="資料上傳"
-      hint="拖檔（CSV / 多分頁 xlsx）→ 自動辨識來源 + 表頭校驗 → 勾選確認 → 錄入 PostgreSQL（冪等去重）"
+      hint="拖檔（CSV / 多分頁 xlsx）→ 自動辨識來源 + 表頭校驗（校驗欄位可於「規則配置 › 上傳表頭校驗」調整）→ 勾選確認 → 錄入 PostgreSQL（冪等去重）"
       class="mb-4"
     >
       <a-upload
@@ -265,7 +272,20 @@ const exportBatch = (batch: any) => {
               </template>
             </a-table-column>
             <a-table-column title="筆數" data-index="row_count" :width="80" />
-            <a-table-column title="說明" data-index="reason" ellipsis tooltip />
+            <!-- 通過的表＝用戶輸入備註（隨批次保存）；未通過的表顯示校驗失敗原因 -->
+            <a-table-column title="備註">
+              <template #cell="{ record }">
+                <a-input
+                  v-if="record.status === 'ok'"
+                  v-model="sheetNotes[record.sheet_name]"
+                  size="small"
+                  placeholder="選填，隨批次保存"
+                  allow-clear
+                  :max-length="200"
+                />
+                <span v-else class="text-xs text-gray-400">{{ record.reason }}</span>
+              </template>
+            </a-table-column>
           </template>
         </a-table>
       </template>
@@ -331,7 +351,7 @@ const exportBatch = (batch: any) => {
           :data="batches"
           :pagination="ALL_PAGINATION"
           row-key="batch_id"
-          :scroll="{ x: 900 }"
+          :scroll="{ x: 1060 }"
         >
           <template #name="{ record }"
             ><b>{{ record.name }}</b></template

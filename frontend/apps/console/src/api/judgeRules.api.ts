@@ -1,8 +1,8 @@
-// 判決規則管理 API（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment 的版本化）。
+// 判決規則管理 API（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment + source_mapping 的版本化）。
 // 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前依 code 型別驗證，非法回 422；存檔後熱重載。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
-/** rule code：'C-1'..'C-6' | 'schema' | 'product_vertical' | 'global_rule' | 'judgment'。 */
+/** rule code：'C-1'..'C-6' | 'schema' | 'product_vertical' | 'global_rule' | 'judgment' | 'source_mapping'。 */
 export type RuleCode = string;
 
 /** 某 rule 的 active 版 meta（清單用）。 */

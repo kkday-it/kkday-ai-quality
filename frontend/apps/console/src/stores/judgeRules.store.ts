@@ -26,6 +26,8 @@ export const RULE_LABELS_FALLBACK: Record<string, string> = {
   product_vertical: '商品垂直分類',
   // 判決配置：judgment.json 無 _meta.label（純旋鈕 config），選單顯示名一律由此 fallback 提供。
   judgment: '判決配置',
+  // 上傳表頭校驗：seed 檔含 _meta.label，DB 未 seed 時由此 fallback。
+  source_mapping: '上傳表頭校驗',
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {

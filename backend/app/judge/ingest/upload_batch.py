@@ -102,7 +102,14 @@ def _run(job_id: str, filename: str, sheets_data: list[dict]) -> None:
             try:
                 # 5 來源統一：原始源列（$ 淨化）直接 upsert 各自來源表（衝突鍵＝特徵 id）
                 inserted = _process_source(job_id, idx, source, rows)
-                batch = db.create_batch(source, label, f"{filename}::{name}", len(rows), inserted)
+                batch = db.create_batch(
+                    source,
+                    label,
+                    f"{filename}::{name}",
+                    len(rows),
+                    inserted,
+                    note=sd.get("note", ""),
+                )
                 _bump_sheet(job_id, idx, set_={"status": "done", "batch_id": batch["batch_id"]})
             except Exception:  # noqa: BLE001 — 單表失敗隔離，不阻斷其餘表
                 _log.exception("上傳單表失敗 job=%s sheet=%s", job_id, name)
@@ -125,7 +132,7 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
     Args:
         content: 上傳檔 bytes。
         filename: 原始檔名（CSV/xlsx 判別 + 批次命名）。
-        selections: 勾選清單 [{"sheet_name", "source"}]（來自 /validate 後）。
+        selections: 勾選清單 [{"sheet_name", "source", "note"}]（來自 /validate 後；note＝用戶備註，隨批次保存）。
 
     Returns:
         {"job_id", "sheets": [{"sheet_name","source","label","total","valid","reason"}]}；
@@ -178,7 +185,13 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
             }
         )
         sheets_data.append(
-            {"sheet_name": name, "source": source, "label": label, "rows": sh["rows"]}
+            {
+                "sheet_name": name,
+                "source": source,
+                "label": label,
+                "rows": sh["rows"],
+                "note": (sel.get("note") or "").strip(),
+            }
         )
 
     job_id = f"up_{uuid.uuid4().hex[:12]}"

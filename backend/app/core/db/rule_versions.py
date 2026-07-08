@@ -4,6 +4,7 @@
 非歸因分類但復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認、存檔後熱重載）者：
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
 - global_rule（判決流程總規範）、judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕），seed 放 config/ai_judge。
+- source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ RULE_CODES = (
     "product_vertical",
     "global_rule",
     "judgment",
+    "source_mapping",
 )
 
 
@@ -47,6 +49,10 @@ def _rule_file(code: str) -> Path:
         code == "judgment"
     ):  # 判決顯示標籤 + 信心閾值 + prejudge 旋鈕（判決 config SSOT），默認 seed = judgment.json
         return _AI_JUDGE_DIR / "judgment.json"
+    if (
+        code == "source_mapping"
+    ):  # 上傳表頭校驗 + 來源欄位映射（上傳流程 SSOT），默認 seed = source_mapping.json
+        return _AI_JUDGE_DIR / "source_mapping.json"
     return _AI_JUDGE_DIR / ("rule.schema.json" if code == "schema" else f"rule_{code}.json")
 
 

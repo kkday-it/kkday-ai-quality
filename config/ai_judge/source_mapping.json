@@ -1,8 +1,9 @@
 {
   "$schema": "./source_mapping.schema.json",
   "_meta": {
-    "version": "1.0",
-    "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。",
+    "version": "1.1",
+    "label": "上傳表頭校驗",
+    "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。live 版在 DB judge_rule_versions（規則配置頁線上編輯），本檔為初始 seed。",
     "canonical_fields": [
       "source",
       "source_record_id",
@@ -48,7 +49,7 @@
       "const_fields": {}
     },
     "product_reviews": {
-      "required_headers": ["rec_oid", "rec_desc"],
+      "required_headers": ["rec_oid", "rec_title", "rec_desc"],
       "field_map": {
         "rec_oid": "source_record_id",
         "create_date": "occurred_at",

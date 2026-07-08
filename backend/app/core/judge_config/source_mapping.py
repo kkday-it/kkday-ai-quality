@@ -7,7 +7,9 @@
   - normalize_row(source, row)：原始列 → 統一問題列表 canonical 欄 + source_metadata(特殊欄)。
 
 公共欄位共用、特殊欄入 source_metadata、source 欄即「反饋管道」——對齊統一問題列表設計。
-快取：首次存取 lazy 載入；config 線上編輯後呼叫 reload()。
+SSOT＝DB judge_rule_versions 的 source_mapping active 版（RuleManager 線上編輯即時生效），
+config/ai_judge/source_mapping.json 為初始 seed / 無 DB 版本時的 fallback（對齊 ai_judge loader）。
+快取：首次存取 lazy 載入；規則存檔後由 rules.py _reload_judge_cache 呼叫 reload()。
 """
 
 from __future__ import annotations
@@ -25,11 +27,19 @@ _loaded = False
 
 
 def _ensure_loaded() -> None:
-    """lazy 載入 source_mapping.json（冪等）。"""
+    """lazy 載入（冪等）：DB active 版優先，無版本 / DB 不可用（腳本冷啟動）回退 seed 檔。"""
     global _loaded
     if _loaded:
         return
-    data = json.loads(_MAPPING_FILE.read_text(encoding="utf-8"))
+    data = None
+    try:
+        from app.core import db  # 函式內 import：避免模組載入期的循環依賴
+
+        data = db.get_rule_active("source_mapping")
+    except Exception:  # noqa: BLE001  DB 未初始化（獨立腳本 / 測試收集期）→ 檔案兜底
+        data = None
+    if data is None:
+        data = json.loads(_MAPPING_FILE.read_text(encoding="utf-8"))
     _sources.clear()
     _sources.update(data.get("sources", {}))
     _canonical.clear()

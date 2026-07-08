@@ -17,10 +17,11 @@ router = APIRouter()
 
 
 class UploadSelection(BaseModel):
-    """確認匯入時用戶勾選的工作表：sheet_name + 確認來源（通常＝自動辨識結果）。"""
+    """確認匯入時用戶勾選的工作表：sheet_name + 確認來源（通常＝自動辨識結果）+ 用戶備註。"""
 
     sheet_name: str
     source: str
+    note: str = ""
 
 
 @router.post("/api/inbound/validate")

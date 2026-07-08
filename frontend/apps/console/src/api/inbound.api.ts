@@ -52,12 +52,12 @@ export interface UploadJobSnapshot {
 /**
  * 確認匯入（背景 job）：上傳勾選工作表 → 立即回 { job_id, sheets }；進度以 SSE 推送（見 uploadStreamUrl）。
  * @param file 同一份檔案（需重送供後端再解析）
- * @param selections 勾選清單 [{ sheet_name, source }]
+ * @param selections 勾選清單 [{ sheet_name, source, note }]（note＝用戶備註，隨批次保存）
  * @returns { job_id, sheets: [{ sheet_name, source, label, total, valid, reason }] }
  */
 export const uploadInbound = (
   file: File,
-  selections: { sheet_name: string; source: string }[],
+  selections: { sheet_name: string; source: string; note?: string }[],
 ): Promise<{
   job_id: string;
   sheets: { sheet_name: string; source: string; label: string; total: number; valid: boolean; reason: string }[];
@@ -85,7 +85,7 @@ export const uploadInbound = (
 export const uploadStreamUrl = (jobId: string): string =>
   `${BASE}/inbound/upload/stream?job_id=${encodeURIComponent(jobId)}`;
 
-/** 上傳批次清單（新到舊；每列 batch_id/name/source/row_count/uploaded_at/original_name 等動態欄）。 */
+/** 上傳批次清單（新到舊；每列 batch_id/name/source/row_count/uploaded_at/original_name/note 等動態欄）。 */
 export const getBatches = (): Promise<Record<string, unknown>[]> =>
   j<Record<string, unknown>[]>(`${BASE}/batches`);
 

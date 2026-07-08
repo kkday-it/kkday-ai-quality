@@ -2,7 +2,8 @@
 /**
  * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
  * 選單置頂特殊項（純 JSON 編輯）：schema 結構規格 / global 判決總規範 / judgment 判決配置
- *   （信心閾值 · 顯示 label · prejudge 旋鈕含 G1 auto_confirm.audit_sample_rate，QC 免改碼調）；
+ *   （信心閾值 · 顯示 label · prejudge 旋鈕含 G1 auto_confirm.audit_sample_rate，QC 免改碼調）
+ *   / source_mapping 上傳表頭校驗（required_headers 指紋 + field_map，存檔即生效於資料上傳頁）；
  *   其後為歸因分類 C-N（面板 / JSON 雙編 + active schema 驗證）。歷史對比恢復 + 單項/整批恢復默認。
  */
 import { computed, onMounted, ref, shallowRef } from 'vue';
@@ -30,12 +31,18 @@ const verticalFilter = useVerticalFilterStore();
 // 歸因分類（C-N，schema/global/judgment 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不讀前端靜態表。
 // 非 L1-L3 歸因樹者一律排除出 C-N 迴圈、改為置頂特殊項（product_vertical 已移「配置」抽屜，此處不顯示；
 // schema＝結構規格、global＝判決總規範、judgment＝信心閾值/label/prejudge 旋鈕，皆純 JSON 編輯）。
-const _NON_DOMAIN_CODES = new Set(['schema', 'product_vertical', 'global_rule', 'judgment']);
+const _NON_DOMAIN_CODES = new Set([
+  'schema',
+  'product_vertical',
+  'global_rule',
+  'judgment',
+  'source_mapping',
+]);
 const domainCodes = computed(() =>
   store.metas.filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code)).map((m) => m.rule_code),
 );
 // 純 JSON 編輯（無 L1-L3 樹）的置頂特殊項：一律 JSON 模式、不走 RuleTreePanel、不套 schema 驗證。
-const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment']);
+const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment', 'source_mapping']);
 // 編輯/檢視模式：panel 面板編輯 / json 原始編輯 / history 歷史對比（頁內展示，取代原彈窗）。
 const mode = ref<'panel' | 'json' | 'history'>('panel');
 const saveOpen = ref(false);
@@ -177,6 +184,10 @@ function doResetAll() {
           <a-menu-item key="judgment">
             <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
             <span class="ml-2">{{ store.labelFor('judgment') }}</span>
+          </a-menu-item>
+          <a-menu-item key="source_mapping">
+            <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>
+            <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
           </a-menu-item>
         </a-menu-item-group>
         <a-menu-item-group title="歸因分類">
