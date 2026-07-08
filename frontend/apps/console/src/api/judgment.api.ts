@@ -6,7 +6,8 @@ import type { ProblemRow } from '@/features/judge/constants';
 export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
-  polarity?: string;
+  /** 傾向篩選（多選 positive/neutral/negative/unknown；CSV 傳後端）。 */
+  polarity?: string[];
   /** 判決階段篩選（多選；unjudged/judged/pending_review/pending_data/insufficient；CSV 傳後端）。 */
   stage?: string[];
   /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
@@ -25,6 +26,8 @@ export interface GetProblemsParams {
   orderOid?: string;
   /** 信心分層過濾（單選；auto_accept/jury/needs_review）。 */
   confidenceTier?: string;
+  /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 product_reviews 生效）。 */
+  hasExternal?: string;
   /** L1 歸因域過濾（單選；content/supplier/…，選項來自 getL1Domains）。 */
   l1Domain?: string;
   /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
@@ -46,7 +49,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   const q = new URLSearchParams();
   if (params.source) q.set('source', params.source);
   if (params.judged !== undefined) q.set('judged', String(params.judged));
-  if (params.polarity) q.set('polarity', params.polarity);
+  if (params.polarity?.length) q.set('polarity', params.polarity.join(','));
   if (params.stage?.length) q.set('stage', params.stage.join(','));
   if (params.scores?.length) q.set('scores', params.scores.join(','));
   if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
@@ -57,6 +60,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
   if (params.l1Domain) q.set('l1_domain', params.l1Domain);
+  if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);
   q.set('limit', String(params.limit ?? 2000));
@@ -81,7 +85,6 @@ export const getL1Domains = (source: string): Promise<L1DomainOpt[]> =>
  */
 export const startProblemsExport = (p: {
   source?: string;
-  polarity?: string;
   judged?: boolean;
   item_ids?: string[];
   /** 星等篩選（多選，IN 語意）。 */
@@ -92,6 +95,20 @@ export const startProblemsExport = (p: {
   date_from?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   date_to?: string;
+  /** 傾向（多選 positive/neutral/negative/unknown）。 */
+  polarity?: string[];
+  /** 判決階段（多選）。 */
+  stage?: string[];
+  /** 信心分層（單選）。 */
+  confidence_tier?: string;
+  /** L1 歸因域（單選 code）。 */
+  l1_domain?: string;
+  /** 有無外部評論（'true'/'false'）。 */
+  has_external?: boolean;
+  /** 精確 id 篩選。 */
+  rec_oid?: string;
+  prod_oid?: string;
+  order_oid?: string;
 }): Promise<{ job_id: string; filename: string }> =>
   j<{ job_id: string; filename: string }>(`${BASE}/problems/export`, {
     method: 'POST',
@@ -106,8 +123,8 @@ export interface PrejudgeStartResp {
   model: string;
 }
 
-/** 啟動初判歸因批量任務（選擇驅動：item_ids 複選 / scope=all 全部未判 + 指定模型）→ {job_id, total, model}。 */
-export const startPrejudge = (body: {
+/** 初判歸因批量任務請求 body（startPrejudge / previewPrejudgeCount 共用；預覽=實跑同一套標的解析）。 */
+export interface PrejudgeBody {
   item_ids?: string[];
   source?: string;
   scope?: string;
@@ -117,8 +134,31 @@ export const startPrejudge = (body: {
   stages?: string[];
   target_polarity?: string;
   max_confidence?: number;
-}): Promise<PrejudgeStartResp> =>
+  /** 範圍收斂（scope=all）：僅在此特徵 id 清單（勾選列）內做目標選取。 */
+  within_ids?: string[];
+  /** 列表全維度篩選（scope=all；語義同 /api/problems）：表級（兩分支皆套）。 */
+  scores?: number[];
+  date_from?: string;
+  date_to?: string;
+  rec_oid?: string;
+  prod_oid?: string;
+  order_oid?: string;
+  /** 判決級收斂（僅已判分支）：信心分層 / L1 歸因域。 */
+  confidence_tier?: string;
+  l1_domain?: string;
+}
+
+/** 啟動初判歸因批量任務（item_ids 顯式 / scope=all 目標選取，可 within_ids 交集勾選範圍）→ {job_id, total, model}。 */
+export const startPrejudge = (body: PrejudgeBody): Promise<PrejudgeStartResp> =>
   j<PrejudgeStartResp>(`${BASE}/v1/judgment/prejudge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+/** 預覽初判歸因「將處理 N 筆」（與 startPrejudge 同一套標的解析；不派工、不消耗 token）。 */
+export const previewPrejudgeCount = (body: PrejudgeBody): Promise<{ total: number }> =>
+  j<{ total: number }>(`${BASE}/v1/judgment/prejudge/count`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -200,3 +240,54 @@ export interface ProductVerticalResolved {
  */
 export const getProductVerticalResolved = (): Promise<ProductVerticalResolved> =>
   j<ProductVerticalResolved>(`${BASE}/judge-rules/product-vertical/resolved`);
+
+/** 歸因歷史單列（run 級：一次批量/選取/單筆重判＝一列；與 llm_usage 以 job_id 關聯）。 */
+export interface JudgmentRun {
+  job_id: string;
+  /** 觸發型態：batch（目標選取）/ selected（顯式多筆）/ single（單筆）。 */
+  kind: 'batch' | 'selected' | 'single';
+  /** 標的先前已有判決 → 本次為重判。 */
+  rejudge: boolean | null;
+  source: string;
+  model: string;
+  ensemble_voters: number;
+  /** 發起參數快照（stages / 商品垂直分類 / 傾向 / 信心上限 / item_ids 樣本…）。 */
+  params: Record<string, unknown>;
+  /** running/paused/cancelling（執行中 overlay 即時值）→ done/error/cancelled；interrupted＝server 重啟中斷。 */
+  status: string;
+  total: number;
+  processed: number | null;
+  ok: number | null;
+  failed: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+  triggered_by: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+/** 歸因歷史詳情的 per-stage LLM 用量明細（由 llm_usage 聚合；job 結束後才有值）。 */
+export interface JudgmentRunStage {
+  stage: string;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  reasoning_tokens: number;
+  cached_tokens: number;
+  cost_usd: number;
+}
+
+/** 歸因歷史列表（started_at 降冪分頁；執行中列帶即時進度）→ {total, items}。 */
+export const listJudgmentRuns = (p: { limit?: number; offset?: number; source?: string } = {}) => {
+  const q = new URLSearchParams();
+  if (p.limit != null) q.set('limit', String(p.limit));
+  if (p.offset != null) q.set('offset', String(p.offset));
+  if (p.source) q.set('source', p.source);
+  return j<{ total: number; items: JudgmentRun[] }>(`${BASE}/v1/judgment/runs?${q.toString()}`);
+};
+
+/** 歸因歷史單筆詳情（run 欄位 + 參數快照 + per-stage LLM 用量明細）。 */
+export const getJudgmentRun = (jobId: string) =>
+  j<JudgmentRun & { stages: JudgmentRunStage[] }>(
+    `${BASE}/v1/judgment/runs/${encodeURIComponent(jobId)}`,
+  );

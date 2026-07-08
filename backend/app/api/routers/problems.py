@@ -34,6 +34,7 @@ def get_problems(
     source: str | None = None,
     judged: bool | None = None,
     polarity: str | None = None,
+    sentiment: str | None = None,
     stage: str | None = None,
     scores: str | None = None,
     product_verticals: str | None = None,
@@ -44,6 +45,7 @@ def get_problems(
     order_oid: str | None = None,
     confidence_tier: str | None = None,
     l1_domain: str | None = None,
+    has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
     limit: int = 100,
@@ -54,6 +56,7 @@ def get_problems(
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
     星等 scores / 商品垂直分類 product_verticals / 判決階段 stage 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     confidence_tier（信心分層）/ l1_domain（L1 歸因域）為單值 judgments.data 過濾。
+    has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
     未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
@@ -61,7 +64,8 @@ def get_problems(
     return db.list_problems(
         source=source,
         judged=judged,
-        polarity=polarity,
+        polarity=_csv_strs(polarity),
+        sentiment=_csv_ints(sentiment),
         stage=_csv_strs(stage),
         score=_csv_ints(scores),
         product_vertical=_csv_strs(product_verticals),
@@ -72,6 +76,7 @@ def get_problems(
         order_oid=order_oid,
         confidence_tier=confidence_tier,
         l1_domain=l1_domain,
+        has_external=has_external,
         sort_by=sort_by,
         sort_dir=sort_dir,
         limit=limit,
@@ -92,13 +97,22 @@ class ExportProblemsIn(BaseModel):
     """導出請求（POST：item_ids 可能上千筆，放 body 避免 GET URL 過長 414）。"""
 
     source: str | None = None
-    polarity: str | None = None
+    polarity: str | list[str] | None = None
     judged: bool | None = None
     item_ids: list[str] | None = None
     scores: list[int] | None = None
     product_verticals: list[str] | None = None
     date_from: str | None = None
     date_to: str | None = None
+    # 與列表頁篩選對齊（導出＝所見即所得）：情緒分 / 判決階段 / 信心分層 / L1 域 / 有無外部評論 / 精確 id
+    sentiment: list[int] | None = None
+    stage: list[str] | None = None
+    confidence_tier: str | None = None
+    l1_domain: str | None = None
+    has_external: bool | None = None
+    rec_oid: str | None = None
+    prod_oid: str | None = None
+    order_oid: str | None = None
 
 
 @router.post("/api/problems/export")
@@ -122,6 +136,14 @@ def export_problems(body: ExportProblemsIn) -> dict:
             product_vertical=body.product_verticals,
             date_from=body.date_from,
             date_to=body.date_to,
+            sentiment=body.sentiment,
+            stage=body.stage,
+            confidence_tier=body.confidence_tier,
+            l1_domain=body.l1_domain,
+            has_external=body.has_external,
+            rec_oid=body.rec_oid,
+            prod_oid=body.prod_oid,
+            order_oid=body.order_oid,
             ctx=ctx,
         )
 

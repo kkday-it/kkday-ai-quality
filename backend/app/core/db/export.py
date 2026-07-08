@@ -35,7 +35,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("評論時間", "occurred_at", 20),
     ("出發日", "go_date", 14),
     ("訂單", "order_mid", 16),
-    ("傾向", "polarity", 10),
+    ("情緒傾向", "our_sentiment", 10),  # 我方情緒分 1-5（正5/中3/負1；與外部評論同尺度）
     ("L1", "l1_label", 14),
     ("L2", "l2_label", 14),
     ("L3", "l3_label", 18),
@@ -49,7 +49,7 @@ _XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中，其餘原樣（None→空字串）。"""
+    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化，其餘原樣（None→空字串）。"""
     if value is None or value == "":
         return ""
     if key == "occurred_at":
@@ -58,6 +58,8 @@ def _export_cell(key: str, value) -> str:
         return fmt_datetime(value, date_only=True)
     if key == "polarity":
         return _POLARITY_LABEL_ZH.get(value, value)
+    if key == "our_sentiment":
+        return str(value)  # 我方情緒分 1-5 純數字，直接字串化
     if key == "confidence_tier":
         return _TIER_LABEL_ZH.get(value, value)
     if key == "judgment_stage":
@@ -111,13 +113,21 @@ def _export_sheet_title(
 
 def export_problems_xlsx(
     source: str | None = None,
-    polarity: str | None = None,
+    polarity: str | list[str] | None = None,
     judged: bool | None = None,
     item_ids: list[str] | None = None,
     score: list[int] | None = None,
     product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    sentiment: list[int] | None = None,
+    stage: list[str] | None = None,
+    confidence_tier: str | None = None,
+    l1_domain: str | None = None,
+    has_external: bool | None = None,
+    rec_oid: str | None = None,
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
     ctx: ExportCtx | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
@@ -127,6 +137,8 @@ def export_problems_xlsx(
 
     Args:
         source/polarity/judged/score/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
+        stage/confidence_tier/l1_domain/has_external/rec_oid/prod_oid/order_oid: 同 list_problems，
+            使導出＝列表所見即所得（全篩選對齊，非只部分）。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
         ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
             None＝同步直呼（測試 / 腳本）。
@@ -151,6 +163,14 @@ def export_problems_xlsx(
         product_vertical=product_vertical,
         date_from=date_from,
         date_to=date_to,
+        sentiment=sentiment,
+        stage=stage,
+        confidence_tier=confidence_tier,
+        l1_domain=l1_domain,
+        has_external=has_external,
+        rec_oid=rec_oid,
+        prod_oid=prod_oid,
+        order_oid=order_oid,
         limit=10_000_000,
     )
     rows = data["rows"]
@@ -160,10 +180,11 @@ def export_problems_xlsx(
     total = len(rows)
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
+    cols = _EXPORT_XLSX_COLS
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
-    ws.append([c[0] for c in _EXPORT_XLSX_COLS])
+    ws.append([c[0] for c in cols])
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級
     _attr_keys = {
         "l1_label",
@@ -174,9 +195,7 @@ def export_problems_xlsx(
         "judgment_stage",
         "summary",
     }
-    review_col_idx = [
-        ci for ci, (_t, key, _w) in enumerate(_EXPORT_XLSX_COLS, start=1) if key not in _attr_keys
-    ]
+    review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
     r_excel = 2  # 資料起始列（表頭列 1）
     for ri, r in enumerate(rows):
@@ -189,13 +208,13 @@ def export_problems_xlsx(
         for j in range(n):
             a = _flat_attr(attrs[j]) if j < len(attrs) else {}
             line = []
-            for _title, key, _w in _EXPORT_XLSX_COLS:
+            for _title, key, _w in cols:
                 src_val = a.get(key, "") if key in _attr_keys else r.get(key, "")
                 line.append(_xlsx_safe(_export_cell(key, src_val)))
             ws.append(line)
         merges.append((r_excel, n))
         r_excel += n
-    _style_header(ws, [c[2] for c in _EXPORT_XLSX_COLS], freeze_cols=1)  # 凍結表頭 + 編號首欄
+    _style_header(ws, [c[2] for c in cols], freeze_cols=1)  # 凍結表頭 + 編號首欄
     # style 後再合併同一 review 的 review 級欄（避免 MergedCell 樣式設定問題）
     for sr, n in merges:
         if n > 1:

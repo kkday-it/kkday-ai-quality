@@ -117,11 +117,18 @@ def attribution_dto(r: dict) -> dict:
     return {
         "finding_id": r.get("finding_id"),
         "polarity": r.get("polarity"),
+        "sentiment_score": r.get(
+            "sentiment_score"
+        ),  # 我方情緒分 1-5（與外部評論 sentiment 同尺度）
         "stage": r.get("stage"),
         "l1": {"code": l1_code, "label": r.get("l1_label")},
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
         "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
-        "confidence": {"value": r.get("conf_value"), "raw": r.get("conf_raw"), "tier": r.get("conf_tier")},
+        "confidence": {
+            "value": r.get("conf_value"),
+            "raw": r.get("conf_raw"),
+            "tier": r.get("conf_tier"),
+        },
         # summary＝表格顯示用 zh-tw 字串（前端零改）；summary_langs＝全語系 map（詳情/未來多語用）
         "content": {
             "summary": summary_langs.get("zh-tw") or next(iter(summary_langs.values()), None),
@@ -146,6 +153,11 @@ def _jg_join_cond(spec):
 def _jg_exists(spec, *extra):
     """`EXISTS (SELECT 1 FROM judgments WHERE source=X AND source_id=特徵id [AND ...])`。"""
     return exists().where(and_(_jg_join_cond(spec), *extra))
+
+
+def _csv_ids(value: str) -> list[str]:
+    """逗號分隔 id 字串 → 去空白去空的清單（「1, 2 ,3」→ ['1','2','3']）；單值回單元素清單。"""
+    return [p.strip() for p in str(value).split(",") if p.strip()]
 
 
 def _vertical_codes(product_vertical: str | list[str] | None) -> list[str]:
@@ -178,6 +190,58 @@ def _vertical_scoped_spec(
     if spec is None and _vertical_codes(product_vertical):
         spec = source_registry.spec_for("product_reviews")
     return spec
+
+
+def apply_table_filters(
+    spec,
+    stmt,
+    *,
+    score: list[int] | None = None,
+    product_vertical: str | list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: str = "occurred_at",
+    rec_oid: str | None = None,
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
+):
+    """來源表級篩選 SSOT（星等/商品垂直分類/日期區間/關聯 oid）——統一問題列表與初判目標選取共用。
+
+    僅含「來源表自身欄位」的條件；判決級條件（polarity/stage/tier/L1）因兩端結構不同
+    （列表用 EXISTS、目標選取用 join 分支）由各呼叫端自行套。語義逐條對齊 list_problems：
+    - score：源欄為 Text（如 rec_scores="5"）→ 轉字串 IN 比對；無 score_col 的來源忽略。
+    - product_vertical：分組名經 codes_for_group 展開，product_category JSON 抽 main 比對。
+    - 日期：sargable 比較走 btree 索引；上界半開 `< date_to||'~'` 含當日整天。
+      date_field='go_date' 且表有 lst_dt_go 用之，否則 spec.date_col。
+    - rec_oid/prod_oid/order_oid：表有對應欄才生效。
+    """
+    from sqlalchemy import cast as sa_cast
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    tbl = spec.table
+    if score and spec.score_col:
+        stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
+    if spec.category_col:
+        codes = _vertical_codes(product_vertical)
+        if codes:
+            stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(codes))
+    # rec_oid/prod_oid/order_oid：支援逗號分隔多值（「1,2,3」→ IN 一起查）；單值＝IN 單元素。
+    if rec_oid and spec.natural_key in tbl.c:
+        stmt = stmt.where(tbl.c[spec.natural_key].in_(_csv_ids(rec_oid)))
+    if prod_oid and "prod_oid" in tbl.c:
+        stmt = stmt.where(tbl.c.prod_oid.in_(_csv_ids(prod_oid)))
+    if order_oid and "order_oid" in tbl.c:
+        stmt = stmt.where(tbl.c.order_oid.in_(_csv_ids(order_oid)))
+    date_col = (
+        tbl.c["lst_dt_go"]
+        if (date_field == "go_date" and "lst_dt_go" in tbl.c)
+        else tbl.c[spec.date_col]
+    )
+    if date_from:
+        stmt = stmt.where(date_col >= date_from)
+    if date_to:
+        stmt = stmt.where(date_col < date_to + "~")
+    return stmt
 
 
 def fmt_datetime(value, *, date_only: bool = False) -> str:

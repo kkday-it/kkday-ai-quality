@@ -52,18 +52,22 @@ def test_insert_source_batch_upsert_overwrites_and_preserves_count(temp_db) -> N
     """同一 rec_oid 匯入兩次：第二次覆蓋第一次，總筆數不變（覆蓋非新增）。"""
     db.insert_source_batch("product_reviews", [_pr_row(rec_desc="第一版", rec_scores="3")])
     with T.get_engine().connect() as c:
-        row1 = c.execute(
-            select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1")
-        ).mappings().first()
+        row1 = (
+            c.execute(select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1"))
+            .mappings()
+            .first()
+        )
     assert row1["rec_desc"] == "第一版"
     assert row1["rec_scores"] == "3"
 
     db.insert_source_batch("product_reviews", [_pr_row(rec_desc="第二版", rec_scores="5")])
     with T.get_engine().connect() as c:
         total = c.execute(select(T.product_reviews)).mappings().all()
-        row2 = c.execute(
-            select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1")
-        ).mappings().first()
+        row2 = (
+            c.execute(select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1"))
+            .mappings()
+            .first()
+        )
     assert len(total) == 1  # 總筆數不變（衝突鍵 rec_oid 覆蓋）
     assert row2["rec_desc"] == "第二版"
     assert row2["rec_scores"] == "5"
@@ -109,7 +113,9 @@ def test_list_problems_source_registry_date_range_filter(temp_db) -> None:
             _pr_row(rec_oid="R2", create_date="2026-06-15 10:00:00"),
         ],
     )
-    result = db.list_problems(source="product_reviews", date_from="2026-06-01", date_to="2026-06-30")
+    result = db.list_problems(
+        source="product_reviews", date_from="2026-06-01", date_to="2026-06-30"
+    )
     assert result["total"] == 1
     assert result["rows"][0]["_group"] == "R2"
 
@@ -175,22 +181,116 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
     db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R1", ticket_id="R1",
-            dimension="non_content", recommended_action="no_action", confidence=0.3,
+            finding_id="fd_product_reviews_R1",
+            ticket_id="R1",
+            dimension="non_content",
+            recommended_action="no_action",
+            confidence=0.3,
         ),
         "product_reviews",
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R2", ticket_id="R2",
-            dimension="non_content", recommended_action="no_action", confidence=0.9,
+            finding_id="fd_product_reviews_R2",
+            ticket_id="R2",
+            dimension="non_content",
+            recommended_action="no_action",
+            confidence=0.9,
         ),
         "product_reviews",
     )
 
-    asc = db.list_problems(source="product_reviews", judged=True, sort_by="confidence", sort_dir="asc")
+    asc = db.list_problems(
+        source="product_reviews", judged=True, sort_by="confidence", sort_dir="asc"
+    )
     assert asc["total"] == 2
     assert [r["_group"] for r in asc["rows"]] == ["R1", "R2"]  # 0.3 在前
 
-    desc = db.list_problems(source="product_reviews", judged=True, sort_by="confidence", sort_dir="desc")
+    desc = db.list_problems(
+        source="product_reviews", judged=True, sort_by="confidence", sort_dir="desc"
+    )
     assert [r["_group"] for r in desc["rows"]] == ["R2", "R1"]  # 0.9 在前
+
+
+def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
+    """prejudge_target_ids 列表全維度篩選：表級（星等/日期/prod_oid）兩分支皆套、判決級（tier/L1）僅已判分支。"""
+    db.insert_source_batch(
+        "product_reviews",
+        [
+            _pr_row(rec_oid="R1", rec_scores="1", create_date="2026-07-01 09:00:00"),
+            _pr_row(rec_oid="R2", rec_scores="5", create_date="2026-06-01 09:00:00"),
+            _pr_row(rec_oid="R3", rec_scores="1", create_date="2026-07-02 09:00:00", prod_oid="P9"),
+        ],
+    )
+    # R3 已判（負向 · pending_review · jury · content）；R1/R2 未判
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R3",
+            ticket_id="R3",
+            dimension="non_content",
+            recommended_action="no_action",
+            polarity="negative",
+            confidence=0.6,
+            raw_confidence=0.6,
+            confidence_tier="jury",
+            judgment_stage="pending_review",
+            l1_domain_code="content",
+            l1_label="商品內容",
+        ),
+        "product_reviews",
+    )
+
+    # 未判分支 + 星等 1：只 R1（R2 星等 5、R3 已判）
+    assert db.prejudge_target_ids("product_reviews", stages=["unjudged"], score=[1]) == ["R1"]
+    # 未判分支 + 日期區間：只 R1（R2 在區間外）
+    assert db.prejudge_target_ids(
+        "product_reviews", stages=["unjudged"], date_from="2026-06-15", date_to="2026-07-01"
+    ) == ["R1"]
+    # 已判分支 + 判決級收斂（tier/L1 命中）→ R3；tier 不符 → 空
+    assert db.prejudge_target_ids(
+        "product_reviews", stages=["pending_review"], confidence_tier="jury", l1_domain="content"
+    ) == ["R3"]
+    assert (
+        db.prejudge_target_ids(
+            "product_reviews", stages=["pending_review"], confidence_tier="auto_accept"
+        )
+        == []
+    )
+    # 已判分支 + 表級 prod_oid：R3 有 P9
+    assert db.prejudge_target_ids("product_reviews", stages=["pending_review"], prod_oid="P9") == [
+        "R3"
+    ]
+    assert (
+        db.prejudge_target_ids("product_reviews", stages=["pending_review"], prod_oid="NOPE") == []
+    )
+
+
+def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
+    """within_ids 範圍收斂：目標選取僅在勾選列集合內（未判/已判分支皆套；空清單＝空範圍）。"""
+    db.insert_source_batch(
+        "product_reviews",
+        [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
+    )
+    # R3 已判（judged）；R1/R2 未判
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R3",
+            ticket_id="R3",
+            dimension="non_content",
+            recommended_action="no_action",
+            judgment_stage="judged",
+        ),
+        "product_reviews",
+    )
+    # 未判分支 + within {R1,R3} → 只 R1（R2 不在範圍、R3 已判）
+    assert db.prejudge_target_ids(
+        "product_reviews", stages=["unjudged"], within_ids=["R1", "R3"]
+    ) == ["R1"]
+    # 全階段 + within {R1,R3} → R1+R3（整個勾選集合；R2 不在範圍）
+    assert sorted(
+        db.prejudge_target_ids(
+            "product_reviews", stages=["unjudged", "judged"], within_ids=["R1", "R3"]
+        )
+    ) == ["R1", "R3"]
+    # 空清單＝空範圍（非「不限」）
+    assert db.prejudge_target_ids("product_reviews", stages=["unjudged"], within_ids=[]) == []

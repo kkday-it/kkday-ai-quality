@@ -24,7 +24,7 @@ export interface DateRangeFilterDef {
   label: string;
 }
 
-/** 傾向篩選（正向/負向/中性/傾向不明；下拉單選）。 */
+/** 傾向篩選（正向/中性/負向 多選；底層映射情緒分區間 4-5/3/1-2，預設不選＝不篩選）。 */
 export interface PolarityFilterDef {
   type: 'polarity';
 }
@@ -44,6 +44,11 @@ export interface L1DomainFilterDef {
   type: 'l1Domain';
 }
 
+/** 有無外部評論篩選（單選；全部/有/無——評論系統融合欄 sentiment/free_tag 是否有值）。 */
+export interface HasExternalFilterDef {
+  type: 'hasExternal';
+}
+
 /** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
 export type SourceFilterDef =
   | PolarityFilterDef
@@ -51,6 +56,7 @@ export type SourceFilterDef =
   | StageFilterDef
   | TierFilterDef
   | L1DomainFilterDef
+  | HasExternalFilterDef
   | ProductVerticalFilterDef
   | DateRangeFilterDef;
 
@@ -166,9 +172,12 @@ const BASE_FILTERS: SourceFilterDef[] = [
 
 /** 組某來源的篩選：共用集 + 有星等者加星等（插在階段後、信心分層前）。 */
 function filtersFor(source: string): SourceFilterDef[] {
-  if (!RATING_SOURCES.has(source)) return BASE_FILTERS;
-  const scoreFilter: SourceFilterDef = { type: 'score', options: [1, 2, 3, 4, 5] };
-  return [BASE_FILTERS[0], BASE_FILTERS[1], scoreFilter, ...BASE_FILTERS.slice(2)];
+  const base = RATING_SOURCES.has(source)
+    ? [BASE_FILTERS[0], BASE_FILTERS[1], { type: 'score', options: [1, 2, 3, 4, 5] } as SourceFilterDef, ...BASE_FILTERS.slice(2)]
+    : [...BASE_FILTERS];
+  // 有無外部評論：僅 product_reviews 有融合欄（sentiment/free_tag）
+  if (source === 'product_reviews') base.push({ type: 'hasExternal' });
+  return base;
 }
 
 /** 5 反饋來源皆用統一複合欄；差異只在星等篩選（有評分欄者才有）。 */

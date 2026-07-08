@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 vi.mock('@arco-design/web-vue', () => ({ Message: { success: vi.fn(), warning: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('@/api', () => ({
   getProblems: vi.fn(),
+  previewPrejudgeCount: vi.fn(),
   startPrejudge: vi.fn(),
   pausePrejudge: vi.fn(),
   resumePrejudge: vi.fn(),
@@ -11,10 +12,11 @@ vi.mock('@/api', () => ({
   prejudgeStreamUrl: (id: string) => `/stream?job_id=${id}`,
 }));
 
-import { getProblems, startPrejudge } from '@/api';
+import { getProblems, previewPrejudgeCount, startPrejudge } from '@/api';
 import { usePrejudgeJob } from './usePrejudgeJob';
 
 const getProblemsMock = vi.mocked(getProblems);
+const previewCountMock = vi.mocked(previewPrejudgeCount);
 const startPrejudgeMock = vi.mocked(startPrejudge);
 
 /** SSE stub：建立即以微任務推 done（讓 _poll 綁好 onmessage 後才觸發）。 */
@@ -29,20 +31,23 @@ class MockEventSource {
   close() {}
 }
 
-const mk = (opts: { selected?: string[]; verticals?: string[] } = {}) =>
+const mk = (opts: { selected?: string[]; verticals?: string[]; filters?: Record<string, unknown> } = {}) =>
   usePrejudgeJob({
     source: () => 'product_reviews',
     llmConfigId: ref('cfg1'),
     effVerticals: computed(() => opts.verticals),
     selectedKeys: ref(opts.selected ?? []),
+    listFilters: computed(() => opts.filters ?? {}),
     reload: vi.fn().mockResolvedValue(undefined),
   });
 
 beforeEach(() => {
   vi.stubGlobal('EventSource', MockEventSource);
   getProblemsMock.mockReset();
+  previewCountMock.mockReset();
   // 安全預設：openPrejudge 會 fire-and-forget refreshTargetCount，未設 mock 時避免 undefined.total 拋 unhandled rejection。
   getProblemsMock.mockResolvedValue({ rows: [], total: 0 });
+  previewCountMock.mockResolvedValue({ total: 0 });
   startPrejudgeMock.mockReset();
   startPrejudgeMock.mockResolvedValue({ job_id: 'j1', total: 2, model: 'gpt-5-nano' });
 });
@@ -67,35 +72,45 @@ describe('usePrejudgeJob 目標選取', () => {
     expect(job.hasJudgedStage.value).toBe(true);
   });
 
-  it('refreshTargetCount：selected 模式＝勾選數（不打 API）', async () => {
+  it('refreshTargetCount：selected 模式＝以 within_ids 打 count 端點（預覽=實跑同 body）', async () => {
+    previewCountMock.mockResolvedValue({ total: 3 });
     const job = mk({ selected: ['a', 'b', 'c'] });
     job.targetMode.value = 'selected';
     await job.refreshTargetCount();
     expect(job.targetCount.value).toBe(3);
-    expect(getProblemsMock).not.toHaveBeenCalled();
+    // selected 模式：scope='all' + within_ids 交集勾選列（與 doRun 同一 body）
+    expect(previewCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'all', within_ids: ['a', 'b', 'c'] }),
+    );
   });
 
-  it('refreshTargetCount：scope 模式逐階段查 total 加總', async () => {
-    getProblemsMock.mockResolvedValue({ rows: [], total: 7 });
+  it('refreshTargetCount：scope 模式以 stages 打 count 端點（單次，total 即結果）', async () => {
+    previewCountMock.mockResolvedValue({ total: 14 });
     const job = mk();
     job.targetMode.value = 'scope';
     job.targetStages.value = ['unjudged', 'pending_review'];
     await job.refreshTargetCount();
-    expect(job.targetCount.value).toBe(14); // 7 + 7
-    // unjudged → judged:false；其餘 → stage=[st]
-    expect(getProblemsMock).toHaveBeenCalledWith(expect.objectContaining({ judged: false }));
-    expect(getProblemsMock).toHaveBeenCalledWith(expect.objectContaining({ stage: ['pending_review'] }));
+    expect(job.targetCount.value).toBe(14);
+    // scope 模式：within_ids 不帶，stages 驅動
+    expect(previewCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'all', stages: ['unjudged', 'pending_review'] }),
+    );
   });
 });
 
 describe('usePrejudgeJob doRun body 建構', () => {
-  it('selected 模式 → item_ids + source', async () => {
+  it('selected 模式 → within_ids + scope=all（scope 目標選取，非 item_ids）', async () => {
     const job = mk({ selected: ['x', 'y'] });
     job.targetMode.value = 'selected';
     job.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     expect(startPrejudgeMock).toHaveBeenCalledWith(
-      expect.objectContaining({ item_ids: ['x', 'y'], source: 'product_reviews', llm_config_id: 'cfg1' }),
+      expect.objectContaining({
+        within_ids: ['x', 'y'],
+        scope: 'all',
+        source: 'product_reviews',
+        llm_config_id: 'cfg1',
+      }),
     );
     expect(job.confirmOpen.value).toBe(false);
   });
@@ -123,5 +138,52 @@ describe('usePrejudgeJob doRun body 建構', () => {
     const body = startPrejudgeMock.mock.calls[0][0];
     expect(body.target_polarity).toBe('negative');
     expect(typeof body.max_confidence).toBe('number'); // ＝judgment.confidence_tiers.auto_accept
+  });
+
+  it('scope 模式 + 目標篩選草稿（openPrejudge 以頁面篩選初始化）→ 表級全帶、判決級只在已判階段帶', async () => {
+    const filters = {
+      polarity: 'negative', scores: [1, 2], confidenceTier: 'jury', l1Domain: 'content',
+      dateFrom: '2026-07-01', dateTo: '2026-07-07', prodOid: 'P1',
+    };
+    // 僅未判：表級（scores/日期/oid）帶、判決級（confidence_tier/l1_domain）不帶
+    const job = mk({ filters });
+    job.openPrejudge(); // 初始化草稿（來自頁面篩選）
+    job.targetMode.value = 'scope';
+    job.targetStages.value = ['unjudged'];
+    job.doRun();
+    await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
+    const body = startPrejudgeMock.mock.calls[0][0];
+    expect(body).toMatchObject({ scores: [1, 2], date_from: '2026-07-01', date_to: '2026-07-07', prod_oid: 'P1' });
+    expect(body).not.toHaveProperty('confidence_tier');
+
+    // 含已判階段：判決級收斂一併帶上
+    const job2 = mk({ filters });
+    job2.openPrejudge();
+    job2.targetMode.value = 'scope';
+    job2.targetStages.value = ['pending_review'];
+    job2.doRun();
+    await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(2));
+    const body2 = startPrejudgeMock.mock.calls[1][0];
+    expect(body2).toMatchObject({ confidence_tier: 'jury', l1_domain: 'content' });
+  });
+
+  it('scope 模式 + 清空草稿 → 不帶任何列表維度（草稿即最終口徑，非頁面篩選）', async () => {
+    const job = mk({ filters: { scores: [5], confidenceTier: 'jury' } });
+    job.openPrejudge(); // 草稿初始化為頁面篩選
+    job.targetMode.value = 'scope';
+    job.draftFilters.score = []; // 使用者於彈窗清空
+    job.draftFilters.tier = '';
+    job.targetStages.value = ['unjudged'];
+    job.doRun();
+    await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
+    const body = startPrejudgeMock.mock.calls[0][0];
+    expect(body.scores).toBeUndefined();
+    expect(body).not.toHaveProperty('confidence_tier');
+  });
+
+  it('openPrejudge：頁面傾向篩選（多選）取第一項作為再判收斂傾向的預設', () => {
+    const job = mk({ filters: { polarity: ['neutral'] } });
+    job.openPrejudge();
+    expect(job.targetPolarity.value).toBe('neutral');
   });
 });

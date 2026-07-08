@@ -9,13 +9,14 @@
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
   IconClose,
   IconDownload,
   IconEdit,
+  IconHistory,
   IconMessage,
 } from '@arco-design/web-vue/es/icon';
 import {
@@ -30,23 +31,23 @@ import {
 } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { composeLlmLabel } from '@/features/settings/utils';
-import { AttributionDetailDrawer } from '../components';
+import { AttributionDetailDrawer, AttributionFilterBar } from '../components';
 import {
-  ALL_PAGINATION,
   POLARITY_LABELS,
   SOURCES,
   STAGE_LABELS,
   STATUS_COLOR,
   STATUS_LABEL,
-  TABLE_DEFAULTS,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
   type Attribution,
+  type FilterField,
   type ProblemRow,
 } from '../constants';
 import { useAttributionList } from '../composables';
 import { fmtDt } from '../utils';
 
+/** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰 / 傾向不明橙）。 */
 const POLARITY_COLOR: Record<string, string> = {
   positive: 'green',
   negative: 'red',
@@ -65,20 +66,18 @@ const STAGE_COLOR: Record<string, string> = {
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
+// 歸因歷史抽屜（點開才載；每次批量/選取/單筆重判的 LLM 使用紀錄）
+const JudgmentRunsDrawer = defineAsyncComponent(
+  () => import('../components/JudgmentRunsDrawer.vue'),
+);
+const runsDrawerVisible = ref(false);
+
 const source = ref('product_reviews');
 
 const {
   schema,
-  polarityFilter,
-  scoreFilter,
-  stageFilter,
-  tierFilter,
-  l1Filter,
+  filters,
   l1Options,
-  dateRange,
-  recOidFilter,
-  prodOidFilter,
-  orderOidFilter,
   verticalOptions,
   verticalGroups,
   onVerticalChange,
@@ -115,6 +114,7 @@ const {
   targetStages,
   targetPolarity,
   lowConfOnly,
+  draftFilters,
   targetCount,
   hasJudgedStage,
   refreshTargetCount,
@@ -122,7 +122,10 @@ const {
   pauseJob,
   resumeJob,
   cancelJob,
-  exportCsv,
+  exportOpen,
+  exportFilters,
+  openExport,
+  doExport,
   exporting,
   exportStatus,
   exportProgress,
@@ -135,13 +138,14 @@ const {
 } = useAttributionList(source);
 
 // 單列重判完成 + 重載後，把表身捲回剛判的那一列（大列表·表身內滾動 y='100%'，重載會回頂 → 失去位置）。
-const tableRef = ref<{ $el: HTMLElement } | null>(null);
+// ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
+const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
 const onRejudge = async (id: string) => {
   await rejudgeRow(id); // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）
   await nextTick();
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
-  const tr = tableRef.value?.$el?.querySelectorAll('.arco-table-body tbody > tr')[idx];
+  const tr = tableRef.value?.tableRef?.$el?.querySelectorAll('.arco-table-body tbody > tr')[idx];
   (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'auto' }); // 即時定位，無滾動動畫
 };
 
@@ -169,6 +173,24 @@ const CONF_TIER_CLASS: Record<string, string> = {
 };
 const confClass = (tier?: string): string =>
   CONF_TIER_CLASS[tier || ''] || 'text-[var(--color-text-1)]';
+
+// ── 外部評論融合欄（sentiment / free_tag 輔助訊號）顯示輔助 ──
+/** 外部情緒分上色：1-2 負向紅、3 中性琥珀、4-5 正向綠（對齊評論系統分段定義）。 */
+const extSentimentClass = (v?: string | number | null): string => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 'text-[var(--color-text-1)]';
+  if (n <= 2) return 'text-[rgb(var(--danger-6))]';
+  if (n < 4) return 'text-[rgb(var(--warning-6))]';
+  return 'text-[rgb(var(--success-6))]';
+};
+/** free_tag 面向分 → Arco tag color（低分痛點紅、中性橙、高分綠）。 */
+const extTagColor = (v?: string | number | null): string => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 'gray';
+  if (n <= 2) return 'red';
+  if (n < 4) return 'orange';
+  return 'green';
+};
 
 // ── 操作欄：標真值彈窗（級聯選 L1→L2→L3 → LLM 評分把關 → 低信心填理由 → 標註）──
 const truelabelOpen = ref(false);
@@ -227,7 +249,9 @@ const labeledAttrs = computed(() =>
 const reasonBlocked = computed(() =>
   labeledAttrs.value.some((a) => {
     const fid = a.finding_id as string;
-    return truelabelEvals.value[fid]?.reason_required && !(truelabelReasons.value[fid] || '').trim();
+    return (
+      truelabelEvals.value[fid]?.reason_required && !(truelabelReasons.value[fid] || '').trim()
+    );
   }),
 );
 
@@ -242,7 +266,9 @@ const evaluateTrueLabels = async () => {
   truelabelSaving.value = true;
   try {
     const results = await Promise.all(
-      attrs.map((a) => evaluateTrueLabel(a.finding_id as string, truelabelDraft.value[a.finding_id as string])),
+      attrs.map((a) =>
+        evaluateTrueLabel(a.finding_id as string, truelabelDraft.value[a.finding_id as string]),
+      ),
     );
     const evals: Record<string, TrueLabelEval> = {};
     attrs.forEach((a, i) => (evals[a.finding_id as string] = results[i]));
@@ -290,7 +316,10 @@ const confirmTrueLabels = async () => {
         });
       }),
     );
-    attrs.forEach((a) => (a.true_label = (truelabelDraft.value[a.finding_id as string] || '').trim() || undefined));
+    attrs.forEach(
+      (a) =>
+        (a.true_label = (truelabelDraft.value[a.finding_id as string] || '').trim() || undefined),
+    );
     Message.success('已標註真值');
     truelabelOpen.value = false;
   } catch (e: any) {
@@ -344,7 +373,9 @@ const submitNote = async () => {
 /** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
 const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-const LLM_OPTS = computed(() => llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })));
+const LLM_OPTS = computed(() =>
+  llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })),
+);
 
 /** 本次判決將使用的模型 label（llmConfigId 跟隨全域啟用中，modal 可臨時覆寫）；無配置回空。 */
 const currentLlmLabel = computed(() => {
@@ -366,20 +397,39 @@ const onSwitchLlm = async (id: unknown) => {
   }
 };
 
-/** 單列重判二次確認文案（附當前模型，判前提醒用什麼 model 歸因）。 */
+/** 單列初判歸因（已有歸因時＝重新判決覆寫）二次確認文案（附當前模型，判前提醒用什麼 model 歸因）。 */
 const rejudgeConfirmText = computed(
   () =>
-    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」重新判決並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定重判？`
+    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」重新初判並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定執行？`,
 );
 
-/** schema 是否含某篩選 type（控制篩選 UI 條件渲染）。 */
-const hasFilter = (t: string) => schema.value.filters.some((f) => f.type === t);
-/** 篩選下拉選項（由既有 label SSOT 衍生，勿另造）。 */
-const POLARITY_OPTS = Object.entries(POLARITY_LABELS).map(([value, label]) => ({ value, label }));
-const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
+/** schema filter type → AttributionFilters 欄位鍵（僅 l1Domain→l1 不同名）。 */
+const SCHEMA_TO_FIELD: Record<string, FilterField> = {
+  polarity: 'polarity',
+  stage: 'stage',
+  score: 'score',
+  tier: 'tier',
+  l1Domain: 'l1',
+  hasExternal: 'hasExternal',
+  dateRange: 'dateRange',
+};
+/** 工具列篩選欄位：schema 決定的維度 + 通用精確查詢（rec/prod/order id 恆顯示）。 */
+const toolbarFields = computed<FilterField[]>(() => {
+  const fromSchema = schema.value.filters
+    .map((f) => SCHEMA_TO_FIELD[f.type])
+    .filter((k): k is FilterField => Boolean(k));
+  return [...fromSchema, 'recOid', 'prodOid', 'orderOid'];
+});
+/** 初判彈窗「目標篩選」欄位（星等/時間/id；再判收斂的傾向/信心/L1 為再判專屬語義，不走此共用欄）。 */
+const PREJUDGE_TARGET_FIELDS: FilterField[] = [
+  'score',
+  'dateRange',
+  'recOid',
+  'prodOid',
+  'orderOid',
+];
+/** 再判收斂用選項（信心分層 / L1 域；此段為再判專屬非列表篩選，故保留本地選項）。 */
 const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
-const SCORE_OPTS = [1, 2, 3, 4, 5].map((v) => ({ value: v, label: `${v} 星` }));
-/** L1 域選項（動態；label 附該域筆數輔助判斷）。 */
 const L1_OPTS = computed(() =>
   l1Options.value.map((d) => ({ value: d.code, label: `${d.label}（${d.count}）` })),
 );
@@ -448,12 +498,20 @@ onMounted(init);
       <a-button type="primary" size="small" :loading="running" @click="openPrejudge">
         初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <a-button size="small" type="outline" :loading="exporting" @click="exportCsv">
+      <!-- 歸因歷史：純檢視（每次批量/選取/單筆重判的 LLM 使用紀錄），緊鄰初判入口 -->
+      <a-button size="small" type="text" @click="runsDrawerVisible = true">
+        <template #icon><icon-history /></template>
+        歸因歷史
+      </a-button>
+      <a-button size="small" type="outline" :loading="exporting" @click="openExport">
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
     </div>
   </Teleport>
+
+  <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
+  <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
   <div class="flex h-full flex-col gap-4">
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
@@ -465,20 +523,10 @@ onMounted(init);
           :status="jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'"
         />
         <!-- 一鍵暫停/恢復/停止：依 jobStatus 切換 -->
-        <a-button
-          v-if="jobStatus === 'paused'"
-          size="small"
-          type="primary"
-          @click="resumeJob"
-        >
+        <a-button v-if="jobStatus === 'paused'" size="small" type="primary" @click="resumeJob">
           恢復
         </a-button>
-        <a-button
-          v-else
-          size="small"
-          :disabled="jobStatus === 'cancelling'"
-          @click="pauseJob"
-        >
+        <a-button v-else size="small" :disabled="jobStatus === 'cancelling'" @click="pauseJob">
           暫停
         </a-button>
         <a-popconfirm
@@ -511,158 +559,78 @@ onMounted(init);
     />
 
     <TableLayout
+      ref="tableRef"
+      v-model:page="page"
+      v-model:page-size="pageSize"
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
       hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
+      :data="rows"
+      :columns="COLS"
+      :loading="loading"
+      :error="error"
+      empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
+      server
+      :total="total"
+      :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
+      row-key="_group"
+      :scroll="{ x: SCROLL_X }"
+      @change="loadPage"
+      @selection-change="onSelectionChange"
+      @sorter-change="onSortChange"
     >
-      <!-- 篩選維度列：傾向 / 判決階段 / 星等 / 信心分層 / L1 域（依 schema.filters 條件渲染）-->
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <a-select
-          v-if="hasFilter('polarity')"
-          v-model="polarityFilter"
-          size="small"
-          allow-clear
-          placeholder="傾向"
-          style="width: 116px"
-          :options="POLARITY_OPTS"
+      <template #toolbar>
+        <!-- 篩選維度列：共用 AttributionFilterBar（單一真相；新增/調整篩選改元件一處即三處生效）。
+             fields 依 schema 動態決定（各來源可篩欄不同），rec/prod/order id 為通用能力恆顯示。 -->
+        <AttributionFilterBar
+          :model="filters"
+          :fields="toolbarFields"
+          :l1-options="l1Options"
+          class="mb-2"
           @change="onFilterChange"
         />
-        <a-select
-          v-if="hasFilter('stage')"
-          v-model="stageFilter"
-          multiple
-          size="small"
-          :max-tag-count="1"
-          placeholder="判決階段"
-          style="width: 190px"
-          :options="STAGE_OPTS"
-          @change="onFilterChange"
-        />
-        <a-select
-          v-if="hasFilter('score')"
-          v-model="scoreFilter"
-          multiple
-          size="small"
-          :max-tag-count="2"
-          placeholder="星等"
-          style="width: 170px"
-          :options="SCORE_OPTS"
-          @change="onFilterChange"
-        />
-        <a-select
-          v-if="hasFilter('tier')"
-          v-model="tierFilter"
-          size="small"
-          allow-clear
-          placeholder="信心分層"
-          style="width: 130px"
-          :options="TIER_OPTS"
-          @change="onFilterChange"
-        />
-        <a-select
-          v-if="hasFilter('l1Domain')"
-          v-model="l1Filter"
-          size="small"
-          allow-clear
-          placeholder="L1 歸因域"
-          style="width: 160px"
-          :options="L1_OPTS"
-          @change="onFilterChange"
-        />
-        <a-range-picker
-          v-for="f in schema.filters.filter((x) => x.type === 'dateRange')"
-          :key="f.type"
-          v-model="dateRange"
-          size="small"
-          value-format="YYYY-MM-DD"
-          style="width: 240px"
-          :placeholder="[`${'label' in f ? f.label : ''}起`, `${'label' in f ? f.label : ''}迄`]"
-          @change="onFilterChange"
-        />
-      </div>
 
-      <!-- 精確查詢 + 分頁選取 + 操作（重置 / 展開收合；右側顯示生效篩選與選取計數）-->
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <a-input
-          v-model="recOidFilter"
-          size="small"
-          allow-clear
-          style="width: 140px"
-          placeholder="評論 rec_oid"
-          @press-enter="onFilterChange"
-          @clear="onFilterChange"
-        />
-        <a-input
-          v-model="prodOidFilter"
-          size="small"
-          allow-clear
-          style="width: 140px"
-          placeholder="商品 prod_oid"
-          @press-enter="onFilterChange"
-          @clear="onFilterChange"
-        />
-        <a-input
-          v-model="orderOidFilter"
-          size="small"
-          allow-clear
-          style="width: 140px"
-          placeholder="訂單 order_oid"
-          @press-enter="onFilterChange"
-          @clear="onFilterChange"
-        />
-        <a-input
-          v-model="pageSpec"
-          size="small"
-          allow-clear
-          style="width: 190px"
-          placeholder="分頁選取 如 1,2~5"
-          @press-enter="selectPages"
-        />
-        <a-button size="small" @click="selectPages">選取分頁</a-button>
-        <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
-        <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
-        <div class="flex-1" />
-        <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
-          已套用 {{ activeFilterCount }} 項篩選
-        </span>
-        <span class="text-xs text-gray-400">每頁 {{ pageSize }} · 已選 {{ runCount }}</span>
-        <a-button size="small" type="outline" status="warning" @click="resetFilters">重置篩選</a-button>
-      </div>
-      <StateGuard
-        :loading="loading"
-        :error="error"
-        :empty="!rows.length"
-        empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
-      >
-        <a-table
-          ref="tableRef"
-          v-bind="TABLE_DEFAULTS"
-          :data="rows"
-          :columns="COLS"
-          :pagination="{ ...ALL_PAGINATION, current: page, pageSize, total }"
-          :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
-          class="min-h-0 flex-1"
-          row-key="_group"
-          :scroll="{ x: SCROLL_X, y: '100%' }"
-          @page-change="
-            (p: number) => {
-              page = p;
-              loadPage();
-            }
-          "
-          @page-size-change="
-            (s: number) => {
-              pageSize = s;
-              page = 1;
-              loadPage();
-            }
-          "
-          @selection-change="onSelectionChange"
-          @sorter-change="onSortChange"
-        >
-          <template #seq="{ record }">{{ record._seq }}</template>
-          <!-- 反饋內容欄：星等+傾向+標題（第1行）／內容全文不省略（第2行）／#ID·時間（第3行）。 -->
-          <template #review="{ record }">
-            <div class="py-1">
+        <!-- 分頁選取 + 操作（右側 flex=auto 撐開，計數與重置靠右）-->
+        <a-row :gutter="[8, 8]" align="center">
+          <a-col flex="190px">
+            <a-input
+              v-model="pageSpec"
+              size="small"
+              allow-clear
+              class="w-full"
+              placeholder="分頁選取 如 1,2~5"
+              @press-enter="selectPages"
+            />
+          </a-col>
+          <a-col flex="none">
+            <a-button size="small" @click="selectPages">選取分頁</a-button>
+          </a-col>
+          <a-col flex="none">
+            <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
+            <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
+          </a-col>
+          <a-col flex="auto" class="flex items-center justify-end gap-2">
+            <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
+              已套用 {{ activeFilterCount }} 項篩選
+            </span>
+            <span class="text-xs text-gray-400">每頁 {{ pageSize }} · 已選 {{ runCount }}</span>
+            <a-button size="small" type="outline" status="warning" @click="resetFilters"
+              >重置篩選</a-button
+            >
+          </a-col>
+        </a-row>
+      </template>
+      <template #seq="{ record }">{{ record._seq }}</template>
+      <!-- 反饋內容欄：比照關聯資料左標籤式，分「原始評論」（星等+傾向+標題/內容/#ID·時間）
+           與「外部評論」（評論系統融合維度：sentiment 情緒分 + free_tag 面向標籤；輔助訊號，僅有值才顯示）。 -->
+      <template #review="{ record }">
+        <div class="flex flex-col gap-1 py-1">
+          <!-- 原始評論 -->
+          <div class="flex gap-1.5">
+            <span
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >原始評論</span
+            >
+            <div class="min-w-0">
               <div class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <a-rate
                   v-if="record.score !== null && record.score !== undefined && record.score !== ''"
@@ -671,249 +639,343 @@ onMounted(init);
                   :count="5"
                   class="review-rate"
                 />
-                <a-tag v-if="record.polarity" size="small" :color="POLARITY_COLOR[record.polarity]">
-                  {{ POLARITY_LABELS[record.polarity] || record.polarity }}
+                <!-- 傾向類別標籤（正向/中性/負向；驅動歸因）-->
+                <a-tag
+                  v-if="record.polarity"
+                  size="small"
+                  :color="POLARITY_COLOR[String(record.polarity)]"
+                >
+                  {{ POLARITY_LABELS[String(record.polarity)] || record.polarity }}
                 </a-tag>
                 <span v-else class="text-xs text-gray-300">未判</span>
+                <!-- 我方情緒分 1-5（重判後回填；與外部評論情緒分同尺度直接對比）-->
+                <span v-if="record.our_sentiment" class="flex items-center gap-1 text-xs">
+                  <span class="text-[var(--color-text-3)]">情緒分</span>
+                  <span class="font-semibold" :class="extSentimentClass(record.our_sentiment)">
+                    {{ record.our_sentiment }}/5
+                  </span>
+                </span>
                 <span v-if="record.title" class="text-sm font-medium text-[var(--color-text-1)]">
                   {{ record.title }}
                 </span>
               </div>
-              <div v-if="record.content" class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]">
+              <div
+                v-if="record.content"
+                class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]"
+              >
                 {{ record.content }}
               </div>
               <div class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
-                #{{ record.source_record_id || record.source_id || '—' }} · {{ fmtDt(record.occurred_at) || '—' }}
+                #{{ record.source_record_id || record.source_id || '—' }} ·
+                {{ fmtDt(record.occurred_at) || '—' }}
               </div>
             </div>
-          </template>
-          <!-- 判決歸因合併欄：每條歸因一塊（L1→L3 + 信心 + 分層 + 判決階段 全放一起），
-               塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
-          <template #verdict="{ record }">
-            <template v-if="record.attributions && record.attributions.length">
-              <!-- 每條歸因一塊，比照關聯資料欄：左小標籤（摘要/歸因/信心/操作）+ 右內容或操作 -->
+          </div>
+          <!-- 外部評論（評論系統 LLM 標籤；無融合資料的列不顯示此塊）-->
+          <div
+            v-if="record.ext_sentiment || record.ext_free_tag?.length"
+            class="flex gap-1.5 border-t border-[var(--color-border-1)] pt-1"
+          >
+            <span
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >外部評論</span
+            >
+            <div class="min-w-0 text-xs leading-relaxed">
               <div
-                v-for="(a, ai) in record.attributions"
-                :key="ai"
-                class="verdict-blk flex flex-col gap-1 py-1 text-xs leading-relaxed"
+                v-if="record.ext_sentiment"
+                class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"
               >
-                <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
-                <div v-if="a.content?.summary" class="flex gap-1.5">
-                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">摘要</span>
-                  <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
-                    {{ a.content.summary }}
-                  </div>
-                </div>
-                <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
-                <div class="flex gap-1.5">
-                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">歸因</span>
-                  <div class="min-w-0">
-                    <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
-                      <template
-                        v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
-                        :key="li"
-                      >
-                        <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
-                        <span
-                          :class="
-                            li === 0
-                              ? 'font-medium text-[rgb(var(--primary-6))]'
-                              : 'text-[var(--color-text-2)]'
-                          "
-                        >
-                          {{ lvl }}
-                        </span>
-                      </template>
-                    </template>
-                    <span v-else class="text-[var(--color-text-3)]">未歸因</span>
-                    <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
-                      <span class="ml-1.5 text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
-                    </a-tooltip>
-                  </div>
-                </div>
-                <!-- 信心（值 + 分層 + 判決階段 + 人工覆核徽章）-->
-                <div class="flex gap-1.5">
-                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">信心</span>
-                  <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <!-- 信心按 tier 上色：綠可採信 / 琥珀需覆核 / 紅必人工（< 0.8 需人工覆核）-->
-                    <span class="font-semibold" :class="confClass(a.confidence?.tier)">
-                      {{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}
-                    </span>
-                    <span class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]">
-                      {{ a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—' }}
-                    </span>
-                    <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
-                      {{ STAGE_LABELS[a.stage] || a.stage }}
-                    </a-tag>
-                    <a-tag
-                      v-if="a.status && a.status !== 'new'"
-                      size="small"
-                      :color="STATUS_COLOR[a.status]"
-                      bordered
-                    >
-                      {{ STATUS_LABEL[a.status] || a.status }}
-                    </a-tag>
-                  </div>
-                </div>
-                <!-- 操作（確認採信(綠)/忽略駁回(紅)/標真值/備註；選中覆核狀態填色 primary）-->
-                <div class="flex gap-1.5">
-                  <span class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">操作</span>
-                  <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <a-button
-                      size="mini"
-                      type="text"
-                      status="success"
-                      :class="a.status === 'confirmed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''"
-                      @click="reviewFinding(a, 'confirmed')"
-                    >
-                      <template #icon><IconCheck /></template>
-                      確認
-                    </a-button>
-                    <a-button
-                      size="mini"
-                      type="text"
-                      status="danger"
-                      :class="a.status === 'dismissed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''"
-                      @click="reviewFinding(a, 'dismissed')"
-                    >
-                      <template #icon><IconClose /></template>
-                      忽略
-                    </a-button>
-                    <a-button size="mini" type="text" @click="openTrueLabel(record)">
-                      <template #icon><IconEdit /></template>
-                      標真值
-                    </a-button>
-                    <a-button
-                      v-if="a.finding_id"
-                      size="mini"
-                      type="text"
-                      @click="openNotes(a.finding_id)"
-                    >
-                      <template #icon><IconMessage /></template>
-                      備註
-                    </a-button>
-                  </div>
-                </div>
-              </div>
-            </template>
-            <span v-else class="text-gray-300">—</span>
-          </template>
-          <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤（name）
-               + 右側內容（值），主要值深色、次要明細 --color-text-2（加深，避免太淺看不清）。 -->
-          <template #context="{ record }">
-            <div class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
-              <!-- 訂單 -->
-              <div class="flex gap-1.5">
-                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">訂單</span>
-                <div class="min-w-0">
-                  <div class="font-medium text-[var(--color-text-1)]">{{ cell(record.order_mid) }}</div>
-                  <div class="text-[var(--color-text-2)]">
-                    OID {{ cell(record.order_oid) }} · 出發 {{ fmtDt(record.go_date, true) || '—' }}
-                  </div>
-                </div>
-              </div>
-              <!-- 商品 -->
-              <div class="flex gap-1.5">
-                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">商品</span>
-                <div class="min-w-0">
-                  <div v-if="record.prod_name" class="font-medium text-[var(--color-text-1)]">
-                    {{ record.prod_name }}
-                  </div>
-                  <span v-else class="text-gray-300">—</span>
-                  <div class="text-[var(--color-text-2)]">
-                    OID {{ cell(record.prod_oid) }} · {{ cell(record.product_category_main) }} ·
-                    {{ cell(record.lang) }}
-                  </div>
-                </div>
-              </div>
-              <!-- 方案 -->
-              <div class="flex gap-1.5">
-                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">方案</span>
-                <div class="min-w-0">
-                  <div v-if="record.package_name" class="text-[var(--color-text-1)]">
-                    {{ record.package_name }}
-                  </div>
-                  <span v-else class="text-gray-300">—</span>
-                  <div class="text-[var(--color-text-2)]">OID {{ cell(record.pkg_oid) }}</div>
-                </div>
-              </div>
-              <!-- 供應商 -->
-              <div class="flex gap-1.5">
-                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">供應商</span>
-                <span class="text-[var(--color-text-1)]">{{ cell(record.supplier_oid) }}</span>
-              </div>
-              <!-- 旅客 -->
-              <div class="flex items-center gap-1.5">
-                <span class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]">旅客</span>
-                <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
-                  {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
-                </a-tag>
-                <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
-                  {{ record.member_uuid }}
+                <span class="text-[var(--color-text-3)]">情緒分</span>
+                <span class="font-semibold" :class="extSentimentClass(record.ext_sentiment)">
+                  {{ record.ext_sentiment }} / 5
                 </span>
               </div>
-            </div>
-          </template>
-          <!-- 操作欄：整列級動作全展開（歸因/重判 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
-          <template #actions="{ record }">
-            <div class="flex flex-col items-stretch gap-1.5 py-1">
-              <!-- 重判＝破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次「歸因」無覆寫，直接執行不製造確認疲勞 -->
-              <a-popconfirm
-                v-if="record.attributions && record.attributions.length"
-                :content="rejudgeConfirmText"
-                ok-text="重判"
-                cancel-text="取消"
-                @ok="onRejudge(record._group)"
+              <!-- 每面向一行：tag_name（按分上色 tag）｜tag_value（獨立上色數字）｜tag_list（逐詞 Arco tag）-->
+              <div
+                v-for="(t, ti) in record.ext_free_tag || []"
+                :key="ti"
+                class="mb-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1"
               >
-                <a-button type="primary" size="small" :loading="isRowBusy(record._group)">
-                  重判
+                <span
+                  v-if="t.tag_value !== null && t.tag_value !== undefined && t.tag_value !== ''"
+                  class="font-semibold"
+                  :class="extSentimentClass(t.tag_value)"
+                >
+                  {{ t.tag_value }}
+                </span>
+                <a-tag size="small" :color="extTagColor(t.tag_value)">{{ t.tag_name }}</a-tag>
+                <a-tag v-for="(w, wi) in t.tag_list || []" :key="wi" size="small" color="gray">
+                  {{ w }}
+                </a-tag>
+              </div>
+              <div v-if="record.ext_lst_oid" class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
+                ext#{{ record.ext_lst_oid }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+      <!-- 判決歸因合併欄：每條歸因一塊（L1→L3 + 信心 + 分層 + 判決階段 全放一起），
+               塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
+      <template #verdict="{ record }">
+        <template v-if="record.attributions && record.attributions.length">
+          <!-- 每條歸因一塊，比照關聯資料欄：左小標籤（摘要/歸因/信心/操作）+ 右內容或操作 -->
+          <div
+            v-for="(a, ai) in record.attributions"
+            :key="ai"
+            class="verdict-blk flex flex-col gap-1 py-1 text-xs leading-relaxed"
+          >
+            <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
+            <div v-if="a.content?.summary" class="flex gap-1.5">
+              <span
+                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                >摘要</span
+              >
+              <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
+                {{ a.content.summary }}
+              </div>
+            </div>
+            <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
+            <div class="flex gap-1.5">
+              <span
+                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                >歸因</span
+              >
+              <div class="min-w-0">
+                <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
+                  <template
+                    v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
+                    :key="li"
+                  >
+                    <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
+                    <span
+                      :class="
+                        li === 0
+                          ? 'font-medium text-[rgb(var(--primary-6))]'
+                          : 'text-[var(--color-text-2)]'
+                      "
+                    >
+                      {{ lvl }}
+                    </span>
+                  </template>
+                </template>
+                <span v-else class="text-[var(--color-text-3)]">未歸因</span>
+                <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
+                  <span class="ml-1.5 text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
+                </a-tooltip>
+              </div>
+            </div>
+            <!-- 信心（值 + 分層 + 判決階段 + 人工覆核徽章）-->
+            <div class="flex gap-1.5">
+              <span
+                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                >信心</span
+              >
+              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <!-- 信心按 tier 上色：綠可採信 / 琥珀需覆核 / 紅必人工（< 0.8 需人工覆核）-->
+                <span class="font-semibold" :class="confClass(a.confidence?.tier)">
+                  {{
+                    typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—'
+                  }}
+                </span>
+                <span
+                  class="rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-[var(--color-text-2)]"
+                >
+                  {{
+                    a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—'
+                  }}
+                </span>
+                <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
+                  {{ STAGE_LABELS[a.stage] || a.stage }}
+                </a-tag>
+                <a-tag
+                  v-if="a.status && a.status !== 'new'"
+                  size="small"
+                  :color="STATUS_COLOR[a.status]"
+                  bordered
+                >
+                  {{ STATUS_LABEL[a.status] || a.status }}
+                </a-tag>
+              </div>
+            </div>
+            <!-- 操作（確認採信(綠)/忽略駁回(紅)/標真值/備註；選中覆核狀態填色 primary）-->
+            <div class="flex gap-1.5">
+              <span
+                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                >操作</span
+              >
+              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                <a-button
+                  size="mini"
+                  type="text"
+                  status="success"
+                  :class="
+                    a.status === 'confirmed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''
+                  "
+                  @click="reviewFinding(a, 'confirmed')"
+                >
+                  <template #icon><IconCheck /></template>
+                  確認
                 </a-button>
-              </a-popconfirm>
-              <a-button
-                v-else
-                type="primary"
-                size="small"
-                :loading="isRowBusy(record._group)"
-                @click="onRejudge(record._group)"
-              >
-                歸因
-              </a-button>
-              <a-button
-                size="small"
-                type="outline"
-                :disabled="!(record.attributions && record.attributions.length)"
-                @click="viewDetail(record)"
-              >
-                查看詳情
-              </a-button>
+                <a-button
+                  size="mini"
+                  type="text"
+                  status="danger"
+                  :class="
+                    a.status === 'dismissed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''
+                  "
+                  @click="reviewFinding(a, 'dismissed')"
+                >
+                  <template #icon><IconClose /></template>
+                  忽略
+                </a-button>
+                <a-button size="mini" type="text" @click="openTrueLabel(record)">
+                  <template #icon><IconEdit /></template>
+                  標真值
+                </a-button>
+                <a-button
+                  v-if="a.finding_id"
+                  size="mini"
+                  type="text"
+                  @click="openNotes(a.finding_id)"
+                >
+                  <template #icon><IconMessage /></template>
+                  備註
+                </a-button>
+              </div>
             </div>
-          </template>
-        </a-table>
-      </StateGuard>
+          </div>
+        </template>
+        <span v-else class="text-gray-300">—</span>
+      </template>
+      <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤（name）
+               + 右側內容（值），主要值深色、次要明細 --color-text-2（加深，避免太淺看不清）。 -->
+      <template #context="{ record }">
+        <div class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
+          <!-- 訂單 -->
+          <div class="flex gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >訂單</span
+            >
+            <div class="min-w-0">
+              <div class="font-medium text-[var(--color-text-1)]">{{ cell(record.order_mid) }}</div>
+              <div class="text-[var(--color-text-2)]">
+                OID {{ cell(record.order_oid) }} · 出發 {{ fmtDt(record.go_date, true) || '—' }}
+              </div>
+            </div>
+          </div>
+          <!-- 商品 -->
+          <div class="flex gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >商品</span
+            >
+            <div class="min-w-0">
+              <div v-if="record.prod_name" class="font-medium text-[var(--color-text-1)]">
+                {{ record.prod_name }}
+              </div>
+              <span v-else class="text-gray-300">—</span>
+              <div class="text-[var(--color-text-2)]">
+                OID {{ cell(record.prod_oid) }} · {{ cell(record.product_category_main) }} ·
+                {{ cell(record.lang) }}
+              </div>
+            </div>
+          </div>
+          <!-- 方案 -->
+          <div class="flex gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >方案</span
+            >
+            <div class="min-w-0">
+              <div v-if="record.package_name" class="text-[var(--color-text-1)]">
+                {{ record.package_name }}
+              </div>
+              <span v-else class="text-gray-300">—</span>
+              <div class="text-[var(--color-text-2)]">OID {{ cell(record.pkg_oid) }}</div>
+            </div>
+          </div>
+          <!-- 供應商 -->
+          <div class="flex gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >供應商</span
+            >
+            <span class="text-[var(--color-text-1)]">{{ cell(record.supplier_oid) }}</span>
+          </div>
+          <!-- 旅客 -->
+          <div class="flex items-center gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >旅客</span
+            >
+            <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
+              {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
+            </a-tag>
+            <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
+              {{ record.member_uuid }}
+            </span>
+          </div>
+        </div>
+      </template>
+      <!-- 操作欄：整列級動作全展開（初判歸因 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
+      <template #actions="{ record }">
+        <div class="flex flex-col items-stretch gap-1.5 py-1">
+          <!-- 已有歸因時＝覆寫破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次無覆寫，直接執行不製造確認疲勞 -->
+          <a-popconfirm
+            v-if="record.attributions && record.attributions.length"
+            :content="rejudgeConfirmText"
+            ok-text="初判歸因"
+            cancel-text="取消"
+            @ok="onRejudge(record._group)"
+          >
+            <a-button type="primary" size="small" :loading="isRowBusy(record._group)">
+              初判歸因
+            </a-button>
+          </a-popconfirm>
+          <a-button
+            v-else
+            type="primary"
+            size="small"
+            :loading="isRowBusy(record._group)"
+            @click="onRejudge(record._group)"
+          >
+            初判歸因
+          </a-button>
+          <a-button
+            size="small"
+            type="outline"
+            :disabled="!(record.attributions && record.attributions.length)"
+            @click="viewDetail(record)"
+          >
+            查看詳情
+          </a-button>
+        </div>
+      </template>
     </TableLayout>
 
-    <!-- 二次確認彈窗：於此選 model 配置後才執行初判歸因 -->
+    <!-- 二次確認彈窗：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
     <a-modal
       v-model:visible="confirmOpen"
       title="確認初判歸因"
       ok-text="開始判決"
       cancel-text="取消"
+      :width="640"
       :ok-loading="running"
       @ok="doRun"
     >
       <div class="flex flex-col gap-3">
-        <!-- 目標模式：有勾選列才提供「已選」；否則依判決階段選取 -->
-        <a-radio-group
-          v-if="runCount"
-          v-model="targetMode"
-          size="small"
-          @change="refreshTargetCount"
-        >
-          <a-radio value="selected">已選 {{ runCount }} 筆</a-radio>
-          <a-radio value="scope">依判決階段選取</a-radio>
-        </a-radio-group>
+        <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
+        <div v-if="runCount" class="flex items-center gap-2">
+          <span class="text-xs text-gray-500">選取範圍</span>
+          <a-radio-group v-model="targetMode" size="small" @change="refreshTargetCount">
+            <a-radio value="selected">已選 {{ runCount }} 筆內</a-radio>
+            <a-radio value="scope">全部資料</a-radio>
+          </a-radio-group>
+        </div>
 
-        <template v-if="targetMode === 'scope'">
+        <div class="flex flex-col gap-3">
           <div>
             <div class="mb-1 text-xs text-gray-500">
               目標判決階段（預設只判未判；加選已判階段＝再判）
@@ -924,28 +986,57 @@ onMounted(init);
               </a-checkbox>
             </a-checkbox-group>
           </div>
-          <!-- 再判收斂：勾選任一已判階段才顯示（預設負向 + 僅低信心）-->
-          <div v-if="hasJudgedStage" class="flex items-center gap-4">
-            <span class="text-xs text-gray-500">再判收斂</span>
-            <a-select
-              v-model="targetPolarity"
-              size="small"
-              style="width: 110px"
-              allow-clear
-              placeholder="傾向"
-              :options="
-                Object.entries(POLARITY_LABELS)
-                  .filter(([k]) => k !== 'unknown')
-                  .map(([value, label]) => ({ value, label }))
-              "
+          <!-- 目標篩選：共用 AttributionFilterBar（自動帶入列表當前篩選，可重選；星等/日期/ID 未判已判分支皆套）-->
+          <div>
+            <div class="mb-1 text-xs text-gray-500">目標篩選（已自動帶入列表當前篩選，可重選）</div>
+            <AttributionFilterBar
+              :model="draftFilters"
+              :fields="PREJUDGE_TARGET_FIELDS"
               @change="refreshTargetCount"
             />
-            <a-radio-group v-model="lowConfOnly" size="small">
-              <a-radio :value="true">僅低信心</a-radio>
-              <a-radio :value="false">全部信心</a-radio>
-            </a-radio-group>
           </div>
-        </template>
+          <!-- 再判收斂：勾選任一已判階段才顯示（傾向/信心分層/L1 為再判專屬語義，非列表篩選；只套已判分支）-->
+          <div v-if="hasJudgedStage">
+            <div class="mb-1 text-xs text-gray-500">再判收斂（僅對已判階段生效）</div>
+            <div class="flex flex-wrap items-center gap-2">
+              <a-select
+                v-model="targetPolarity"
+                size="small"
+                style="width: 110px"
+                allow-clear
+                placeholder="傾向"
+                :options="
+                  Object.entries(POLARITY_LABELS)
+                    .filter(([k]) => k !== 'unknown')
+                    .map(([value, label]) => ({ value, label }))
+                "
+                @change="refreshTargetCount"
+              />
+              <a-select
+                v-model="draftFilters.tier"
+                size="small"
+                allow-clear
+                placeholder="信心分層"
+                style="width: 130px"
+                :options="TIER_OPTS"
+                @change="refreshTargetCount"
+              />
+              <a-select
+                v-model="draftFilters.l1"
+                size="small"
+                allow-clear
+                placeholder="L1 歸因域"
+                style="width: 160px"
+                :options="L1_OPTS"
+                @change="refreshTargetCount"
+              />
+              <a-radio-group v-model="lowConfOnly" size="small">
+                <a-radio :value="true">僅低信心</a-radio>
+                <a-radio :value="false">全部信心</a-radio>
+              </a-radio-group>
+            </div>
+          </div>
+        </div>
 
         <div class="text-sm text-[var(--color-text-1)]">
           將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
@@ -954,7 +1045,8 @@ onMounted(init);
 
         <div>
           <div class="mb-1 text-xs text-gray-500">
-            LLM 模型配置（同「設定 › LLM 模型連線」；本次使用：<b>{{ currentLlmLabel || '未選' }}</b>）
+            LLM 模型配置（同「設定 › LLM 模型連線」；本次使用：<b>{{ currentLlmLabel || '未選' }}</b
+            >）
           </div>
           <a-select
             v-model="llmConfigId"
@@ -964,6 +1056,27 @@ onMounted(init);
           />
         </div>
         <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
+      </div>
+    </a-modal>
+
+    <!-- 導出確認彈窗：草稿帶入列表當前篩選、可重選（共用 AttributionFilterBar）；有勾選則只導勾選列 -->
+    <a-modal
+      v-model:visible="exportOpen"
+      title="導出列表"
+      ok-text="開始導出"
+      cancel-text="取消"
+      :width="640"
+      @ok="doExport"
+    >
+      <div class="flex flex-col gap-3">
+        <div v-if="runCount" class="text-xs text-[rgb(var(--warning-6))]">
+          已勾選 {{ runCount }} 筆 → 只導出勾選列（下方篩選僅供參考，不套用）。
+        </div>
+        <div>
+          <div class="mb-1 text-xs text-gray-500">導出範圍篩選（已帶入列表當前篩選，可重選）</div>
+          <AttributionFilterBar :model="exportFilters" :fields="toolbarFields" :l1-options="l1Options" />
+        </div>
+        <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
       </div>
     </a-modal>
 
@@ -980,8 +1093,9 @@ onMounted(init);
     >
       <div v-if="truelabelRow" class="flex flex-col gap-3">
         <div class="text-xs text-[var(--color-text-3)]">
-          為每條歸因用級聯選正確分類（留空＝清除）。確認時 LLM 會對「該真值 vs 反饋原文」評分並對比原判信心，
-          信心明顯下降需填修改理由。此標註供準確率評估，不改變 AI 判決。
+          為每條歸因用級聯選正確分類（留空＝清除）。確認時 LLM 會對「該真值 vs
+          反饋原文」評分並對比原判信心， 信心明顯下降需填修改理由。此標註供準確率評估，不改變 AI
+          判決。
         </div>
 
         <div
@@ -1004,7 +1118,9 @@ onMounted(init);
           />
 
           <!-- review：LLM 前後信心對比 + 低信心必填理由 -->
-          <template v-if="truelabelPhase === 'review' && a.finding_id && truelabelEvals[a.finding_id]">
+          <template
+            v-if="truelabelPhase === 'review' && a.finding_id && truelabelEvals[a.finding_id]"
+          >
             <div class="text-xs" :class="evalDelta(truelabelEvals[a.finding_id]).cls">
               {{ evalDelta(truelabelEvals[a.finding_id]).text }}
             </div>
@@ -1039,7 +1155,7 @@ onMounted(init);
             </a-button>
           </template>
           <template v-else>
-            <a-button size="small" @click="(truelabelPhase = 'select')">返回修改</a-button>
+            <a-button size="small" @click="truelabelPhase = 'select'">返回修改</a-button>
             <a-button
               type="primary"
               size="small"
@@ -1055,18 +1171,28 @@ onMounted(init);
     </a-modal>
 
     <!-- 歸因備註彈窗：左右佈局——左＝時間軸歷史（固定寬），右＝新增備註（flex-1 填滿，消除中間空隙）-->
-    <a-modal v-model:visible="noteOpen" title="歸因備註" :footer="false" :width="680" unmount-on-close>
+    <a-modal
+      v-model:visible="noteOpen"
+      title="歸因備註"
+      :footer="false"
+      :width="680"
+      unmount-on-close
+    >
       <div class="flex gap-5">
         <!-- 左：append-only 歷史時間軸（新到舊；固定寬避免撐開留白）-->
         <div class="w-[300px] shrink-0">
           <StateGuard :loading="noteLoading" error="">
             <a-timeline v-if="noteList.length" class="max-h-[360px] overflow-auto pl-1">
               <a-timeline-item v-for="n in noteList" :key="n.id">
-                <div class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]">
+                <div
+                  class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]"
+                >
                   <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
                   <span>{{ fmtNoteTime(n.created_at) }}</span>
                 </div>
-                <div class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]">
+                <div
+                  class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
+                >
                   {{ n.content }}
                 </div>
               </a-timeline-item>
@@ -1075,7 +1201,9 @@ onMounted(init);
           </StateGuard>
         </div>
         <!-- 右：新增備註（flex-1 填滿剩餘寬）-->
-        <div class="flex min-w-0 flex-1 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5">
+        <div
+          class="flex min-w-0 flex-1 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5"
+        >
           <a-textarea
             v-model="noteDraft"
             :auto-size="{ minRows: 4 }"

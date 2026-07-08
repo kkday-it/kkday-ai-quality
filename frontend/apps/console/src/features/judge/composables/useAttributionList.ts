@@ -1,6 +1,6 @@
 // 歸因列表資料與互動邏輯（分頁 / 篩選 / 選取 / 初判歸因批次 / CSV 導出）——由 AttributionList.vue 下沉，
 // 使頁面薄化為模板+綁定；來源切換時整組篩選按新 schema 清空殘留值。
-import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
+import { computed, reactive, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import {
   startProblemsExport,
   patchStatus,
@@ -10,7 +10,15 @@ import {
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
-import { schemaFor, type Attribution, type ProblemRow } from '../constants';
+import {
+  cloneFilters,
+  countActiveFilters,
+  emptyFilters,
+  filtersToParams,
+  schemaFor,
+  type Attribution,
+  type ProblemRow,
+} from '../constants';
 import { exportName } from '../utils';
 import { useAttributionSelection } from './useAttributionSelection';
 import { useExportJob } from './useExportJob';
@@ -41,12 +49,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
   };
 
-  // ── 篩選狀態（各來源 schema 決定哪些生效；切來源時一併清空）──
-  const polarityFilter = ref('');
-  const scoreFilter = ref<number[]>([]); // 星等多選（1-5；僅有 score_col 的來源生效）
-  const stageFilter = ref<string[]>([]); // 判決階段多選（STAGE_LABELS 五值）
-  const tierFilter = ref(''); // 信心分層單選（TIER_LABELS）
-  const l1Filter = ref(''); // L1 歸因域單選（l1_domain_code）
+  // ── 篩選狀態（單一 reactive 物件＝SSOT；工具列/導出/初判共用 AttributionFilterBar 綁定此形狀）──
+  // 各來源 schema 決定哪些欄位生效；切來源時一併清空殘留值（見下方 watch）。
+  const filters = reactive(emptyFilters());
   const l1Options = ref<L1DomainOpt[]>([]); // L1 域下拉選項（該來源已判資料 distinct）
   /** 載入 L1 域選項（來源切換 / 初始）；失敗回空不阻斷列表。 */
   const loadL1Options = async () => {
@@ -56,14 +61,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       l1Options.value = [];
     }
   };
-  const dateRange = ref<string[]>([]);
-  const recOidFilter = ref('');
-  const prodOidFilter = ref('');
-  const orderOidFilter = ref('');
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
   const sortValue = ref('occurred_at:desc');
-  /** 生效的 polarity 篩選（送後端；空＝不篩）。「僅看問題」已移除，傾向下拉直接涵蓋負向。 */
-  const effPolarity = computed(() => polarityFilter.value || undefined);
 
   // ── LLM 模型（已保存配置）──下沉 useLlmConfigs（載入/選中/全域切換）；同源「設定 › LLM 模型連線」。
   const { llmConfigId, llmConfigs, activeLlmId, loadConfigs, setActiveLlm } = useLlmConfigs();
@@ -85,17 +84,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     const [sortBy, sortDir] = sortValue.value.split(':');
     return {
       source: toValue(source),
-      polarity: effPolarity.value,
-      scores: scoreFilter.value.length ? scoreFilter.value : undefined,
-      stage: stageFilter.value.length ? stageFilter.value : undefined,
-      confidenceTier: tierFilter.value || undefined,
-      l1Domain: l1Filter.value || undefined,
+      ...filtersToParams(filters),
       productVerticals: effVerticals.value,
-      dateFrom: dateRange.value?.[0] || undefined,
-      dateTo: dateRange.value?.[1] || undefined,
-      recOid: recOidFilter.value.trim() || undefined,
-      prodOid: prodOidFilter.value.trim() || undefined,
-      orderOid: orderOidFilter.value.trim() || undefined,
       sortBy: sortBy || undefined,
       sortDir: (sortDir as 'asc' | 'desc') || 'desc',
     };
@@ -128,30 +118,11 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   };
 
   /** 生效篩選項數（供工具列「已套用 N 項」提示；不含排序）。 */
-  const activeFilterCount = computed(
-    () =>
-      (polarityFilter.value ? 1 : 0) +
-      (scoreFilter.value.length ? 1 : 0) +
-      (stageFilter.value.length ? 1 : 0) +
-      (tierFilter.value ? 1 : 0) +
-      (l1Filter.value ? 1 : 0) +
-      (dateRange.value?.length ? 1 : 0) +
-      (recOidFilter.value.trim() ? 1 : 0) +
-      (prodOidFilter.value.trim() ? 1 : 0) +
-      (orderOidFilter.value.trim() ? 1 : 0),
-  );
+  const activeFilterCount = computed(() => countActiveFilters(filters));
 
   /** 重置所有篩選 + 排序（回預設）並重載第 1 頁。 */
   const resetFilters = () => {
-    polarityFilter.value = '';
-    scoreFilter.value = [];
-    stageFilter.value = [];
-    tierFilter.value = '';
-    l1Filter.value = '';
-    dateRange.value = [];
-    recOidFilter.value = '';
-    prodOidFilter.value = '';
-    orderOidFilter.value = '';
+    Object.assign(filters, emptyFilters());
     sortValue.value = 'occurred_at:desc';
     onFilterChange();
   };
@@ -182,16 +153,18 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     () => toValue(source),
     () => {
       const filterTypes = new Set(schema.value.filters.map((f) => f.type));
-      if (!filterTypes.has('polarity')) polarityFilter.value = '';
-      if (!filterTypes.has('score')) scoreFilter.value = [];
-      if (!filterTypes.has('stage')) stageFilter.value = [];
-      if (!filterTypes.has('tier')) tierFilter.value = '';
-      if (!filterTypes.has('l1Domain')) l1Filter.value = '';
-      if (!filterTypes.has('dateRange')) dateRange.value = [];
+      // schema-gated 欄位：新來源不支援者清空（type 名對齊 source-schema 的 filter type）
+      if (!filterTypes.has('polarity')) filters.polarity = [];
+      if (!filterTypes.has('score')) filters.score = [];
+      if (!filterTypes.has('stage')) filters.stage = [];
+      if (!filterTypes.has('tier')) filters.tier = '';
+      if (!filterTypes.has('l1Domain')) filters.l1 = '';
+      if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
+      if (!filterTypes.has('dateRange')) filters.dateRange = [];
       // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
-      recOidFilter.value = '';
-      prodOidFilter.value = '';
-      orderOidFilter.value = '';
+      filters.recOid = '';
+      filters.prodOid = '';
+      filters.orderOid = '';
       sortValue.value = 'occurred_at:desc';
       loadL1Options(); // L1 選項隨來源重載
       onFilterChange();
@@ -219,34 +192,56 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const { selectedKeys } = selection;
 
   // ── 初判歸因批次 + 單列重判（下沉 usePrejudgeJob；注入依賴，回傳 ref 保留 identity 不改綁定）──
+  // 頁面列表篩選快照（scope 模式「套用當前列表篩選」用；與 filterQuery 同源值，鍵名對齊 getProblems）
+  const listFilters = computed(() => filtersToParams(filters));
   const job = usePrejudgeJob({
     source,
     llmConfigId,
     effVerticals,
     selectedKeys,
+    listFilters,
     reload: async () => {
       await loadPage();
       await loadUnjudged();
     },
   });
 
-  // ── 導出（背景 job + SSE 實時進度 + 可停止；有勾選→只導已選 review，否則導符合目前篩選全部）──
+  // ── 導出（背景 job + SSE 實時進度 + 可停止）：改彈窗流程，開啟時草稿帶入列表當前篩選、可重選 ──
   const exportJob = useExportJob();
-  /** 啟動導出：交由 useExportJob 管進度/下載/停止；1:N 每條歸因一列的美化 xlsx。 */
-  const exportCsv = () =>
-    exportJob.run(
+  const exportOpen = ref(false);
+  /** 導出草稿篩選（與列表篩選同形狀；彈窗內可重選，不影響列表本身）。 */
+  const exportFilters = reactive(emptyFilters());
+  /** 開導出彈窗：草稿深拷貝列表當前篩選（有勾選時提示只導勾選列，篩選欄仍顯示以供參考）。 */
+  const openExport = () => {
+    Object.assign(exportFilters, cloneFilters(filters));
+    exportOpen.value = true;
+  };
+  /** 確認導出：以草稿篩選啟動背景 job（歸因列表）；有勾選 review 則只導那些（item_ids 優先於篩選）。 */
+  const doExport = () => {
+    exportOpen.value = false;
+    const p = filtersToParams(exportFilters);
+    return exportJob.run(
       () =>
         startProblemsExport({
           source: toValue(source),
-          polarity: effPolarity.value,
-          scores: scoreFilter.value.length ? scoreFilter.value : undefined,
           product_verticals: effVerticals.value,
-          date_from: dateRange.value?.[0] || undefined,
-          date_to: dateRange.value?.[1] || undefined,
+          polarity: p.polarity,
+          scores: p.scores,
+          stage: p.stage,
+          confidence_tier: p.confidenceTier,
+          l1_domain: p.l1Domain,
+          has_external:
+            p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
+          date_from: p.dateFrom,
+          date_to: p.dateTo,
+          rec_oid: p.recOid,
+          prod_oid: p.prodOid,
+          order_oid: p.orderOid,
           item_ids: selectedKeys.value.length ? selectedKeys.value : undefined,
         }),
       exportName('歸因列表', 'xlsx'),
     );
+  };
 
   // ── 單列覆核（操作欄；與批量 selectedKeys 解耦；單列重判已下沉 usePrejudgeJob.rejudgeRow）──
   /**
@@ -266,17 +261,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   return {
     schema,
-    // 篩選
-    polarityFilter,
-    scoreFilter,
-    stageFilter,
-    tierFilter,
-    l1Filter,
+    // 篩選（單一 reactive 物件；AttributionFilterBar 綁定）
+    filters,
     l1Options,
-    dateRange,
-    recOidFilter,
-    prodOidFilter,
-    orderOidFilter,
     verticalOptions,
     verticalGroups,
     onVerticalChange,
@@ -304,8 +291,11 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     ...job,
     // 單列覆核
     reviewFinding,
-    // 導出（背景 job + 實時進度 + 停止）
-    exportCsv,
+    // 導出（彈窗草稿流程 + 型態選擇 + 背景 job + 實時進度 + 停止）
+    exportOpen,
+    exportFilters,
+    openExport,
+    doExport,
     exporting: exportJob.exporting,
     exportStatus: exportJob.status,
     exportProgress: exportJob.progress,

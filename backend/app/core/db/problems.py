@@ -4,24 +4,38 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import cast as sa_cast
-from sqlalchemy import func, or_, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import and_, func, or_, select
 
 from app.core.db import source_registry
 from app.core.db import tables as T
 from app.core.db._shared import (
     _jg_exists,
     _jg_join_cond,
-    _vertical_codes,
+    apply_table_filters,
     attribution_dto,
 )
 
 # fan-out 需帶回的 judgments typed 判決欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
 _JG_COLS = (
-    "finding_id", "polarity", "stage", "l1_code", "l1_label", "l2_code", "l2_label",
-    "l3_code", "l3_label", "conf_value", "conf_raw", "conf_tier", "summary", "evidence",
-    "action", "is_primary", "status", "true_label",
+    "finding_id",
+    "polarity",
+    "sentiment_score",
+    "stage",
+    "l1_code",
+    "l1_label",
+    "l2_code",
+    "l2_label",
+    "l3_code",
+    "l3_label",
+    "conf_value",
+    "conf_raw",
+    "conf_tier",
+    "summary",
+    "evidence",
+    "action",
+    "is_primary",
+    "status",
+    "true_label",
 )
 
 
@@ -89,8 +103,41 @@ def _parse_category_main(value) -> str | None:
     if isinstance(v, dict):
         return v.get("main") or None
     if isinstance(v, list):
-        return (str(v[0]) if v else None)
+        return str(v[0]) if v else None
     return str(v) if v else None
+
+
+def _parse_free_tag(value) -> list[dict]:
+    """free_tag 欄（JSON 字串）→ 標籤 dict 清單；tag_list 為內嵌 JSON 字串需二次 parse。
+
+    輸出 [{tag_name, tag_value, tag_list:[詞,...]}]；任一層 parse 失敗回 []（輔助訊號，壞值不阻列表）。
+    """
+    if not value:
+        return []
+    try:
+        items = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(items, list):
+            return []
+        out = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            words = it.get("tag_list")
+            if isinstance(words, str):  # 導出時 STRING 內嵌 JSON 陣列 → 二次 parse
+                try:
+                    words = json.loads(words)
+                except (ValueError, TypeError):
+                    words = []
+            out.append(
+                {
+                    "tag_name": it.get("tag_name"),
+                    "tag_value": it.get("tag_value"),
+                    "tag_list": words if isinstance(words, list) else [],
+                }
+            )
+        return out
+    except (ValueError, TypeError):
+        return []
 
 
 def _enrich_problem(row: dict, source: str | None = None) -> dict:
@@ -116,7 +163,9 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "source": src,
         "source_label": _sources.label_for(src),
         "prod_oid": canon.get("prod_oid") or "",
-        "prod_name": _extract_prod_name({"order_snap_json": snap}) if snap else (row.get("prod_name_zh_tw") or ""),
+        "prod_name": _extract_prod_name({"order_snap_json": snap})
+        if snap
+        else (row.get("prod_name_zh_tw") or ""),
         "package_name": _extract_package_name({"order_snap_json": snap}) if snap else "",
         "pkg_oid": canon.get("pkg_oid") or "",
         "content": canon.get("content") or "",
@@ -126,13 +175,19 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "channel": canon.get("channel"),
         "lang": canon.get("lang"),
         "order_oid": canon.get("order_oid"),
-        "order_mid": row.get("order_mid"),  # 同名源欄（pr/conv/mixpanel 有；freshdesk/appf 無→None）
+        "order_mid": row.get(
+            "order_mid"
+        ),  # 同名源欄（pr/conv/mixpanel 有；freshdesk/appf 無→None）
         "supplier_oid": canon.get("supplier_oid"),
         "go_date": canon.get("go_date"),
         "member_uuid": canon.get("member_uuid"),
         "traveller_type": canon.get("traveller_type"),
         "product_category_main": _parse_category_main(canon.get("product_category")),
         "source_record_id": source_id,  # 評論ID（＝特徵 id）
+        # 外部評論融合欄（僅 product_reviews 有；輔助訊號——傾向/歸因以原文 LLM 判定為準）
+        "ext_lst_oid": row.get("review_external_lst_oid"),
+        "ext_sentiment": row.get("sentiment"),
+        "ext_free_tag": _parse_free_tag(row.get("free_tag")),
         "status": None,
         "created_at": None,
     }
@@ -142,7 +197,12 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         {
             "judged": bool(row.get("jg_finding_id")),
             "needs_review": bool(row.get("jg_needs_review")),
-            "polarity": row.get("jg_polarity"),  # 列級傾向（前端列樣式 record.polarity + 導出「傾向」欄）
+            "polarity": row.get(
+                "jg_polarity"
+            ),  # 列級傾向（前端列樣式 record.polarity + 導出「傾向」欄）
+            "our_sentiment": row.get(
+                "jg_sentiment_score"
+            ),  # 列級我方情緒分 1-5（傾向細分顯示 + 評論對比表；與外部 sentiment 同尺度）
             "dimension": row.get("jg_dimension"),
         }
     )
@@ -162,7 +222,9 @@ def _derive_stage(dto: dict) -> str:
         return "judged"
     if not (dto.get("l3") or {}).get("code"):
         return "pending_data"
-    return "judged" if (dto.get("confidence") or {}).get("tier") == "auto_accept" else "pending_review"
+    return (
+        "judged" if (dto.get("confidence") or {}).get("tier") == "auto_accept" else "pending_review"
+    )
 
 
 def _attribution_of(r: dict) -> dict:
@@ -202,7 +264,9 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         fan = (
             select(
                 tbl,
-                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 判決欄（含 status/true_label）
+                *[
+                    jg.c[k].label(f"jg_{k}") for k in _JG_COLS
+                ],  # typed 判決欄（含 status/true_label）
                 jg.c.needs_review.label("jg_needs_review"),
                 jg.c.dimension.label("jg_dimension"),
             )
@@ -232,7 +296,8 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
 def list_problems(
     source: str | None = None,
     judged: bool | None = None,
-    polarity: str | None = None,
+    polarity: str | list[str] | None = None,
+    sentiment: list[int] | None = None,
     stage: list[str] | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -246,6 +311,7 @@ def list_problems(
     order_oid: str | None = None,
     confidence_tier: str | None = None,
     l1_domain: str | None = None,
+    has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
@@ -267,6 +333,7 @@ def list_problems(
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
         l1_domain: L1 歸因域過濾（judgments.data.l1_domain_code；content/supplier/…）。
+        has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
 
     Returns:
         {"rows": [統一記錄], "total": 符合篩選總數}。
@@ -275,15 +342,33 @@ def list_problems(
     if spec is None:
         return {"rows": [], "total": 0}
     return _list_problems_spec(
-        spec, judged, polarity, stage, limit, offset, score, product_vertical, date_from, date_to,
-        date_field, rec_oid, prod_oid, order_oid, confidence_tier, l1_domain, sort_by, sort_dir,
+        spec,
+        judged,
+        polarity,
+        stage,
+        limit,
+        offset,
+        score,
+        product_vertical,
+        date_from,
+        date_to,
+        date_field,
+        rec_oid,
+        prod_oid,
+        order_oid,
+        confidence_tier,
+        l1_domain,
+        sort_by,
+        sort_dir,
+        has_external=has_external,
+        sentiment=sentiment,
     )
 
 
 def _list_problems_spec(
     spec: source_registry.SourceSpec,
     judged: bool | None,
-    polarity: str | None,
+    polarity: str | list[str] | None,
     stage: list[str] | None,
     limit: int,
     offset: int,
@@ -299,17 +384,18 @@ def _list_problems_spec(
     l1_domain: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
+    has_external: bool | None = None,
+    sentiment: list[int] | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN judgments。
 
     表本身即單一來源，無需 WHERE source= 過濾；score/product_vertical/日期區間為此分支專屬篩選。
     """
     tbl = spec.table
-    # 日期欄：canonical 'go_date' 且該表有 lst_dt_go → 用之；否則一律 spec.date_col（occurred_at 等價源欄）
-    date_col = tbl.c["lst_dt_go"] if (date_field == "go_date" and "lst_dt_go" in tbl.c) else tbl.c[spec.date_col]
 
     def _f(stmt):
-        """spec 分支篩選：score/vertical/日期/prod_oid/order_oid（表級）+ judged/polarity/stage（判決 EXISTS）。"""
+        """spec 分支篩選：表級（score/vertical/日期/oid，SSOT＝_shared.apply_table_filters，與初判
+        目標選取共用同一份語義）+ judged/polarity/stage/tier/L1（判決 EXISTS，列表專屬結構）。"""
         has_jg = _jg_exists(spec)
         if judged is True:
             stmt = stmt.where(has_jg)
@@ -317,7 +403,12 @@ def _list_problems_spec(
             stmt = stmt.where(~has_jg)
         jg = T.judgments
         if polarity:
-            stmt = stmt.where(_jg_exists(spec, jg.c.polarity == polarity))
+            # 傾向多選（positive/neutral/negative/unknown）；含 unknown 亦可（其無情緒分，故按 polarity 篩）
+            pol_list = [polarity] if isinstance(polarity, str) else polarity
+            stmt = stmt.where(_jg_exists(spec, jg.c.polarity.in_(pol_list)))
+        if sentiment:
+            # 情緒分多選（1-5；我方 sentiment_score 由 polarity 確定性映射 正5/中3/負1）
+            stmt = stmt.where(_jg_exists(spec, jg.c.sentiment_score.in_(sentiment)))
         if stage:
             # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
             conds = []
@@ -332,28 +423,37 @@ def _list_problems_spec(
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
         if l1_domain:
             stmt = stmt.where(_jg_exists(spec, jg.c.l1_code == l1_domain))
-        if score and spec.score_col:
-            # 源欄為 Text（如 rec_scores="5"）→ 星等清單轉字串比對
-            stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
-        if spec.category_col:
-            codes = _vertical_codes(product_vertical)
-            if codes:
-                # product_category 為 raw JSON（{"main":"CATEGORY_..","sub":[]}）→ 抽 main 比對
-                stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(codes))
-        if rec_oid and spec.natural_key in tbl.c:
-            # rec_oid＝評論 id（各來源表 natural_key，product_reviews→rec_oid）；查來源表本身主鍵欄
-            stmt = stmt.where(tbl.c[spec.natural_key] == rec_oid)
-        if prod_oid and "prod_oid" in tbl.c:
-            stmt = stmt.where(tbl.c.prod_oid == prod_oid)
-        if order_oid and "order_oid" in tbl.c:
-            stmt = stmt.where(tbl.c.order_oid == order_oid)
-        # sargable 日期比較（走 btree 索引，取代打死索引的 substr）；date_col 為 raw datetime 文字，
-        # 上界半開 < date_to||'~' 以含當日整天（直接 <= 會漏當日有時間的列），'~' 大於 ' '/'T' 分隔符。
-        if date_from:
-            stmt = stmt.where(date_col >= date_from)
-        if date_to:
-            stmt = stmt.where(date_col < date_to + "~")
-        return stmt
+        # 有無外部評論：有對應外部評論（review_external_lst_oid）且有實際內容（sentiment 或 free_tag）。
+        # 與前端顯示一致（v-if ext_sentiment || ext_free_tag.length）。未匹配的列 upsert 後三欄皆為
+        # 空字串''（非 NULL），故 isnot(None) 不足——須同時排除 ''（及 free_tag 的空陣列 '[]'/'null'），
+        # 否則篩選把空字串列誤判為「有」。lst_oid 條件為語義防護（內容恆隨 lst_oid 而來，無孤兒內容列）。
+        # 僅 product_reviews 有融合欄，其餘來源無此欄 → 忽略此篩選
+        if has_external is not None and "review_external_lst_oid" in tbl.c:
+            has_content = or_(
+                and_(tbl.c["sentiment"].isnot(None), tbl.c["sentiment"] != ""),
+                and_(
+                    tbl.c["free_tag"].isnot(None),
+                    tbl.c["free_tag"].notin_(["", "[]", "null"]),
+                ),
+            )
+            ext_cond = and_(
+                tbl.c["review_external_lst_oid"].isnot(None),
+                tbl.c["review_external_lst_oid"] != "",
+                has_content,
+            )
+            stmt = stmt.where(ext_cond if has_external else ~ext_cond)
+        return apply_table_filters(
+            spec,
+            stmt,
+            score=score,
+            product_vertical=product_vertical,
+            date_from=date_from,
+            date_to=date_to,
+            date_field=date_field,
+            rec_oid=rec_oid,
+            prod_oid=prod_oid,
+            order_oid=order_oid,
+        )
 
     # item 級排序（白名單防注入）；confidence 取該 item 各歸因最大信心（scalar 子查詢）
     _sort_map = {

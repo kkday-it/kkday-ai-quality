@@ -1,14 +1,12 @@
-"""初判 / 再判「目標選取」：解析批量判決的標的特徵 id 清單（stage 驅動）。"""
+"""初判 / 再判「目標選取」：解析批量判決的標的特徵 id 清單（stage 驅動 + 列表全維度篩選）。"""
 
 from __future__ import annotations
 
-from sqlalchemy import cast as sa_cast
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import source_registry
 from app.core.db import tables as T
-from app.core.db._shared import _jg_join_cond, _vertical_codes
+from app.core.db._shared import _jg_join_cond, apply_table_filters
 
 
 def prejudge_target_ids(
@@ -17,8 +15,19 @@ def prejudge_target_ids(
     stages: list[str] | None = None,
     target_polarity: str | None = None,
     max_confidence: float | None = None,
+    *,
+    score: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: str = "occurred_at",
+    rec_oid: str | None = None,
+    prod_oid: str | None = None,
+    order_oid: str | None = None,
+    confidence_tier: str | None = None,
+    l1_domain: str | None = None,
+    within_ids: list[str] | None = None,
 ) -> list[str]:
-    """初判歸因「目標選取」的特徵 id 清單（scope=all；stage 驅動）。
+    """初判歸因「目標選取」的特徵 id 清單（scope=all；stage 驅動 + 列表全維度篩選）。
 
     只 SELECT 特徵 id、不跑 _enrich_problem，避免對全量做 source_mapping 還原的無謂開銷；
     供 prejudge_batch 批量派工前一次解析標的集合。source 命中 source_registry 查該專表；
@@ -27,8 +36,11 @@ def prejudge_target_ids(
     選取邏輯（兩分支聯集去重）：
     - stages 含 'unjudged' → 收「無 finding 列」特徵 id（首判）。
     - stages 含已判階段（judged/pending_review/pending_data/insufficient）→ 收
-      judgments.data.judgment_stage ∈ 該些階段，並可再收斂 target_polarity 與 max_confidence
-      （只重判已判中負向且低信心等場景，避免浪費 token 重判已確定的正向/高信心）。
+      judgments.stage ∈ 該些階段，並可再收斂 target_polarity / max_confidence /
+      confidence_tier / l1_domain（只重判負向低信心等場景，避免浪費 token 重判已確定者）。
+    - 表級篩選（星等/垂直分類/日期區間/關聯 oid）兩分支皆套，語義與統一問題列表同一份
+      SSOT（_shared.apply_table_filters）——「歸因目標＝列表當前篩得到的東西」。
+      判決級收斂（傾向/信心/L1）只對已判分支有意義（未判列無判決可比對）。
 
     Args:
         source: 來源 code（None＝全部來源，回空；5 來源全拆表須指定單一來源）。
@@ -36,6 +48,14 @@ def prejudge_target_ids(
         stages: 目標判決階段清單（預設 ["unjudged"]）。
         target_polarity: 已判分支的傾向收斂（如 "negative"；None＝不收斂）。
         max_confidence: 已判分支的信心上限（confidence < 此值才收；None＝不收斂）。
+        score: 星等多選（IN；僅有 score_col 的來源生效）。
+        date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）。
+        date_field: 日期篩選欄名（'occurred_at' | 'go_date'）。
+        rec_oid/prod_oid/order_oid: 關聯資料精確篩選（表有對應欄才生效）。
+        confidence_tier: 已判分支的信心分層收斂（auto_accept/jury/needs_review）。
+        l1_domain: 已判分支的 L1 歸因域收斂（content/supplier/…）。
+        within_ids: 範圍收斂——僅在此特徵 id 清單內做目標選取（前端「已選 N 筆內」；
+            兩分支皆套；None＝不限、空清單＝空範圍回空）。
 
     Returns:
         目標特徵 id 清單（去重；順序不保證）。
@@ -51,11 +71,21 @@ def prejudge_target_ids(
     j = tbl.outerjoin(jg, _jg_join_cond(spec))
 
     def _scope(stmt):
-        """套商品垂直分類過濾（有分類欄的來源；product_category 為 JSON 抽 main 比對）。"""
-        if spec.category_col:
-            codes = _vertical_codes(product_vertical)
-            if codes:
-                stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(codes))
+        """表級篩選（與列表共用 SSOT）：星等/垂直分類/日期區間/關聯 oid + 勾選範圍收斂。"""
+        stmt = apply_table_filters(
+            spec,
+            stmt,
+            score=score,
+            product_vertical=product_vertical,
+            date_from=date_from,
+            date_to=date_to,
+            date_field=date_field,
+            rec_oid=rec_oid,
+            prod_oid=prod_oid,
+            order_oid=order_oid,
+        )
+        if within_ids is not None:  # 空清單＝空範圍（IN () 恆假），非「不限」
+            stmt = stmt.where(nk.in_(within_ids))
         return stmt
 
     ids: set[str] = set()
@@ -70,5 +100,9 @@ def prejudge_target_ids(
                 s = s.where(jg.c.polarity == target_polarity)
             if max_confidence is not None:
                 s = s.where(jg.c.conf_value < max_confidence)
+            if confidence_tier:
+                s = s.where(jg.c.conf_tier == confidence_tier)
+            if l1_domain:
+                s = s.where(jg.c.l1_code == l1_domain)
             ids.update(r[0] for r in c.execute(_scope(s)))
     return [str(x) for x in ids if x is not None]

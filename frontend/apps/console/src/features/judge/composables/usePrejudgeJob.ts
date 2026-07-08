@@ -1,17 +1,44 @@
 // 初判歸因批次任務：跑批 + SSE 進度 + 暫停/恢復/停止 + 目標選取彈窗 + 單列重判。
 // 自 useAttributionList 下沉；依賴（來源 / 選中模型 / 垂直分類 / 勾選列 / 重載回呼）由呼叫端注入，
 // 回傳之 ref 保留原 identity（呼叫端 spread 進 return，模板綁定不變）。
-import { computed, ref, toValue, type ComputedRef, type MaybeRefOrGetter, type Ref } from 'vue';
+import {
+  computed,
+  reactive,
+  ref,
+  toValue,
+  type ComputedRef,
+  type MaybeRefOrGetter,
+  type Ref,
+} from 'vue';
 import { Message } from '@arco-design/web-vue';
 import judgment from '@config/ai_judge/judgment.json';
 import {
   cancelPrejudge,
-  getProblems,
   pausePrejudge,
   prejudgeStreamUrl,
+  previewPrejudgeCount,
   resumePrejudge,
   startPrejudge,
+  type PrejudgeBody,
 } from '@/api';
+import { emptyFilters, filtersToParams, STAGE_LABELS } from '../constants';
+
+/** 頁面列表篩選快照（開彈窗時自動帶入彈窗內目標篩選草稿的初值；鍵名對齊 getProblems 參數）。 */
+export interface PrejudgeListFilters {
+  /** 傾向（頁面傾向多選篩選；開彈窗時取第一項作為再判收斂傾向的預設值）。 */
+  polarity?: string[];
+  /** 星等多選（表級，未判/已判分支皆套）。 */
+  scores?: number[];
+  /** 信心分層（判決級，僅已判分支）。 */
+  confidenceTier?: string;
+  /** L1 歸因域（判決級，僅已判分支）。 */
+  l1Domain?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  recOid?: string;
+  prodOid?: string;
+  orderOid?: string;
+}
 
 /** usePrejudgeJob 的注入依賴。 */
 interface PrejudgeJobDeps {
@@ -23,6 +50,8 @@ interface PrejudgeJobDeps {
   effVerticals: ComputedRef<string[] | undefined>;
   /** 跨頁累積的勾選 review（source_id）；selected 模式目標與 item_ids 用。 */
   selectedKeys: Ref<string[]>;
+  /** 頁面當前列表篩選快照（scope 模式套用；undefined 值代表該維度未設）。 */
+  listFilters: ComputedRef<PrejudgeListFilters>;
   /** 判決完成後重載列表 + 未判數（就地看到結果）。 */
   reload: () => Promise<void>;
 }
@@ -32,7 +61,7 @@ interface PrejudgeJobDeps {
  * @returns 進度狀態、目標選取、批次動作（跑/暫停/恢復/停止）、單列重判 loading + 觸發。
  */
 export function usePrejudgeJob(deps: PrejudgeJobDeps) {
-  const { source, llmConfigId, effVerticals, selectedKeys, reload } = deps;
+  const { source, llmConfigId, effVerticals, selectedKeys, listFilters, reload } = deps;
 
   const running = ref(false);
   /** 當前 job_id（供暫停/恢復/停止；無執行中為空）。 */
@@ -70,15 +99,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       };
       es.onerror = finish;
     });
-  const _run = async (body: {
-    item_ids?: string[];
-    source?: string;
-    scope?: string;
-    product_verticals?: string[];
-    stages?: string[];
-    target_polarity?: string;
-    max_confidence?: number;
-  }) => {
+  const _run = async (body: PrejudgeBody) => {
     if (running.value) return;
     running.value = true;
     jobStatus.value = 'running';
@@ -138,65 +159,98 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   };
   // 初判歸因統一彈窗 + 目標選取（stage 驅動）：於彈窗選範圍/收斂/model 再確認執行
   const confirmOpen = ref(false);
-  /** 目標模式：selected＝用勾選列；scope＝依判決階段選取。有勾選預設 selected，否則 scope。 */
+  /** 選取範圍：selected＝在「已選 N 筆」內做階段+篩選目標選取（within_ids 交集）；scope＝全部資料。 */
   const targetMode = ref<'selected' | 'scope'>('scope');
   const targetStages = ref<string[]>(['unjudged']); // 預設只收未判
   const targetPolarity = ref('negative'); // 再判傾向收斂（勾已判階段時生效）
   const lowConfOnly = ref(true); // true＝僅低信心(<auto_accept)；false＝全部信心
   const targetCount = ref(0); // 「將處理 N 筆」預覽
+  // ── 彈窗內目標篩選草稿：開彈窗自動帶入頁面當前列表篩選，彈窗內可下拉重選，只影響本次判決目標 ──
+  // 與列表同形狀（AttributionFilters）→ 彈窗 AttributionFilterBar 直接綁定；prejudge 只用其中
+  // score/dateRange/oid（目標篩選）+ tier/l1（再判收斂），polarity/stage/hasExternal 欄不使用。
+  const draftFilters = reactive(emptyFilters());
   /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
   const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
 
-  // 單調遞增請求序號：快速切換條件會併發多次 refresh，僅最後一次可寫入 targetCount（防慢回應覆蓋新值）。
-  let countSeq = 0;
-  /** 依目標模式/條件算「將處理 N 筆」預覽（scope 模式逐階段查 getProblems total 加總；信心收斂無法由列表 API 精算，屬近似）。 */
-  const refreshTargetCount = async () => {
-    if (targetMode.value === 'selected') {
-      targetCount.value = selectedKeys.value.length;
-      return;
-    }
-    const seq = ++countSeq;
-    let total = 0;
-    for (const st of targetStages.value) {
-      const r = await getProblems({
-        source: toValue(source),
-        productVerticals: effVerticals.value,
-        limit: 1,
-        ...(st === 'unjudged'
-          ? { judged: false }
-          : { stage: [st], ...(targetPolarity.value ? { polarity: targetPolarity.value } : {}) }),
-      });
-      total += r.total || 0;
-    }
-    if (seq === countSeq) targetCount.value = total; // 過期回應（已有更新的 refresh）丟棄，不覆蓋
+  /** 彈窗草稿 → 篩選快照（空值一律轉 undefined；鍵名對齊 getProblems / 後端參數）。 */
+  const _lf = (): PrejudgeListFilters => {
+    const p = filtersToParams(draftFilters);
+    return {
+      scores: p.scores,
+      confidenceTier: p.confidenceTier,
+      l1Domain: p.l1Domain,
+      dateFrom: p.dateFrom,
+      dateTo: p.dateTo,
+      recOid: p.recOid,
+      prodOid: p.prodOid,
+      orderOid: p.orderOid,
+    };
   };
-
-  /** 開初判歸因彈窗：有勾選預設 selected 模式，否則 scope 模式。 */
-  const openPrejudge = () => {
-    targetMode.value = selectedKeys.value.length ? 'selected' : 'scope';
-    confirmOpen.value = true;
-    void refreshTargetCount();
-  };
-
-  /** 二次確認後執行：selected→item_ids（帶 source，後端據此選對專表）；scope→stage 驅動目標選取。 */
-  const doRun = () => {
-    confirmOpen.value = false;
-    if (targetMode.value === 'selected') {
-      _run({ item_ids: selectedKeys.value, source: toValue(source) });
-      return;
-    }
-    _run({
+  /** 組 scope 目標選取請求 body（doRun 與筆數預覽共用同一形狀 → 預覽=實跑）：
+   *  stage 驅動 + 目標篩選草稿全維度；範圍=已選時再以 within_ids 交集勾選列。 */
+  const _scopeBody = (): PrejudgeBody => {
+    const lf = _lf();
+    return {
       source: toValue(source),
       scope: 'all',
       product_verticals: effVerticals.value,
       stages: targetStages.value,
+      within_ids: targetMode.value === 'selected' ? [...selectedKeys.value] : undefined,
+      scores: lf.scores,
+      date_from: lf.dateFrom,
+      date_to: lf.dateTo,
+      rec_oid: lf.recOid,
+      prod_oid: lf.prodOid,
+      order_oid: lf.orderOid,
       ...(hasJudgedStage.value
         ? {
             target_polarity: targetPolarity.value || undefined,
             max_confidence: lowConfOnly.value ? judgment.confidence_tiers.auto_accept : undefined,
+            confidence_tier: lf.confidenceTier,
+            l1_domain: lf.l1Domain,
           }
         : {}),
-    });
+    };
+  };
+
+  // 單調遞增請求序號：快速切換條件會併發多次 refresh，僅最後一次可寫入 targetCount（防慢回應覆蓋新值）。
+  let countSeq = 0;
+  /** 「將處理 N 筆」預覽：與 doRun 同一 body 打後端 count 端點（同一套標的解析，含 max_confidence 精算）。 */
+  const refreshTargetCount = async () => {
+    const seq = ++countSeq;
+    try {
+      const r = await previewPrejudgeCount(_scopeBody());
+      if (seq === countSeq) targetCount.value = r.total; // 過期回應（已有更新的 refresh）丟棄，不覆蓋
+    } catch {
+      /* 預覽失敗維持上次值不阻斷操作；實跑筆數仍以 startPrejudge 後端解析為準 */
+    }
+  };
+
+  /** 開初判歸因彈窗：目標篩選草稿自動帶入頁面當前列表篩選（彈窗內可重選）。
+   *  範圍預設：有勾選＝「已選內」且收全部階段、不收斂（初始目標＝整個勾選集合，對齊「判我勾的」直覺）；
+   *  無勾選＝全部資料且只判未判、再判收斂預設負向+僅低信心（安全預設，避免誤重判全庫）。 */
+  const openPrejudge = () => {
+    const hasSel = selectedKeys.value.length > 0;
+    targetMode.value = hasSel ? 'selected' : 'scope';
+    targetStages.value = hasSel ? Object.keys(STAGE_LABELS) : ['unjudged'];
+    const lf = listFilters.value;
+    draftFilters.score = lf.scores ? [...lf.scores] : [];
+    draftFilters.dateRange = lf.dateFrom && lf.dateTo ? [lf.dateFrom, lf.dateTo] : [];
+    draftFilters.recOid = lf.recOid || '';
+    draftFilters.prodOid = lf.prodOid || '';
+    draftFilters.orderOid = lf.orderOid || '';
+    draftFilters.tier = lf.confidenceTier || '';
+    draftFilters.l1 = lf.l1Domain || '';
+    targetPolarity.value = hasSel ? '' : lf.polarity?.[0] || 'negative';
+    lowConfOnly.value = !hasSel;
+    confirmOpen.value = true;
+    void refreshTargetCount();
+  };
+
+  /** 二次確認後執行：範圍（全部/已選內）+ 階段 + 篩選草稿統一走 scope 目標選取（與預覽同 body）。 */
+  const doRun = () => {
+    confirmOpen.value = false;
+    _run(_scopeBody());
   };
 
   // ── 單列操作（操作欄；與批量 selectedKeys 完全解耦，各自獨立路徑）──
@@ -249,6 +303,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     targetStages,
     targetPolarity,
     lowConfOnly,
+    draftFilters,
     targetCount,
     hasJudgedStage,
     refreshTargetCount,
