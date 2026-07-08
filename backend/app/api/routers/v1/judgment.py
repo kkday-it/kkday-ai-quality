@@ -21,26 +21,74 @@ router = APIRouter(prefix="/judgment", tags=["judgment"])
 
 
 class PrejudgeIn(BaseModel):
-    """初判歸因請求：item_ids 顯式選取優先；否則 scope=all 取該來源全部未判。"""
+    """初判歸因請求：item_ids 顯式選取優先；否則 scope=all 依 stages 目標選取（可 within_ids 交集勾選範圍）。"""
 
     item_ids: list[str] | None = None
     source: str | None = None
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
-    voter_config_ids: list[str] | None = None  # 跨廠 ensemble voter 模型集（低信心才複判投票；空/缺＝不 ensemble）
-    ensemble_sample_rate: float | None = None  # ④抽樣稽核：高信心筆按此比例也跑 ensemble（0/缺＝純 confidence-gate）
+    voter_config_ids: list[str] | None = (
+        None  # 跨廠 ensemble voter 模型集（低信心才複判投票；空/缺＝不 ensemble）
+    )
+    ensemble_sample_rate: float | None = (
+        None  # ④抽樣稽核：高信心筆按此比例也跑 ensemble（0/缺＝純 confidence-gate）
+    )
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
     target_polarity: str | None = None  # 已判分支傾向收斂（如 "negative"）
     max_confidence: float | None = None  # 已判分支信心上限（confidence < 此值才收）
+    within_ids: list[str] | None = None  # 範圍收斂：僅在此特徵 id 清單（勾選列）內做目標選取
+    # 列表全維度篩選（scope=all；語義同 /api/problems，SSOT=_shared.apply_table_filters）：
+    # 表級（兩分支皆套）＋ 判決級收斂（僅已判分支）——「歸因目標＝列表當前篩得到的東西」
+    scores: list[int] | None = None  # 星等多選（表級）
+    date_from: str | None = None  # 日期區間起（'YYYY-MM-DD'，含；表級）
+    date_to: str | None = None  # 日期區間迄（含；表級）
+    rec_oid: str | None = None  # 評論/特徵 id 精確篩選（表級）
+    prod_oid: str | None = None  # 商品 OID（表級）
+    order_oid: str | None = None  # 訂單 OID（表級）
+    confidence_tier: str | None = None  # 信心分層收斂（已判分支；auto_accept/jury/needs_review）
+    l1_domain: str | None = None  # L1 歸因域收斂（已判分支）
+
+
+def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
+    """解析批量判決標的特徵 id 清單（start 與 count 預覽共用同一套，預覽即實跑）。
+
+    item_ids 顯式 > scope=="all" 走 stage 驅動目標選取（可 within_ids 交集勾選範圍）> 空集合。
+    """
+    if body.item_ids:
+        return body.item_ids
+    if body.scope == "all":
+        return db.prejudge_target_ids(
+            body.source,
+            body.product_verticals,
+            stages=body.stages,
+            target_polarity=body.target_polarity,
+            max_confidence=body.max_confidence,
+            score=body.scores,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            rec_oid=body.rec_oid,
+            prod_oid=body.prod_oid,
+            order_oid=body.order_oid,
+            confidence_tier=body.confidence_tier,
+            l1_domain=body.l1_domain,
+            within_ids=body.within_ids,
+        )
+    return []
+
+
+@router.post("/prejudge/count")
+def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
+    """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""
+    return {"total": len(_resolve_target_ids(body))}
 
 
 @router.post("/prejudge")
 def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)) -> dict:
     """啟動初判歸因批量任務 → {job_id, total, model}（立即回，背景派工）。
 
-    標的解析：item_ids 顯式 > scope=="all" 取 db.unjudged_item_ids(source) > 空集合。
+    標的解析：_resolve_target_ids（item_ids 顯式 > scope=all 目標選取，可 within_ids 交集勾選範圍）。
     設定注入：以當前 user 的 effective LLM dict（可選 llm_config_id）供 judge 路徑跨 thread 讀取。
     """
     uid = user.get("user_id", "")
@@ -54,21 +102,46 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
         if cid and cid != body.llm_config_id
     ] or None
 
+    item_ids = _resolve_target_ids(body)
+
+    # 歸因歷史語境：觸發型態（batch=目標選取/selected=顯式多筆或勾選範圍/single=單筆）+ 是否重判 + 參數快照
     if body.item_ids:
-        item_ids = body.item_ids
-    elif body.scope == "all":
-        item_ids = db.prejudge_target_ids(
-            body.source, body.product_verticals,
-            stages=body.stages, target_polarity=body.target_polarity,
-            max_confidence=body.max_confidence,
-        )
+        kind = "single" if len(body.item_ids) == 1 else "selected"
+        rejudge = db.any_judged(body.source, item_ids)  # 顯式選取：標的已有判決＝重判
     else:
-        item_ids = []
+        kind = (
+            "selected" if body.within_ids else "batch"
+        )  # 勾選範圍內目標選取：歷史語境仍屬顯式選取
+        rejudge = any(
+            s != "unjudged" for s in (body.stages or ["unjudged"])
+        )  # 目標選取：收已判階段＝重判
+    params = body.model_dump(exclude_none=True)
+    # id 大清單不進參數快照（防 params 膨脹）；≤20 筆保留供單筆/小批追溯
+    for key in ("item_ids", "within_ids"):
+        if len(params.get(key) or []) > 20:
+            params[key] = params[key][:20]
+    params["item_ids_count"] = len(item_ids)
 
     job_id = prejudge_batch.start_job(
-        item_ids, eff, model, source=body.source, voter_cfgs=voter_cfgs, sample_rate=body.ensemble_sample_rate or 0.0
+        item_ids,
+        eff,
+        model,
+        source=body.source,
+        voter_cfgs=voter_cfgs,
+        sample_rate=body.ensemble_sample_rate or 0.0,
+        triggered_by=user.get("email") or uid,
+        kind=kind,
+        rejudge=rejudge,
+        params=params,
+        # exact-cache 讀取閘：批次（scope 目標選取）重用規則未變部分；顯式單筆/選取重判＝使用者要求真的重打
+        cache_read=(kind == "batch"),
     )
-    return {"job_id": job_id, "total": len(item_ids), "model": model, "ensemble_voters": len(voter_cfgs or [])}
+    return {
+        "job_id": job_id,
+        "total": len(item_ids),
+        "model": model,
+        "ensemble_voters": len(voter_cfgs or []),
+    }
 
 
 @router.post("/prejudge/pause")
@@ -98,6 +171,58 @@ def cancel_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> di
     return prejudge_batch.get_job(job_id) or {}
 
 
+def _overlay_live(run: dict) -> dict:
+    """對非終態 run 疊加 in-mem job 快照（即時進度/花費）；快照已不在（server 重啟）→ 標 interrupted。
+
+    歸因歷史 DB 只在暫停/恢復/終態回寫，執行中的 processed/token/費用活在 prejudge_batch 記憶體；
+    列表/詳情讀取時 merge，前端拿到的即為當下實況。
+    """
+    if run.get("status") in ("running", "paused", "cancelling"):
+        snap = prejudge_batch.get_job(run["job_id"])
+        if snap:
+            run.update(
+                {
+                    "status": snap["status"],
+                    "processed": snap["processed"],
+                    "ok": snap["ok"],
+                    "failed": snap["failed"],
+                    "total_tokens": snap["total_tokens"],
+                    "cost_usd": snap["cost_usd"],
+                }
+            )
+        else:
+            run["status"] = "interrupted"  # server 重啟中斷：無快照可續，如實標記
+    return run
+
+
+@router.get("/runs")
+def list_runs(
+    limit: int = 20,
+    offset: int = 0,
+    source: str | None = None,
+    _: dict = Depends(auth.get_current_user),
+) -> dict:
+    """歸因歷史列表（每次批量/選取/單筆重判一列；started_at 降冪分頁）→ {total, items}。
+
+    執行中 run 疊加 in-mem 即時進度（_overlay_live）；token/費用終態值來自 usage sink 累計。
+    """
+    data = db.list_judgment_runs(limit=limit, offset=offset, source=source)
+    data["items"] = [_overlay_live(r) for r in data["items"]]
+    return data
+
+
+@router.get("/runs/{job_id}")
+def run_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
+    """單一 run 詳情：run 欄位 + 發起參數快照 + llm_usage per-stage 明細（呼叫數/token/費用）。
+
+    per-stage 明細於 job 結束 flush llm_usage 後才有值（執行中為空陣列）。
+    """
+    run = db.judgment_run_detail(job_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"歸因歷史不存在：{job_id}")
+    return _overlay_live(run)
+
+
 @router.get("/prejudge/stream")
 async def prejudge_stream(job_id: str) -> StreamingResponse:
     """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job done/error/cancelled 即關閉。
@@ -122,5 +247,9 @@ async def prejudge_stream(job_id: str) -> StreamingResponse:
     return StreamingResponse(
         _events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

@@ -18,7 +18,8 @@ import pytest
 
 from app.core import db
 from app.core import settings as app_settings
-from app.judge import prejudge, prejudge_batch as pb
+from app.judge import prejudge
+from app.judge import prejudge_batch as pb
 
 
 def _wait_status(job_id: str, want: set[str], timeout: float = 5.0) -> dict:
@@ -42,11 +43,15 @@ def batch_env(monkeypatch):
 
     monkeypatch.setattr(pb, "_reload_judge_rules", lambda: None)  # 免碰判準 loader/DB
     monkeypatch.setattr(
-        db, "get_items_by_ids",
-        lambda ids, source=None: [{"rec_oid": i, "comment": "很差要退款", "rating": 1} for i in ids],
+        db,
+        "get_items_by_ids",
+        lambda ids, source=None: [
+            {"rec_oid": i, "comment": "很差要退款", "rating": 1} for i in ids
+        ],
     )
     monkeypatch.setattr(
-        db, "replace_source_findings",
+        db,
+        "replace_source_findings",
         lambda src, sid, findings: state["replaced"].append((src, sid)) or len(findings),
     )
     monkeypatch.setattr(
@@ -54,7 +59,9 @@ def batch_env(monkeypatch):
     )
     # 歸因歷史（judgment_runs）落庫也 stub 掉：start_job/暫停恢復/終態都會 best-effort 寫 DB，
     # 不 stub 會把測試 job 寫進 dev 庫（實測汙染過 4 列假 run）。
-    monkeypatch.setattr(db, "insert_judgment_run", lambda row: state.setdefault("runs", []).append(row))
+    monkeypatch.setattr(
+        db, "insert_judgment_run", lambda row: state.setdefault("runs", []).append(row)
+    )
     monkeypatch.setattr(db, "update_judgment_run_status", lambda job_id, status: None)
     monkeypatch.setattr(db, "finish_judgment_run", lambda job_id, snap: None)
     monkeypatch.setattr(prejudge, "to_findings", lambda item, **kw: [])

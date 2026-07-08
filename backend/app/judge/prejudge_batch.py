@@ -72,8 +72,12 @@ def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
 
 
 def _work_one(
-    job_id: str, item: dict, model: str, source: str | None,
-    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+    job_id: str,
+    item: dict,
+    model: str,
+    source: str | None,
+    voter_cfgs: list[dict] | None = None,
+    sample_rate: float = 0.0,
 ) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
@@ -99,7 +103,9 @@ def _work_one(
             norm["prod_oid"] = canon.get("prod_oid") or ""
             norm["order_oid"] = canon.get("order_oid") or ""
             norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
-            findings = prejudge.to_findings(norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate)
+            findings = prejudge.to_findings(
+                norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate
+            )
             db.replace_source_findings(src, source_id, findings)
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
@@ -119,7 +125,13 @@ def _reload_judge_rules() -> None:
     from app.core.db import _shared
     from app.judge import prejudge
 
-    for fn in (ai_judge.reload, global_rule.reload, _shared.reload_judgment_cfg, prejudge.reload, flags.reload):
+    for fn in (
+        ai_judge.reload,
+        global_rule.reload,
+        _shared.reload_judgment_cfg,
+        prejudge.reload,
+        flags.reload,
+    ):
         try:
             fn()
         except Exception:  # noqa: BLE001  單一 loader reload 失敗不阻斷整批判決
@@ -127,22 +139,43 @@ def _reload_judge_rules() -> None:
 
 
 def _run(
-    job_id: str, item_ids: list[str], eff: dict, model: str, source: str | None = None,
-    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+    job_id: str,
+    item_ids: list[str],
+    eff: dict,
+    model: str,
+    source: str | None = None,
+    voter_cfgs: list[dict] | None = None,
+    sample_rate: float = 0.0,
+    cache_read: bool = True,
 ) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
-    # 在背景 thread 的 context 內 set 好兩個 contextvar，稍後每筆任務 copy_context 快照即帶上。
-    app_settings.set_current(eff)
     _reload_judge_rules()  # 硬保證：本批每筆 LLM 判決都採用『當前 DB active 版規則』（防 server 記憶體舊快取）
+    # 批次 serving tier（judgment.json prejudge.batch_service_tier；flex＝-50% 換延遲，小批不套）：
+    # 注入 eff 後由 client 依 provider 守門送出；429 資源不足 client 自動回退標準 tier。
+    tier = prejudge.batch_service_tier(len(item_ids))
+    if tier:
+        eff = {**eff, "service_tier": tier}
+    # 在背景 thread 的 context 內 set 好 contextvar，稍後每筆任務 copy_context 快照即帶上。
+    app_settings.set_current(eff)
+    # LLM exact-cache 讀取閘：批次開（重用規則未變部分·零 token）；顯式重判關（使用者要求真的重打）
+    client.set_llm_cache_read(cache_read)
 
     def _sink(m: str, prompt: int, completion: int, cached: int = 0) -> None:
-        """token 用量回報：累計 total_tokens 並依模型單價加總 cost_usd（cached 部分折扣計；thread-safe）。"""
+        """token 用量回報：累計 total_tokens 並依模型單價加總 cost_usd（cached 折扣＋job 級 tier 折扣）。
+
+        tier 取 job 級設定（flex 個別呼叫 429 回退標準時此處會微幅低估；權威 per-call 計價在
+        llm_usage 落庫，帶實際生效 tier）。thread-safe。
+        """
         with _jobs_lock:
             snap = _jobs.get(job_id)
             if snap is None:
                 return
             snap["total_tokens"] += prompt + completion
-            snap["cost_usd"] = round(snap["cost_usd"] + pricing.cost_usd(m, prompt, completion, cached), 6)
+            snap["cost_usd"] = round(
+                snap["cost_usd"]
+                + pricing.cost_usd(m, prompt, completion, cached, service_tier=tier),
+                6,
+            )
 
     client.set_usage_sink(_sink)
     # per-call 用量落庫：base 情境（job/source）+ 共用 buffer（copy_context 前設定→worker 共用同一 list），
@@ -170,10 +203,16 @@ def _run(
                     while len(in_flight) >= max_workers:
                         _, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
-                    in_flight.add(ex.submit(c.run, _work_one, job_id, item, model, source, voter_cfgs, sample_rate))
+                    in_flight.add(
+                        ex.submit(
+                            c.run, _work_one, job_id, item, model, source, voter_cfgs, sample_rate
+                        )
+                    )
                 if cancel and cancel.is_set():
                     break
-            wait(in_flight)  # drain 剩餘（正常跑完 / 取消後已提交的收斂；with 結束亦 shutdown(wait=True)）
+            wait(
+                in_flight
+            )  # drain 剩餘（正常跑完 / 取消後已提交的收斂；with 結束亦 shutdown(wait=True)）
         _set_status(job_id, "cancelled" if (cancel and cancel.is_set()) else "done")
     except Exception:  # noqa: BLE001  整批級失敗（如 DB 連線斷）→ 標 error 供前端停輪詢
         _log.exception("初判歸因批量任務失敗 job=%s", job_id)
@@ -185,14 +224,24 @@ def _run(
         except Exception:  # noqa: BLE001
             _log.debug("llm_usage flush 失敗 job=%s", job_id)
         client.set_usage_context(None)
+        try:  # 歸因歷史終態回寫（於 llm_usage flush 後，詳情頁 per-stage 明細即刻可查）
+            snap = get_job(job_id)
+            if snap:
+                db.finish_judgment_run(job_id, snap)
+        except Exception:  # noqa: BLE001
+            _log.exception("歸因歷史終態回寫失敗 job=%s", job_id)
         _drop_controls(job_id)
 
 
 def _set_status(job_id: str, status: str) -> None:
-    """設定 job 狀態（thread-safe）。"""
+    """設定 job 狀態（thread-safe）；同步回寫歸因歷史（best-effort，不阻斷判決）。"""
     with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id]["status"] = status
+    try:  # 非終態（paused/running/cancelling）即時回寫；終態統計另由 _run finally 的 finish 覆蓋
+        db.update_judgment_run_status(job_id, status)
+    except Exception:  # noqa: BLE001
+        _log.debug("歸因歷史狀態回寫失敗 job=%s status=%s", job_id, status)
 
 
 def _drop_controls(job_id: str) -> None:
@@ -211,6 +260,10 @@ def pause_job(job_id: str) -> bool:
         ctrl = _controls.get(job_id)
     if ctrl:
         ctrl["gate"].clear()
+    try:  # 歸因歷史狀態同步（best-effort）
+        db.update_judgment_run_status(job_id, "paused")
+    except Exception:  # noqa: BLE001
+        pass
     return True
 
 
@@ -224,6 +277,10 @@ def resume_job(job_id: str) -> bool:
         ctrl = _controls.get(job_id)
     if ctrl:
         ctrl["gate"].set()
+    try:  # 歸因歷史狀態同步（best-effort）
+        db.update_judgment_run_status(job_id, "running")
+    except Exception:  # noqa: BLE001
+        pass
     return True
 
 
@@ -241,12 +298,26 @@ def cancel_job(job_id: str) -> bool:
     if ctrl:
         ctrl["cancel"].set()
         ctrl["gate"].set()  # 喚醒被暫停阻塞的提交迴圈，使其看到 cancel 並 break
+    try:  # 歸因歷史狀態同步（best-effort；drain 完由 _run 終態 finish 覆蓋為 cancelled）
+        db.update_judgment_run_status(job_id, "cancelling")
+    except Exception:  # noqa: BLE001
+        pass
     return True
 
 
 def start_job(
-    item_ids: list[str], eff: dict, model: str, source: str | None = None,
-    voter_cfgs: list[dict] | None = None, sample_rate: float = 0.0,
+    item_ids: list[str],
+    eff: dict,
+    model: str,
+    source: str | None = None,
+    voter_cfgs: list[dict] | None = None,
+    sample_rate: float = 0.0,
+    *,
+    triggered_by: str = "",
+    kind: str = "batch",
+    rejudge: bool = False,
+    params: dict | None = None,
+    cache_read: bool = True,
 ) -> str:
     """註冊並背景啟動一個初判歸因批量任務；立即回 job_id（不阻塞請求）。
 
@@ -258,6 +329,12 @@ def start_job(
             None＝沿用 intake_items 舊行為）。
         voter_cfgs: 跨廠 ensemble voter 的 effective LLM config 清單（None＝不 ensemble）；穿透至
             to_findings，主判決有低信心 attr 才對各 voter 複判投票（confidence-gated，見 prejudge._ensemble_attrs）。
+        sample_rate: 高信心筆的 ensemble 抽樣稽核比例（0＝純 confidence-gate）。
+        triggered_by: 觸發人（user email；歸因歷史落庫）。
+        kind: 觸發型態（batch/selected/single；歸因歷史落庫，端點解析）。
+        rejudge: 標的先前已有判決（本次為重判；端點判定）。
+        params: 發起參數快照（歸因歷史落庫供追溯；勿含大清單）。
+        cache_read: LLM exact-cache 讀取閘（批次 True＝重用規則未變部分；顯式單筆/選取重判 False＝真的重打。寫入恆開）。
 
     Returns:
         job_id（前端據此輪詢 get_job）。
@@ -268,9 +345,26 @@ def start_job(
         gate = threading.Event()
         gate.set()  # 預設可跑（暫停時清除）
         _controls[job_id] = {"gate": gate, "cancel": threading.Event()}
+    try:  # 歸因歷史建檔（run 級持久化；失敗不阻斷判決——歷史為輔助紀錄）
+        db.insert_judgment_run(
+            {
+                "job_id": job_id,
+                "kind": kind,
+                "rejudge": rejudge,
+                "source": source or "",
+                "model": model,
+                "ensemble_voters": len(voter_cfgs or []),
+                "params": params or {},
+                "status": "running",
+                "total": len(item_ids),
+                "triggered_by": triggered_by,
+            }
+        )
+    except Exception:  # noqa: BLE001
+        _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(job_id, item_ids, eff, model, source, voter_cfgs, sample_rate),
+        args=(job_id, item_ids, eff, model, source, voter_cfgs, sample_rate, cache_read),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()

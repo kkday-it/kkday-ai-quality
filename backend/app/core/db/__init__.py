@@ -31,6 +31,14 @@ from app.core.db.ingest import (
     list_batches,
     update_batch_inserted,
 )
+from app.core.db.judgment_runs import (
+    any_judged,
+    finish_judgment_run,
+    insert_judgment_run,
+    judgment_run_detail,
+    list_judgment_runs,
+    update_judgment_run_status,
+)
 from app.core.db.llm_usage import (
     insert_llm_usage_row,
     insert_llm_usage_rows,
@@ -100,6 +108,12 @@ __all__ = [
     "insert_llm_usage_row",
     "insert_llm_usage_rows",
     "llm_usage_overview",
+    "any_judged",
+    "finish_judgment_run",
+    "insert_judgment_run",
+    "judgment_run_detail",
+    "list_judgment_runs",
+    "update_judgment_run_status",
     "update_batch_inserted",
     "update_finding_status",
     "update_finding_true_label",

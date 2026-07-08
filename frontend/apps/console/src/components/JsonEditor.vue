@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, shallowRef } from 'vue';
-import type { Content, Validator } from 'vanilla-jsoneditor';
+import { ref, onMounted, onBeforeUnmount, shallowRef, watch } from 'vue';
+import type { Content, JSONEditorPropsOptional, OnClassName, OnExpand, Validator } from 'vanilla-jsoneditor';
+
+/** vanilla-jsoneditor 的節點路徑（各段字串；套件未公開匯出 JSONPath 型別，故本地別名）。 */
+type JsonPath = string[];
 // 預設（亮色）主題已內建於套件 JS，無需另引 CSS；themes/ 僅提供 dark 覆蓋（jse-theme-dark.css）。
 
 /**
@@ -24,8 +27,10 @@ const props = withDefaults(
     schema?: Record<string, unknown>;
     /** 撐滿父容器高度（height:100%）取代預設 60vh 上限；用於整頁編輯（如判決規則頁）。 */
     fill?: boolean;
+    /** 選填節點 class 回呼：依 path/value 回傳 class 名（如版本對比標紅）；變更即時套用（read-only 情境）。 */
+    onClassName?: OnClassName;
   }>(),
-  { readOnly: false, mode: 'tree', fill: false, schema: undefined },
+  { readOnly: false, mode: 'tree', fill: false, schema: undefined, onClassName: undefined },
 );
 
 // jsoneditor API 於掛載時動態載入；型別走 import type（編譯期擦除，不進 bundle）
@@ -74,9 +79,42 @@ onMounted(async () => {
       mode: props.mode === 'text' ? jse.Mode.text : jse.Mode.tree,
       readOnly: props.readOnly,
       validator: buildValidator(),
+      onClassName: props.onClassName,
       onChange,
     },
   });
+});
+
+// read-only（歷史 / 版本對比）情境：外部 json 或 onClassName 於掛載後才就緒（非同步載入 / 切版）時推入 editor。
+// 修「掛載時內容尚未載入 → 空白，需重選版本才顯示」的競態；同時讓 diff 標紅隨版本即時更新。
+// 可編輯情境不走此路（維持 :key 重掛），避免打字→回寫 json→updateProps 重置游標的迴圈。
+watch(
+  () => [props.json, props.onClassName] as const,
+  ([json, onClassName]) => {
+    if (!props.readOnly || !editor.value) return;
+    editor.value.updateProps({ content: { json } as Content, onClassName } as JSONEditorPropsOptional);
+  },
+);
+
+/**
+ * 暴露命令式方法給消費端（版本對比用）：
+ * - expand(path, cb)：自 path 起逐節點依 cb 決定是否展開（tree 模式）
+ * - scrollTo(path)：捲動並聚焦指定節點
+ * - refresh()：重繪
+ * 皆對 editor 尚未就緒 / 非 tree 模式做保護，靜默略過不拋錯。
+ */
+defineExpose({
+  expand: (path: JsonPath, callback?: OnExpand): void => {
+    try {
+      editor.value?.expand(path, callback);
+    } catch {
+      /* 非 tree 模式 / editor 未就緒 → 略過 */
+    }
+  },
+  // 目標 path 可能只存在於某一版（增 / 刪）→ 另一欄 scrollTo 會 reject，靜默吞掉不干擾對齊
+  scrollTo: (path: JsonPath): Promise<void> =>
+    (editor.value?.scrollTo(path) ?? Promise.resolve()).catch(() => {}),
+  refresh: (): Promise<void> => editor.value?.refresh() ?? Promise.resolve(),
 });
 
 onBeforeUnmount(() => {
@@ -101,5 +139,14 @@ onBeforeUnmount(() => {
 /* fill：整頁編輯時撐滿父容器（父須有定高），取代 60vh；仍由 editor 內部捲 contents（工具列固定） */
 .json-editor-fill {
   height: 100%;
+}
+/* 版本對比：onClassName 標記的變動節點染紅（淡底 + 紅值），用 :deep 穿透 editor 內部 DOM。
+   顏色取 Arco 全域 token（arco.css 已於 main.ts 全域載入），亮 / 暗主題一致。 */
+.json-editor-host :deep(.jse-diff-changed) {
+  background: var(--color-danger-light-1);
+}
+.json-editor-host :deep(.jse-diff-changed .jse-value) {
+  color: rgb(var(--danger-6));
+  font-weight: 600;
 }
 </style>
