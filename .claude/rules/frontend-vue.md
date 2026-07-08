@@ -18,6 +18,18 @@ paths:
 
 > `preflight: false`（已關 Tailwind reset，避免破壞 Arco）。新增 utility 直接用，無需額外設定。
 
+## 多控制項橫列佈局（篩選列 / 工具列 · 強制用 Arco Grid）
+
+篩選列 / 工具列等**會換行的多控制項橫排**（多個 `a-select` / `a-input` / 按鈕並排且可能超出一行），一律用 **Arco Grid（`a-row` / `a-col`）**，禁止手抄 `flex flex-wrap gap-x` 拼版：
+
+- **根用 `<a-row :gutter="[橫, 縱]" align="center" wrap>`**：`gutter` 傳**陣列**同時給欄距與**換行行距**——這是關鍵。手寫 `flex flex-wrap gap-2` 的 `gap` 只作用於單一 flex 容器內部；一旦拆成**兩個相鄰 `<div>`**（如「篩選維度列」+「精確查詢列」），兩 div 之間**無縱向間距 → 視覺黏疊**。Grid 的 `gutter` 縱向值天然消除此問題。
+- **每個控制項包一個 `<a-col :flex="...">`**：固定基寬用 `flex="160px"`，內容自適寬按鈕用 `flex="none"`，撐開占位（把右側計數/重置推到最右）用 `flex="auto"`（`flex` prop Arco 2.10.0+）。
+- **控制項本身 `class="w-full"` 撐滿該欄**，寬度交給 `a-col`，**不再**在 `a-select` / `a-input` 上寫 `style="width: XXXpx"`。
+- **多段橫列**（篩選維度 + 精確查詢分兩排）：拆成多個 `a-row`，段間距用 Tailwind `class="mb-2"`（Grid 不管跨 row 間距）。
+- **條件渲染的欄位**：`v-if` / `v-for` 掛在 `a-col` 上（欄不存在時不佔 gutter 空位）。
+
+> 範例見 `features/judge/pages/AttributionList.vue` 的 `#toolbar`。輕量單行、不會換行的少量控制項（2~3 個）可續用 `flex gap-2`，不強制 Grid。
+
 ## UI 元件復用（不自寫）
 
 新增任何共用 UI 前，先搜尋 codebase 既有 component，找到即擴充，不平行造第二套。
@@ -26,6 +38,25 @@ paths:
 - 需要表單 / 表格 / 提示 → 用 Arco 對應元件（`a-form` / `a-table` / `Message`）
 - 需要圖表 → 用 `vue-echarts` 的 `<v-chart>`，不引入其他圖表庫
 - **元件薄**：只管渲染 + 互動，業務邏輯下沉 composable / util；function > 50 行或元件塞多職責 → 拆分
+
+## 表格（全局公共元件 · 強制）
+
+任何列表表格（頁面 / 抽屜 / 彈窗內皆同）一律用全局公共元件 `TableLayout`（`@/components`），禁止各處手抄 flex 樣板 / TABLE_DEFAULTS / 散寫 pagination 物件：
+
+- **內建表格模式（首選）**：傳 `data` 即啟用，內部渲染 a-table 並自動打底 `TABLE_DEFAULTS` + 滿高滾動 + 分頁 preset；columns / row-key / expandable / row-selection / 事件與 #columns / #expand-row / 自訂 cell slots 全透傳：
+  ```vue
+  <TableLayout title="…" :data="rows" :columns="COLS" :loading="loading" :error="error"
+    server :total="total" v-model:page="page" v-model:page-size="pageSize" @change="load">
+    <template #toolbar>…篩選列…</template>
+    <template #review="{ record }">…</template>
+  </TableLayout>
+  ```
+- **分頁**：`pagination` prop 傳 `'standard'`（預設）/ `'with-all'`（含「全部」，**僅限總量可控小表**，萬級大表禁用）/ `false` / 自訂物件；伺服器分頁加 `server`，元件自組 current/pageSize/total 與換頁 handlers（換 pageSize 自動回第 1 頁）
+- **三態**：`loading`（a-table 內建 spin）/ `error`（表上方 alert 不遮資料）/ `emptyText`（內建 empty 文案）
+- **高度前置**：頁面根 `h-full`（AppShell 已 flex 撐高）；抽屜 / 彈窗傳 `full-height`
+- **純佈局模式**（不傳 `data`）：非表格內容（卡片列表等）走預設插槽自排；a-table 自帶 `class="min-h-0 flex-1"` + `:scroll="{ y: '100%' }"`
+- **例外**：`pagination=false` 的輕量小表（設定面板 / 彈窗內對照表）可直接 a-table，不強制套卡片
+- 常數 SSOT：`@/constants/table.constant`（`TABLE_DEFAULTS` / `ALL_PAGINATION` / `PAGINATION_WITH_ALL` / `PAGE_SIZE_ALL`）
 
 ## 按鈕與操作區（視覺區分主次 · 強制）
 
