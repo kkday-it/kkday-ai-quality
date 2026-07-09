@@ -1,6 +1,6 @@
 """Alembic 環境：target_metadata + 連線皆取自 app 的 tables 模組（config 驅動 URL）。
 
-URL 來源＝`tables.resolve_url()`（database_url 空→SQLite dev / postgresql://→PG），
+URL 來源＝`tables.resolve_url()`（＝`config.env.database_url`，PostgreSQL；dev 預設本機，prod 經 DATABASE_URL 覆蓋），
 與後端 runtime 同一條 SSOT；故 `alembic upgrade` 跑在哪個庫由 DATABASE_URL 決定，不在 alembic.ini 硬寫。
 """
 

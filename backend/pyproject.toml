@@ -19,7 +19,7 @@ dependencies = [
     "bcrypt>=4.0.0",
     "pyjwt>=2.9.0",
     "cryptography>=42.0.0",    # user_settings 機密 at-rest 加密（Fernet；app/core/crypto.py）
-    "sqlalchemy>=2.0.0",       # 資料層 dialect 抽象（SQLite dev + PostgreSQL prod）
+    "sqlalchemy>=2.0.0",       # 資料層（PostgreSQL only；Core + Alembic 遷移）
     "alembic>=1.13.0",         # schema 版本遷移
     "psycopg2-binary>=2.9.0",  # PostgreSQL driver（app 操作庫 + QC DB 連線測試共用）
 ]
