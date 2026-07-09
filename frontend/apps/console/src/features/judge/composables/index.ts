@@ -5,3 +5,4 @@ export * from './useAttributionSelection';
 export * from './useExportJob';
 export * from './useLlmConfigs';
 export * from './usePrejudgeJob';
+export * from './useProductVerticalRule';
