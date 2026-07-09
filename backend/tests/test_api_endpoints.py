@@ -54,6 +54,15 @@ def test_register_duplicate_email_conflict(client) -> None:
     client.post("/api/auth/register", json={"email": "dup@kkday.com", "password": "secret1"})
     r = client.post("/api/auth/register", json={"email": "dup@kkday.com", "password": "secret1"})
     assert r.status_code == 409
+    # 錯誤 code 契約（raise_api_error）：detail = {code, message}，供前端 i18n 對映
+    detail = r.json()["detail"]
+    assert detail["code"] == "AUTH.EMAIL_EXISTS" and detail["message"]
+
+
+def test_login_failed_error_code_contract(client) -> None:
+    """帳密錯 → 401 且 detail.code = AUTH.LOGIN_FAILED（error-code i18n 框架契約）。"""
+    r = client.post("/api/auth/login", json={"email": "nope@kkday.com", "password": "x"})
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "AUTH.LOGIN_FAILED"
 
 
 def test_login_success_and_wrong_password(client) -> None:

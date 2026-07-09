@@ -1,0 +1,7 @@
+{
+  "AUTH": {
+    "INVALID_CREDENTIALS_FORMAT": "Email 格式錯誤或密碼長度不足",
+    "EMAIL_EXISTS": "此 Email 已註冊",
+    "LOGIN_FAILED": "Email 或密碼錯誤"
+  }
+}

@@ -5,10 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core import auth, config, db
+from app.core.errors import raise_api_error
 from app.core.permissions import business_list_ttl_ms, get_provider
 
 router = APIRouter()
@@ -40,14 +41,15 @@ def register(body: RegisterIn) -> dict:
     """註冊新帳號 → 回 JWT + user。email 重複回 409。"""
     email = body.email.strip().lower()
     if "@" not in email or len(body.password) < config.env.min_password_length:
-        raise HTTPException(
+        raise_api_error(
+            "AUTH.INVALID_CREDENTIALS_FORMAT",
+            f"email 格式錯誤或密碼少於 {config.env.min_password_length} 碼",
             status_code=400,
-            detail=f"email 格式錯誤或密碼少於 {config.env.min_password_length} 碼",
         )
     try:
         user = db.create_user(str(uuid.uuid4()), email, auth.hash_password(body.password))
     except db.DuplicateEmailError:
-        raise HTTPException(status_code=409, detail="此 email 已註冊") from None
+        raise_api_error("AUTH.EMAIL_EXISTS", "此 email 已註冊", status_code=409)
     return {"token": auth.create_access_token(user["user_id"]), "user": _public_user(user)}
 
 
@@ -57,7 +59,7 @@ def login(body: LoginIn) -> dict:
     email = body.email.strip().lower()
     user = db.get_user_by_email(email)
     if not user or not auth.verify_password(body.password, user["password_hash"] or ""):
-        raise HTTPException(status_code=401, detail="email 或密碼錯誤")
+        raise_api_error("AUTH.LOGIN_FAILED", "email 或密碼錯誤", status_code=401)
     return {"token": auth.create_access_token(user["user_id"]), "user": _public_user(user)}
 
 

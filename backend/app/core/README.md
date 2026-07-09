@@ -11,7 +11,8 @@
 | `export_jobs.py` | 通用導出背景 job registry（in-mem 進度快照 + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 判決規則導出共用，端點見 `api/routers/exports.py`。 |
 | `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |
 | `crypto.py` | 機密 at-rest 加密（Fernet；key＝env `AIQ_SECRET_KEY`，未設明文直通可回滾）。密文帶 `enc:v1:` 前綴、舊明文列直通；既有列遷移用 `scripts/tools/encrypt_user_secrets.py`。 |
-| `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout…），全專案最底層依賴。 |
+| `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout / DB 連線池…），全專案最底層依賴。 |
+| `errors.py` | API 錯誤 code 統一入口 `raise_api_error(code, message, status_code)` → HTTPException(detail={code, message})。前端據 code 對映 i18n 翻譯（見前端 `src/i18n`）；漸進採用 touch-when-edit。 |
 | `paths.py` | 路徑 SSOT（REPO_ROOT / CONFIG_DIR / AI_JUDGE_DIR / GLOBAL_DIR），全專案唯一算一次。 |
 | `auth.py` | JWT 簽發/驗證 + 密碼雜湊 + 角色派生（`role_for`：角色由 `config/global/roles.json` 白名單每請求即時派生，admin/qc 兩級、零 migration）。正式環境缺/弱 JWT secret（<32 bytes）拒啟動。端點授權改由 `permissions/` 負責（見下）。 |
 | `permissions/` | **可替換權限框架**（package）：`PermissionProvider` 抽象（base）+ `require_permission(key)` dependency（deps）+ business-key 常數（permission_keys，be2 風格 `module.sub-function.action`）+ `LocalPermissionProvider`（角色→key 讀 `config/global/role_permissions.json`）+ `Be2PermissionProvider` 空殼。換 be2 中央 Auth SVC 唯一改動點＝`config/global/auth.config.json['provider']` + `be2_provider.py`，router 全不動。fail-closed。 |
