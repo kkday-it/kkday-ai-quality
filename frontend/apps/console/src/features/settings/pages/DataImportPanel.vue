@@ -179,7 +179,7 @@ onUnmounted(closeStream);
       @change="onFileChange"
     >
       <template #upload-button>
-        <a-button type="outline">選擇資料包 zip…</a-button>
+        <a-button type="outline">導入資料包…</a-button>
       </template>
     </a-upload>
 
