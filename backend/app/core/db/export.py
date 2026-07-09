@@ -131,14 +131,13 @@ def export_problems_xlsx(
     polarity: str | list[str] | None = None,
     judged: bool | None = None,
     item_ids: list[str] | None = None,
-    score: list[int] | None = None,
     product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     sentiment: list[int] | None = None,
     stage: list[str] | None = None,
     confidence_tier: str | None = None,
-    l1_domain: str | None = None,
+    taxonomy: list[str] | None = None,
     has_external: bool | None = None,
     rec_oid: str | None = None,
     prod_oid: str | None = None,
@@ -151,8 +150,8 @@ def export_problems_xlsx(
     傾向/分層/判決階段輸出繁中 label。openpyxl / _style_header lazy import。
 
     Args:
-        source/polarity/judged/score/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
-        stage/confidence_tier/l1_domain/has_external/rec_oid/prod_oid/order_oid: 同 list_problems，
+        source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
+        stage/confidence_tier/taxonomy/has_external/rec_oid/prod_oid/order_oid: 同 list_problems，
             使導出＝列表所見即所得（全篩選對齊，非只部分）。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
         ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
@@ -175,14 +174,13 @@ def export_problems_xlsx(
         source=source,
         polarity=polarity,
         judged=judged,
-        score=score,
         product_vertical=product_vertical,
         date_from=date_from,
         date_to=date_to,
         sentiment=sentiment,
         stage=stage,
         confidence_tier=confidence_tier,
-        l1_domain=l1_domain,
+        taxonomy=taxonomy,
         has_external=has_external,
         rec_oid=rec_oid,
         prod_oid=prod_oid,

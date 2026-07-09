@@ -68,6 +68,33 @@ def _cache_key(kwargs: dict) -> str:
     ).hexdigest()
 
 
+def _loads_lenient(raw: str) -> dict | None:
+    """容錯 JSON 解析：直 json.loads 失敗時，剝除 markdown fence / 抽取首個 {...} 區塊再試。
+
+    無法送 response_format 的 provider（如 ByteDance seed）靠 prompt 產 JSON，偶帶 ```json fence
+    或前後贅述——嚴格 json.loads 會誤判為壞輸出。回 dict；徹底無法解析回 None（上層降級空 dict）。
+    """
+    if not raw:
+        return None
+    for candidate in (
+        raw,
+        raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```"),
+    ):
+        try:
+            v = json.loads(candidate.strip())
+            return v if isinstance(v, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            pass
+    start, end = raw.find("{"), raw.rfind("}")  # 抽取首個大括號區塊（贅述包裹時）
+    if 0 <= start < end:
+        try:
+            v = json.loads(raw[start : end + 1])
+            return v if isinstance(v, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
 # token 用量回報槽（ContextVar）：批量判決設定 sink，chat_json 每次呼叫把 usage 回報以累計花費。
 # 用 ContextVar 是因 prejudge_batch 以 copy_context 派工，worker 自動繼承 _run 設的 sink。
 # sink 簽名：(model, prompt_tokens, completion_tokens, cached_tokens) → None（須自行 thread-safe）；
@@ -319,13 +346,24 @@ def chat_json(
             return hit
     try:
         resp = _complete(cfg, kwargs, ck)  # gateway 分派（OpenAI SDK / litellm）
-    except Exception as e:  # noqa: BLE001  flex 缺容量→回退標準 tier；json_schema 不受支援（400）→回退 json_object
-        if kwargs.get("service_tier") == "flex" and "resource_unavailable" in str(e).lower():
+    except Exception as e:  # noqa: BLE001  flex 缺容量→回退標準 tier；response_format 不支援→去除；json_schema→回退 json_object
+        emsg = str(e)
+        if kwargs.get("service_tier") == "flex" and "resource_unavailable" in emsg.lower():
             # flex 容量不足（429 resource_unavailable，該次不計費）→ 回退標準 tier 重打一次
             # （官方建議策略；批次不因 flex 缺容量失敗，僅該筆回原價。cfg 同步改寫使計價按實際 tier）
             _log.warning("flex 容量不足(stage=%s)，回退標準 tier 重試", stage)
             kwargs.pop("service_tier", None)
             cfg = {**cfg, "service_tier": None}
+            resp = _complete(cfg, kwargs, ck)
+        elif "response_format" in emsg and kwargs.get("response_format"):
+            # provider 全不支援 response_format（如 ByteDance seed-2-0-lite：json_object / json_schema
+            # 皆回 400）→ 去除該參數重試，靠 system prompt 的 JSON 指示 + 下方 fence-tolerant 解析兜底。
+            _log.warning(
+                "response_format 不受支援(stage=%s)，改無 response_format 重試：%s",
+                stage,
+                emsg.splitlines()[0][:160],
+            )
+            kwargs.pop("response_format", None)
             resp = _complete(cfg, kwargs, ck)
         elif schema is None:
             raise
@@ -333,7 +371,7 @@ def chat_json(
             _log.warning(
                 "json_schema 不受支援(stage=%s)，回退 json_object：%s",
                 stage,
-                str(e).splitlines()[0][:160],
+                emsg.splitlines()[0][:160],
             )
             kwargs["response_format"] = {"type": "json_object"}
             resp = _complete(cfg, kwargs, ck)
@@ -361,11 +399,10 @@ def chat_json(
         except Exception:  # noqa: BLE001
             _log.debug("usage 落庫失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        # LLM 回非 JSON（空字串 / markdown fence 包裹 / prompt 漂移）→ 記錄並降級為空 dict，
-        # 由上層 _sanitize 補位（不靜默吞：留 log 供 monitoring 偵測模型輸出退化）。
+    parsed = _loads_lenient(raw)
+    if parsed is None:
+        # LLM 回非 JSON（空字串 / prompt 漂移）→ 記錄並降級為空 dict，由上層 _sanitize 補位
+        # （不靜默吞：留 log 供 monitoring 偵測模型輸出退化）。
         _log.warning("LLM JSON parse 失敗 stage=%s model=%s raw=%r", stage, cfg["model"], raw[:200])
         return {}
     if use_cache and parsed:  # 寫入恆開（顯式重判的新結果也回填供後續批次重用）；空 dict 不快取
