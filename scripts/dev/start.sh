@@ -20,8 +20,9 @@ if ! command -v docker >/dev/null 2>&1; then
       brew install colima docker docker-compose || { echo "❌ colima 安裝失敗"; exit 1; }
       ;;
     Linux)
-      sudo apt-get update -qq && sudo apt-get install -y docker.io docker-compose-plugin ||
-        { echo "❌ Docker 安裝失敗，請手動安裝"; exit 1; }
+      # Docker 官方安裝腳本（跨 distro·含 compose plugin；比 distro 套件穩定，避開 docker-compose-plugin 各版本包名不一）
+      curl -fsSL https://get.docker.com | sudo sh || { echo "❌ Docker 安裝失敗，請手動安裝"; exit 1; }
+      sudo systemctl enable --now docker 2>/dev/null || sudo service docker start 2>/dev/null || true
       ;;
     *) echo "❌ 未知平台，請手動安裝容器引擎"; exit 1 ;;
   esac
