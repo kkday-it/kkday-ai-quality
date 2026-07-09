@@ -1,7 +1,7 @@
 """AI 法官核心資料模型（Pydantic v2）。
 
 對應 folder 2117435397 SD §3 的 TicketFinding；前端對應型別見 frontend/src/types/finding.ts。
-判決邏輯（classify/adequacy/arbiter/diagnose）將沿用 ProductContentAIChecker 的 Python 資產。
+判決邏輯（classify / adequacy / arbiter）沿用 ProductContentAIChecker 的 Python 資產。
 """
 
 from __future__ import annotations
