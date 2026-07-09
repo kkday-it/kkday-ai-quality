@@ -10,8 +10,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# config/ 為前後端共用 SSOT，後端 runtime 讀取（AIQ_CONFIG_DIR 明確指向，免依賴 parents[3] 推導）
+# config/ + constants/ 為前後端共用 SSOT，後端 runtime 讀取（config 經 AIQ_CONFIG_DIR；constants 走 REPO_ROOT/constants=/app/constants）
 COPY config/ config/
+COPY constants/ constants/
 COPY backend/ backend/
 
 # 依賴 SSOT＝pyproject.toml（editable，與 dev 一致；app 指向 source，config 定位穩定）

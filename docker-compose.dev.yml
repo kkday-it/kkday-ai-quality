@@ -1,0 +1,67 @@
+# 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。
+#   ./scripts/dev/start.sh   （偵測+啟動 Docker 後 docker compose -f docker-compose.dev.yml up）
+# 改碼即生效：後端 uvicorn --reload（掛 ./backend/app）、前端 vite HMR（掛 ./frontend，node_modules 走容器內）。
+# 資料庫空庫也能起（backend 跳過 alembic upgrade，改 main.py init_db create_all+stamp）；資料靠前台「資料導入」上傳。
+# 生產部署走 docker-compose.yml（多 worker·nginx 靜態·嚴格 JWT）。
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kkdb_ai_quality
+      POSTGRES_HOST_AUTH_METHOD: trust  # dev 免密；生產走 secret
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+      # 有 seed 則首啟自動還原；空則空庫（前台導入資料包）。先 ./scripts/dev/fetch-seed.sh 取得。
+      - ./docker/seed:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    # dev 跳過 entrypoint 的 alembic upgrade（migration 無法從零建庫）；schema 由 main.py init_db(create_all+stamp)。
+    entrypoint: []
+    command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8100", "--reload"]
+    environment:
+      APP_ENV: development  # 免嚴格 JWT；資料導入閘自動開
+      DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality
+      AIQ_ALLOW_DATA_IMPORT: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}  # 無 key → stub 模式；填 key 走真 LLM
+      CORS_ALLOW_ORIGINS: http://localhost:5273
+    volumes:
+      - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
+      - ./config:/app/config                 # 前後端共用配置（熱編）
+      - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8100:8100"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      VITE_BACKEND_URL: http://backend:8100  # vite proxy /api → 後端容器
+      CHOKIDAR_USEPOLLING: "true"            # Mac/Docker bind mount 檔案監看需輪詢，否則 HMR 不觸發
+    volumes:
+      - ./frontend:/app/frontend             # source 熱更
+      - /app/frontend/node_modules           # 匿名 volume 遮蔽 host（Mac）node_modules → 用容器內 Linux 依賴
+      - /app/frontend/apps/console/node_modules
+      - ./config:/app/config
+      - ./constants:/app/constants
+    depends_on:
+      - backend
+    ports:
+      - "5273:5273"
+
+volumes:
+  pgdata_dev:

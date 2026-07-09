@@ -7,8 +7,9 @@
 FROM node:22-slim AS build
 RUN npm install -g pnpm
 WORKDIR /app
-# @config → repo 根 config/（vite.config 的 ../../../config）；build 需一併帶入
+# @config / @constants → repo 根 config/·constants/（vite.config 的 ../../../*）；build 需一併帶入
 COPY config/ config/
+COPY constants/ constants/
 COPY frontend/ frontend/
 WORKDIR /app/frontend
 RUN pnpm install --frozen-lockfile && pnpm build

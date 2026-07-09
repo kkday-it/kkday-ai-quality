@@ -1,42 +1,58 @@
 #!/usr/bin/env bash
-# 一鍵啟動前後端（首次含 bootstrap：系統工具 / 依賴 / DB / seed；Ctrl-C 同時停）。
+# 一鍵啟動（純 Docker）：偵測 Docker → 未啟動則啟動並等待 → docker compose up（dev·hot reload）。
 #   ./scripts/dev/start.sh
-# 後端：backend/run.sh（venv + 依賴 + uvicorn，port 8100，Swagger /docs）
-# 前端：frontend pnpm dev（vite，本機 port 5273）
+# 全服務在容器內：PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴。本機只需 Docker，無需裝 python/node/pnpm/PG。
+# 改碼即生效（uvicorn --reload + vite HMR）；首次會 build image（較久），之後秒起。Ctrl-C 停止所有服務。
+# 資料：空庫也能起 → 於前端「配置 › 資料導入」上傳資料包載入；或先設 SEED_URL 由 db 首啟自動還原。
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # scripts/dev/ 的上兩層＝repo 根
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-# ── 0. Bootstrap：系統級工具偵測 + 協助安裝（缺才裝，裝前確認）──────────────
-#     doctor.sh 維持 report-only 檢查閘門；安裝動作集中於此 lib（見檔內設計說明）。
-# shellcheck source=scripts/dev/lib/ensure-system-tools.sh
-. "$ROOT/scripts/dev/lib/ensure-system-tools.sh"
-ensure_system_tools || { echo "❌ 系統工具未就緒，請依上方指令處理後重試"; exit 1; }
+# 1. Docker CLI 存在？
+if ! command -v docker >/dev/null 2>&1; then
+  echo "❌ 未偵測到 Docker。請先安裝 Docker Desktop → https://www.docker.com/products/docker-desktop/"
+  exit 1
+fi
 
-# ── 0b. Seed：本機 DB 為空且有 seed 來源時，還原你的全部數據（首次 onboarding）──
-#      無 seed 來源 → 非致命略過，以空庫啟動（backend create_all 建空 schema）。
-"$ROOT/scripts/dev/fetch-seed.sh" --restore-if-empty || true
+# 2. Docker daemon 已啟動？未啟動則嘗試啟動並等待就緒（最長 ~2 分鐘）
+if ! docker info >/dev/null 2>&1; then
+  echo "🐳 Docker 未啟動，嘗試啟動 ..."
+  case "$(uname -s)" in
+    Darwin)
+      # 依序試常見引擎：OrbStack → Docker Desktop → colima
+      if [ -d "/Applications/OrbStack.app" ]; then
+        open -a OrbStack >/dev/null 2>&1 || true
+      elif [ -d "/Applications/Docker.app" ]; then
+        open -a Docker >/dev/null 2>&1 || true
+      elif command -v colima >/dev/null 2>&1; then
+        colima start >/dev/null 2>&1 || true
+      else
+        echo "⚠️ 找不到 Docker 引擎（OrbStack / Docker Desktop / colima），請手動啟動後重試"
+      fi
+      ;;
+    Linux) sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true ;;
+    *) echo "⚠️ 未知平台，請手動啟動 Docker 後重試" ;;
+  esac
+  printf "   等待 Docker 就緒"
+  for i in $(seq 1 60); do
+    if docker info >/dev/null 2>&1; then
+      printf " ✓\n"
+      break
+    fi
+    printf "."
+    sleep 2
+    if [ "$i" = 60 ]; then
+      printf "\n❌ Docker 啟動逾時，請手動開啟 Docker Desktop 後重試\n"
+      exit 1
+    fi
+  done
+fi
 
-# ── 1. 前置自檢閘門：工具鏈 / 依賴 / .env / DB / migration，冪等修復；不過關即中止 ──
-"$ROOT/scripts/dev/doctor.sh" || { echo "❌ 環境自檢未通過，請依上方指令修復後重試"; exit 1; }
+# 3.（選用）取得 seed 供 db 首啟自動還原；無 SEED_URL / 本地檔則略過（空庫，改前台導入資料包）
+"$ROOT/scripts/dev/fetch-seed.sh" >/dev/null 2>&1 || true
 
-# 後端背景啟動（run.sh 會自建 venv / 裝依賴 / 跑 uvicorn --reload）
-( cd backend && ./run.sh ) &
-BACK_PID=$!
-
-# 結束 / Ctrl-C 時連帶收掉後端（含 uvicorn reload 子程序）
-cleanup() {
-  echo ""
-  echo "🛑 停止後端 (pid $BACK_PID) ..."
-  kill "$BACK_PID" 2>/dev/null || true
-  pkill -P "$BACK_PID" 2>/dev/null || true
-  pkill -f "uvicorn app.api.main:app" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-
-echo "🚀 後端：http://localhost:8100  (Swagger: http://localhost:8100/docs)"
-echo "🎨 前端啟動中（vite，埠見下方輸出，本機通常 http://localhost:5273）..."
-echo ""
-
-# 前端前景啟動；它停下（Ctrl-C）→ 觸發 trap 收後端
-cd frontend && pnpm dev
+# 4. 起全部服務（dev·hot reload）；Ctrl-C 停止。首次自動 build image。
+echo "🚀 啟動所有服務（Docker · hot reload）..."
+echo "   後端 http://localhost:8100（Swagger /docs）｜前端 http://localhost:5273"
+echo "   首次會 build image，請稍候；之後秒起。（改依賴時加 --build 重建）"
+exec docker compose -f docker-compose.dev.yml up

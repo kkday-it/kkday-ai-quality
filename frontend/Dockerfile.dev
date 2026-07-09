@@ -1,0 +1,16 @@
+# AI 法官前端 —— 開發 image（vite dev server + HMR）。
+# 與生產 Dockerfile（build 靜態 + nginx）不同：這裡跑 vite dev，配合 docker-compose.dev.yml 掛 source 熱更。
+# build 內先裝依賴 → compose 用匿名 volume 保留容器內 node_modules（遮蔽 host Mac binaries）。
+#   docker build -f frontend/Dockerfile.dev -t aiq-frontend-dev .
+FROM node:22-slim
+RUN corepack enable
+WORKDIR /app
+# @config / @constants → repo 根（vite alias ../../../config、../../../constants）；build 需一併帶入
+COPY config/ config/
+COPY constants/ constants/
+COPY frontend/ frontend/
+WORKDIR /app/frontend
+RUN pnpm install --frozen-lockfile
+EXPOSE 5273
+# --host 對外可連；埠對齊 vite 預設 5273（VITE_DEV_PORT 可覆蓋）
+CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5273"]
