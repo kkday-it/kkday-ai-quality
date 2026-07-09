@@ -1,0 +1,11 @@
+{
+  "_comment": "角色 → business-key 權限集合 SSOT（前後端同讀）。key 定義見 backend/app/core/permissions/permission_keys.py（be2 風格 module.sub-function.action）。admin 用 '*' 展開為全量；qc 為日常質檢作業子集。日後接 be2 中央 Auth SVC 時本檔由 be2_provider 取代（見 auth.config.json）。",
+  "admin": ["*"],
+  "qc": [
+    "finding.review.update",
+    "finding.true-label.update",
+    "data.source.upload",
+    "data.datapack.export",
+    "problem.list.export"
+  ]
+}

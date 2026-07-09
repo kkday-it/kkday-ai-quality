@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from app.core import auth
 from app.core.paths import CONFIG_DIR as _CONFIG  # repo 根 config/（統一定位，取代原 parents[4]）
+from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -97,7 +98,9 @@ def read_file(name: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
 @router.put("/files/{name:path}")
 def write_file(
-    name: str, body: ConfigWriteIn, _: dict = Depends(auth.require_role("admin"))
+    name: str,
+    body: ConfigWriteIn,
+    _: dict = Depends(require_permission(permission_keys.CONFIG_FILE_WRITE)),
 ) -> dict:
     """覆寫單一 config 檔：先備份 .backups/，再以 2-space/unicode 格式寫入，最後 reload taxonomy。
 

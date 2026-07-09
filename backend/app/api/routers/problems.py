@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core import db
+from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter()
 
@@ -104,8 +105,11 @@ class ExportProblemsIn(BaseModel):
 
 
 @router.post("/api/problems/export")
-def export_problems(body: ExportProblemsIn) -> dict:
-    """啟動問題列表導出背景 job → {job_id, filename}（立即回，背景組檔）。
+def export_problems(
+    body: ExportProblemsIn,
+    _user: dict = Depends(require_permission(permission_keys.PROBLEM_LIST_EXPORT)),
+) -> dict:
+    """啟動問題列表導出背景 job → {job_id, filename}（立即回，背景組檔）；需 problem.list.export 權限。
 
     大列表組 xlsx 可能耗時數十秒，改背景 job：前端連 SSE（/api/exports/stream）看進度、可停止，
     完成後 /api/exports/download 取檔。item_ids 給定→只導那些 review（複選/分頁選取，可上千）；

@@ -1,0 +1,6 @@
+{
+  "_comment": "權限 provider 切換開關（唯一替換點）。provider='local' 走 config 白名單（roles.json + role_permissions.json）；日後 provider='be2' 走中央 Auth SVC（需先實作 backend/app/core/permissions/be2_provider.py）。whiteList 預留 be2 base controller 白名單路徑（免權限端點），現行 local 未使用。",
+  "provider": "local",
+  "whiteList": [],
+  "businessListTtlMs": 43200000
+}

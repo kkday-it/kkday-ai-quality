@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import auth, db
+from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter()
 
@@ -34,9 +35,11 @@ class StatusIn(BaseModel):
 
 @router.patch("/api/findings/{finding_id}/status")
 def patch_finding_status(
-    finding_id: str, body: StatusIn, user: dict = Depends(auth.get_current_user)
+    finding_id: str,
+    body: StatusIn,
+    user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE)),
 ) -> dict:
-    """更新 Finding 狀態（出口A 確認/忽略/已修）；需登入，記操作者/時間 audit。"""
+    """更新 Finding 狀態（出口A 確認/忽略/已修）；需 finding.review.update 權限，記操作者/時間 audit。"""
     actor = user.get("email") or user.get("user_id") or "unknown"
     if not db.update_finding_status(finding_id, body.status, actor=actor):
         raise HTTPException(status_code=404, detail="finding not found")
@@ -141,9 +144,11 @@ class TrueLabelIn(BaseModel):
 
 @router.patch("/api/findings/{finding_id}/true_label")
 def patch_finding_true_label(
-    finding_id: str, body: TrueLabelIn, user: dict = Depends(auth.get_current_user)
+    finding_id: str,
+    body: TrueLabelIn,
+    user: dict = Depends(require_permission(permission_keys.FINDING_TRUE_LABEL_UPDATE)),
 ) -> dict:
-    """人工標註單筆歸因真值 true_label（+把關 audit：理由 + LLM 信心）；需登入，記操作者/時間。重判依 finding_id 保留。
+    """人工標註單筆歸因真值 true_label（+把關 audit：理由 + LLM 信心）；需 finding.true-label.update 權限。重判依 finding_id 保留。
 
     後端把關（防繞過 UI）：設真值且帶 llm_conf 時，若『原判信心 − llm_conf』> 閾值卻未附理由 → 422。
     """

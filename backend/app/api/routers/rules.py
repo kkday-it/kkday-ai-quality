@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import auth, db
+from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter(prefix="/api/judge-rules", tags=["judge-rules"])
 
@@ -227,7 +228,9 @@ def get_version(code: str, version: int, user: dict = Depends(auth.get_current_u
 
 # 註：須定義於 `/{code}` POST 之前，否則會被 save_rule 的 code path 攔截。
 @router.post("/reset-default-all")
-def reset_default_all(user: dict = Depends(auth.require_role("admin"))) -> dict:
+def reset_default_all(
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
     """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一個版本覆蓋當前。
 
     缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
@@ -238,7 +241,11 @@ def reset_default_all(user: dict = Depends(auth.require_role("admin"))) -> dict:
 
 
 @router.post("/{code}")
-def save_rule(code: str, body: SaveIn, user: dict = Depends(auth.require_role("admin"))) -> dict:
+def save_rule(
+    code: str,
+    body: SaveIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
     """存檔（先 jsonschema 驗證 → 新版 active）。"""
     _check_code(code)
     _validate(code, body.content)
@@ -250,7 +257,11 @@ def save_rule(code: str, body: SaveIn, user: dict = Depends(auth.require_role("a
 
 
 @router.post("/{code}/restore/{version}")
-def restore_rule(code: str, version: int, user: dict = Depends(auth.require_role("admin"))) -> dict:
+def restore_rule(
+    code: str,
+    version: int,
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
     """恢復某歷史版本（複製為新 active 版）。"""
     _check_code(code)
     try:
@@ -264,7 +275,10 @@ def restore_rule(code: str, version: int, user: dict = Depends(auth.require_role
 
 
 @router.post("/{code}/reset-default")
-def reset_default(code: str, user: dict = Depends(auth.require_role("admin"))) -> dict:
+def reset_default(
+    code: str,
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
     """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。"""
     _check_code(code)
     try:

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import auth, config, db
+from app.core.permissions import business_list_ttl_ms, get_provider
 
 router = APIRouter()
 
@@ -63,3 +65,15 @@ def login(body: LoginIn) -> dict:
 def me(user: dict = Depends(auth.get_current_user)) -> dict:
     """回傳當前登入使用者。"""
     return _public_user(user)
+
+
+@router.get("/api/auth/permissions")
+def permissions(user: dict = Depends(auth.get_current_user)) -> dict:
+    """回當前 user 的 business-key 權限清單（be2 `auth.business-list` 契約形狀 {value, ttl, startTime}）。
+
+    前端存 localStorage 供 hasPermission / v-auth 使用；shape 現在即等於 be2，日後接 be2 中央 Auth SVC
+    時前端消費端（store/directive/guard）零改——只換 permission.api.ts 的來源。
+    """
+    value = sorted(get_provider().get_permissions(user))
+    start_time = int(datetime.now(timezone.utc).timestamp() * 1000)
+    return {"value": value, "ttl": business_list_ttl_ms(), "startTime": start_time}

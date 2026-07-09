@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core import db
 from app.core import source_mapping as srcmap
+from app.core.permissions import permission_keys, require_permission
 from app.judge.ingest import entry, upload_batch
 
 router = APIRouter()
@@ -25,8 +26,11 @@ class UploadSelection(BaseModel):
 
 
 @router.post("/api/inbound/validate")
-async def validate_inbound(file: UploadFile = File(...)) -> dict:
-    """乾跑校驗（不落庫）：逐工作表自動辨識來源 + 必備表頭校驗，回每表能否上傳。
+async def validate_inbound(
+    file: UploadFile = File(...),
+    _user: dict = Depends(require_permission(permission_keys.DATA_SOURCE_UPLOAD)),
+) -> dict:
+    """乾跑校驗（不落庫）：逐工作表自動辨識來源 + 必備表頭校驗，回每表能否上傳。需 data.source.upload 權限。
 
     支援多工作表 xlsx（一次傳整本 ai_judge_source.xlsx）；CSV 視為單表。
     前端據此彈窗：哪些表偵測到哪個來源、哪些可傳、哪些不可（缺哪些必備欄）。
@@ -72,6 +76,7 @@ async def validate_inbound(file: UploadFile = File(...)) -> dict:
 async def upload_inbound(
     file: UploadFile = File(...),
     selections: str = Form(...),
+    _user: dict = Depends(require_permission(permission_keys.DATA_SOURCE_UPLOAD)),
 ) -> dict:
     """確認匯入（背景 job）：解析 + 校驗勾選工作表 → 註冊背景任務逐表分塊落庫 → 立即回 {job_id, sheets}。
 

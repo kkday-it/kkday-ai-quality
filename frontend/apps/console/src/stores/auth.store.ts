@@ -10,6 +10,7 @@ import {
   getMe,
   type AuthUser,
 } from '@/api';
+import { usePermissionStore } from './permission.store';
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(getToken());
@@ -17,34 +18,38 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthed = (): boolean => !!token.value;
 
-  /** 登入成功 → 存 token + user。失敗（401）由呼叫端 catch 顯示。 */
+  /** 登入成功 → 存 token + user + 載入權限清單。失敗（401）由呼叫端 catch 顯示。 */
   async function login(email: string, password: string): Promise<void> {
     const res = await apiLogin(email, password);
     token.value = res.token;
     setToken(res.token);
     user.value = res.user;
+    await usePermissionStore().load(); // 權限清單（be2 business-list），供 v-auth / 選單 / 守衛
   }
 
-  /** 註冊成功 → 自動登入（存 token + user）。 */
+  /** 註冊成功 → 自動登入（存 token + user + 載入權限）。 */
   async function register(email: string, password: string): Promise<void> {
     const res = await apiRegister(email, password);
     token.value = res.token;
     setToken(res.token);
     user.value = res.user;
+    await usePermissionStore().load();
   }
 
-  /** 登出：清 token + user。 */
+  /** 登出：清 token + user + 權限。 */
   function logout(): void {
     token.value = null;
     user.value = null;
     clearToken();
+    usePermissionStore().clear();
   }
 
-  /** 以既有 token 拉當前 user；token 失效則登出。 */
+  /** 以既有 token 拉當前 user + 刷新權限；token 失效則登出。 */
   async function fetchMe(): Promise<void> {
     if (!token.value) return;
     try {
       user.value = await getMe();
+      await usePermissionStore().load();
     } catch {
       logout();
     }

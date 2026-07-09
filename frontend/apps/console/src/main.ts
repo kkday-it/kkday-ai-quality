@@ -6,5 +6,11 @@ import './style.css';
 
 import App from './App.vue';
 import router from './router';
+import { vAuth } from './directives/auth.directive';
 
-createApp(App).use(createPinia()).use(ArcoVue).use(router).mount('#app');
+createApp(App)
+  .use(createPinia())
+  .use(ArcoVue)
+  .use(router)
+  .directive('auth', vAuth)
+  .mount('#app');

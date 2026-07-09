@@ -133,28 +133,13 @@ def reload_roles() -> None:
 
 
 def role_for(email: str | None) -> str:
-    """email → 角色（admins 名單比對不分大小寫；其餘 defaultRole，預設 qc）。"""
+    """email → 角色（admins 名單比對不分大小寫；其餘 defaultRole，預設 qc）。
+
+    角色→具體 business-key 權限的映射與端點守衛由可替換權限框架負責
+    （見 app/core/permissions：`require_permission` + `role_permissions.json`）——本函式僅派生角色。
+    """
     cfg = _roles_cfg()
     admins = {str(e).strip().lower() for e in (cfg.get("admins") or [])}
     if email and email.strip().lower() in admins:
         return "admin"
     return str(cfg.get("defaultRole") or "qc")
-
-
-def require_role(*roles: str):
-    """FastAPI 依賴工廠：角色不符回 403（掛破壞性端點；回傳 user dict 供 handler 沿用）。
-
-    用法：`user: dict = Depends(auth.require_role("admin"))`——先過 get_current_user 認證，
-    再比對 role_for(email)；admin 永遠隱含通過（單機兩級，admin ⊇ qc 權限）。
-    """
-
-    def _dep(user: dict = Depends(get_current_user)) -> dict:
-        role = role_for(user.get("email"))
-        if role not in roles and role != "admin":
-            raise HTTPException(
-                status_code=403, detail=f"需要 {'/'.join(roles)} 權限（當前 {role}）"
-            )
-        user["role"] = role
-        return user
-
-    return _dep

@@ -3,6 +3,11 @@ import { watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { LlmConnectionsPanel, QcConnectionsPanel, DataImportPanel } from '@/features/settings/pages';
 import { ProductVerticalSettingsPanel } from '@/features/judge/components';
+import { PERM } from '@/api';
+import { usePermission } from '@/composables/usePermission';
+
+// 資料導入 tab 需 data.datapack.import 權限（admin 級·破壞性整庫覆蓋）；無權限者不顯示該分頁。
+const { can } = usePermission();
 
 // ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 模型連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料導入。
 // 前兩 tab 自帶多套 config 管理 + 卡片內啟用切換；vertical tab 維護分組↔CATEGORY 映射（版本化）；
@@ -39,7 +44,7 @@ onMounted(async () => {
   } else if (s === 'vertical') {
     tab.value = 'vertical';
     visible.value = true;
-  } else if (s === 'import') {
+  } else if (s === 'import' && can(PERM.dataDatapackImport)) {
     tab.value = 'import';
     visible.value = true;
   } else if (s === 'llm' || s === 'connections' || s === 'config' || s === 'model') {
@@ -69,7 +74,7 @@ onMounted(async () => {
       <a-tab-pane key="vertical" title="🧭 商品垂直分類">
         <ProductVerticalSettingsPanel :active="tab === 'vertical'" />
       </a-tab-pane>
-      <a-tab-pane key="import" title="💾 資料導入">
+      <a-tab-pane v-if="can(PERM.dataDatapackImport)" key="import" title="💾 資料導入">
         <DataImportPanel />
       </a-tab-pane>
     </a-tabs>

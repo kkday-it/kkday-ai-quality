@@ -2,8 +2,9 @@
 
 安全（現階段）：
 - 僅執行「純資料灌入白名單表」，不執行上傳內容為 SQL（見 db.datapack）。
-- 端點掛 `Depends(auth.get_current_user)`：要登入即可（**admin 閘延後**，上線前改 require_role("admin")）。
-- 環境閘 `AIQ_ALLOW_DATA_IMPORT`：None＝依環境（development 開、其餘關），防生產誤觸。
+- 匯入端點掛 `require_permission(data.datapack.import)`（admin 級）、導出掛 `data.datapack.export`（qc+admin）——
+  權限經可替換框架 provider 判定（見 app/core/permissions），日後換 be2 零改此檔。
+- 環境閘 `AIQ_ALLOW_DATA_IMPORT`：None＝依環境（development 開、其餘關），防生產誤觸（權限之外的第二道保險）。
 - 破壞性動作需 type-to-confirm（confirm_phrase 由 datapack.CONFIRM_PHRASE 定義，validate 回傳給前端）。
 """
 
@@ -16,9 +17,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.core import auth, export_jobs, import_jobs
+from app.core import export_jobs, import_jobs
 from app.core.config import env
 from app.core.db import datapack
+from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter()
 
@@ -43,7 +45,7 @@ def _guard() -> None:
 async def validate_import(
     file: UploadFile = File(...),
     include_sensitive: bool = Form(False),
-    _user: dict = Depends(auth.get_current_user),
+    _user: dict = Depends(require_permission(permission_keys.DATA_DATAPACK_IMPORT)),
 ) -> dict:
     """乾跑校驗資料包（零 DB 寫入）：回 schema 檢查 + 每表匯入計畫 + 需輸入的 confirm_phrase。
 
@@ -59,7 +61,7 @@ async def run_import(
     file: UploadFile = File(...),
     confirm_phrase: str = Form(...),
     include_sensitive: bool = Form(False),
-    _user: dict = Depends(auth.get_current_user),
+    _user: dict = Depends(require_permission(permission_keys.DATA_DATAPACK_IMPORT)),
 ) -> dict:
     """確認匯入（背景 job）：核對 confirm_phrase → 註冊背景任務單交易 truncate-then-load → 回 {job_id}。
 
@@ -113,7 +115,7 @@ async def import_stream(job_id: str) -> StreamingResponse:
 @router.post("/api/admin/export/start")
 def start_export_datapack(
     include_sensitive: bool = False,
-    _user: dict = Depends(auth.get_current_user),
+    _user: dict = Depends(require_permission(permission_keys.DATA_DATAPACK_EXPORT)),
 ) -> dict:
     """啟動全庫資料包導出背景 job（逐表回報進度）→ 立即回 {job_id}。
 

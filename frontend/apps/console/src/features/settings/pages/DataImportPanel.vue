@@ -3,7 +3,8 @@
  * 💾 資料導入面板（配置抽屜第 4 tab）。
  * 上傳資料包 zip（由 scripts/tools/dump_datapack.py 產生）→ 乾跑校驗預覽 → type-to-confirm →
  * 背景匯入 + SSE 逐表進度。安全：只灌白名單表、不執行 SQL（見後端 datapack）。
- * ⚠️ admin 閘現階段延後：任何登入者可見可用；上線前須加 v-if=isAdmin + 後端 require_role。
+ * 權限：需 data.datapack.import（admin 級）——入口 tab 由 SettingsDrawer 以 can(PERM.dataDatapackImport)
+ * v-if 過濾，後端端點亦掛 require_permission 兜底（見 app/core/permissions）。
  */
 import { ref, computed, onUnmounted } from 'vue';
 import { Message } from '@arco-design/web-vue';

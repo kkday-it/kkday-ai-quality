@@ -8,8 +8,8 @@
  */
 import { computed, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
-import { storeToRefs } from 'pinia';
-import { useAuthStore } from '@/stores';
+import { PERM } from '@/api';
+import { usePermission } from '@/composables/usePermission';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
@@ -22,8 +22,9 @@ import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
 
-// 輕量 RBAC：非 admin 顯示唯讀提示（寫入端點後端 403 為權威，前端提示避免做白工）
-const { isAdmin } = storeToRefs(useAuthStore());
+// 權限：無 judge-rule.version.manage 者唯讀（後端 403 為權威，前端 disable + 提示避免做白工）
+const { can } = usePermission();
+const canManage = computed(() => can(PERM.judgeRuleManage));
 
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
@@ -159,8 +160,8 @@ function doResetAll() {
 
 <template>
   <div class="flex h-full flex-col gap-2">
-    <a-alert v-if="!isAdmin" type="warning" banner>
-      唯讀模式：規則發布／恢復默認需 admin 權限（config/global/roles.json 名單）；儲存將被後端拒絕（403）。
+    <a-alert v-if="!canManage" type="warning" banner>
+      唯讀模式：規則發布／恢復默認需 judge-rule.version.manage 權限；儲存 / 恢復按鈕已停用（後端亦以 403 兜底）。
     </a-alert>
   <div class="flex min-h-0 flex-1 gap-4">
     <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
@@ -234,7 +235,14 @@ function doResetAll() {
         </span>
         <div class="flex-1" />
         <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置右 -->
-        <a-button size="small" type="text" status="warning" @click="doResetAll">全部恢復默認</a-button>
+        <a-button
+          size="small"
+          type="text"
+          status="warning"
+          :disabled="!canManage"
+          @click="doResetAll"
+          >全部恢復默認</a-button
+        >
         <a-button size="small" type="outline" :loading="exporting" @click="doExport">
           <template #icon><icon-download /></template>
           導出規則
@@ -260,8 +268,21 @@ function doResetAll() {
         </span>
         <span class="text-sm font-medium text-[var(--color-text-1)]">{{ store.labelFor(store.activeCode) }}</span>
         <div class="flex-1" />
-        <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
-        <a-button type="primary" size="small" :disabled="!store.dirty" @click="(saveOpen = true)">儲存</a-button>
+        <a-button
+          size="small"
+          type="outline"
+          status="warning"
+          :disabled="!canManage"
+          @click="doReset"
+          >恢復默認</a-button
+        >
+        <a-button
+          type="primary"
+          size="small"
+          :disabled="!store.dirty || !canManage"
+          @click="(saveOpen = true)"
+          >儲存</a-button
+        >
       </div>
 
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->

@@ -102,9 +102,9 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）|
 | GET | `/api/products` · `/api/findings` | 商品清單（依 finding）· 判決結果列表 |
 | PATCH | `/api/findings/{id}/status` · `/{id}/true_label` | 單筆歸因人工覆核（確認/忽略/已修）· 標註真值分類（歸因列表操作欄用）。**需登入**，記操作者/時間 audit |
-| POST | `/api/auth/register`·`/login` | 帳號 |
-| POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings |
-| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。⚠️ admin 閘延後，現為登入即可 + `AIQ_ALLOW_DATA_IMPORT` 環境閘 |
+| POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
+| POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
+| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。需 `data.datapack.import` 權限（admin 級）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘雙重保險 |
 
 > 完整 API：啟動後開 Swagger UI http://localhost:8100/docs
 
@@ -113,5 +113,6 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L3、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
 - **判準 SSOT**＝`config/ai_judge` 規則樹（RuleManager 面板版本化，DB `judge_rule_versions` append-only 快照）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
+- **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，judgment 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重判時規則未變動部分零 token 重用，顯式單筆重判不吃快取）。
 - **機密 at-rest 加密**：`user_settings` 的 provider_tokens / qc_passwords 以 Fernet 加密落庫（`app/core/crypto.py`，key＝env `AIQ_SECRET_KEY`；既有明文列遷移用 `scripts/tools/encrypt_user_secrets.py`）。**正式環境（`APP_ENV≠development`）缺 `AIQ_SECRET_KEY` 拒啟動**（避免機密明文落庫）；dev 未設則明文直通並告警。`/api/settings/raw` 明文回顯僅回本人設定（JWT 守衛），屬**單機內網環境的有意識權衡**，部署公網前必須移除。

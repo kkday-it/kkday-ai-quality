@@ -13,7 +13,8 @@
 | `crypto.py` | 機密 at-rest 加密（Fernet；key＝env `AIQ_SECRET_KEY`，未設明文直通可回滾）。密文帶 `enc:v1:` 前綴、舊明文列直通；既有列遷移用 `scripts/tools/encrypt_user_secrets.py`。 |
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout…），全專案最底層依賴。 |
 | `paths.py` | 路徑 SSOT（REPO_ROOT / CONFIG_DIR / AI_JUDGE_DIR / GLOBAL_DIR），全專案唯一算一次。 |
-| `auth.py` | JWT 簽發/驗證 + 密碼雜湊 + 輕量 RBAC（`role_for`/`require_role`：角色由 `config/global/roles.json` 白名單每請求即時派生，admin/qc 兩級、零 migration；寫入端點掛 `Depends(auth.require_role("admin"))`）。 |
+| `auth.py` | JWT 簽發/驗證 + 密碼雜湊 + 角色派生（`role_for`：角色由 `config/global/roles.json` 白名單每請求即時派生，admin/qc 兩級、零 migration）。正式環境缺/弱 JWT secret（<32 bytes）拒啟動。端點授權改由 `permissions/` 負責（見下）。 |
+| `permissions/` | **可替換權限框架**（package）：`PermissionProvider` 抽象（base）+ `require_permission(key)` dependency（deps）+ business-key 常數（permission_keys，be2 風格 `module.sub-function.action`）+ `LocalPermissionProvider`（角色→key 讀 `config/global/role_permissions.json`）+ `Be2PermissionProvider` 空殼。換 be2 中央 Auth SVC 唯一改動點＝`config/global/auth.config.json['provider']` + `be2_provider.py`，router 全不動。fail-closed。 |
 | `flags.py` | OpenFeature 判決閾值旗標介面（`threshold()`）+ 薄 `JudgeConfigProvider`（解析 judge.<tier> → judgment confidence_tiers，DB active·熱重載）。面向 OpenFeature 標準避供應商鎖定，Phase 7 換 Flagsmith 呼叫端零改；prejudge 閾值讀取走此。 |
 
 ## 依賴方向（禁循環）
