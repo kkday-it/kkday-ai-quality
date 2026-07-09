@@ -10,6 +10,7 @@
 - **後端**：Python 3.10+ / FastAPI + SQLAlchemy Core + **PostgreSQL**（Alembic 遷移）+ OpenAI SDK（Structured Outputs）+ Pydantic
 - **前端**：Vue3 + Vite + **Arco Design Vue** + Pinia + vue-echarts
 - **LLM**：OpenAI gpt-5 系列（無 key 時走 stub 啟發式，可零 key 走通閉環）
+- **啟動 / 部署**：**Docker Compose**——一鍵 `./scripts/dev/start.sh`（dev·hot reload）／生產 `docker compose up`（nginx + 多 worker）。**本機只需 Docker**，PG 與所有依賴皆在容器內。
 - 文檔地圖見 [docs/README.md](./docs/README.md)（歷史選型與早期 spec 已封存於 `docs/archive/`，僅供追溯非現行契約）
 
 ## 核心流程
@@ -41,41 +42,41 @@ frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
   apps/console/src/features/ # judge / settings / overview / auth（feature-based）
   packages/types
 scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
-docs/                        # 文檔地圖（README）· UPSTREAM-REFS · archive/（過時 spec 封存）
+docs/                        # 文檔地圖（README）· 上手指南 HTML · archive/（過時 spec 封存）
+docker-compose.yml           # 生產編排（PG + backend 多worker + frontend nginx）
+docker-compose.dev.yml       # 開發編排（hot reload：source volume + uvicorn --reload + vite HMR）
+backend/Dockerfile · frontend/Dockerfile · frontend/Dockerfile.dev   # 各服務 image
 ```
 
 ## 🚀 啟動
 
-### 一鍵起前後端（推薦）
+### 一鍵啟動（純 Docker，推薦）
 ```bash
 ./scripts/dev/start.sh
 ```
-- 後端 → http://localhost:8100（Swagger `/docs`）｜前端 → http://localhost:5273
-- **Ctrl-C 一次**前後端一起停。
-- **首次 clone 即用**：start.sh 會偵測系統工具（python/node/pnpm/PostgreSQL），缺則協助安裝（裝前二次確認；非互動設 `AIQ_AUTO_INSTALL=1`）→ 建庫 → 自建 venv/裝依賴 → 起前後端（**空庫也能跑**）。
+- **本機只需 Docker**（無需裝 python/node/pnpm/PostgreSQL）。start.sh 會**偵測 Docker → 未啟動則自動啟動並等待 → `docker compose up`** 起全服務。
+- 全服務在容器內：**PostgreSQL + 後端 http://localhost:8100（Swagger `/docs`）+ 前端 http://localhost:5273 + 所有依賴**。
+- **改碼即生效**（後端 `uvicorn --reload`、前端 vite HMR，掛 source volume）；首次會 build image（較久），之後秒起。**Ctrl-C** 停止所有服務。改依賴時 `docker compose -f docker-compose.dev.yml up --build` 重建。
 
-**載入全部數據（本地上傳，推薦）**：跑起來後在登入頁註冊帳號 → 「配置 › 資料導入」上傳維護者給的**資料包 zip**（維護者自產：`python scripts/tools/dump_datapack.py` → `data/exports/kkday-ai-quality-datapack-*.zip`，或前台「導出資料包」下載）→ 校驗 → 輸入 `REPLACE-ALL-DATA` → 匯入。完整圖解見 [`docs/kkday-ai-quality-onboarding.html`](./docs/kkday-ai-quality-onboarding.html)。
+**載入全部數據（本地上傳，推薦）**：起來後在登入頁註冊帳號 → 「配置 › 資料導入」上傳**資料包 zip**（維護者自產：`python scripts/tools/dump_datapack.py` → `data/exports/kkday-ai-quality-datapack-*.zip`，或前台「導出資料包」下載）→ 校驗 → 輸入 `REPLACE-ALL-DATA` → 匯入。完整圖解見 [`docs/kkday-ai-quality-onboarding.html`](./docs/kkday-ai-quality-onboarding.html)。**空庫也能起**，資料靠上傳補上；或設 `SEED_URL` 由 db 首啟自動還原。
 
-**容器化替代（零本機依賴）**：`AIQ_JWT_SECRET=... docker compose up`（前端 → http://localhost:8080；一樣起空庫後用「資料導入」上傳資料包）。
-
-> 進階（選用）：亦可用整庫 seed 免註冊還原——`./scripts/dev/dump-seed.sh` 產 `docker/seed/seed.sql.gz`，放到目標機同路徑後 start.sh 首啟自動還原（含帳號）；或設 `SEED_URL` 由 `fetch-seed.sh` 下載。
-
-**常用腳本**（見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev/start.sh` 起前後端 · `python scripts/tools/dump_datapack.py` 產資料包 · `./scripts/dev/seed.sh` 重置 mock · `./scripts/dev/test.sh` smoke · `./scripts/dev/lint.sh` lint · `./scripts/dev/format.sh` format · `./scripts/dev/doctor.sh` 環境自檢。
-
-### 後端（單獨）
+**生產部署**（多 worker + nginx 靜態；前端 http://localhost:8080）：
 ```bash
-cd backend
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+AIQ_JWT_SECRET=<your-secret> docker compose up -d --build   # 走 docker-compose.yml（生產）
+```
+
+**常用腳本**（見 [`scripts/README.md`](./scripts/README.md)）：`./scripts/dev/start.sh` 一鍵 Docker 啟動 · `python scripts/tools/dump_datapack.py` 產資料包 · `./scripts/dev/dump-seed.sh` 產 seed · `./scripts/dev/lint.sh` lint · `./scripts/dev/format.sh` format。
+
+### 進階：不使用 Docker 手動跑（選用）
+> 一般用上面 Docker 一鍵即可。若要在本機直接跑，需自備 Python ≥ 3.10 / Node ≥ 20 / pnpm / 本機 PostgreSQL（`kkdb_ai_quality`）：
+```bash
+# 後端
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn app.api.main:app --reload --port 8100
+# 前端（另開終端）
+cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy /api → :8100
 ```
-> 需 Python ≥ 3.10 + 本機 PostgreSQL（`kkdb_ai_quality`）。schema：dev 由啟動時 `create_all` 建表；prod 部署跑 `alembic upgrade head`。連線經 `backend/.env` `DATABASE_URL`（預設 `postgresql+psycopg2://localhost:5432/kkdb_ai_quality`）。
-
-### 前端（單獨）
-```bash
-cd frontend && pnpm install
-cd apps/console && npx vite   # http://localhost:5273（需後端先起於 8100；dev 經 vite proxy /api → 8100）
-```
+> schema：dev 啟動時 `create_all` 建表並自動 stamp alembic head（資料包導入 schema 檢查需對齊）；連線經 `backend/.env` `DATABASE_URL`（預設 `postgresql+psycopg2://localhost:5432/kkdb_ai_quality`）。
 
 ### LLM 模式
 - **無 `OPENAI_API_KEY`**：走 **stub**（啟發式），零 key 走通整條 pipeline。

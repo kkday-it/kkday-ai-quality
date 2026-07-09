@@ -87,7 +87,7 @@ code.kbd{font-family:var(--mono);background:var(--surface-0);border:1px solid va
 
   <section class="sec">
     <h2>主流程（4 步）</h2>
-    <p class="lead">只需先裝好 <code class="kbd">git</code>（macOS 另建議先有 Homebrew）；其餘 start.sh 會協助安裝。</p>
+    <p class="lead">本機只需 <code class="kbd">git</code> + <strong>Docker Desktop</strong>；不用裝 python/node/pnpm/PostgreSQL，全在容器內。</p>
 
     <div class="step">
       <div class="num">1</div>
@@ -102,15 +102,15 @@ cd kkday-ai-quality</code><button class="copy" aria-label="複製指令"><i clas
     <div class="step">
       <div class="num">2</div>
       <div class="bd">
-        <h3><i class="ti ti-player-play"></i>一條指令啟動（空庫也能跑）</h3>
-        <p class="desc">start.sh 自動備齊環境並起前後端，資料庫先是空的，稍後用上傳補上。首次較久。</p>
+        <h3><i class="ti ti-player-play"></i>一條指令啟動（純 Docker · 空庫也能跑）</h3>
+        <p class="desc">start.sh 偵測 Docker（未啟動會自動啟動），再 docker compose 起全服務。首次 build 較久，之後秒起。</p>
         <div class="code"><code>./scripts/dev/start.sh</code><button class="copy" aria-label="複製指令"><i class="ti ti-copy"></i></button></div>
         <ul class="auto">
-          <li><i class="ti ti-check"></i>偵測並協助安裝 python≥3.10 / node≥20 / pnpm / PostgreSQL（裝前會問你）</li>
-          <li><i class="ti ti-check"></i>建立資料庫 kkdb_ai_quality（空庫）</li>
-          <li><i class="ti ti-check"></i>建 venv／裝依賴 → 起後端 :8100ㆍ前端 :5273</li>
+          <li><i class="ti ti-check"></i>偵測 Docker → 未啟動則自動啟動並等待就緒</li>
+          <li><i class="ti ti-check"></i>容器內起 PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴</li>
+          <li><i class="ti ti-check"></i>改碼即生效（uvicorn --reload + vite HMR）；Ctrl-C 停止全部</li>
         </ul>
-        <p class="note">非互動環境（CI）想免確認自動安裝：<code class="kbd">AIQ_AUTO_INSTALL=1 ./scripts/dev/start.sh</code></p>
+        <p class="note">沒裝 Docker？先裝 Docker Desktop：https://www.docker.com/products/docker-desktop/</p>
       </div>
     </div>
 
@@ -160,26 +160,27 @@ cd kkday-ai-quality</code><button class="copy" aria-label="複製指令"><i clas
   </section>
 
   <section class="sec">
-    <h2>替代路徑 · Docker（零本機依賴）</h2>
-    <p class="lead">不想在本機裝 python/node/PostgreSQL，只裝 Docker：</p>
-    <div class="code"><code>AIQ_JWT_SECRET=change-me docker compose up</code><button class="copy" aria-label="複製指令"><i class="ti ti-copy"></i></button></div>
-    <p class="note">前端 → <code class="kbd">http://localhost:8080</code>；一樣先起空庫，再用「資料導入」上傳資料包。此路徑為生產式編排、無 hot reload（要改碼繼續開發走上面主流程）。</p>
+    <h2>生產部署（選用）</h2>
+    <p class="lead">上面主流程是 dev（hot reload）；正式部署走生產 compose（多 worker + nginx 靜態）：</p>
+    <div class="code"><code>AIQ_JWT_SECRET=&lt;your-secret&gt; docker compose up -d --build</code><button class="copy" aria-label="複製指令"><i class="ti ti-copy"></i></button></div>
+    <p class="note">前端 → <code class="kbd">http://localhost:8080</code>；生產須提供 <code class="kbd">AIQ_JWT_SECRET</code>，無 hot reload。</p>
   </section>
 
   <section class="sec">
     <h2>速查</h2>
     <div class="ref">
       <span class="chip">後端 :8100 · /docs</span>
-      <span class="chip">前端(原生) :5273</span>
-      <span class="chip">前端(docker) :8080</span>
+      <span class="chip">前端(dev) :5273</span>
+      <span class="chip">前端(生產) :8080</span>
       <span class="chip">DB kkdb_ai_quality</span>
     </div>
     <div class="warn">
       <h3><i class="ti ti-alert-triangle"></i>卡住時</h3>
       <ul>
-        <li>start.sh 停在系統工具 → 依提示手動安裝，或設 <code class="kbd">AIQ_AUTO_INSTALL=1</code> 重跑。</li>
+        <li>start.sh 說找不到 Docker → 先裝並開啟 Docker Desktop 再重跑。</li>
+        <li>首次很久 → 在 build image（裝依賴），正常；之後秒起。</li>
         <li>畫面沒數據 → 到「配置 › 資料導入」上傳資料包 zip。</li>
-        <li>改了後端卻沒生效 / 端點 404 → uvicorn reload 偶爾卡舊碼：<code class="kbd">lsof -ti:8100 | xargs kill -9</code> 後重啟。</li>
+        <li>改依賴（pyproject/package.json）沒生效 → <code class="kbd">docker compose -f docker-compose.dev.yml up --build</code> 重建。</li>
         <li>登不進 → 空庫時先在登入頁註冊帳號。</li>
       </ul>
     </div>
