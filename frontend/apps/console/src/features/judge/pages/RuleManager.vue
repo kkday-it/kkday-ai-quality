@@ -68,6 +68,10 @@ const isSchema = computed(() => store.activeCode === 'schema');
 // selectRule('product_vertical') 會改共用 activeCode；以 domainCodes 精準判斷（非 !_NON_TREE_CODES）即免把
 // product_vertical 的 {groups}（非 L1-L3 樹）誤餵 RuleTreePanel 成空白錯亂樹。schema/global/judgment 亦非樹。
 const isDomainTree = computed(() => domainCodes.value.includes(store.activeCode));
+// 本頁是否管理當前 activeCode：product_vertical 由「配置」抽屜（ProductVerticalSettingsPanel）獨立管理、
+// 本頁選單不含它（見 _NON_DOMAIN_CODES）。但抽屜共用同一 judgeRules store，其 selectRule('product_vertical')
+// 會改共用 activeCode → 本頁背景會誤渲染 product_vertical 編輯器。守衛：非本頁管理的 code 時不渲染編輯區。
+const isOwnRule = computed(() => store.activeCode !== 'product_vertical');
 // schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
 const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
@@ -262,7 +266,7 @@ function doResetAll() {
       />
 
       <!-- 當前規則標頭：碼 + 名稱（左）＋ 針對「當前規則」的恢復默認 / 儲存（右），明示只作用於選中的這條 -->
-      <div class="mb-2 flex flex-none items-center gap-2">
+      <div v-if="isOwnRule" class="mb-2 flex flex-none items-center gap-2">
         <span class="rounded bg-[rgb(var(--primary-1))] px-2 py-0.5 font-mono text-xs font-semibold text-[rgb(var(--primary-6))]">
           {{ store.activeCode }}
         </span>
@@ -286,7 +290,7 @@ function doResetAll() {
       </div>
 
       <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
-      <div class="min-h-0 flex-1">
+      <div v-if="isOwnRule" class="min-h-0 flex-1">
         <StateGuard :loading="store.loading" :error="store.error">
           <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
           <RuleHistoryPanel v-if="mode === 'history'" :key="`hist-${store.activeCode}`" class="h-full" />
@@ -310,6 +314,13 @@ function doResetAll() {
             @change="onChange"
           />
         </StateGuard>
+      </div>
+      <!-- 抽屜帶入 product_vertical（本頁不管理）→ 顯示提示，不重複渲染編輯器 -->
+      <div
+        v-else
+        class="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-3)]"
+      >
+        商品垂直分類請於「配置 › 商品垂直分類」抽屜編輯，此頁不重複管理。
       </div>
     </div>
 
