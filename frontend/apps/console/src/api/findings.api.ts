@@ -1,15 +1,5 @@
-// Findings 領域 API：查詢、狀態更新、判決鏈路。
+// Findings 領域 API：狀態更新、真值標註、備註、級聯樹。
 import { BASE, JSON_HEADERS, j } from './http.api';
-
-export const getFindings = (
-  params: { prodOid?: string; dimension?: string } = {},
-): Promise<Record<string, unknown>[]> => {
-  const q = new URLSearchParams();
-  if (params.prodOid) q.set('prod_oid', params.prodOid);
-  if (params.dimension) q.set('dimension', params.dimension);
-  const s = q.toString();
-  return j<Record<string, unknown>[]>(`${BASE}/findings${s ? `?${s}` : ''}`);
-};
 
 export const patchStatus = (findingId: string, status: string) =>
   j(`${BASE}/findings/${encodeURIComponent(findingId)}/status`, {
@@ -83,11 +73,4 @@ export const addFindingNote = (findingId: string, content: string): Promise<Find
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ content }),
-  });
-
-export const diagnose = (prodOid: string) =>
-  j(`${BASE}/diagnose`, {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ prod_oid: prodOid }),
   });

@@ -1,17 +1,16 @@
-"""判決結果（judgments）CRUD：寫入 / 整組替換 / 讀取原始判決列 + 商品清單。"""
+"""判決結果（judgments）CRUD：寫入 / 整組替換 / 單筆讀取 / 人工狀態 + 真值標註 + 歸因備註。"""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 
 from app.core.db import tables as T
-from app.core.db._shared import attribution_dto
 from app.core.schema import TicketFinding
 
 _log = logging.getLogger(__name__)
@@ -28,8 +27,8 @@ def _finding_values(f: TicketFinding, source: str) -> dict:
         "finding_id": f.finding_id,
         "source": source,
         "source_id": f.ticket_id,  # prejudge 設 ticket_id = 特徵 id（source_id）
-        "prod_oid": f.prod_oid,  # ProductDetail / list_products 下鑽用
-        "dimension": f.dimension,  # ProductDetail 內容/非內容過濾用
+        "prod_oid": f.prod_oid,  # 商品維度關聯（歸因列表 prod_oid 篩選 / 概覽下鑽）
+        "dimension": f.dimension,  # 內容 / 非內容維度過濾
         "status": f.status,
         "created_at": f.created_at,
         "needs_review": bool(f.needs_review),  # 人審佇列篩選
@@ -132,42 +131,6 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
                     values["status_updated_at"] = old["status_updated_at"]
             c.execute(sa_insert(jg).values(**values))
     return len(findings)
-
-
-def list_findings(
-    prod_oid: str | None = None,
-    dimension: str | None = None,
-) -> list[dict]:
-    """列出判決結果（可依 prod_oid / dimension 過濾），新到舊。data 還原為完整 Finding。"""
-    stmt = select(T.judgments)
-    for col, val in (
-        (T.judgments.c.prod_oid, prod_oid),
-        (T.judgments.c.dimension, dimension),
-    ):
-        if val:
-            stmt = stmt.where(col == val)
-    stmt = stmt.order_by(T.judgments.c.created_at.desc())
-    out = []
-    with T.get_engine().connect() as c:
-        for r in c.execute(stmt).mappings():
-            d = dict(r)
-            # typed 欄 → 乾淨巢狀 DTO（FindingCard 消費巢狀 finding）
-            d["finding"] = attribution_dto(d)
-            out.append(d)
-    return out
-
-
-def list_products() -> list[dict]:
-    """有 finding 的商品清單（PM 下拉用），依問題數排序。"""
-    n = func.count().label("n")
-    stmt = (
-        select(T.judgments.c.prod_oid, n)
-        .where(T.judgments.c.dimension != "non_content")
-        .group_by(T.judgments.c.prod_oid)
-        .order_by(n.desc())
-    )
-    with T.get_engine().connect() as c:
-        return [dict(r) for r in c.execute(stmt).mappings()]
 
 
 def update_finding_status(finding_id: str, status: str, *, actor: str | None = None) -> bool:

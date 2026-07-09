@@ -243,7 +243,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   // ── 單列覆核（操作欄；與批量 selectedKeys 解耦；單列重判已下沉 usePrejudgeJob.rejudgeRow）──
   /**
    * 單條歸因覆核：只改該 finding 的 status（per-attribution；每條歸因分開操作）。
-   * optimistic 即時回寫（PATCH 秒級，仿 FindingCard 無 loading）；只改人工 status 軸、不動 AI stage。
+   * optimistic 即時回寫（PATCH 秒級·無 loading）；只改人工 status 軸、不動 AI stage。
    */
   const reviewFinding = async (attr: Attribution, status: string) => {
     if (!attr.finding_id) return;

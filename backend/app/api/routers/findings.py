@@ -1,4 +1,4 @@
-"""判決結果端點（列表 / 商品清單 / 人工狀態 / 真值標註 / 歸因備註）；全路徑自帶 /api。"""
+"""判決結果人工動作端點（人工狀態 / 真值標註 + 把關 / 歸因備註 / 級聯樹）；全路徑自帶 /api。"""
 
 from __future__ import annotations
 
@@ -11,21 +11,6 @@ from app.core import auth, db
 from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter()
-
-
-@router.get("/api/findings")
-def get_findings(
-    prod_oid: str | None = None,
-    dimension: str | None = None,
-) -> list[dict]:
-    """列出判決結果（可依 prod_oid / dimension 過濾；下鑽用）。"""
-    return db.list_findings(prod_oid, dimension)
-
-
-@router.get("/api/products")
-def get_products() -> list[dict]:
-    """有 finding 的商品清單（PM 單品頁下拉）。"""
-    return db.list_products()
 
 
 class StatusIn(BaseModel):

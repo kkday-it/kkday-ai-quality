@@ -17,6 +17,3 @@ export const STATUS_COLOR: Record<string, string> = {
   fixed: 'cyan',
   dismissed: 'gray',
 };
-
-/** 狀態篩選下拉選項（由 STATUS_LABEL 衍生，避免重複維護）。 */
-export const STATUS_OPTS = Object.entries(STATUS_LABEL).map(([k, l]) => ({ k, l }));

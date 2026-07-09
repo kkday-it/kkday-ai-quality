@@ -3,7 +3,6 @@ export * from './http.api';
 export * from './auth.api';
 export * from './permission.api';
 export * from './findings.api';
-export * from './products.api';
 export * from './inbound.api';
 export * from './judgment.api';
 export * from './exports.api';

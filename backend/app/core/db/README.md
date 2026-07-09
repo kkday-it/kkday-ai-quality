@@ -23,7 +23,7 @@
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
 | `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝C-1..6 + schema + product_vertical + global_rule + judgment + source_mapping。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
-| `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`/`list_findings`/`list_products`）。 |
+| `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`/`get_finding`/`update_finding_status`/`update_finding_true_label` + 歸因備註）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；判決級（僅已判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |

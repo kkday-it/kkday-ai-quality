@@ -11,8 +11,6 @@ export const judgeRoutes: RouteRecordRaw = {
     { path: 'upload', component: () => import('../pages/DataUpload.vue'), meta: { text: '資料上傳' } }, // 售前售後進線等多來源·批次管理
     { path: 'list', component: () => import('../pages/AttributionList.vue'), meta: { text: '歸因列表' } }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
     { path: 'attribution', component: () => import('../pages/AttributionOverview.vue'), meta: { text: '歸因概覽' } }, // 聚合儀表板：縱覽 + 各來源專屬概覽（KPI + 漏斗 + L1~L3 + 趨勢 + PDF 導出）
-    { path: 'analytics', component: () => import('../pages/Analytics.vue'), meta: { text: 'RD／品控 分析' } }, // 出口 B
-    { path: 'product', component: () => import('../pages/ProductDetail.vue'), meta: { text: 'PM／AM 單品' } }, // 出口 A
   ],
 };
 
