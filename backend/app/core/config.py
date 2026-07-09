@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     min_password_length: int = 6  # 註冊密碼最短長度（安全政策，可依合規調整）
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
+    # 連線池（跨環境可調；prejudge 併發 64 執行緒共享，預設 15 明顯不足 → 拉高。
+    # pool_size + max_overflow = 單 process 連線上限，須 < PG max_connections(預設 100)，留餘裕給其他連線）。
+    db_pool_size: int = 10  # 常駐連線數
+    db_max_overflow: int = 20  # 尖峰可超額連線數（10+20=30 上限）
+    db_pool_recycle: int = (
+        1800  # 連線回收秒（避免 PG 端 idle 斷線後借到死連線；配 pool_pre_ping 雙保險）
+    )
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
     cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
     # 全庫資料包匯入開關（破壞性：清空並覆蓋整庫）。None＝依環境（development 開、其餘關）；

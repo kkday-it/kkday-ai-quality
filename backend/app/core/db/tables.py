@@ -96,6 +96,10 @@ judgments = Table(
     Index("idx_judgments_polarity", "polarity"),
     Index("idx_judgments_stage", "stage"),
     Index("idx_judgments_l1", "l1_code"),
+    # L2/L3 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/l3/sentiment 全表掃）
+    Index("idx_judgments_l2", "l2_code"),
+    Index("idx_judgments_l3", "l3_code"),
+    Index("idx_judgments_sentiment", "sentiment_score"),
     Index("idx_judgments_tier", "conf_tier"),
 )
 
@@ -357,18 +361,34 @@ def resolve_url() -> str:
     return env.database_url
 
 
+def _engine_kwargs() -> dict:
+    """create_engine 共用參數：連線池調校（get_engine / set_engine 同一組，避免兩處漂移）。
+
+    pool_pre_ping：借用前 ping，避開 PG idle 斷線 / 重啟後借到死連線；
+    pool_size/max_overflow/pool_recycle 由 env 調（見 config.py）——prejudge 64 執行緒共享，
+    預設 15 不足故拉高，上限仍須 < PG max_connections。
+    """
+    return {
+        "future": True,
+        "pool_pre_ping": True,
+        "pool_size": env.db_pool_size,
+        "max_overflow": env.db_max_overflow,
+        "pool_recycle": env.db_pool_recycle,
+    }
+
+
 def get_engine() -> Engine:
     """取當前 engine（首次依 resolve_url 建立）。db.py 一律經此取連線。"""
     global _engine
     if _engine is None:
-        _engine = create_engine(resolve_url(), future=True)
+        _engine = create_engine(resolve_url(), **_engine_kwargs())
     return _engine
 
 
 def set_engine(url: str) -> Engine:
     """重設 engine（測試指向測試庫 / 切換連線用）。"""
     global _engine
-    _engine = create_engine(url, future=True)
+    _engine = create_engine(url, **_engine_kwargs())
     return _engine
 
 
