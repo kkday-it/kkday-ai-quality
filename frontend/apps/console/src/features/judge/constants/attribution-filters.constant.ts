@@ -8,12 +8,10 @@ export interface AttributionFilters {
   polarity: string[];
   /** 判決階段（多選）。 */
   stage: string[];
-  /** 星等（多選 1-5）。 */
-  score: number[];
   /** 信心分層（單選）。 */
   tier: string;
-  /** L1 歸因域（單選 code）。 */
-  l1: string;
+  /** 歸因分類（多選任意層級 code；L1/L2/L3 皆可，後端子樹語義命中）。 */
+  taxonomy: string[];
   /** 有無外部評論（''=全部 / 'true'=有 / 'false'=無）。 */
   hasExternal: string;
   /** 反饋時間區間 [from, to]（'YYYY-MM-DD'）。 */
@@ -33,9 +31,8 @@ export type FilterField = keyof AttributionFilters;
 export const emptyFilters = (): AttributionFilters => ({
   polarity: [],
   stage: [],
-  score: [],
   tier: '',
-  l1: '',
+  taxonomy: [],
   hasExternal: '',
   dateRange: [],
   recOid: '',
@@ -48,7 +45,7 @@ export const cloneFilters = (f: AttributionFilters): AttributionFilters => ({
   ...f,
   polarity: [...f.polarity],
   stage: [...f.stage],
-  score: [...f.score],
+  taxonomy: [...f.taxonomy],
   dateRange: [...f.dateRange],
 });
 
@@ -65,18 +62,16 @@ export const POLARITY_FILTER_OPTS = [
   { value: 'positive', label: '正向' },
   { value: 'unknown', label: '情緒不明' },
 ];
-/** 階段 / 分層 / 星等選項（自 label 常數衍生，單一真相）。 */
+/** 階段 / 分層選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
-export const SCORE_OPTS = [1, 2, 3, 4, 5].map((v) => ({ value: v, label: `${v} 星` }));
 
 /** 已套用的篩選項數（計數徽章用；空值不計）。 */
 export const countActiveFilters = (f: AttributionFilters): number =>
   (f.polarity.length ? 1 : 0) +
   (f.stage.length ? 1 : 0) +
-  (f.score.length ? 1 : 0) +
   (f.tier ? 1 : 0) +
-  (f.l1 ? 1 : 0) +
+  (f.taxonomy.length ? 1 : 0) +
   (f.hasExternal ? 1 : 0) +
   (f.dateRange.length ? 1 : 0) +
   (f.recOid.trim() ? 1 : 0) +
@@ -89,9 +84,8 @@ export const filtersToParams = (f: AttributionFilters) => {
   return {
     polarity: f.polarity.length ? f.polarity : undefined,
     stage: f.stage.length ? f.stage : undefined,
-    scores: f.score.length ? f.score : undefined,
     confidenceTier: f.tier || undefined,
-    l1Domain: f.l1 || undefined,
+    taxonomy: f.taxonomy.length ? f.taxonomy : undefined,
     hasExternal: f.hasExternal || undefined,
     dateFrom: f.dateRange?.[0] || undefined,
     dateTo: f.dateRange?.[1] || undefined,

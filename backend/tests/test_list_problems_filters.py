@@ -78,15 +78,48 @@ def test_insert_source_batch_empty_list_returns_zero(temp_db) -> None:
     assert db.insert_source_batch("product_reviews", []) == 0
 
 
-def test_list_problems_source_registry_score_filter(temp_db) -> None:
-    """source='product_reviews' + score 篩選：只回符合星等（rec_scores）的列。"""
+def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
+    """source='product_reviews' + taxonomy 篩選：任意層級 code（l1/l2/l3_code 任一 IN）子樹語義。"""
     db.insert_source_batch(
         "product_reviews",
         [_pr_row(rec_oid="R1", rec_scores="5"), _pr_row(rec_oid="R2", rec_scores="2")],
     )
-    result = db.list_problems(source="product_reviews", score=[5])
-    assert result["total"] == 1
-    assert result["rows"][0]["_group"] == "R1"
+    # R1 判到 L2（l3 空）；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R1",
+            ticket_id="R1",
+            dimension="non_content",
+            recommended_action="no_action",
+            polarity="negative",
+            l1_domain_code="content",
+            l1_label="商品內容",
+            l2_code="C-1-2",
+            l2_label="行程資訊",
+        ),
+        "product_reviews",
+    )
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_R2",
+            ticket_id="R2",
+            dimension="non_content",
+            recommended_action="no_action",
+            polarity="negative",
+            l1_domain_code="supplier",
+            l1_label="供應商履約",
+        ),
+        "product_reviews",
+    )
+    # L1 code 命中（子樹語義）
+    r = db.list_problems(source="product_reviews", taxonomy=["content"])
+    assert r["total"] == 1 and r["rows"][0]["_group"] == "R1"
+    # L2 code 命中
+    r = db.list_problems(source="product_reviews", taxonomy=["C-1-2"])
+    assert r["total"] == 1 and r["rows"][0]["_group"] == "R1"
+    # 多選 OR：兩域都中
+    r = db.list_problems(source="product_reviews", taxonomy=["content", "supplier"])
+    assert r["total"] == 2
 
 
 def test_list_problems_source_registry_product_vertical_filter(temp_db, monkeypatch) -> None:
@@ -158,6 +191,36 @@ def test_prejudge_target_ids_uses_registry_for_product_reviews(temp_db) -> None:
     assert ids == ["R2"]
 
 
+def test_prejudge_target_ids_has_external_filter(temp_db) -> None:
+    """has_external 表級篩選（初判目標選取）：有外部融合內容的列才算「有」，空字串污染列不誤判。
+
+    R1＝有外部（lst_oid + sentiment）；R2＝upsert 未匹配的空字串污染（三欄皆 ''，須視為「無」）；
+    R3＝無融合資料（NULL）。驗證 True 只回 R1、False 回 R2+R3（與列表 SSOT apply_table_filters 同語義）。
+    """
+    db.insert_source_batch(
+        "product_reviews",
+        [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
+    )
+    with T.get_engine().begin() as c:
+        c.execute(
+            T.product_reviews.update()
+            .where(T.product_reviews.c.rec_oid == "R1")
+            .values(review_external_lst_oid="EX1", sentiment="4", free_tag='["服務"]')
+        )
+        c.execute(
+            T.product_reviews.update()
+            .where(T.product_reviews.c.rec_oid == "R2")
+            .values(review_external_lst_oid="", sentiment="", free_tag="")
+        )
+    ids_has = db.prejudge_target_ids("product_reviews", stages=["unjudged"], has_external=True)
+    assert set(ids_has) == {"R1"}
+    ids_no = db.prejudge_target_ids("product_reviews", stages=["unjudged"], has_external=False)
+    assert set(ids_no) == {"R2", "R3"}
+    # None＝不篩選：三列全回
+    ids_all = db.prejudge_target_ids("product_reviews", stages=["unjudged"])
+    assert set(ids_all) == {"R1", "R2", "R3"}
+
+
 def test_get_items_by_ids_uses_registry_for_product_reviews(temp_db) -> None:
     """get_items_by_ids(ids, source='product_reviews') 走專表，回傳列含源欄位（如 rec_scores）。"""
     db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1", rec_scores="4")])
@@ -213,7 +276,7 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
 
 
 def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
-    """prejudge_target_ids 列表全維度篩選：表級（星等/日期/prod_oid）兩分支皆套、判決級（tier/L1）僅已判分支。"""
+    """prejudge_target_ids 列表全維度篩選：表級（日期/prod_oid）兩分支皆套、判決級（tier/歸因分類）僅已判分支。"""
     db.insert_source_batch(
         "product_reviews",
         [
@@ -240,15 +303,16 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
         "product_reviews",
     )
 
-    # 未判分支 + 星等 1：只 R1（R2 星等 5、R3 已判）
-    assert db.prejudge_target_ids("product_reviews", stages=["unjudged"], score=[1]) == ["R1"]
     # 未判分支 + 日期區間：只 R1（R2 在區間外）
     assert db.prejudge_target_ids(
         "product_reviews", stages=["unjudged"], date_from="2026-06-15", date_to="2026-07-01"
     ) == ["R1"]
     # 已判分支 + 判決級收斂（tier/L1 命中）→ R3；tier 不符 → 空
     assert db.prejudge_target_ids(
-        "product_reviews", stages=["pending_review"], confidence_tier="jury", l1_domain="content"
+        "product_reviews",
+        stages=["pending_review"],
+        confidence_tier="jury",
+        taxonomy=["content"],
     ) == ["R3"]
     assert (
         db.prejudge_target_ids(

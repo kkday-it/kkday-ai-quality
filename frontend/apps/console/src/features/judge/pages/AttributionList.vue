@@ -77,7 +77,7 @@ const source = ref('product_reviews');
 const {
   schema,
   filters,
-  l1Options,
+  cascadeOptions,
   verticalOptions,
   verticalGroups,
   onVerticalChange,
@@ -112,7 +112,6 @@ const {
   openPrejudge,
   targetMode,
   targetStages,
-  targetPolarity,
   lowConfOnly,
   draftFilters,
   targetCount,
@@ -403,13 +402,12 @@ const rejudgeConfirmText = computed(
     `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」重新初判並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定執行？`,
 );
 
-/** schema filter type → AttributionFilters 欄位鍵（僅 l1Domain→l1 不同名）。 */
+/** schema filter type → AttributionFilters 欄位鍵（現皆同名，保留映射以隔離 schema 命名）。 */
 const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   polarity: 'polarity',
   stage: 'stage',
-  score: 'score',
   tier: 'tier',
-  l1Domain: 'l1',
+  taxonomy: 'taxonomy',
   hasExternal: 'hasExternal',
   dateRange: 'dateRange',
 };
@@ -420,19 +418,19 @@ const toolbarFields = computed<FilterField[]>(() => {
     .filter((k): k is FilterField => Boolean(k));
   return [...fromSchema, 'recOid', 'prodOid', 'orderOid'];
 });
-/** 初判彈窗「目標篩選」欄位（星等/時間/id；再判收斂的傾向/信心/L1 為再判專屬語義，不走此共用欄）。 */
+/** 初判彈窗「目標篩選」欄位：統一完整篩選欄（與列表對齊）。第一行 id/日期，第二行 傾向/信心分層/歸因分類/外部評論。
+ *  日期/id/外部評論 為表級（兩分支皆套）；傾向/信心分層/歸因分類 為判決級（只對已判分支生效，見 _scopeBody
+ *  的 hasJudgedStage 閘）。判決階段由上方 checkbox 承擔 → 不納入此篩選欄。 */
 const PREJUDGE_TARGET_FIELDS: FilterField[] = [
-  'score',
-  'dateRange',
   'recOid',
   'prodOid',
   'orderOid',
+  'dateRange',
+  'polarity',
+  'tier',
+  'taxonomy',
+  'hasExternal',
 ];
-/** 再判收斂用選項（信心分層 / L1 域；此段為再判專屬非列表篩選，故保留本地選項）。 */
-const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
-const L1_OPTS = computed(() =>
-  l1Options.value.map((d) => ({ value: d.code, label: `${d.label}（${d.count}）` })),
-);
 
 /** 序號欄（前置於業務欄前）：依當前頁碼 + 列索引計算全域序號。 */
 const SEQ_COL = { title: '序號', slotName: 'seq', width: 64 };
@@ -584,7 +582,7 @@ onMounted(init);
         <AttributionFilterBar
           :model="filters"
           :fields="toolbarFields"
-          :l1-options="l1Options"
+          :cascade-options="cascadeOptions"
           class="mb-2"
           @change="onFilterChange"
         />
@@ -943,10 +941,10 @@ onMounted(init);
           >
             初判歸因
           </a-button>
+          <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button
             size="small"
             type="outline"
-            :disabled="!(record.attributions && record.attributions.length)"
             @click="viewDetail(record)"
           >
             查看詳情
@@ -961,7 +959,7 @@ onMounted(init);
       title="確認初判歸因"
       ok-text="開始判決"
       cancel-text="取消"
-      :width="640"
+      :width="1040"
       :ok-loading="running"
       @ok="doRun"
     >
@@ -986,55 +984,27 @@ onMounted(init);
               </a-checkbox>
             </a-checkbox-group>
           </div>
-          <!-- 目標篩選：共用 AttributionFilterBar（自動帶入列表當前篩選，可重選；星等/日期/ID 未判已判分支皆套）-->
+          <!-- 目標篩選：共用 AttributionFilterBar（完整篩選欄，與列表對齊；自動帶入列表當前篩選，可重選）。
+               星等/日期/ID 兩分支皆套；傾向/信心分層/L1 為判決級，僅對已判分支生效（見 usePrejudgeJob._scopeBody）。 -->
           <div>
             <div class="mb-1 text-xs text-gray-500">目標篩選（已自動帶入列表當前篩選，可重選）</div>
             <AttributionFilterBar
               :model="draftFilters"
               :fields="PREJUDGE_TARGET_FIELDS"
+              :cascade-options="cascadeOptions"
               @change="refreshTargetCount"
             />
-          </div>
-          <!-- 再判收斂：勾選任一已判階段才顯示（傾向/信心分層/L1 為再判專屬語義，非列表篩選；只套已判分支）-->
-          <div v-if="hasJudgedStage">
-            <div class="mb-1 text-xs text-gray-500">再判收斂（僅對已判階段生效）</div>
-            <div class="flex flex-wrap items-center gap-2">
-              <a-select
-                v-model="targetPolarity"
-                size="small"
-                style="width: 110px"
-                allow-clear
-                placeholder="傾向"
-                :options="
-                  Object.entries(POLARITY_LABELS)
-                    .filter(([k]) => k !== 'unknown')
-                    .map(([value, label]) => ({ value, label }))
-                "
-                @change="refreshTargetCount"
-              />
-              <a-select
-                v-model="draftFilters.tier"
-                size="small"
-                allow-clear
-                placeholder="信心分層"
-                style="width: 130px"
-                :options="TIER_OPTS"
-                @change="refreshTargetCount"
-              />
-              <a-select
-                v-model="draftFilters.l1"
-                size="small"
-                allow-clear
-                placeholder="L1 歸因域"
-                style="width: 160px"
-                :options="L1_OPTS"
-                @change="refreshTargetCount"
-              />
-              <a-radio-group v-model="lowConfOnly" size="small">
-                <a-radio :value="true">僅低信心</a-radio>
-                <a-radio :value="false">全部信心</a-radio>
-              </a-radio-group>
+            <div class="mt-1 text-xs text-gray-400">
+              星等 / 日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1 僅對「已判」階段生效（未判列尚無判決可比對）。
             </div>
+          </div>
+          <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
+          <div v-if="hasJudgedStage" class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">再判信心範圍</span>
+            <a-radio-group v-model="lowConfOnly" size="small" @change="refreshTargetCount">
+              <a-radio :value="true">僅低信心</a-radio>
+              <a-radio :value="false">全部信心</a-radio>
+            </a-radio-group>
           </div>
         </div>
 
@@ -1065,7 +1035,7 @@ onMounted(init);
       title="導出列表"
       ok-text="開始導出"
       cancel-text="取消"
-      :width="640"
+      :width="1040"
       @ok="doExport"
     >
       <div class="flex flex-col gap-3">
@@ -1074,7 +1044,7 @@ onMounted(init);
         </div>
         <div>
           <div class="mb-1 text-xs text-gray-500">導出範圍篩選（已帶入列表當前篩選，可重選）</div>
-          <AttributionFilterBar :model="exportFilters" :fields="toolbarFields" :l1-options="l1Options" />
+          <AttributionFilterBar :model="exportFilters" :fields="toolbarFields" :cascade-options="cascadeOptions" />
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
       </div>

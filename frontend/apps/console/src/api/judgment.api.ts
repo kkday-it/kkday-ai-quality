@@ -2,7 +2,7 @@
 import { BASE, j } from './http.api';
 import type { ProblemRow } from '@/features/judge/constants';
 
-/** 統一問題列表查詢參數（source/judged/polarity 既有；scores/productVerticals/日期區間為新增篩選）。 */
+/** 統一問題列表查詢參數（傾向/階段/信心分層/歸因分類/垂直分類/日期區間/精確 id）。 */
 export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
@@ -10,8 +10,6 @@ export interface GetProblemsParams {
   polarity?: string[];
   /** 判決階段篩選（多選；unjudged/judged/pending_review/pending_data/insufficient；CSV 傳後端）。 */
   stage?: string[];
-  /** 星等篩選（多選，IN 語意；僅有 score 欄的來源如 product_reviews 有效）。 */
-  scores?: number[];
   /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
   productVerticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
@@ -28,8 +26,8 @@ export interface GetProblemsParams {
   confidenceTier?: string;
   /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 product_reviews 生效）。 */
   hasExternal?: string;
-  /** L1 歸因域過濾（單選；content/supplier/…，選項來自 getL1Domains）。 */
-  l1Domain?: string;
+  /** 歸因分類過濾（多選任意層級 code；後端 l1/l2/l3_code 任一 IN 命中＝子樹語義）。 */
+  taxonomy?: string[];
   /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
   sortBy?: string;
   /** 排序方向（asc/desc；預設 desc）。 */
@@ -51,15 +49,15 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity?.length) q.set('polarity', params.polarity.join(','));
   if (params.stage?.length) q.set('stage', params.stage.join(','));
-  if (params.scores?.length) q.set('scores', params.scores.join(','));
-  if (params.productVerticals?.length) q.set('product_verticals', params.productVerticals.join(','));
+  if (params.productVerticals?.length)
+    q.set('product_verticals', params.productVerticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
   if (params.recOid) q.set('rec_oid', params.recOid);
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
-  if (params.l1Domain) q.set('l1_domain', params.l1Domain);
+  if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);
@@ -67,17 +65,6 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   q.set('offset', String(params.offset ?? 0));
   return j<ProblemListResp>(`${BASE}/problems?${q.toString()}`);
 };
-
-/** 某來源已判資料出現過的 L1 歸因域（供列表 L1 篩選下拉；code/label/count 皆來自 judgments.data distinct）。 */
-export interface L1DomainOpt {
-  code: string;
-  label: string;
-  count: number;
-}
-
-/** 取某來源 L1 歸因域清單（選項恆與可篩內容一致，見後端 db.list_l1_domains）。 */
-export const getL1Domains = (source: string): Promise<L1DomainOpt[]> =>
-  j<L1DomainOpt[]>(`${BASE}/problems/l1_domains?source=${encodeURIComponent(source)}`);
 
 /**
  * 啟動問題列表導出背景 job（POST·item_ids 放 body 避免 URL 過長 431）→ {job_id, filename}（立即回）。
@@ -87,8 +74,6 @@ export const startProblemsExport = (p: {
   source?: string;
   judged?: boolean;
   item_ids?: string[];
-  /** 星等篩選（多選，IN 語意）。 */
-  scores?: number[];
   /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單）。 */
   product_verticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
@@ -101,8 +86,8 @@ export const startProblemsExport = (p: {
   stage?: string[];
   /** 信心分層（單選）。 */
   confidence_tier?: string;
-  /** L1 歸因域（單選 code）。 */
-  l1_domain?: string;
+  /** 歸因分類（多選任意層級 code；子樹語義）。 */
+  taxonomy?: string[];
   /** 有無外部評論（'true'/'false'）。 */
   has_external?: boolean;
   /** 精確 id 篩選。 */
@@ -132,20 +117,21 @@ export interface PrejudgeBody {
   product_verticals?: string[];
   /** 目標選取（scope=all；stage 驅動）：階段清單/傾向收斂/信心上限。 */
   stages?: string[];
-  target_polarity?: string;
+  target_polarity?: string[];
   max_confidence?: number;
   /** 範圍收斂（scope=all）：僅在此特徵 id 清單（勾選列）內做目標選取。 */
   within_ids?: string[];
   /** 列表全維度篩選（scope=all；語義同 /api/problems）：表級（兩分支皆套）。 */
-  scores?: number[];
   date_from?: string;
   date_to?: string;
   rec_oid?: string;
   prod_oid?: string;
   order_oid?: string;
-  /** 判決級收斂（僅已判分支）：信心分層 / L1 歸因域。 */
+  /** 判決級收斂（僅已判分支）：信心分層 / 歸因分類（多選任意層級 code，子樹語義）。 */
   confidence_tier?: string;
-  l1_domain?: string;
+  taxonomy?: string[];
+  /** 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。 */
+  has_external?: boolean;
 }
 
 /** 啟動初判歸因批量任務（item_ids 顯式 / scope=all 目標選取，可 within_ids 交集勾選範圍）→ {job_id, total, model}。 */

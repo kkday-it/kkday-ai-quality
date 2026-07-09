@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 
 from app.core.db import source_registry
 from app.core.db import tables as T
@@ -301,7 +301,6 @@ def list_problems(
     stage: list[str] | None = None,
     limit: int = 100,
     offset: int = 0,
-    score: list[int] | None = None,
     product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -310,7 +309,7 @@ def list_problems(
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
-    l1_domain: str | None = None,
+    taxonomy: list[str] | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -327,12 +326,11 @@ def list_problems(
         polarity: 傾向過濾（judgments.data.polarity）。
         stage: 判決階段多選（judgments.data.judgment_stage；'unjudged'＝無判決，多值 OR）。
         limit/offset: 分頁。
-        score: 星等過濾（IN 清單；僅 source_registry 命中且有 score_col 的來源可用）。
         product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
-        l1_domain: L1 歸因域過濾（judgments.data.l1_domain_code；content/supplier/…）。
+        taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2/l3_code 任一 IN 命中＝子樹語義）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
 
     Returns:
@@ -348,7 +346,6 @@ def list_problems(
         stage,
         limit,
         offset,
-        score,
         product_vertical,
         date_from,
         date_to,
@@ -357,7 +354,7 @@ def list_problems(
         prod_oid,
         order_oid,
         confidence_tier,
-        l1_domain,
+        taxonomy,
         sort_by,
         sort_dir,
         has_external=has_external,
@@ -372,7 +369,6 @@ def _list_problems_spec(
     stage: list[str] | None,
     limit: int,
     offset: int,
-    score: list[int] | None,
     product_vertical: str | list[str] | None,
     date_from: str | None,
     date_to: str | None,
@@ -381,7 +377,7 @@ def _list_problems_spec(
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
-    l1_domain: str | None = None,
+    taxonomy: list[str] | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
     has_external: bool | None = None,
@@ -389,13 +385,13 @@ def _list_problems_spec(
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN judgments。
 
-    表本身即單一來源，無需 WHERE source= 過濾；score/product_vertical/日期區間為此分支專屬篩選。
+    表本身即單一來源，無需 WHERE source= 過濾；product_vertical/日期區間為此分支專屬篩選。
     """
     tbl = spec.table
 
     def _f(stmt):
-        """spec 分支篩選：表級（score/vertical/日期/oid，SSOT＝_shared.apply_table_filters，與初判
-        目標選取共用同一份語義）+ judged/polarity/stage/tier/L1（判決 EXISTS，列表專屬結構）。"""
+        """spec 分支篩選：表級（vertical/日期/oid，SSOT＝_shared.apply_table_filters，與初判
+        目標選取共用同一份語義）+ judged/polarity/stage/tier/歸因分類（判決 EXISTS，列表專屬結構）。"""
         has_jg = _jg_exists(spec)
         if judged is True:
             stmt = stmt.where(has_jg)
@@ -421,31 +417,23 @@ def _list_problems_spec(
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
-        if l1_domain:
-            stmt = stmt.where(_jg_exists(spec, jg.c.l1_code == l1_domain))
-        # 有無外部評論：有對應外部評論（review_external_lst_oid）且有實際內容（sentiment 或 free_tag）。
-        # 與前端顯示一致（v-if ext_sentiment || ext_free_tag.length）。未匹配的列 upsert 後三欄皆為
-        # 空字串''（非 NULL），故 isnot(None) 不足——須同時排除 ''（及 free_tag 的空陣列 '[]'/'null'），
-        # 否則篩選把空字串列誤判為「有」。lst_oid 條件為語義防護（內容恆隨 lst_oid 而來，無孤兒內容列）。
-        # 僅 product_reviews 有融合欄，其餘來源無此欄 → 忽略此篩選
-        if has_external is not None and "review_external_lst_oid" in tbl.c:
-            has_content = or_(
-                and_(tbl.c["sentiment"].isnot(None), tbl.c["sentiment"] != ""),
-                and_(
-                    tbl.c["free_tag"].isnot(None),
-                    tbl.c["free_tag"].notin_(["", "[]", "null"]),
-                ),
+        if taxonomy:
+            # 歸因分類多選：任意層級 code，l1/l2/l3_code 任一 IN 命中＝子樹語義
+            # （選 L1 涵蓋整域，含只判到 L2 的列；選 L3 精確到葉）
+            stmt = stmt.where(
+                _jg_exists(
+                    spec,
+                    or_(
+                        jg.c.l1_code.in_(taxonomy),
+                        jg.c.l2_code.in_(taxonomy),
+                        jg.c.l3_code.in_(taxonomy),
+                    ),
+                )
             )
-            ext_cond = and_(
-                tbl.c["review_external_lst_oid"].isnot(None),
-                tbl.c["review_external_lst_oid"] != "",
-                has_content,
-            )
-            stmt = stmt.where(ext_cond if has_external else ~ext_cond)
+        # 表級篩選（垂直分類/日期/oid/有無外部評論）走 SSOT，避免與初判目標選取各寫一份而漂移。
         return apply_table_filters(
             spec,
             stmt,
-            score=score,
             product_vertical=product_vertical,
             date_from=date_from,
             date_to=date_to,
@@ -453,6 +441,7 @@ def _list_problems_spec(
             rec_oid=rec_oid,
             prod_oid=prod_oid,
             order_oid=order_oid,
+            has_external=has_external,
         )
 
     # item 級排序（白名單防注入）；confidence 取該 item 各歸因最大信心（scalar 子查詢）
@@ -474,28 +463,3 @@ def _list_problems_spec(
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
     return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
-
-
-def list_l1_domains(source: str) -> list[dict]:
-    """某來源已判資料中出現過的 L1 歸因域清單（供列表 L1 篩選下拉，選項恆與資料一致）。
-
-    直接對 judgments.data 抽 distinct (l1_domain_code, l1_label)——label 與 code 同存於判決 JSON，
-    故無需另維護 code→label 對照表（SSOT 即資料本身）。按出現次數 desc 排序，空 code 剔除。
-
-    Args:
-        source: 來源 code（judgments.source 過濾）。
-
-    Returns:
-        [{"code", "label", "count"}]（count＝該域歸因筆數）。
-    """
-    jg = T.judgments
-    code = jg.c.l1_code
-    label = jg.c.l1_label
-    stmt = (
-        select(code.label("code"), label.label("label"), func.count().label("count"))
-        .where(jg.c.source == source, code != "", code.isnot(None))
-        .group_by(code, label)
-        .order_by(func.count().desc())
-    )
-    with T.get_engine().connect() as conn:
-        return [{"code": r.code, "label": r.label, "count": r.count} for r in conn.execute(stmt)]

@@ -36,7 +36,6 @@ def get_problems(
     polarity: str | None = None,
     sentiment: str | None = None,
     stage: str | None = None,
-    scores: str | None = None,
     product_verticals: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -44,7 +43,7 @@ def get_problems(
     prod_oid: str | None = None,
     order_oid: str | None = None,
     confidence_tier: str | None = None,
-    l1_domain: str | None = None,
+    taxonomy: str | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -54,8 +53,8 @@ def get_problems(
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
-    星等 scores / 商品垂直分類 product_verticals / 判決階段 stage 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
-    confidence_tier（信心分層）/ l1_domain（L1 歸因域）為單值 judgments.data 過濾。
+    商品垂直分類 product_verticals / 判決階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2/l3_code 任一 IN 命中＝子樹語義）為多值判決過濾。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
@@ -67,7 +66,6 @@ def get_problems(
         polarity=_csv_strs(polarity),
         sentiment=_csv_ints(sentiment),
         stage=_csv_strs(stage),
-        score=_csv_ints(scores),
         product_vertical=_csv_strs(product_verticals),
         date_from=date_from,
         date_to=date_to,
@@ -75,22 +73,13 @@ def get_problems(
         prod_oid=prod_oid,
         order_oid=order_oid,
         confidence_tier=confidence_tier,
-        l1_domain=l1_domain,
+        taxonomy=_csv_strs(taxonomy),
         has_external=has_external,
         sort_by=sort_by,
         sort_dir=sort_dir,
         limit=limit,
         offset=offset,
     )
-
-
-@router.get("/api/problems/l1_domains")
-def get_l1_domains(source: str) -> list[dict]:
-    """某來源已判資料出現過的 L1 歸因域清單（[{code,label,count}]）——供歸因列表 L1 篩選下拉。
-
-    選項直接來自 judgments.data distinct，恆與可篩內容一致（見 db.list_l1_domains）。
-    """
-    return db.list_l1_domains(source)
 
 
 class ExportProblemsIn(BaseModel):
@@ -100,15 +89,14 @@ class ExportProblemsIn(BaseModel):
     polarity: str | list[str] | None = None
     judged: bool | None = None
     item_ids: list[str] | None = None
-    scores: list[int] | None = None
     product_verticals: list[str] | None = None
     date_from: str | None = None
     date_to: str | None = None
-    # 與列表頁篩選對齊（導出＝所見即所得）：情緒分 / 判決階段 / 信心分層 / L1 域 / 有無外部評論 / 精確 id
+    # 與列表頁篩選對齊（導出＝所見即所得）：情緒分 / 判決階段 / 信心分層 / 歸因分類 / 有無外部評論 / 精確 id
     sentiment: list[int] | None = None
     stage: list[str] | None = None
     confidence_tier: str | None = None
-    l1_domain: str | None = None
+    taxonomy: list[str] | None = None
     has_external: bool | None = None
     rec_oid: str | None = None
     prod_oid: str | None = None
@@ -121,7 +109,7 @@ def export_problems(body: ExportProblemsIn) -> dict:
 
     大列表組 xlsx 可能耗時數十秒，改背景 job：前端連 SSE（/api/exports/stream）看進度、可停止，
     完成後 /api/exports/download 取檔。item_ids 給定→只導那些 review（複選/分頁選取，可上千）；
-    否則導符合 source/polarity/judged + 星等 / 商品垂直分類 / 日期區間 篩選（與列表頁一致）全部。
+    否則導符合 source/polarity/judged + 商品垂直分類 / 歸因分類 / 日期區間 篩選（與列表頁一致）全部。
     """
     from app.core import export_jobs
 
@@ -132,14 +120,13 @@ def export_problems(body: ExportProblemsIn) -> dict:
             polarity=body.polarity,
             judged=body.judged,
             item_ids=body.item_ids,
-            score=body.scores,
             product_vertical=body.product_verticals,
             date_from=body.date_from,
             date_to=body.date_to,
             sentiment=body.sentiment,
             stage=body.stage,
             confidence_tier=body.confidence_tier,
-            l1_domain=body.l1_domain,
+            taxonomy=body.taxonomy,
             has_external=body.has_external,
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,

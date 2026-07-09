@@ -4,9 +4,9 @@ import { computed, reactive, ref, toValue, watch, type MaybeRefOrGetter } from '
 import {
   startProblemsExport,
   patchStatus,
-  getL1Domains,
   getProblems,
-  type L1DomainOpt,
+  getTaxonomyCascade,
+  type CascadeNode,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
@@ -52,13 +52,14 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   // ── 篩選狀態（單一 reactive 物件＝SSOT；工具列/導出/初判共用 AttributionFilterBar 綁定此形狀）──
   // 各來源 schema 決定哪些欄位生效；切來源時一併清空殘留值（見下方 watch）。
   const filters = reactive(emptyFilters());
-  const l1Options = ref<L1DomainOpt[]>([]); // L1 域下拉選項（該來源已判資料 distinct）
-  /** 載入 L1 域選項（來源切換 / 初始）；失敗回空不阻斷列表。 */
-  const loadL1Options = async () => {
+  const cascadeOptions = ref<CascadeNode[]>([]); // 歸因分類級聯選項（全局 L1→L3 樹，載一次共用）
+  /** 載入歸因分類級聯樹（初始一次；全局分類與來源無關）；失敗回空不阻斷列表。 */
+  const loadCascadeOptions = async () => {
+    if (cascadeOptions.value.length) return;
     try {
-      l1Options.value = await getL1Domains(toValue(source));
+      cascadeOptions.value = await getTaxonomyCascade();
     } catch {
-      l1Options.value = [];
+      cascadeOptions.value = [];
     }
   };
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
@@ -155,10 +156,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const filterTypes = new Set(schema.value.filters.map((f) => f.type));
       // schema-gated 欄位：新來源不支援者清空（type 名對齊 source-schema 的 filter type）
       if (!filterTypes.has('polarity')) filters.polarity = [];
-      if (!filterTypes.has('score')) filters.score = [];
       if (!filterTypes.has('stage')) filters.stage = [];
       if (!filterTypes.has('tier')) filters.tier = '';
-      if (!filterTypes.has('l1Domain')) filters.l1 = '';
+      if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
       if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
       if (!filterTypes.has('dateRange')) filters.dateRange = [];
       // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
@@ -166,7 +166,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       filters.prodOid = '';
       filters.orderOid = '';
       sortValue.value = 'occurred_at:desc';
-      loadL1Options(); // L1 選項隨來源重載
       onFilterChange();
     },
   );
@@ -181,7 +180,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const init = () => {
     loadConfigs();
     verticalFilter.loadOptions();
-    loadL1Options();
+    loadCascadeOptions();
     loadPage();
     loadUnjudged();
   };
@@ -226,12 +225,10 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           source: toValue(source),
           product_verticals: effVerticals.value,
           polarity: p.polarity,
-          scores: p.scores,
           stage: p.stage,
           confidence_tier: p.confidenceTier,
-          l1_domain: p.l1Domain,
-          has_external:
-            p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
+          taxonomy: p.taxonomy,
+          has_external: p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
           date_from: p.dateFrom,
           date_to: p.dateTo,
           rec_oid: p.recOid,
@@ -263,7 +260,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     schema,
     // 篩選（單一 reactive 物件；AttributionFilterBar 綁定）
     filters,
-    l1Options,
+    cascadeOptions,
     verticalOptions,
     verticalGroups,
     onVerticalChange,

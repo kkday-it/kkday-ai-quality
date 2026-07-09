@@ -27,12 +27,12 @@ import { emptyFilters, filtersToParams, STAGE_LABELS } from '../constants';
 export interface PrejudgeListFilters {
   /** 傾向（頁面傾向多選篩選；開彈窗時取第一項作為再判收斂傾向的預設值）。 */
   polarity?: string[];
-  /** 星等多選（表級，未判/已判分支皆套）。 */
-  scores?: number[];
   /** 信心分層（判決級，僅已判分支）。 */
   confidenceTier?: string;
-  /** L1 歸因域（判決級，僅已判分支）。 */
-  l1Domain?: string;
+  /** 歸因分類（判決級，僅已判分支；多選任意層級 code，子樹語義）。 */
+  taxonomy?: string[];
+  /** 有無外部評論（表級，兩分支皆套）：''／undefined＝全部、'true'＝有、'false'＝無。 */
+  hasExternal?: string;
   dateFrom?: string;
   dateTo?: string;
   recOid?: string;
@@ -114,7 +114,9 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       }
       await _poll(r.job_id);
       if (jobStatus.value === 'cancelled') {
-        Message.info(`已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`);
+        Message.info(
+          `已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`,
+        );
       } else {
         Message.success(`初判歸因完成：${progress.value.processed} 筆（模型 ${r.model}）`);
       }
@@ -162,12 +164,12 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 選取範圍：selected＝在「已選 N 筆」內做階段+篩選目標選取（within_ids 交集）；scope＝全部資料。 */
   const targetMode = ref<'selected' | 'scope'>('scope');
   const targetStages = ref<string[]>(['unjudged']); // 預設只收未判
-  const targetPolarity = ref('negative'); // 再判傾向收斂（勾已判階段時生效）
   const lowConfOnly = ref(true); // true＝僅低信心(<auto_accept)；false＝全部信心
   const targetCount = ref(0); // 「將處理 N 筆」預覽
   // ── 彈窗內目標篩選草稿：開彈窗自動帶入頁面當前列表篩選，彈窗內可下拉重選，只影響本次判決目標 ──
-  // 與列表同形狀（AttributionFilters）→ 彈窗 AttributionFilterBar 直接綁定；prejudge 只用其中
-  // score/dateRange/oid（目標篩選）+ tier/l1（再判收斂），polarity/stage/hasExternal 欄不使用。
+  // 與列表同形狀（AttributionFilters）→ 彈窗 AttributionFilterBar 直接綁定（統一完整篩選欄）。
+  // 表級（dateRange/oid/hasExternal）兩分支皆套；判決級（polarity/tier/taxonomy）只對已判分支送
+  // （未判列無判決）。stage 由上方 checkbox 承擔 → 此欄不納入彈窗篩選。
   const draftFilters = reactive(emptyFilters());
   /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
   const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
@@ -176,9 +178,10 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   const _lf = (): PrejudgeListFilters => {
     const p = filtersToParams(draftFilters);
     return {
-      scores: p.scores,
+      polarity: p.polarity,
       confidenceTier: p.confidenceTier,
-      l1Domain: p.l1Domain,
+      taxonomy: p.taxonomy,
+      hasExternal: p.hasExternal,
       dateFrom: p.dateFrom,
       dateTo: p.dateTo,
       recOid: p.recOid,
@@ -196,18 +199,19 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       product_verticals: effVerticals.value,
       stages: targetStages.value,
       within_ids: targetMode.value === 'selected' ? [...selectedKeys.value] : undefined,
-      scores: lf.scores,
       date_from: lf.dateFrom,
       date_to: lf.dateTo,
       rec_oid: lf.recOid,
       prod_oid: lf.prodOid,
       order_oid: lf.orderOid,
+      // 有無外部評論為表級（兩分支皆套）→ 恆送；字串轉 boolean（對齊 useAttributionList 的送法）
+      has_external: lf.hasExternal === undefined ? undefined : lf.hasExternal === 'true',
       ...(hasJudgedStage.value
         ? {
-            target_polarity: targetPolarity.value || undefined,
+            target_polarity: lf.polarity,
             max_confidence: lowConfOnly.value ? judgment.confidence_tiers.auto_accept : undefined,
             confidence_tier: lf.confidenceTier,
-            l1_domain: lf.l1Domain,
+            taxonomy: lf.taxonomy,
           }
         : {}),
     };
@@ -234,14 +238,16 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     targetMode.value = hasSel ? 'selected' : 'scope';
     targetStages.value = hasSel ? Object.keys(STAGE_LABELS) : ['unjudged'];
     const lf = listFilters.value;
-    draftFilters.score = lf.scores ? [...lf.scores] : [];
     draftFilters.dateRange = lf.dateFrom && lf.dateTo ? [lf.dateFrom, lf.dateTo] : [];
     draftFilters.recOid = lf.recOid || '';
     draftFilters.prodOid = lf.prodOid || '';
     draftFilters.orderOid = lf.orderOid || '';
+    draftFilters.hasExternal = lf.hasExternal || '';
     draftFilters.tier = lf.confidenceTier || '';
-    draftFilters.l1 = lf.l1Domain || '';
-    targetPolarity.value = hasSel ? '' : lf.polarity?.[0] || 'negative';
+    draftFilters.taxonomy = lf.taxonomy ? [...lf.taxonomy] : [];
+    // 傾向：帶入列表當前傾向；無選取的預設 scope（只判未判）用 negative 兜底——
+    // 避免使用者臨時加勾已判階段卻沒選傾向時，把整庫已判全數重判。
+    draftFilters.polarity = hasSel ? [] : lf.polarity?.length ? [...lf.polarity] : ['negative'];
     lowConfOnly.value = !hasSel;
     confirmOpen.value = true;
     void refreshTargetCount();
@@ -301,7 +307,6 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     confirmOpen,
     targetMode,
     targetStages,
-    targetPolarity,
     lowConfOnly,
     draftFilters,
     targetCount,

@@ -196,7 +196,6 @@ def apply_table_filters(
     spec,
     stmt,
     *,
-    score: list[int] | None = None,
     product_vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -204,23 +203,23 @@ def apply_table_filters(
     rec_oid: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
+    has_external: bool | None = None,
 ):
-    """來源表級篩選 SSOT（星等/商品垂直分類/日期區間/關聯 oid）——統一問題列表與初判目標選取共用。
+    """來源表級篩選 SSOT（商品垂直分類/日期區間/關聯 oid/有無外部評論）——統一問題列表與初判目標選取共用。
 
-    僅含「來源表自身欄位」的條件；判決級條件（polarity/stage/tier/L1）因兩端結構不同
+    僅含「來源表自身欄位」的條件；判決級條件（polarity/stage/tier/歸因分類）因兩端結構不同
     （列表用 EXISTS、目標選取用 join 分支）由各呼叫端自行套。語義逐條對齊 list_problems：
-    - score：源欄為 Text（如 rec_scores="5"）→ 轉字串 IN 比對；無 score_col 的來源忽略。
     - product_vertical：分組名經 codes_for_group 展開，product_category JSON 抽 main 比對。
     - 日期：sargable 比較走 btree 索引；上界半開 `< date_to||'~'` 含當日整天。
       date_field='go_date' 且表有 lst_dt_go 用之，否則 spec.date_col。
     - rec_oid/prod_oid/order_oid：表有對應欄才生效。
+    - has_external：有無外部評論融合資料（僅有 review_external_lst_oid 欄的來源生效，如 product_reviews）。
     """
+    from sqlalchemy import and_, or_
     from sqlalchemy import cast as sa_cast
     from sqlalchemy.dialects.postgresql import JSONB
 
     tbl = spec.table
-    if score and spec.score_col:
-        stmt = stmt.where(tbl.c[spec.score_col].in_([str(s) for s in score]))
     if spec.category_col:
         codes = _vertical_codes(product_vertical)
         if codes:
@@ -241,6 +240,21 @@ def apply_table_filters(
         stmt = stmt.where(date_col >= date_from)
     if date_to:
         stmt = stmt.where(date_col < date_to + "~")
+    # 有無外部評論：有 review_external_lst_oid 且有實際內容（sentiment 或 free_tag 非空）。與前端顯示一致
+    # （v-if ext_sentiment || ext_free_tag.length）。未匹配列 upsert 後三欄皆空字串 ''（非 NULL），故
+    # isnot(None) 不足——須同時排除 ''（free_tag 另排空陣列 '[]'/'null'），否則空字串列誤判為「有」。
+    # lst_oid 條件為語義防護（內容恆隨 lst_oid 而來，無孤兒內容列）。僅 product_reviews 有融合欄，餘忽略。
+    if has_external is not None and "review_external_lst_oid" in tbl.c:
+        has_content = or_(
+            and_(tbl.c["sentiment"].isnot(None), tbl.c["sentiment"] != ""),
+            and_(tbl.c["free_tag"].isnot(None), tbl.c["free_tag"].notin_(["", "[]", "null"])),
+        )
+        ext_cond = and_(
+            tbl.c["review_external_lst_oid"].isnot(None),
+            tbl.c["review_external_lst_oid"] != "",
+            has_content,
+        )
+        stmt = stmt.where(ext_cond if has_external else ~ext_cond)
     return stmt
 
 

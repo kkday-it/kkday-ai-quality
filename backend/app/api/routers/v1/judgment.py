@@ -36,19 +36,19 @@ class PrejudgeIn(BaseModel):
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
-    target_polarity: str | None = None  # 已判分支傾向收斂（如 "negative"）
+    target_polarity: list[str] | None = None  # 已判分支傾向收斂（多選 IN；如 ["negative"]）
     max_confidence: float | None = None  # 已判分支信心上限（confidence < 此值才收）
     within_ids: list[str] | None = None  # 範圍收斂：僅在此特徵 id 清單（勾選列）內做目標選取
     # 列表全維度篩選（scope=all；語義同 /api/problems，SSOT=_shared.apply_table_filters）：
     # 表級（兩分支皆套）＋ 判決級收斂（僅已判分支）——「歸因目標＝列表當前篩得到的東西」
-    scores: list[int] | None = None  # 星等多選（表級）
     date_from: str | None = None  # 日期區間起（'YYYY-MM-DD'，含；表級）
     date_to: str | None = None  # 日期區間迄（含；表級）
     rec_oid: str | None = None  # 評論/特徵 id 精確篩選（表級）
     prod_oid: str | None = None  # 商品 OID（表級）
     order_oid: str | None = None  # 訂單 OID（表級）
     confidence_tier: str | None = None  # 信心分層收斂（已判分支；auto_accept/jury/needs_review）
-    l1_domain: str | None = None  # L1 歸因域收斂（已判分支）
+    taxonomy: list[str] | None = None  # 歸因分類收斂（已判分支；任意層級 code 多選，子樹語義）
+    has_external: bool | None = None  # 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews）
 
 
 def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
@@ -65,14 +65,14 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
             stages=body.stages,
             target_polarity=body.target_polarity,
             max_confidence=body.max_confidence,
-            score=body.scores,
             date_from=body.date_from,
             date_to=body.date_to,
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,
             order_oid=body.order_oid,
             confidence_tier=body.confidence_tier,
-            l1_domain=body.l1_domain,
+            taxonomy=body.taxonomy,
+            has_external=body.has_external,
             within_ids=body.within_ids,
         )
     return []

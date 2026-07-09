@@ -131,21 +131,21 @@ describe('usePrejudgeJob doRun body 建構', () => {
     const job = mk();
     job.targetMode.value = 'scope';
     job.targetStages.value = ['unjudged', 'pending_review'];
-    job.targetPolarity.value = 'negative';
+    job.draftFilters.polarity = ['negative'];
     job.lowConfOnly.value = true;
     job.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     const body = startPrejudgeMock.mock.calls[0][0];
-    expect(body.target_polarity).toBe('negative');
+    expect(body.target_polarity).toEqual(['negative']);
     expect(typeof body.max_confidence).toBe('number'); // ＝judgment.confidence_tiers.auto_accept
   });
 
   it('scope 模式 + 目標篩選草稿（openPrejudge 以頁面篩選初始化）→ 表級全帶、判決級只在已判階段帶', async () => {
     const filters = {
-      polarity: 'negative', scores: [1, 2], confidenceTier: 'jury', l1Domain: 'content',
+      polarity: ['negative'], confidenceTier: 'jury', taxonomy: ['content'],
       dateFrom: '2026-07-01', dateTo: '2026-07-07', prodOid: 'P1',
     };
-    // 僅未判：表級（scores/日期/oid）帶、判決級（confidence_tier/l1_domain）不帶
+    // 僅未判：表級（日期/oid）帶、判決級（confidence_tier/taxonomy）不帶
     const job = mk({ filters });
     job.openPrejudge(); // 初始化草稿（來自頁面篩選）
     job.targetMode.value = 'scope';
@@ -153,7 +153,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     job.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     const body = startPrejudgeMock.mock.calls[0][0];
-    expect(body).toMatchObject({ scores: [1, 2], date_from: '2026-07-01', date_to: '2026-07-07', prod_oid: 'P1' });
+    expect(body).toMatchObject({ date_from: '2026-07-01', date_to: '2026-07-07', prod_oid: 'P1' });
     expect(body).not.toHaveProperty('confidence_tier');
 
     // 含已判階段：判決級收斂一併帶上
@@ -164,26 +164,26 @@ describe('usePrejudgeJob doRun body 建構', () => {
     job2.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(2));
     const body2 = startPrejudgeMock.mock.calls[1][0];
-    expect(body2).toMatchObject({ confidence_tier: 'jury', l1_domain: 'content' });
+    expect(body2).toMatchObject({ confidence_tier: 'jury', taxonomy: ['content'] });
   });
 
   it('scope 模式 + 清空草稿 → 不帶任何列表維度（草稿即最終口徑，非頁面篩選）', async () => {
-    const job = mk({ filters: { scores: [5], confidenceTier: 'jury' } });
+    const job = mk({ filters: { taxonomy: ['content'], confidenceTier: 'jury' } });
     job.openPrejudge(); // 草稿初始化為頁面篩選
     job.targetMode.value = 'scope';
-    job.draftFilters.score = []; // 使用者於彈窗清空
+    job.draftFilters.taxonomy = []; // 使用者於彈窗清空
     job.draftFilters.tier = '';
     job.targetStages.value = ['unjudged'];
     job.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     const body = startPrejudgeMock.mock.calls[0][0];
-    expect(body.scores).toBeUndefined();
+    expect(body.taxonomy).toBeUndefined();
     expect(body).not.toHaveProperty('confidence_tier');
   });
 
-  it('openPrejudge：頁面傾向篩選（多選）取第一項作為再判收斂傾向的預設', () => {
+  it('openPrejudge：頁面傾向篩選（多選）整組帶入草稿作為再判收斂傾向預設', () => {
     const job = mk({ filters: { polarity: ['neutral'] } });
     job.openPrejudge();
-    expect(job.targetPolarity.value).toBe('neutral');
+    expect(job.draftFilters.polarity).toEqual(['neutral']);
   });
 });

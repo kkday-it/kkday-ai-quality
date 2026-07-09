@@ -3,13 +3,6 @@
 // （待該來源遷移專屬表時再依 §7 補完整 schema，非本次範圍）。
 import type { TableColumnData } from '@arco-design/web-vue';
 
-/** 星等篩選（多選）。 */
-export interface ScoreFilterDef {
-  type: 'score';
-  /** 可選星等清單（如 [1,2,3,4,5]）。 */
-  options: number[];
-}
-
 /** 商品垂直分類篩選（多選；選項來自 rule_code=product_vertical 的 active 版本動態解析）。 */
 export interface ProductVerticalFilterDef {
   type: 'productVertical';
@@ -39,9 +32,9 @@ export interface TierFilterDef {
   type: 'tier';
 }
 
-/** L1 歸因域篩選（單選；選項為該來源已判資料 distinct，經 getL1Domains 動態載入）。 */
-export interface L1DomainFilterDef {
-  type: 'l1Domain';
+/** 歸因分類篩選（a-cascader L1→L3 級聯複選；選項來自 getTaxonomyCascade，任意層級 code 子樹語義）。 */
+export interface TaxonomyFilterDef {
+  type: 'taxonomy';
 }
 
 /** 有無外部評論篩選（單選；全部/有/無——評論系統融合欄 sentiment/free_tag 是否有值）。 */
@@ -52,10 +45,9 @@ export interface HasExternalFilterDef {
 /** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
 export type SourceFilterDef =
   | PolarityFilterDef
-  | ScoreFilterDef
   | StageFilterDef
   | TierFilterDef
-  | L1DomainFilterDef
+  | TaxonomyFilterDef
   | HasExternalFilterDef
   | ProductVerticalFilterDef
   | DateRangeFilterDef;
@@ -112,7 +104,6 @@ export interface Attribution {
   true_label?: string;
 }
 
-
 /**
  * 歸因列表單列（`_enrich_problem` 回傳）。常用欄位具名、其餘走 index signature——
  * 各來源欄位集不同（product_reviews 有 score、conversations 無），故不列窮舉、以 `unknown` 保型別安全
@@ -158,35 +149,36 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/** 有星等欄的來源（product_reviews=rec_scores / freshdesk=st_survey_rating / app_feedback=score）→ 才給星等篩選。 */
-const RATING_SOURCES = new Set(['product_reviews', 'freshdesk_tickets', 'app_feedback']);
-
-/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / L1域 / 日期區間。 */
+/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 歸因分類 / 日期區間。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },
   { type: 'tier' },
-  { type: 'l1Domain' },
+  { type: 'taxonomy' },
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];
 
-/** 組某來源的篩選：共用集 + 有星等者加星等（插在階段後、信心分層前）。 */
+/** 組某來源的篩選：共用集（+ product_reviews 專屬「有無外部評論」）。 */
 function filtersFor(source: string): SourceFilterDef[] {
-  const base = RATING_SOURCES.has(source)
-    ? [BASE_FILTERS[0], BASE_FILTERS[1], { type: 'score', options: [1, 2, 3, 4, 5] } as SourceFilterDef, ...BASE_FILTERS.slice(2)]
-    : [...BASE_FILTERS];
+  const base = [...BASE_FILTERS];
   // 有無外部評論：僅 product_reviews 有融合欄（sentiment/free_tag）
   if (source === 'product_reviews') base.push({ type: 'hasExternal' });
   return base;
 }
 
-/** 5 反饋來源皆用統一複合欄；差異只在星等篩選（有評分欄者才有）。 */
-const _SOURCES = ['product_reviews', 'conversations', 'freshdesk_tickets', 'app_feedback', 'mixpanel_tracker'];
+/** 5 反饋來源皆用統一複合欄 + 共用篩選。 */
+const _SOURCES = [
+  'product_reviews',
+  'conversations',
+  'freshdesk_tickets',
+  'app_feedback',
+  'mixpanel_tracker',
+];
 export const SOURCE_LIST_SCHEMAS: Record<string, SourceListSchema> = Object.fromEntries(
   _SOURCES.map((s) => [s, { columns: COMPOSITE_COLUMNS, filters: filtersFor(s) }]),
 );
 
-/** 未註冊來源回退：同一套統一複合欄 + 共用篩選（無星等）。 */
+/** 未註冊來源回退：同一套統一複合欄 + 共用篩選。 */
 const FALLBACK_SCHEMA: SourceListSchema = { columns: COMPOSITE_COLUMNS, filters: BASE_FILTERS };
 
 /**
