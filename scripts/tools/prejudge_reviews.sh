@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT/backend"
 if [ ! -x .venv/bin/python ]; then
-  echo "❌ 尚無 backend/.venv；先跑 ./scripts/dev/dev.sh 或 backend/run.sh 建環境" >&2
+  echo "❌ 尚無 backend/.venv；先跑 ./scripts/dev/start.sh 或 backend/run.sh 建環境" >&2
   exit 1
 fi
 exec .venv/bin/python prejudge_reviews.py "$@"

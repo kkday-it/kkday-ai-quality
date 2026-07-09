@@ -9,7 +9,7 @@ echo "🐍 backend ruff ..."
 if [ -x "$ROOT/backend/.venv/bin/ruff" ]; then
   ( cd "$ROOT/backend" && .venv/bin/ruff check . ) || fail=1
 else
-  echo "  ⚠️ 無 backend/.venv/bin/ruff（先跑 ./scripts/dev/dev.sh 或 backend/run.sh 建 venv）；略過後端"
+  echo "  ⚠️ 無 backend/.venv/bin/ruff（先跑 ./scripts/dev/start.sh 或 backend/run.sh 建 venv）；略過後端"
 fi
 
 echo ""

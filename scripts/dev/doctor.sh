@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 環境自檢閘門 —— dev.sh / 部署前置。偵測工具鏈 + 依賴 + DB + migration，冪等可重跑。
+# 環境自檢閘門 —— start.sh / 部署前置。偵測工具鏈 + 依賴 + DB + migration，冪等可重跑。
 #   ./scripts/dev/doctor.sh          檢測 + 冪等自動修復（cp .env / 裝依賴 / alembic upgrade）
 #   ./scripts/dev/doctor.sh --check  唯讀檢測（CI / prod：不改檔、不裝、不 upgrade），有問題回非零
 #

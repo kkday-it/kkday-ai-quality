@@ -108,7 +108,7 @@ def supervised_report() -> dict[str, Any]:
     """撈標註列 → analyze_supervised；DB 不可達回 {status: skipped}。"""
     data = _load_labeled_supervised()
     if data is None:
-        return {"status": "skipped", "reason": "DB 不可達（先 ./scripts/dev/dev.sh 起後端）"}
+        return {"status": "skipped", "reason": "DB 不可達（先 ./scripts/dev/start.sh 起後端）"}
     return analyze_supervised(*data)
 
 

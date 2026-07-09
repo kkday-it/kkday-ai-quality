@@ -12,6 +12,9 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # seed 自動還原：官方鏡像首啟（空卷）時執行 initdb.d 內 *.sql.gz。
+      # 掛整個目錄（非單檔）→ 目錄空也安全；先跑 ./scripts/dev/fetch-seed.sh 取得 seed.sql.gz。
+      - ./docker/seed:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
