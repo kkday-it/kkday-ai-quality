@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
     cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
+    # 全庫資料包匯入開關（破壞性：清空並覆蓋整庫）。None＝依環境（development 開、其餘關）；
+    # 顯式 true/false 覆蓋。防生產誤觸；上線收緊 admin 閘後仍建議留此環境級保險。
+    aiq_allow_data_import: bool | None = None
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）

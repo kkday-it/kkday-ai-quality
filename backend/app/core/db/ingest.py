@@ -13,8 +13,46 @@ from app.core.db import tables as T
 
 
 def init_db() -> None:
-    """建表（冪等）。dev 用 create_all；prod schema 演進交 Alembic。"""
+    """建表（冪等）。dev 用 create_all；prod schema 演進交 Alembic。
+
+    create_all 後補蓋 alembic_version＝head（僅當其為空）：dev 不跑 migration，但資料包導入 /
+    部署對齊需 alembic_version 反映當前 schema。migration 鏈無法從零 upgrade（含假設既有狀態的
+    DROP INDEX），故 fresh 庫直接 stamp、不跑 upgrade（create_all 產生的 schema 即 head）。
+    prod 由 entrypoint 先 alembic upgrade 已蓋章 → 此處偵測非空即跳過，無衝突。
+    """
     T.metadata.create_all(T.get_engine())
+    _stamp_alembic_head_if_empty()
+
+
+def _alembic_head_revision() -> str | None:
+    """從 alembic script 目錄讀 head revision（不連 DB；讀不到回 None）。"""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_root = Path(__file__).resolve().parents[3]  # app/core/db/ingest.py → backend/
+    ini = backend_root / "alembic.ini"
+    if not ini.exists():
+        return None
+    cfg = Config(str(ini))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    return ScriptDirectory.from_config(cfg).get_current_head()
+
+
+def _stamp_alembic_head_if_empty() -> None:
+    """alembic_version 為空時蓋章為 head（fresh dev 庫 create_all 後對齊，供資料包導入 schema 檢查）。"""
+    from sqlalchemy import text
+
+    with T.get_engine().begin() as c:
+        c.execute(
+            text("CREATE TABLE IF NOT EXISTS alembic_version (version_num varchar(32) NOT NULL)")
+        )
+        if c.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first():
+            return  # 已有版本（prod upgrade 或既有 dev 庫）→ 不動
+        head = _alembic_head_revision()
+        if head:
+            c.execute(text("INSERT INTO alembic_version (version_num) VALUES (:h)"), {"h": head})
 
 
 def create_batch(

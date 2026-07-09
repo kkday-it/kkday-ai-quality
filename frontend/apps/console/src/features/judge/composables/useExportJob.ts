@@ -45,10 +45,12 @@ export function useExportJob() {
    * 啟動一次導出：starter 回 {job_id} → SSE 追進度 → done 時取檔下載、cancelled/error/中斷各提示。
    * @param starter 呼叫領域 start 端點（如 startProblemsExport）回 {job_id} 的函式
    * @param downloadName 下載檔名（含副檔名；前端以本地時間戳命名，忽略後端建議名）
+   * @param successMessage done 時的成功提示（預設「已導出 Excel」；非 xlsx 導出可覆寫，如資料包）
    */
   const run = async (
     starter: () => Promise<{ job_id: string }>,
     downloadName: string,
+    successMessage = '已導出 Excel',
   ): Promise<void> => {
     if (exporting.value) return;
     exporting.value = true;
@@ -66,7 +68,7 @@ export function useExportJob() {
         a.download = downloadName;
         a.click();
         URL.revokeObjectURL(url);
-        Message.success('已導出 Excel');
+        Message.success(successMessage);
       } else if (status.value === 'cancelled') {
         Message.info('已停止導出');
       } else if (status.value === 'error') {

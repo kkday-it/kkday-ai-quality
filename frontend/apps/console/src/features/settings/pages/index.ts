@@ -3,3 +3,4 @@
 //   *ConfigEditor / *Card / TaxonomySettings 為內部實作，不在此暴露。
 export { default as LlmConnectionsPanel } from './LlmConnectionsPanel.vue';
 export { default as QcConnectionsPanel } from './QcConnectionsPanel.vue';
+export { default as DataImportPanel } from './DataImportPanel.vue';

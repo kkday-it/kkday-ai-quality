@@ -28,6 +28,7 @@ app.add_middleware(
 db.init_db()  # 啟動即建表（冪等）
 
 # ── 掛載領域 router（各自帶完整 /api 路徑；v1 為新攝取架構 /api/v1）──
+from app.api.routers import admin_import as admin_import_router  # noqa: E402
 from app.api.routers import auth as auth_router  # noqa: E402
 from app.api.routers import config as config_router  # noqa: E402
 from app.api.routers import exports as exports_router  # noqa: E402
@@ -54,6 +55,7 @@ for _r in (
     problems_router.router,  # /api/problems
     llm_usage_router.router,  # /api/llm-usage（AI 消耗聚合）
     overview_router.router,  # /api/overview（質檢概覽真實指標·縮窄真接）
+    admin_import_router.router,  # /api/admin/import（全庫資料包安全匯入）
 ):
     app.include_router(_r)
 
