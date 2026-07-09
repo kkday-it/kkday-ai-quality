@@ -1,14 +1,17 @@
 # scripts/ — 開發腳本（按職責分層）
 
-**所有開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：dev/doctor/format/lint/test/seed）、
-`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/encrypt_user_secrets）、
+**所有開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：start/doctor/format/lint/test/seed + dump-seed/fetch-seed + lib/ensure-system-tools）、
+`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/encrypt_user_secrets/dump_datapack）、
 `refeed/`（rule 反哺飛輪：rule_refeed）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
 `backend/`（`run.sh` / `seed_mock.py` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
 
 | 腳本 | 用途 | 等價手動指令 |
 |---|---|---|
-| `./scripts/dev/dev.sh` | 一鍵起前後端（Ctrl-C 一起停） | `backend/run.sh` ＋ `cd frontend && pnpm dev` |
+| `./scripts/dev/start.sh` | 一鍵起前後端（首次含 bootstrap：系統工具偵測/安裝 + seed 還原；Ctrl-C 一起停） | `ensure-system-tools` ＋ `fetch-seed` ＋ `doctor` ＋ `backend/run.sh` ＋ `cd frontend && pnpm dev` |
+| `./scripts/dev/dump-seed.sh` | 產全庫 seed（pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum） | `pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
+| `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原 | `gunzip -c docker/seed/seed.sql.gz \| psql kkdb_ai_quality` |
+| `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |
 | `./scripts/dev/seed.sh` | 重置 mock 判決資料（20 筆全場景） | `cd backend && .venv/bin/python seed_mock.py` |
 | `./scripts/dev/test.sh` | 後端 smoke test（零 key stub） | `cd backend && ./run.sh test` |
 | `./scripts/dev/lint.sh` | Lint 前後端（ruff + eslint） | `cd backend && .venv/bin/ruff check .` ＋ `cd frontend && pnpm lint` |
@@ -17,6 +20,8 @@
 | `./scripts/tools/translate_summaries.py` | 一鍵批量轉譯既有判決摘要為繁中（DB 直接改；只轉非中文為主者·需 active LLM·stub 拒跑；`--dry-run`/`--limit N` 試跑） | `cd backend && .venv/bin/python ../scripts/tools/translate_summaries.py` |
 | `./scripts/tools/boundary_ab_eval.py` | 判準界線 A/B 離線評測（唯讀不寫 judgments）：`--build` 抽評測集／`--mode flat\|cascade` 重判（cascade 為本 process monkey-patch，不動線上）；`--stage-a-model` 覆寫 Stage A 模型 | `cd backend && .venv/bin/python ../scripts/tools/boundary_ab_eval.py --help` |
 | `./scripts/tools/boundary_ab_report.py` | A/B 報告：before/flat/cascade 對 silver label 算 content 誤判率、primary 準確率（accuracy.analyze_supervised）與混淆對 | `cd backend && .venv/bin/python ../scripts/tools/boundary_ab_report.py --help` |
+| `./scripts/tools/multi_model_eval.py` | 多模型準確度評測（唯讀不寫 judgments）：`--build-set` 建評測集（有外部 free_tag 且已判的 product_reviews）／`--run --config-id <id>` 以指定 LLM 配置逐則 `to_findings` 收集 sentiment/polarity/歸因 | `cd backend && .venv/bin/python ../scripts/tools/multi_model_eval.py --help` |
+| `./scripts/tools/multi_model_report.py` | 多模型準確度報告：對外部 free_tag「問題面向(tag_value≤門檻)」映射到當前 L1/L2 為 ground truth，算情緒/ L1-L2 精確率/free_tag 召回，出 xlsx（統計+明細+長條圖）；復用 build_comparison_report 計分原語 | `cd backend && .venv/bin/python ../scripts/tools/multi_model_report.py --help` |
 | `./scripts/tools/encrypt_user_secrets.py` | user_settings 機密 at-rest 加密遷移（明文→Fernet 密文；冪等；`--dry-run` 試跑、`--decrypt` 回滾）；需 backend/.env 已設 `AIQ_SECRET_KEY` | `cd backend && .venv/bin/python ../scripts/tools/encrypt_user_secrets.py` |
 | `./scripts/refeed/rule_refeed.sh` | rule 反哺飛輪：印 ensemble 判錯的邊界候選（content↔supplier 優先）／`--apply <RULE> <NODE> "<canon>"` 精煉某 node canon 寫回 DB active 版並熱重載 | `cd backend && .venv/bin/python ../scripts/refeed/rule_refeed.py` |
 

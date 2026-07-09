@@ -16,5 +16,6 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 | `routers/rules.py` | 判決規則版本化 CRUD（/api/judge-rules：list/active/history/save/restore/reset + jsonschema 驗證）；POST `/export` 啟動規則 xlsx 導出背景 job。**寫入端點（save/restore/reset×2）掛 admin 守衛（403）**。 |
 | `routers/exports.py` | 通用導出 job 端點（/api/exports：SSE `stream` 進度 / `download` 取檔 / `cancel` 停止），搭 `app/core/export_jobs` 全域 registry，問題列表 / 判決規則導出共用。 |
 | `routers/overview.py` | 質檢概覽真實指標（GET /api/overview/ai-judge：judgments 內容類占比月趨勢 + 總量；「縮窄真接」——外部系統指標不在此，前端維持示意）。 |
+| `routers/admin_import.py` | 全庫資料包導出/匯入（/api/admin：POST `/export/start` 啟動導出背景 job〔逐表進度，復用通用 export_jobs，下載走 /api/exports/download〕；POST `/import/validate` 乾跑校驗、POST `/import` 確認匯入背景 job、GET `/import/stream` SSE），委派 `app/core/db/datapack` + `app/core/import_jobs` + `app/core/export_jobs`。匯入只灌白名單表·不執行 SQL；環境閘 `AIQ_ALLOW_DATA_IMPORT`（dev 開）。**⚠️ admin 閘延後**：現掛 `get_current_user`（登入即可），上線前改 `require_role("admin")`。 |
 
-> 認證：JWT（Bearer header）；capability-token 端點（prejudge / 導出 SSE `stream`）以 job_id 免 header，其餘（cancel / download）仍需 Bearer。
+> 認證：JWT（Bearer header）；capability-token 端點（prejudge / 導出 SSE `stream` / import `stream`）以 job_id 免 header，其餘（cancel / download / export / import）仍需 Bearer。
