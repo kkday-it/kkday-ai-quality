@@ -9,8 +9,8 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.4.0",
     "openai>=1.50.0",
-    "litellm>=1.90.0",       # LLM gateway（env.llm_gateway=litellm 啟用；統一介面 + cost，fallback/語意快取待 Phase 7）
-    "diskcache>=5.6.0",      # LLM exact-match 結果快取（同 prompt+model 重用判決；重判未變部分零 token。顯式宣告，勿依賴 litellm 傳遞依賴）
+    "diskcache>=5.6.0",      # LLM exact-match 結果快取（同 prompt+model 重用判決；重判未變部分零 token）
+    "jsonschema>=4.0.0",     # 判決規則 JSON schema 驗證（rules.py）。顯式宣告——原靠 litellm 傳遞，移除後須自帶
     "openfeature-sdk>=0.10",  # 判決閾值旗標標準介面（避供應商鎖定；provider 包 judgment 配置，Phase 7 換 Flagsmith）
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",  # pydantic-settings 解析 env_file 所需
@@ -47,7 +47,7 @@ accuracy = [
 
 # 判決引擎 DSPy 鷹架（Phase 3 旗艦，選用）：judge/dspy_engine.py 以 Signature 承載 polarity/L1-L3、
 # 用 true_label 編譯自優化（BootstrapFewShot→MIPROv2）。⚠️ 需標註(≥50)+LLM key 才能編譯/執行；
-# 現為 flagged-off 並行鷹架，不接主判決路徑。dspy 底層走 litellm（已為 base dep），無 torch。
+# 現為 flagged-off 並行鷹架，不接主判決路徑。dspy 底層走 litellm（由 dspy 套件自帶，非 base dep），無 torch。
 dspy = [
     "dspy>=3.2",
 ]

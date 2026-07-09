@@ -66,10 +66,6 @@ class Settings(BaseSettings):
     llm_max_retries: int = (
         5  # 單次 LLM 呼叫 429/5xx 最大重試次數（改值需重啟；client 依 token/base_url 快取）
     )
-    # LLM gateway：'openai'（預設，OpenAI SDK 直呼）| 'litellm'（統一 gateway，得 cost/fallback/語意快取路徑）。
-    # 增量 strangler：預設走既有 openai 路徑（proven）；設 LLM_GATEWAY=litellm 切換，可回滾。語意快取/fallback/
-    # OTel 等進階能力需 Phase 7 服務（Redis/Router/collector）；現階段 litellm 路徑得統一介面 + cost 正規化。
-    llm_gateway: str = "openai"
 
 
 # 單例：import 時即載入 .env，全後端共用。

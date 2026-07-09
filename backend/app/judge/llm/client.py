@@ -1,11 +1,9 @@
-"""LLM client + stub 開關 + gateway 分派。
+"""LLM client + stub 開關。
 
 配置來源：當前 user 的 DB user_settings（前端「設定」面板管理）優先，fallback 環境變數（config.env）。
 無 api_token（settings 與 env 皆無）→ stub 模式（啟發式，零 key 走通 pipeline）；有 token → 真判。
 
-gateway（`env.llm_gateway`，增量 strangler·可回滾）：預設 `openai`（OpenAI SDK 直呼，proven）；設
-`litellm` 走 LiteLLM 統一 gateway（cost 正規化 + 未來 fallback/語意快取/OTel）。對外介面（chat_json/ping）
-不變，僅 `_complete` 內部依 gateway 分派；兩後端回應同構（.choices/.usage），usage 抽取與解析共用。
+LLM 呼叫走 OpenAI SDK 直呼（`_complete`）；base_url 可覆寫以打各 OpenAI-compatible 端點。
 """
 
 from __future__ import annotations
@@ -199,10 +197,11 @@ def _get_client(token: str, base_url: str):
         return cli
 
 
-# ── LLM gateway 分派（增量 strangler：預設 OpenAI SDK；LLM_GATEWAY=litellm 切換，可回滾）─────────
-def _complete_openai(cfg: dict, kwargs: dict, cache_key: str | None):
-    """OpenAI SDK 路徑（預設，proven）：共用快取 client（含 retry/timeout）+ prompt_cache_key 直傳頂層。
+# ── LLM 呼叫（OpenAI SDK 直呼；base_url 可覆寫打各 OpenAI-compatible 端點）─────────
+def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
+    """OpenAI SDK 呼叫：共用快取 client（含 retry/timeout）+ prompt_cache_key 直傳頂層。
 
+    kwargs＝共用 completion 參數（model/messages/response_format/temperature/reasoning_effort）。
     flex tier 請求以 with_options 拉長 timeout（官方建議 15 分鐘；flex 延遲變動大，沿用標準 60s 必然
     大量誤逾時）——per-request override，不影響快取 client 的標準 timeout。
     """
@@ -213,44 +212,6 @@ def _complete_openai(cfg: dict, kwargs: dict, cache_key: str | None):
     if cache_key:
         k["prompt_cache_key"] = cache_key
     return client.chat.completions.create(**k)
-
-
-def _complete_litellm(cfg: dict, kwargs: dict, cache_key: str | None):
-    """LiteLLM gateway 路徑（LLM_GATEWAY=litellm）：統一介面 + cost 正規化（語意快取/fallback/OTel 待 Phase 7）。
-
-    任何自訂 base_url 一律以 `openai/<model>` + api_base 強制走 OpenAI-compatible transport（對齊現有以
-    base_url 打各 OpenAI 相容端點的行為）；prompt_cache_key 走 extra_body 轉發（litellm 原生不收此 OpenAI
-    專屬參數）；drop_params 讓不受支援參數靜默丟棄，跨 provider 更穩。回應物件與 OpenAI SDK 同構
-    （.choices[0].message.content / .usage.*），上層 usage 抽取與 JSON 解析共用。
-    """
-    import litellm
-
-    base_url = cfg["base_url"]
-    k = dict(kwargs)
-    k["model"] = f"openai/{kwargs['model']}" if base_url else kwargs["model"]
-    k["api_key"] = cfg["token"]
-    k["drop_params"] = True  # 不受支援參數（如 reasoning_effort 於某 provider）靜默丟棄，避免 400
-    k["num_retries"] = env.llm_max_retries
-    # flex tier 延遲變動大 → 官方建議拉長 timeout（15 分鐘），其餘沿用標準值
-    k["timeout"] = float(
-        env.llm_timeout_flex if kwargs.get("service_tier") == "flex" else env.llm_timeout
-    )
-    if base_url:
-        k["api_base"] = base_url
-    if cache_key:
-        k["extra_body"] = {"prompt_cache_key": cache_key}
-    return litellm.completion(**k)
-
-
-def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
-    """依 env.llm_gateway 分派 LLM 呼叫（'litellm' → gateway；否則 OpenAI SDK 直呼）。
-
-    kwargs＝後端無關的共用 completion 參數（model/messages/response_format/temperature/reasoning_effort）；
-    cache_key 由各後端放對位置（OpenAI 頂層 / litellm extra_body）。回應同構，上層免分歧。
-    """
-    if env.llm_gateway == "litellm":
-        return _complete_litellm(cfg, kwargs, cache_key)
-    return _complete_openai(cfg, kwargs, cache_key)
 
 
 def _resolve() -> dict:
@@ -345,7 +306,7 @@ def chat_json(
             _log.debug("LLM exact-cache 命中 stage=%s", stage)
             return hit
     try:
-        resp = _complete(cfg, kwargs, ck)  # gateway 分派（OpenAI SDK / litellm）
+        resp = _complete(cfg, kwargs, ck)  # OpenAI SDK 呼叫
     except Exception as e:  # noqa: BLE001  flex 缺容量→回退標準 tier；response_format 不支援→去除；json_schema→回退 json_object
         emsg = str(e)
         if kwargs.get("service_tier") == "flex" and "resource_unavailable" in emsg.lower():
