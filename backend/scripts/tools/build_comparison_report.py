@@ -17,61 +17,29 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
 from app.core.db import tables as T
+from app.core.db.comparison import (
+    FAIL_FILL as _FAIL_FILL,
+)
+from app.core.db.comparison import (
+    PASS_FILL as _PASS_FILL,
+)
+from app.core.db.comparison import (
+    build_stat_sheet,
+    load_facet_map,
+)
+from app.core.db.comparison import (
+    facet_sets as _shared_facet_sets,
+)
+from app.core.db.comparison import (
+    sentiment_band as _band,
+)
 from app.core.judge_config.rule_export import _style_header
 
-# PASS/FAIL 色標（綠/紅；start_color+end_color 顯式指定，WPS/Numbers/Excel 皆相容）
-_PASS_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-_PASS_FONT = Font(color="006100", bold=True)
-_FAIL_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-_FAIL_FONT = Font(color="9C0006", bold=True)
-
-
-def _color_pass_fail(cell) -> None:
-    """依 cell 值 PASS/FAIL 上色（PASS 綠 / FAIL 紅）；其他值不動。"""
-    if cell.value == "PASS":
-        cell.fill = _PASS_FILL
-        cell.font = _PASS_FONT
-    elif cell.value == "FAIL":
-        cell.fill = _FAIL_FILL
-        cell.font = _FAIL_FONT
-
-
-# ── free_tag 面向名 → 對應我方 L1 / L2 分類：SSOT＝config/ai_judge/free_tag_mapping.json ──
-# 外部化為專案內部數據源（可維護、與現行 taxonomy 同步），腳本啟動時載入。
-
-
-def _load_facet_map() -> dict[str, tuple[set[str], set[str]]]:
-    """讀 config/ai_judge/free_tag_mapping.json → {tag_name: (L1 集合, L2 集合)}。"""
-    from app.core.paths import AI_JUDGE_DIR
-
-    data = json.loads((AI_JUDGE_DIR / "free_tag_mapping.json").read_text(encoding="utf-8"))
-    return {
-        name: (set(m.get("l1", [])), set(m.get("l2", [])))
-        for name, m in data.get("mapping", {}).items()
-    }
-
-
-FACET_MAP: dict[str, tuple[set[str], set[str]]] = _load_facet_map()
-
-
-def _band(v) -> str | None:
-    """情緒分 → 區間（neg/neu/pos）；空/非 1-5 回 None。"""
-    try:
-        n = int(round(float(v)))
-    except (TypeError, ValueError):
-        return None
-    if n <= 2:
-        return "neg"
-    if n == 3:
-        return "neu"
-    if n >= 4:
-        return "pos"
-    return None
+# free_tag 面向名 → 對應我方 L1 / L2 分類（SSOT＝config/ai_judge/free_tag_mapping.json，見 comparison.py）
+FACET_MAP: dict[str, tuple[set[str], set[str]]] = load_facet_map()
 
 
 def _parse_free_tag(raw: str) -> list[dict]:
@@ -102,16 +70,12 @@ def _parse_free_tag(raw: str) -> list[dict]:
     return out
 
 
-def _facet_sets(tag_name: str) -> tuple[set[str], set[str]]:
-    """free_tag 面向名 → (對應 L1 集合, L2 集合)；不在映射表則以子字串近似兜底。"""
-    if tag_name in FACET_MAP:
-        return FACET_MAP[tag_name]
-    # 兜底：面向名與某 L2 label 互為子字串（如「餐飲」↔「餐飲品質」）
-    l2 = {lbl for lbl in _ALL_L2 if tag_name and (tag_name in lbl or lbl in tag_name)}
-    return set(), l2
-
-
 _ALL_L2: set[str] = set()
+
+
+def _facet_sets(tag_name: str) -> tuple[set[str], set[str]]:
+    """free_tag 面向名 → (對應 L1 集合, L2 集合)；委派共用 comparison.facet_sets（帶入本腳本的 _ALL_L2）。"""
+    return _shared_facet_sets(tag_name, _ALL_L2)
 
 
 def _ft_summary(free_tags: list[dict]) -> str:
@@ -349,8 +313,8 @@ def main(in_path: str) -> None:
         )
     _style_header(map_ws, [w for _, w in map_cols], freeze_cols=1)
 
-    # ── 匹配率統計 → Excel 餅圖（PASS/FAIL）+ 小資料表 ──
-    _build_stat_charts(
+    # ── 匹配率統計 → Excel 餅圖（PASS/FAIL）+ 小資料表（共用 comparison.build_stat_sheet）──
+    build_stat_sheet(
         wb,
         [
             ("情緒傾向匹配（評論級）", n_sent_pass, n_reviews - n_sent_pass),
@@ -373,43 +337,6 @@ def main(in_path: str) -> None:
         f"情緒匹配 {n_sent_pass}({n_sent_pass / n_reviews:.1%}) "
         f"L1 {n_l1_pass}({n_l1_pass / n_ft:.1%}) L2 {n_l2_pass}({n_l2_pass / n_ft:.1%})"
     )
-
-
-def _build_stat_charts(wb, metrics: list[tuple[str, int, int]], n_reviews: int, n_ft: int) -> None:
-    """匹配率統計工作表：每指標一個 PASS/FAIL 餅圖 + 底部資料表。"""
-    from openpyxl.chart import PieChart, Reference
-
-    ws = wb.create_sheet("匹配率統計")
-    ws["A1"] = "AI 判決 vs 外部評論 匹配率"
-    ws["A2"] = f"可比對評論 {n_reviews} 則｜free_tag 面向 {n_ft} 個"
-    ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["B"].width = 10
-
-    for idx, (title, ok, ng) in enumerate(metrics):
-        # 每指標一小資料塊（PASS/FAIL 兩列），供餅圖引用
-        base_row = 4 + idx * 4
-        ws.cell(row=base_row, column=1, value=title)
-        pc = ws.cell(row=base_row + 1, column=1, value="PASS")
-        ws.cell(row=base_row + 1, column=2, value=ok)
-        fc = ws.cell(row=base_row + 2, column=1, value="FAIL")
-        ws.cell(row=base_row + 2, column=2, value=ng)
-        _color_pass_fail(pc)
-        _color_pass_fail(fc)
-        rate = ok / (ok + ng) if (ok + ng) else 0
-        ws.cell(row=base_row + 3, column=1, value="匹配率")
-        ws.cell(row=base_row + 3, column=2, value=f"{rate:.1%}")
-
-        pie = PieChart()
-        pie.title = f"{title}（{rate:.1%}）"
-        pie.height = 6.5
-        pie.width = 10
-        labels = Reference(ws, min_col=1, min_row=base_row + 1, max_row=base_row + 2)
-        data = Reference(ws, min_col=2, min_row=base_row, max_row=base_row + 2)
-        pie.add_data(data, titles_from_data=True)
-        pie.set_categories(labels)
-        # 圖表並排右側（每個往右挪 8 欄）
-        anchor_col = get_column_letter(4 + idx * 8)
-        ws.add_chart(pie, f"{anchor_col}4")
 
 
 if __name__ == "__main__":
