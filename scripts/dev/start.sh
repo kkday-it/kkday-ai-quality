@@ -10,28 +10,29 @@ cd "$ROOT"
 
 # 1. Docker CLI 存在？
 if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ 未偵測到 Docker。請先安裝 Docker Desktop → https://www.docker.com/products/docker-desktop/"
+  echo "❌ 未偵測到 docker CLI。建議裝 colima（免費開源·大公司無授權問題）："
+  echo "   macOS: brew install colima docker docker-compose ｜ Linux: sudo apt install docker.io docker-compose-plugin"
   exit 1
 fi
 
 # 2. Docker daemon 已啟動？未啟動則嘗試啟動並等待就緒（最長 ~2 分鐘）
 if ! docker info >/dev/null 2>&1; then
-  echo "🐳 Docker 未啟動，嘗試啟動 ..."
+  echo "🐳 容器引擎未啟動，嘗試啟動 ..."
   case "$(uname -s)" in
     Darwin)
-      # 依序試常見引擎：OrbStack → Docker Desktop → colima
-      if [ -d "/Applications/OrbStack.app" ]; then
+      # 優先 colima（免費開源·大公司免授權）；無則退 OrbStack / Docker Desktop
+      if command -v colima >/dev/null 2>&1; then
+        colima start >/dev/null 2>&1 || true
+      elif [ -d "/Applications/OrbStack.app" ]; then
         open -a OrbStack >/dev/null 2>&1 || true
       elif [ -d "/Applications/Docker.app" ]; then
         open -a Docker >/dev/null 2>&1 || true
-      elif command -v colima >/dev/null 2>&1; then
-        colima start >/dev/null 2>&1 || true
       else
-        echo "⚠️ 找不到 Docker 引擎（OrbStack / Docker Desktop / colima），請手動啟動後重試"
+        echo "⚠️ 找不到容器引擎。建議裝 colima（免費）：brew install colima docker docker-compose，再重跑"
       fi
       ;;
     Linux) sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true ;;
-    *) echo "⚠️ 未知平台，請手動啟動 Docker 後重試" ;;
+    *) echo "⚠️ 未知平台，請手動啟動容器引擎後重試" ;;
   esac
   printf "   等待 Docker 就緒"
   for i in $(seq 1 60); do
@@ -42,7 +43,7 @@ if ! docker info >/dev/null 2>&1; then
     printf "."
     sleep 2
     if [ "$i" = 60 ]; then
-      printf "\n❌ Docker 啟動逾時，請手動開啟 Docker Desktop 後重試\n"
+      printf "\n❌ 容器引擎啟動逾時。請手動啟動（colima start ｜ 或開 OrbStack/Docker Desktop）後重試\n"
       exit 1
     fi
   done

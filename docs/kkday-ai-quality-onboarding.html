@@ -87,7 +87,7 @@ code.kbd{font-family:var(--mono);background:var(--surface-0);border:1px solid va
 
   <section class="sec">
     <h2>主流程（4 步）</h2>
-    <p class="lead">本機只需 <code class="kbd">git</code> + <strong>Docker Desktop</strong>；不用裝 python/node/pnpm/PostgreSQL，全在容器內。</p>
+    <p class="lead">本機只需 <code class="kbd">git</code> + <strong>容器引擎</strong>（推薦免費開源的 <code class="kbd">colima</code>）；不用裝 python/node/pnpm/PostgreSQL，全在容器內。</p>
 
     <div class="step">
       <div class="num">1</div>
@@ -110,7 +110,7 @@ cd kkday-ai-quality</code><button class="copy" aria-label="複製指令"><i clas
           <li><i class="ti ti-check"></i>容器內起 PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴</li>
           <li><i class="ti ti-check"></i>改碼即生效（uvicorn --reload + vite HMR）；Ctrl-C 停止全部</li>
         </ul>
-        <p class="note">沒裝 Docker？先裝 Docker Desktop：https://www.docker.com/products/docker-desktop/</p>
+        <p class="note">沒裝容器引擎？推薦 colima（免費開源）：<code class="kbd">brew install colima docker docker-compose</code>；start.sh 會自動 colima start。也支援 OrbStack / Docker Desktop。</p>
       </div>
     </div>
 
@@ -177,7 +177,7 @@ cd kkday-ai-quality</code><button class="copy" aria-label="複製指令"><i clas
     <div class="warn">
       <h3><i class="ti ti-alert-triangle"></i>卡住時</h3>
       <ul>
-        <li>start.sh 說找不到 Docker → 先裝並開啟 Docker Desktop 再重跑。</li>
+        <li>start.sh 說找不到容器引擎 → 裝 colima（<code class="kbd">brew install colima docker docker-compose</code>）再重跑。</li>
         <li>首次很久 → 在 build image（裝依賴），正常；之後秒起。</li>
         <li>畫面沒數據 → 到「配置 › 資料導入」上傳資料包 zip。</li>
         <li>改依賴（pyproject/package.json）沒生效 → <code class="kbd">docker compose -f docker-compose.dev.yml up --build</code> 重建。</li>
