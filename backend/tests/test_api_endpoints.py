@@ -115,27 +115,53 @@ def _seed_one_finding() -> str:
     return fid
 
 
+def test_patch_finding_status_requires_auth(client) -> None:
+    # 匿名（無 Bearer）→ 401，不得改動任何歸因狀態
+    assert client.patch("/api/findings/x/status", json={"status": "confirmed"}).status_code == 401
+
+
 def test_patch_finding_status_not_found_and_success(client, auth_headers) -> None:
     assert (
-        client.patch("/api/findings/nope/status", json={"status": "confirmed"}).status_code == 404
-    )
-    fid = _seed_one_finding()
-    r = client.patch(f"/api/findings/{fid}/status", json={"status": "confirmed"})
-    assert r.status_code == 200 and r.json()["status"] == "confirmed"
-
-
-def test_patch_finding_status_rejects_invalid_value(client) -> None:
-    # Literal 僅 confirmed/dismissed/fixed；'new' 等非法 → 422
-    assert client.patch("/api/findings/x/status", json={"status": "new"}).status_code == 422
-
-
-def test_patch_true_label_not_found_and_success(client) -> None:
-    assert (
-        client.patch("/api/findings/nope/true_label", json={"true_label": "content"}).status_code
+        client.patch(
+            "/api/findings/nope/status", json={"status": "confirmed"}, headers=auth_headers
+        ).status_code
         == 404
     )
     fid = _seed_one_finding()
-    r = client.patch(f"/api/findings/{fid}/true_label", json={"true_label": "content"})
+    r = client.patch(
+        f"/api/findings/{fid}/status", json={"status": "confirmed"}, headers=auth_headers
+    )
+    assert r.status_code == 200 and r.json()["status"] == "confirmed"
+
+
+def test_patch_finding_status_rejects_invalid_value(client, auth_headers) -> None:
+    # Literal 僅 confirmed/dismissed/fixed；'new' 等非法 → 422
+    assert (
+        client.patch(
+            "/api/findings/x/status", json={"status": "new"}, headers=auth_headers
+        ).status_code
+        == 422
+    )
+
+
+def test_patch_true_label_requires_auth(client) -> None:
+    assert (
+        client.patch("/api/findings/x/true_label", json={"true_label": "content"}).status_code
+        == 401
+    )
+
+
+def test_patch_true_label_not_found_and_success(client, auth_headers) -> None:
+    assert (
+        client.patch(
+            "/api/findings/nope/true_label", json={"true_label": "content"}, headers=auth_headers
+        ).status_code
+        == 404
+    )
+    fid = _seed_one_finding()
+    r = client.patch(
+        f"/api/findings/{fid}/true_label", json={"true_label": "content"}, headers=auth_headers
+    )
     assert r.status_code == 200 and r.json()["true_label"] == "content"
 
 

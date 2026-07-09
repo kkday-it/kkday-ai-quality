@@ -14,7 +14,7 @@
 
 一列 = 一條歸因，**全 typed scalar 欄**（無 JSONB blob）。判決表是查詢/聚合/篩選密集的分析核心且 schema 已穩定，故 storage 用 typed 欄（可直接 btree 索引、SQL 乾淨），巢狀物件屬呈現層於 API DTO 組（`_shared.attribution_dto`）。
 
-**欄位**：關聯鍵 `finding_id`PK / `source` / `source_id` / `prod_oid`；查詢便利 `dimension`；傾向階段 `polarity` / `sentiment_score`（情緒分 1-5·LLM 讀原文細分夾區間 負1-2/中3/正4-5·與外部評論 sentiment 同尺度供對比表比對·null＝未判）/ `stage`；歸因 `l1_code` `l1_label` `l2_code` `l2_label` `l3_code` `l3_label`；信心 `conf_value` `conf_raw` `conf_tier`；內容 `summary` `evidence` `action`；元 `model` `is_primary` `judged_at`；人工覆核 `status` `true_label` `needs_review` `created_at`。
+**欄位**：關聯鍵 `finding_id`PK / `source` / `source_id` / `prod_oid`；查詢便利 `dimension`；傾向階段 `polarity` / `sentiment_score`（情緒分 1-5·LLM 讀原文細分夾區間 負1-2/中3/正4-5·與外部評論 sentiment 同尺度供對比表比對·null＝未判）/ `stage`；歸因 `l1_code` `l1_label` `l2_code` `l2_label` `l3_code` `l3_label`；信心 `conf_value` `conf_raw` `conf_tier`；內容 `summary` `evidence` `action`；元 `model` `is_primary` `judged_at`；人工覆核 `status` `true_label`（+把關 audit `true_label_reason` `true_label_conf`）`needs_review` `created_at`；操作者 audit `status_updated_by/at` `true_label_updated_by/at`（人工改狀態/標真值時記操作者 email + ISO 時間；系統自動路由不寫·重判依 finding_id 一併保留）。
 
 - **寫入**：`schema.TicketFinding.to_columns()` 產出判決 payload 欄 + `findings._finding_values` 補關聯/人工欄（殘留/legacy 欄不入庫）。
 - **查詢**（GROUP BY / FILTER / SORT）：直接 `jg.c.polarity == x` / `jg.c.l1_code` / `func.max(jg.c.conf_value)`，走 `idx_judgments_{polarity,stage,l1,tier}` btree 索引。

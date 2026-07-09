@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, func, select
 from sqlalchemy import delete as sa_delete
@@ -74,7 +75,11 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
                 "true_label": r.true_label,
                 "true_label_reason": r.true_label_reason,
                 "true_label_conf": r.true_label_conf,
+                "true_label_updated_by": r.true_label_updated_by,
+                "true_label_updated_at": r.true_label_updated_at,
                 "status": r.status,
+                "status_updated_by": r.status_updated_by,
+                "status_updated_at": r.status_updated_at,
             }
             for r in c.execute(
                 select(
@@ -82,7 +87,11 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
                     jg.c.true_label,
                     jg.c.true_label_reason,
                     jg.c.true_label_conf,
+                    jg.c.true_label_updated_by,
+                    jg.c.true_label_updated_at,
                     jg.c.status,
+                    jg.c.status_updated_by,
+                    jg.c.status_updated_at,
                 )
                 .where(key)
                 .with_for_update()
@@ -105,16 +114,22 @@ def replace_source_findings(source: str, source_id: str, findings: list[TicketFi
             values = _finding_values(f, source)
             old = preserved.get(f.finding_id)
             if old:
-                if old["true_label"] is not None:  # 真值三軸（真值 + 把關理由 + LLM 信心）一併保留
+                if (
+                    old["true_label"] is not None
+                ):  # 真值三軸（真值 + 把關理由 + LLM 信心）+ 操作者/時間一併保留
                     values["true_label"] = old["true_label"]
                     values["true_label_reason"] = old["true_label_reason"]
                     values["true_label_conf"] = old["true_label_conf"]
+                    values["true_label_updated_by"] = old["true_label_updated_by"]
+                    values["true_label_updated_at"] = old["true_label_updated_at"]
                 if old["status"] in (
                     "confirmed",
                     "dismissed",
                     "fixed",
-                ):  # 僅保留人工覆核；new/auto_confirmed 重算
+                ):  # 僅保留人工覆核（含操作者/時間 audit）；new/auto_confirmed 重算
                     values["status"] = old["status"]
+                    values["status_updated_by"] = old["status_updated_by"]
+                    values["status_updated_at"] = old["status_updated_at"]
             c.execute(sa_insert(jg).values(**values))
     return len(findings)
 
@@ -155,10 +170,19 @@ def list_products() -> list[dict]:
         return [dict(r) for r in c.execute(stmt).mappings()]
 
 
-def update_finding_status(finding_id: str, status: str) -> bool:
-    """更新單筆 Finding 狀態（confirmed/dismissed/fixed）。回傳是否命中。"""
+def update_finding_status(finding_id: str, status: str, *, actor: str | None = None) -> bool:
+    """更新單筆 Finding 狀態（confirmed/dismissed/fixed）+ 記操作者/時間 audit。回傳是否命中。
+
+    actor：操作者 email（登入身分）；連同當下 ISO 時間寫入 status_updated_by/at，供人工覆核留痕。
+    """
     stmt = (
-        sa_update(T.judgments).where(T.judgments.c.finding_id == finding_id).values(status=status)
+        sa_update(T.judgments)
+        .where(T.judgments.c.finding_id == finding_id)
+        .values(
+            status=status,
+            status_updated_by=actor,
+            status_updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
     )
     with T.get_engine().begin() as c:
         return c.execute(stmt).rowcount > 0
@@ -170,12 +194,14 @@ def update_finding_true_label(
     *,
     reason: str | None = None,
     llm_conf: float | None = None,
+    actor: str | None = None,
 ) -> bool:
     """人工標註單筆 Finding 的真值分類 true_label（+把關 audit：修改理由 + LLM 契合信心）。回傳是否命中。
 
     true_label 存人工用級聯選出的葉 code；None/空字串清除標註（連帶清 reason/conf）。
     reason：LLM 對真值信心明顯下降時人工填的修改理由（防亂標）。llm_conf：標註當下 LLM 對該真值的契合信心。
-    重判（replace_source_findings）依 finding_id 保留此三軸（真值 + 理由 + 信心）。
+    actor：操作者 email；連同 ISO 時間寫入 true_label_updated_by/at（標與清皆留痕）。
+    重判（replace_source_findings）依 finding_id 保留真值三軸（真值 + 理由 + 信心）。
     """
     clearing = not (true_label or "").strip()
     stmt = (
@@ -185,6 +211,8 @@ def update_finding_true_label(
             true_label=None if clearing else true_label,
             true_label_reason=None if clearing else (reason or None),
             true_label_conf=None if clearing else llm_conf,
+            true_label_updated_by=actor,
+            true_label_updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
     )
     with T.get_engine().begin() as c:

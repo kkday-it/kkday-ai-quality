@@ -9,7 +9,7 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 | `routers/auth.py` | 帳號系統（/api/auth：register / login / me）。 |
 | `routers/inbound.py` | 資料錄入（/api/inbound：validate / upload / upload/stream SSE）+ 批次清單（/api/batches）。 |
 | `routers/settings.py` | 設定（/api/settings：get/update/raw/test-llm）+ QC DB 連線測試（/api/datasource/qc-db/test）；含 `load_user_context` 守衛 + `_activate_settings`（contextvar 注入 judge 路徑）。 |
-| `routers/findings.py` | 判決結果（/api/findings、/api/products）+ 單筆歸因人工動作（PATCH /api/findings/{id}/status｜/true_label）。 |
+| `routers/findings.py` | 判決結果（/api/findings、/api/products）+ 單筆歸因人工動作（PATCH /api/findings/{id}/status｜/true_label，**需登入**·記操作者/時間 audit）。 |
 | `routers/problems.py` | 統一問題列表 / 縱覽聚合（/api/problems*）+ 列表導出（POST /api/problems/export → 背景 job）。 |
 | `routers/v1/` | `judgment.py`（初判歸因批次：prejudge 啟動/筆數預覽 POST `/prejudge/count`（與啟動同一套標的解析，可 `within_ids` 交集勾選範圍）/SSE 串流/暫停/恢復/停止 + 歸因歷史 GET `/runs`·`/runs/{job_id}`——run 級 LLM 使用紀錄，執行中列 overlay in-mem 即時進度）；`__init__` 聚合於 `/api/v1`。 |
 | `routers/config.py` | config JSON 線上編輯（讀寫 config/ai_judge，寫後 reload loader）。 |

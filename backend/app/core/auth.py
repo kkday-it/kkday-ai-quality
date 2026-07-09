@@ -24,14 +24,22 @@ _JWT_ALGORITHM = "HS256"
 _TOKEN_TTL = timedelta(days=env.jwt_ttl_days)  # env JWT_TTL_DAYS（prod 可縮短）
 _DEV_SECRET = "dev-insecure-secret-change-me"  # 僅開發 fallback，正式須設 AIQ_JWT_SECRET
 _BCRYPT_MAX_BYTES = 72  # bcrypt 演算法上限，超過會拋 ValueError，故先截斷
+_MIN_SECRET_BYTES = 32  # JWT secret 最低位元組數（HS256 弱 secret 可被暴力/彩虹表偽造）
 
-# 啟動即檢查：非 development 環境缺 AIQ_JWT_SECRET → 拒絕啟動。
-# 避免正式環境靜默用可預測的 dev secret 簽發可被偽造的 JWT（本模組被 main.py import，故啟動時即觸發）。
-if not env.aiq_jwt_secret and env.app_env != "development":
-    raise RuntimeError(
-        f"APP_ENV={env.app_env} 為正式環境，必須設定 AIQ_JWT_SECRET；"
-        "拒絕以開發預設 secret 啟動（JWT 可被偽造）。"
-    )
+# 啟動即檢查：非 development 環境的 AIQ_JWT_SECRET 必須存在且夠強（≥32 bytes）→ 否則拒絕啟動。
+# 避免正式環境靜默用可預測的 dev secret、或用過短 secret 簽發可被偽造的 JWT（本模組被 main.py import，啟動即觸發）。
+if env.app_env != "development":
+    _secret_val = (env.aiq_jwt_secret or "").strip()
+    if not _secret_val:
+        raise RuntimeError(
+            f"APP_ENV={env.app_env} 為正式環境，必須設定 AIQ_JWT_SECRET；"
+            "拒絕以開發預設 secret 啟動（JWT 可被偽造）。"
+        )
+    if len(_secret_val.encode("utf-8")) < _MIN_SECRET_BYTES:
+        raise RuntimeError(
+            f"AIQ_JWT_SECRET 過短（需 ≥{_MIN_SECRET_BYTES} bytes），弱 secret 易被偽造；"
+            '生成：python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
 
 
 def _secret() -> str:

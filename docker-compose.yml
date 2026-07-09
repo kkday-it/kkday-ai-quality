@@ -1,6 +1,6 @@
 # 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。
 # 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
-#   AIQ_JWT_SECRET=... OPENAI_API_KEY=... docker compose up -d --build
+#   AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
 # restart: unless-stopped → 容器崩潰 / 主機重開機自動拉起（配合 host 的 docker daemon 開機自啟）。
 services:
   db:
@@ -29,8 +29,10 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality
-      # production 缺 JWT 秘鑰會拒啟動（config.py）；未注入即在此報錯，不帶病啟動
-      AIQ_JWT_SECRET: ${AIQ_JWT_SECRET:?須設定 AIQ_JWT_SECRET}
+      # production 缺 JWT 秘鑰會拒啟動（auth.py）；未注入即在此報錯，不帶病啟動
+      AIQ_JWT_SECRET: ${AIQ_JWT_SECRET:?須設定 AIQ_JWT_SECRET（≥32 bytes；python -c "import secrets;print(secrets.token_urlsafe(32))"）}
+      # user_settings 機密 at-rest 加密 key；未設則 provider token / QC 密碼明文落庫（crypto.py 正式環境拒啟動）
+      AIQ_SECRET_KEY: ${AIQ_SECRET_KEY:?須設定 AIQ_SECRET_KEY（同上方式生成）}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # 前端對外網域（逗號分隔多個）；預設對齊本 compose 的 frontend 埠
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080}

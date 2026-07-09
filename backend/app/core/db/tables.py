@@ -78,9 +78,15 @@ judgments = Table(
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
     Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed
+    # 人工覆核 audit：誰、何時改了 status（人工確認/忽略/已修）——非系統自動路由，供操作留痕可追。
+    Column("status_updated_by", Text),  # 最後改 status 的操作者 email（系統自動路由不寫）
+    Column("status_updated_at", Text),  # 最後改 status 的時間（ISO 字串，與 created_at 同形態）
     Column("true_label", Text),  # 人工標註真值分類（級聯選出的葉 code）
     Column("true_label_reason", Text),  # 標真值把關：LLM 信心明顯下降時人工填的修改理由（audit）
     Column("true_label_conf", Float),  # 標真值時 LLM 對該真值的契合信心（audit + 準確率評估）
+    # 人工標真值 audit：誰、何時標/清了 true_label——與 reason/conf（LLM 把關）互補，記錄操作者身分。
+    Column("true_label_updated_by", Text),  # 最後標/清 true_label 的操作者 email
+    Column("true_label_updated_at", Text),  # 最後標/清 true_label 的時間（ISO 字串）
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
     Index("idx_judgments_source", "source"),
