@@ -1,4 +1,8 @@
-"""問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。"""
+"""問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。
+
+整列底色依 polarity（正綠/中灰/負紅）；另附「歸因統計」圖表工作表
+（本次導出的情緒傾向/L1/L2/分層/階段分佈，見 export_stats.py）。
+"""
 
 from __future__ import annotations
 
@@ -19,28 +23,35 @@ if TYPE_CHECKING:
 # 每寫入多少 review 檢查一次取消旗標並回報進度（過密徒增鎖競爭、過疏取消不即時）。
 _PROGRESS_STEP = 200
 
-# 導出 xlsx 欄位（標題, 記錄鍵, 欄寬）：特徵 id（source_id）第一列；1:N 每條歸因一列（review 級欄合併）
+# 導出 xlsx 欄位（標題, 記錄鍵, 欄寬）：評論身份欄（編號～評論時間）前置並凍結；1:N 每條歸因一列（review 級欄合併）
 _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("編號", "source_id", 14),
     ("來源", "source_label", 12),
-    ("商品ID", "prod_oid", 12),
+    ("評論標題", "title", 28),  # rec_title：評論標題（review 級）
+    (
+        "評論內容",
+        "content",
+        48,
+    ),  # rec_desc：評論正文（review 級，判決主輸入）；凍結邊界：前 4 欄（編號～評論內容）橫捲固定
+    ("評論星等", "score", 8),
+    ("評論時間", "occurred_at", 20),
+    ("外部評論情緒傾向", "ext_sentiment", 12),  # 外部評論系統情緒分 1-5（僅商品評論來源有值）
+    ("外部評論 Free Tag", "ext_free_tag", 40),  # 外部評論面向標籤摘要（每面向一行）
+    ("訂單號", "order_mid", 16),
+    ("出發日", "go_date", 14),
+    ("商品編號", "prod_oid", 12),
     ("商品名稱", "prod_name", 28),
-    ("評論", "content", 48),
     (
         "問題摘要",
         "summary",
         40,
-    ),  # 緊接評論後：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
-    ("星等", "score", 8),
-    ("評論時間", "occurred_at", 20),
-    ("出發日", "go_date", 14),
-    ("訂單", "order_mid", 16),
+    ),  # attr 級：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
     ("情緒傾向", "our_sentiment", 10),  # 我方情緒分 1-5（正5/中3/負1；與外部評論同尺度）
-    ("L1", "l1_label", 14),
-    ("L2", "l2_label", 14),
-    ("L3", "l3_label", 18),
-    ("信心", "confidence", 8),
-    ("分層", "confidence_tier", 12),
+    ("L1 分類", "l1_label", 14),
+    ("L2 分類", "l2_label", 14),
+    ("L3 分類", "l3_label", 18),
+    ("信心度", "confidence", 8),
+    ("判決分層", "confidence_tier", 12),
     ("判決階段", "judgment_stage", 12),
 ]
 
@@ -49,7 +60,11 @@ _XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化，其餘原樣（None→空字串）。"""
+    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化、外部 free_tag 摘要化，其餘原樣。"""
+    if key == "ext_free_tag":  # list[dict] → 多行摘要（空 list 亦回空字串，須先於下方 falsy 判斷）
+        from app.core.db.comparison import ext_free_tag_summary
+
+        return ext_free_tag_summary(value)
     if value is None or value == "":
         return ""
     if key == "occurred_at":
@@ -152,6 +167,7 @@ def export_problems_xlsx(
     from io import BytesIO
 
     from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
 
     from app.core.judge_config.rule_export import _style_header
 
@@ -214,12 +230,30 @@ def export_problems_xlsx(
             ws.append(line)
         merges.append((r_excel, n))
         r_excel += n
-    _style_header(ws, [c[2] for c in cols], freeze_cols=1)  # 凍結表頭 + 編號首欄
-    # style 後再合併同一 review 的 review 級欄（避免 MergedCell 樣式設定問題）
+    _style_header(ws, [c[2] for c in cols], freeze_cols=4)  # 凍結表頭 + 前 4 欄（編號～評論內容）
+    # polarity 整列底色（正綠/中灰/負紅；傾向不明不上色）。置於「合併前」——此時全為普通 cell，
+    # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header 故覆蓋其斑馬紋。
+    _pol_fill = {
+        "positive": PatternFill("solid", fgColor="DCF3E3"),  # 正向：淡綠
+        "neutral": PatternFill("solid", fgColor="EAEBEE"),  # 中立：淡灰
+        "negative": PatternFill("solid", fgColor="FDE0E0"),  # 負向：淡紅
+    }
+    for (sr, n), r in zip(merges, rows, strict=True):
+        fill = _pol_fill.get(r.get("polarity"))
+        if fill is None:
+            continue
+        for rr in range(sr, sr + n):
+            for cell in ws[rr]:
+                cell.fill = fill
+    # style + 上色後再合併同一 review 的 review 級欄（避免 MergedCell 樣式設定問題）
     for sr, n in merges:
         if n > 1:
             for ci in review_col_idx:
                 ws.merge_cells(start_row=sr, start_column=ci, end_row=sr + n - 1, end_column=ci)
+    # 緊接資料表後附「歸因統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段分佈；所見即所得）
+    from app.core.db.export_stats import append_stats_sheet
+
+    append_stats_sheet(wb, rows)
     if ctx is not None:
         ctx.report(total, total)  # 組檔完成（save 為單次序列化，無法再細分進度）
     buf = BytesIO()
