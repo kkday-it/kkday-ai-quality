@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
-# 一鍵啟動（純 Docker）：偵測 Docker → 未啟動則啟動並等待 → docker compose up（dev·hot reload）。
+# 一鍵啟動（純 Docker）：自動裝並啟動容器引擎（優先 colima 免費開源）→ docker compose up（dev·hot reload）。
 #   ./scripts/dev/start.sh
-# 全服務在容器內：PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴。本機只需 Docker，無需裝 python/node/pnpm/PG。
+# 全服務在容器內：PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴。本機只需 Homebrew（macOS）；其餘 start.sh 自動裝。
 # 改碼即生效（uvicorn --reload + vite HMR）；首次會 build image（較久），之後秒起。Ctrl-C 停止所有服務。
 # 資料：空庫也能起 → 於前端「配置 › 資料導入」上傳資料包載入；或先設 SEED_URL 由 db 首啟自動還原。
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-# 1. Docker CLI 存在？
+# 1. 容器工具（docker CLI）存在？缺則自動安裝 colima（免費開源·大公司免授權）
 if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ 未偵測到 docker CLI。建議裝 colima（免費開源·大公司無授權問題）："
-  echo "   macOS: brew install colima docker docker-compose ｜ Linux: sudo apt install docker.io docker-compose-plugin"
-  exit 1
+  echo "📦 未偵測到容器工具，自動安裝 colima（免費開源）..."
+  case "$(uname -s)" in
+    Darwin)
+      command -v brew >/dev/null 2>&1 || {
+        echo "❌ 需先安裝 Homebrew（https://brew.sh）再重跑 start.sh"
+        exit 1
+      }
+      brew install colima docker docker-compose || { echo "❌ colima 安裝失敗"; exit 1; }
+      ;;
+    Linux)
+      sudo apt-get update -qq && sudo apt-get install -y docker.io docker-compose-plugin ||
+        { echo "❌ Docker 安裝失敗，請手動安裝"; exit 1; }
+      ;;
+    *) echo "❌ 未知平台，請手動安裝容器引擎"; exit 1 ;;
+  esac
 fi
 
 # 2. Docker daemon 已啟動？未啟動則嘗試啟動並等待就緒（最長 ~2 分鐘）
@@ -27,8 +39,11 @@ if ! docker info >/dev/null 2>&1; then
         open -a OrbStack >/dev/null 2>&1 || true
       elif [ -d "/Applications/Docker.app" ]; then
         open -a Docker >/dev/null 2>&1 || true
+      elif command -v brew >/dev/null 2>&1; then
+        echo "📦 無容器引擎，自動安裝 colima（免費開源）..."
+        brew install colima docker docker-compose && colima start >/dev/null 2>&1 || true
       else
-        echo "⚠️ 找不到容器引擎。建議裝 colima（免費）：brew install colima docker docker-compose，再重跑"
+        echo "⚠️ 無容器引擎且無 Homebrew，請先裝 brew（https://brew.sh）後重跑"
       fi
       ;;
     Linux) sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true ;;
