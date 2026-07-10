@@ -10,13 +10,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# 依賴快取層：先只 COPY pyproject 抽 base deps 安裝——改 code 重 build 不再全量重裝，
+# 只有 pyproject.toml 變動才使此層失效（layer-cache 排序，deps 與 code 分層）。
+COPY backend/pyproject.toml /tmp/pyproject.toml
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
 # config/ + constants/ 為前後端共用 SSOT，後端 runtime 讀取（config 經 AIQ_CONFIG_DIR；constants 走 REPO_ROOT/constants=/app/constants）
 COPY config/ config/
 COPY constants/ constants/
 COPY backend/ backend/
 
-# 依賴 SSOT＝pyproject.toml（editable，與 dev 一致；app 指向 source，config 定位穩定）
-RUN pip install --no-cache-dir -e ./backend
+# editable 安裝（與 dev 一致；app 指向 source）。--no-deps：依賴已於上方快取層裝好，此步秒級。
+RUN pip install --no-cache-dir --no-deps -e ./backend
 
 WORKDIR /app/backend
 EXPOSE 8100

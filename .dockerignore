@@ -14,3 +14,8 @@
 !**/.env.example
 backend/smoke_test.py
 frontend/apps/console/dist
+# 大體積 runtime 產物（Dockerfile 從不 COPY；漏掉會讓 ~487MB context 每次 build 傳兩次）
+**/.pnpm-store
+data/
+# seed 僅 db 容器 runtime bind-mount 用（compose ./docker/seed:/docker-entrypoint-initdb.d），build 不需要
+docker/seed/

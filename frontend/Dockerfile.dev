@@ -1,16 +1,30 @@
 # AI 法官前端 —— 開發 image（vite dev server + HMR）。
 # 與生產 Dockerfile（build 靜態 + nginx）不同：這裡跑 vite dev，配合 docker-compose.dev.yml 掛 source 熱更。
-# build 內先裝依賴 → compose 用匿名 volume 保留容器內 node_modules（遮蔽 host Mac binaries）。
+# 層序：先只 COPY manifest → pnpm fetch（依賴快取層·只有 lockfile 變動才失效）→ 再 COPY code → offline install。
+# compose 用匿名 volume 保留容器內 node_modules（遮蔽 host Mac binaries）。
 #   docker build -f frontend/Dockerfile.dev -t aiq-frontend-dev .
 FROM node:22-slim
 RUN corepack enable
+WORKDIR /app/frontend
+# 依賴快取層：package.json 供 corepack 解析 packageManager pin；lockfile 供 fetch（tarball 全進 store）
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+# 本機透明代理偶發截斷國際線路回應（error 23）→ shell 層整段重試（比照 ProductContentAIChecker 實測解法）；
+# 網路持續不穩時可 --build-arg NPM_REGISTRY=https://registry.npmmirror.com 換鏡像（integrity sha 仍驗證）。
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN for i in 1 2 3 4 5; do \
+      echo "[pnpm fetch] attempt $i"; \
+      pnpm fetch --registry "${NPM_REGISTRY}" && exit 0; \
+      echo "[pnpm fetch] attempt $i failed, retry in 5s"; sleep 5; \
+    done; \
+    echo "[pnpm fetch] failed after retries"; exit 1
+# code + 共用配置（@config / @constants → repo 根，vite alias ../../../config、../../../constants）
 WORKDIR /app
-# @config / @constants → repo 根（vite alias ../../../config、../../../constants）；build 需一併帶入
 COPY config/ config/
 COPY constants/ constants/
 COPY frontend/ frontend/
 WORKDIR /app/frontend
-RUN pnpm install --frozen-lockfile
+# offline：依賴 tarball 已在 store，純本地連結（秒級）；workspace 子包 manifest 隨上方完整 COPY 進來
+RUN pnpm install --frozen-lockfile --offline
 EXPOSE 5273
 # --host 對外可連；埠對齊 vite 預設 5273（VITE_DEV_PORT 可覆蓋）
 CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5273"]

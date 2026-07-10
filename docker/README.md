@@ -53,6 +53,11 @@ python scripts/tools/dump_datapack.py                         # 產資料包 zip
 
 ### 重建 / 清理
 
+> **依賴層快取**：Dockerfile 已按「manifest → 裝依賴（快取層）→ code」排序——改 code 重 build **不重裝依賴**
+> （實測暖快取全套重 build ~3s），只有 `pyproject.toml` / `pnpm-lock.yaml` 變動才觸發重裝；
+> `.dockerignore` 已排除 `.pnpm-store`/`data/`/`docker/seed/`（context 由 ~500MB 級瘦到 KB 級）。
+> 網路不穩令 `pnpm fetch` 失敗時：`--build-arg NPM_REGISTRY=https://registry.npmmirror.com` 換鏡像。
+
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build                # 重建 image（改 Dockerfile / 後端依賴）
 docker compose -f docker-compose.dev.yml up -d --force-recreate backend   # 不重建只換容器

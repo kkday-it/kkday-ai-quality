@@ -43,7 +43,7 @@ frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
   packages/types
 scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
 docs/                        # 文檔地圖（README）· 上手指南 HTML · archive/（過時 spec 封存）
-start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入口；stop --wipe 連資料清空）
+start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入口；stop 預設保留資料，--wipe 才清空）
 docker-compose.yml           # 生產編排（PG + backend 單worker + frontend nginx）
 docker-compose.dev.yml       # 開發編排（hot reload：source volume + uvicorn --reload + vite HMR）
 docker/                      # seed/（首啟自動還原）· README.md（Docker 命令大全 + 疑難排解）
@@ -70,7 +70,9 @@ docker compose -f docker-compose.dev.yml logs -f backend      # 追 log（fronte
 docker compose -f docker-compose.dev.yml restart backend      # 重啟單服務（新 migration 靠這個自動套用）
 docker compose -f docker-compose.dev.yml exec backend bash    # 進容器 shell
 docker compose -f docker-compose.dev.yml exec db psql -U postgres kkdb_ai_quality   # 直連 DB
-./stop.sh                                         # 停止（--wipe 連資料庫清空）
+./stop.sh                                                     # 停止（預設保留資料庫）
+./stop.sh --wipe                                              # ⚠️ 顯式加 --wipe 才會連資料庫一起清空
+
 ```
 > ⚠️ **前端加套件**：主機 `pnpm add` 後容器不會自動同步，須容器內 `exec -e CI=true frontend sh -c "cd /app/frontend && pnpm install"` + `restart frontend`（SOP 見 docker/README.md）。
 
