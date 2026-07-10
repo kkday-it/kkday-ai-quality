@@ -1,7 +1,12 @@
-# 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。
+# 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。完整命令見 docker/README.md。
 # 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
-#   AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
+#
+#   啟動：   AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... docker compose up -d --build
+#   停止：   docker compose down                    （資料保留於 pgdata volume）
+#   看 log： docker compose logs -f backend
+#
 # restart: unless-stopped → 容器崩潰 / 主機重開機自動拉起（配合 host 的 docker daemon 開機自啟）。
+name: kkday-ai-quality # 固定專案名（與 dev 同名共用前綴；dev/prod 服務同名會互斥，同機同時跑請改其一）
 services:
   db:
     image: postgres:17-alpine

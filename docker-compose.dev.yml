@@ -1,8 +1,15 @@
-# 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。
-#   ./scripts/dev/start.sh   （偵測+啟動 Docker 後 docker compose -f docker-compose.dev.yml up）
+# 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。完整命令/疑難排解見 docker/README.md。
+#
+#   一鍵：     ./scripts/dev/start.sh                                    （自動裝引擎 + up）
+#   啟動：     docker compose -f docker-compose.dev.yml up -d            （背景；改依賴加 --build）
+#   停止：     ./scripts/dev/stop.sh                                     （--wipe 連資料庫一起清）
+#   看 log：   docker compose -f docker-compose.dev.yml logs -f backend  （或 frontend / db）
+#   進容器：   docker compose -f docker-compose.dev.yml exec backend bash
+#
 # 改碼即生效：後端 uvicorn --reload（掛 ./backend/app）、前端 vite HMR（掛 ./frontend，node_modules 走容器內）。
-# 資料庫空庫也能起（backend 跳過 alembic upgrade，改 main.py init_db create_all+stamp）；資料靠前台「資料導入」上傳。
-# 生產部署走 docker-compose.yml（多 worker·nginx 靜態·嚴格 JWT）。
+# schema 自動對齊：entrypoint 分流（空庫 init_db／既有庫 alembic upgrade head），新 migration 重啟即套用。
+# 生產部署走 docker-compose.yml（單 worker·nginx 靜態·嚴格 secret）。
+name: kkday-ai-quality # 固定專案名：容器/網路/volume 前綴不隨資料夾改名漂移（服務尾碼 -1 保留，供 --scale）
 services:
   db:
     image: postgres:17-alpine
@@ -25,8 +32,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # dev 跳過 entrypoint 的 alembic upgrade（migration 無法從零建庫）；schema 由 main.py init_db(create_all+stamp)。
-    entrypoint: []
+    # 走智慧 entrypoint（docker-entrypoint.sh）：空庫→init_db(create_all+stamp)／既有庫→alembic upgrade head。
+    # dev 既有庫因此會自動套用新 migration（如加欄）——create_all 不改既有表，跳過 alembic 曾令舊庫缺新欄
+    # （踩過：judgments audit 欄缺失令資料包導出 UndefinedColumn 500）。
     command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8100", "--reload"]
     environment:
       APP_ENV: development  # 免嚴格 JWT；資料導入閘自動開
@@ -36,6 +44,10 @@ services:
       CORS_ALLOW_ORIGINS: http://localhost:5273
     volumes:
       - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
+      # migration 檔 + entrypoint 也掛（image 可能過舊）：新增 migration 免 rebuild，重啟容器即自動套用。
+      - ./backend/alembic:/app/backend/alembic
+      - ./backend/alembic.ini:/app/backend/alembic.ini
+      - ./backend/docker-entrypoint.sh:/app/backend/docker-entrypoint.sh
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
     depends_on:
