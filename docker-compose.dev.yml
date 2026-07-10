@@ -2,7 +2,8 @@
 #
 #   一鍵：     ./start.sh                                    （自動裝引擎 + up）
 #   啟動：     docker compose -f docker-compose.dev.yml up -d            （背景；改依賴加 --build）
-#   停止：     ./stop.sh                                                 （預設保留資料庫；顯式 --wipe 才清空）
+#   停止：     ./stop.sh                                                 （只停止·資料一律保留）
+#   清空資料：  docker compose -f docker-compose.dev.yml down -v          （⚠️ 毀滅性·刪 pgdata_dev）
 #   看 log：   docker compose -f docker-compose.dev.yml logs -f backend  （或 frontend / db）
 #   進容器：   docker compose -f docker-compose.dev.yml exec backend bash
 #

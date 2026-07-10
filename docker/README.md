@@ -21,7 +21,7 @@
 ```bash
 ./start.sh                                        # 一鍵：自動裝引擎（colima）→ up（前景，Ctrl-C 停）
 docker compose -f docker-compose.dev.yml up -d                # 背景啟動
-./stop.sh                                         # 停止（資料保留）；--wipe 連 pgdata_dev 一起刪
+./stop.sh                                         # 停止（只停止·資料一律保留）
 docker compose -f docker-compose.dev.yml ps                   # 看服務狀態
 docker compose -f docker-compose.dev.yml logs -f backend      # 追後端 log（frontend / db 同理）
 docker compose -f docker-compose.dev.yml restart backend      # 重啟單一服務（套用新 migration 就靠這個）
@@ -63,7 +63,7 @@ docker compose -f docker-compose.dev.yml up -d --build                # 重建 i
 docker compose -f docker-compose.dev.yml up -d --force-recreate backend   # 不重建只換容器
 docker compose -f docker-compose.dev.yml rm -sfv frontend \
   && docker compose -f docker-compose.dev.yml up -d frontend           # 連匿名 volume 一起重來（前端依賴徹底重置）
-./stop.sh --wipe                                           # ⚠️ 刪 pgdata_dev＝資料庫全清（重來全新空庫）
+docker compose -f docker-compose.dev.yml down -v                       # ⚠️ 毀滅性：刪 pgdata_dev＝資料庫全清（stop.sh 刻意不提供）
 docker volume ls | grep kkday-ai-quality                               # 看本專案 volume
 ```
 
@@ -89,4 +89,4 @@ docker compose logs -f backend
 | 後端行為停在舊 code（reload 卡死）| `docker compose -f docker-compose.dev.yml restart backend`；原生跑則 `lsof -ti:8100 \| xargs kill -9` |
 | 匯入資料包報 schema 版本不符 | 資料包是舊 schema 導出的 → 重新「導出資料包」再匯入（或該環境先 `restart backend` 升 schema）|
 | build 很慢 / 想看 build log | `docker compose -f docker-compose.dev.yml build --progress=plain backend` |
-| 想全部砍掉重來 | `./stop.sh --wipe` → `./start.sh`（空庫；資料靠 seed 或前台資料包匯入）|
+| 想全部砍掉重來 | `docker compose -f docker-compose.dev.yml down -v` → `./start.sh`（⚠️ 刪庫；資料靠 seed 或前台資料包匯入）|
