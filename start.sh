@@ -103,7 +103,9 @@ _open() {
 _open "$FRONTEND_URL"
 
 echo "✅ 全部就緒（已在瀏覽器開啟前端）"
-echo "   前端  $FRONTEND_URL"
-echo "   後端  $BACKEND_DOCS_URL（Swagger）"
+# ⚠️ 變數緊貼全形字必用 ${VAR}：8-bit locale（如 ISO8859-1 終端）下 bash 會把全形字首位元組
+# 當字母吃進變數名 → unbound variable（實測踩到）；大括號在任何 locale 都明確終止變數名。
+echo "   前端  ${FRONTEND_URL}"
+echo "   後端  ${BACKEND_DOCS_URL}（Swagger）"
 echo "   log： docker compose -f docker-compose.dev.yml logs -f backend"
 echo "   停止：./stop.sh（資料保留）"
