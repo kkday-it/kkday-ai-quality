@@ -1,6 +1,6 @@
 # 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。完整命令/疑難排解見 docker/README.md。
 #
-#   一鍵：     ./start.sh                                    （自動裝引擎 → up -d → 等就緒 → 自動開網頁）
+#   一鍵：     ./start.sh                                    （自動裝引擎 → up -d → 等就緒 → 自動開前端網頁）
 #   啟動：     docker compose -f docker-compose.dev.yml up -d            （背景；改依賴加 --build）
 #   停止：     ./stop.sh                                                 （只停止·資料一律保留）
 #   清空資料：  docker compose -f docker-compose.dev.yml down -v          （⚠️ 毀滅性·刪 pgdata_dev）

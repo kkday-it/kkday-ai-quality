@@ -94,16 +94,15 @@ for i in $(seq 1 90); do
   fi
 done
 
-# 6. 自動打開前後端網頁（macOS open / Linux xdg-open；無圖形環境則只印 URL）
+# 6. 自動打開前端網頁（macOS open / Linux xdg-open；無圖形環境則只印 URL）。Swagger 只印不開。
 _open() {
   if command -v open >/dev/null 2>&1; then open "$1"
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || true
   fi
 }
 _open "$FRONTEND_URL"
-_open "$BACKEND_DOCS_URL"
 
-echo "✅ 全部就緒（已在瀏覽器開啟）"
+echo "✅ 全部就緒（已在瀏覽器開啟前端）"
 echo "   前端  $FRONTEND_URL"
 echo "   後端  $BACKEND_DOCS_URL（Swagger）"
 echo "   log： docker compose -f docker-compose.dev.yml logs -f backend"

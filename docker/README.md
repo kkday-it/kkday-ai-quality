@@ -19,7 +19,7 @@
 ### 日常（dev）
 
 ```bash
-./start.sh                                        # 一鍵：自動裝引擎 → up -d → 等就緒 → 自動開前後端網頁
+./start.sh                                        # 一鍵：自動裝引擎 → up -d → 等就緒 → 自動開前端網頁
 docker compose -f docker-compose.dev.yml up -d                # 背景啟動
 ./stop.sh                                         # 停止（只停止·資料一律保留）
 docker compose -f docker-compose.dev.yml ps                   # 看服務狀態
