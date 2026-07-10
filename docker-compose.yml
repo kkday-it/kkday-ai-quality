@@ -30,6 +30,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # 顯式 :prod tag：與 dev 分 tag，兩形態 build 互不覆蓋（同專案名+服務名時 compose 預設共用 tag）
+    image: kkday-ai-quality-backend:prod
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -58,6 +60,7 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    image: kkday-ai-quality-frontend:prod # 同 backend：與 dev 分 tag 防互蓋
     restart: unless-stopped
     ports:
       - "8080:80"

@@ -68,8 +68,43 @@ fi
 # 3.（選用）取得 seed 供 db 首啟自動還原；無 SEED_URL / 本地檔則略過（空庫，改前台導入資料包）
 "$ROOT/scripts/dev/fetch-seed.sh" >/dev/null 2>&1 || true
 
-# 4. 起全部服務（dev·hot reload）；Ctrl-C 停止。首次自動 build image。
+# 4. 背景起全部服務（dev·hot reload）；首次自動 build image（依賴層有快取，之後秒起）。
 echo "🚀 啟動所有服務（Docker · hot reload）..."
-echo "   後端 http://localhost:8100（Swagger /docs）｜前端 http://localhost:5273"
 echo "   首次會 build image，請稍候；之後秒起。（改依賴時加 --build 重建）"
-exec docker compose -f docker-compose.dev.yml up
+docker compose -f docker-compose.dev.yml up -d || { echo "❌ 啟動失敗；詳見 docker compose -f docker-compose.dev.yml logs"; exit 1; }
+
+FRONTEND_URL="http://localhost:5273"
+BACKEND_DOCS_URL="http://localhost:8100/docs"
+
+# 5. 等前後端就緒（探 HTTP 可回應即可；後端含 entrypoint schema 對齊時間）
+_probe() { # $1=url → 可連且回 HTTP 即 0（不要求 200：/docs 重導、vite 對無 Accept 回 404 皆算活）
+  command curl -s -o /dev/null --max-time 2 "$1" 2>/dev/null
+}
+printf "   等待服務就緒"
+for i in $(seq 1 90); do
+  if _probe "http://localhost:8100/health" && _probe "$FRONTEND_URL"; then
+    printf " ✓\n"
+    break
+  fi
+  printf "."
+  sleep 2
+  if [ "$i" = 90 ]; then
+    printf "\n⚠️ 服務未在 3 分鐘內就緒；查 log：docker compose -f docker-compose.dev.yml logs -f\n"
+    exit 1
+  fi
+done
+
+# 6. 自動打開前後端網頁（macOS open / Linux xdg-open；無圖形環境則只印 URL）
+_open() {
+  if command -v open >/dev/null 2>&1; then open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || true
+  fi
+}
+_open "$FRONTEND_URL"
+_open "$BACKEND_DOCS_URL"
+
+echo "✅ 全部就緒（已在瀏覽器開啟）"
+echo "   前端  $FRONTEND_URL"
+echo "   後端  $BACKEND_DOCS_URL（Swagger）"
+echo "   log： docker compose -f docker-compose.dev.yml logs -f backend"
+echo "   停止：./stop.sh（資料保留）"

@@ -1,6 +1,6 @@
 # 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。完整命令/疑難排解見 docker/README.md。
 #
-#   一鍵：     ./start.sh                                    （自動裝引擎 + up）
+#   一鍵：     ./start.sh                                    （自動裝引擎 → up -d → 等就緒 → 自動開網頁）
 #   啟動：     docker compose -f docker-compose.dev.yml up -d            （背景；改依賴加 --build）
 #   停止：     ./stop.sh                                                 （只停止·資料一律保留）
 #   清空資料：  docker compose -f docker-compose.dev.yml down -v          （⚠️ 毀滅性·刪 pgdata_dev）
@@ -32,6 +32,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # 顯式 :dev tag：dev/prod 共用專案名+服務名，不分 tag 會互蓋 image（prod build 曾把 dev vite image 蓋成 nginx）
+    image: kkday-ai-quality-backend:dev
     restart: unless-stopped
     # 走智慧 entrypoint（docker-entrypoint.sh）：空庫→init_db(create_all+stamp)／既有庫→alembic upgrade head。
     # dev 既有庫因此會自動套用新 migration（如加欄）——create_all 不改既有表，跳過 alembic 曾令舊庫缺新欄
@@ -61,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile.dev
+    image: kkday-ai-quality-frontend:dev # 同 backend：與 prod 分 tag 防互蓋
     restart: unless-stopped
     environment:
       VITE_BACKEND_URL: http://backend:8100  # vite proxy /api → 後端容器

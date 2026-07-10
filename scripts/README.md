@@ -9,7 +9,7 @@
 
 | 腳本 | 用途 | 等價手動指令 |
 |---|---|---|
-| `./start.sh`（repo 根） | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務容器內起（PG+後端+前端，hot reload）；Ctrl-C 停 | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up` |
+| `./start.sh`（repo 根） | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務背景起（PG+後端+前端，hot reload）→ 等就緒 → **自動開前後端網頁**；停止用 `./stop.sh` | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up -d` |
 | `./stop.sh`（repo 根） | 停止所有服務（**只停止·資料一律保留**；清庫刻意不提供，須顯式 `down -v`） | `docker compose -f docker-compose.dev.yml down` |
 | `./scripts/dev/dump-seed.sh` | 產全庫 seed（pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum） | `pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
 | `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原 | `gunzip -c docker/seed/seed.sql.gz \| psql kkdb_ai_quality` |
