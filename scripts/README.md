@@ -1,15 +1,16 @@
 # scripts/ — 開發腳本（按職責分層）
 
-**所有開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：start[純 Docker 一鍵]/stop/doctor/format/lint/test/seed + dump-seed/fetch-seed）、
+**開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed）、
 `audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/encrypt_user_secrets/dump_datapack）、
 `refeed/`（rule 反哺飛輪：rule_refeed）。
+**例外：`start.sh` / `stop.sh` 放 repo 根**（與 docker-compose 同級·onboarding 入口，clone 後一眼可見免翻子夾）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
 `backend/`（`run.sh` / `seed_mock.py` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
 
 | 腳本 | 用途 | 等價手動指令 |
 |---|---|---|
-| `./scripts/dev/start.sh` | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務容器內起（PG+後端+前端，hot reload）；Ctrl-C 停 | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up` |
-| `./scripts/dev/stop.sh` | 停止所有服務（保留資料 volume）；`--wipe` 連 pgdata_dev 一起刪→全新空庫 | `docker compose -f docker-compose.dev.yml down [-v]` |
+| `./start.sh`（repo 根） | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務容器內起（PG+後端+前端，hot reload）；Ctrl-C 停 | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up` |
+| `./stop.sh`（repo 根） | 停止所有服務（保留資料 volume）；`--wipe` 連 pgdata_dev 一起刪→全新空庫 | `docker compose -f docker-compose.dev.yml down [-v]` |
 | `./scripts/dev/dump-seed.sh` | 產全庫 seed（pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum） | `pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
 | `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原 | `gunzip -c docker/seed/seed.sql.gz \| psql kkdb_ai_quality` |
 | `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |

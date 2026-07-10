@@ -1,8 +1,8 @@
 # 開發用編排（hot reload）—— 全服務在容器內，本機只需 Docker。完整命令/疑難排解見 docker/README.md。
 #
-#   一鍵：     ./scripts/dev/start.sh                                    （自動裝引擎 + up）
+#   一鍵：     ./start.sh                                    （自動裝引擎 + up）
 #   啟動：     docker compose -f docker-compose.dev.yml up -d            （背景；改依賴加 --build）
-#   停止：     ./scripts/dev/stop.sh                                     （--wipe 連資料庫一起清）
+#   停止：     ./stop.sh                                     （--wipe 連資料庫一起清）
 #   看 log：   docker compose -f docker-compose.dev.yml logs -f backend  （或 frontend / db）
 #   進容器：   docker compose -f docker-compose.dev.yml exec backend bash
 #

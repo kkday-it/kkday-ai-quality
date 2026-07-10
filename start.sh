@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 一鍵啟動（純 Docker）：自動裝並啟動容器引擎（優先 colima 免費開源）→ docker compose up（dev·hot reload）。
-#   ./scripts/dev/start.sh
+#   ./start.sh
 # 全服務在容器內：PostgreSQL + 後端 :8100 + 前端 :5273 + 所有依賴。本機只需 Homebrew（macOS）；其餘 start.sh 自動裝。
 # 改碼即生效（uvicorn --reload + vite HMR）；首次會 build image（較久），之後秒起。Ctrl-C 停止所有服務。
 # 資料：空庫也能起 → 於前端「配置 › 資料導入」上傳資料包載入；或先設 SEED_URL 由 db 首啟自動還原。
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"  # 本檔在 repo 根（與 docker-compose.dev.yml 同級）
 cd "$ROOT"
 
 # 1. 容器工具（docker CLI）存在？缺則自動安裝 colima（免費開源·大公司免授權）
