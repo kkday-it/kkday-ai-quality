@@ -5,7 +5,7 @@
 
 | 項目 | 職責 |
 |---|---|
-| `prejudge.py` | 單條進線 → **多歸因** TicketFinding 清單（`to_findings`）：Stage0 略過純好評 → Stage1 極性閘門 → Stage2 多歸因（候選域 canon 聚焦選 L1/L2/L3 + 信心）。cascade（config-gated）走 Stage A 多域→逐域 Stage B；`global_rule.prejudge_depth="l2"` 時改走**單呼叫 32 面向目錄只判 L1+L2**（`_attrs_l2_multi`；L3 留待接上商品/訂單佐證的深判，高信心 L2 照走 judged/G1），低信心反饋三環照舊（grounding 壓信心 → attr_min_confidence 閘門 → 負反饋重問）。**G1 自動確認路由**（`_route_status`）：auto_accept+judged→`auto_confirmed`（免人工佇列）+ `audit_sample_rate` 抽樣回 new 防自動化偏誤。 |
+| `prejudge.py` | 單條進線 → **多歸因** TicketFinding 清單（`to_findings`）：Stage0 略過純好評 → Stage1 極性閘門 → Stage2 多歸因（候選域 canon 聚焦選 L1/L2/L3 + 信心）。cascade（config-gated）走 Stage A 多域→逐域 Stage B；`global_rule.prejudge_depth="l2"` 時改走**單呼叫 31 面向目錄只判 L1+L2**（`_attrs_l2_multi`；L3 留待接上商品/訂單佐證的深判，高信心 L2 照走 judged/G1），低信心反饋三環照舊（grounding 壓信心 → attr_min_confidence 閘門 → 負反饋重問）。**G1 自動確認路由**（`_route_status`）：auto_accept+judged→`auto_confirmed`（免人工佇列）+ `audit_sample_rate` 抽樣回 new 防自動化偏誤。 |
 | `prejudge_batch.py` | in-mem job registry + ThreadPool 併發判決（copy_context 帶 contextvar）+ 進度/花費快照 + 暫停/恢復/停止（背壓逐筆提交）。 |
 | `ingest/` | 上傳落庫：`entry.read_sheets`（CSV/xlsx 讀成工作表）+ `upload_batch`（背景 job 分塊 → `db.insert_source_batch` 各來源專表 + $ 欄淨化）。 |
 | `llm/client.py` | LLM client（Structured Outputs、prompt caching、per-provider token、usage sink 回報、stub 模式）+ OpenAI SDK 直呼（`_complete`；base_url 可覆寫打各 OpenAI-compatible 端點）+ **exact-match 結果快取**（diskcache·`data/llm_cache`·`env.llm_exact_cache`：key=model+messages+response_format+effort 雜湊，prompt 內嵌規則正文→失效粒度自動精準；命中零 token 零延遲不落 llm_usage；讀取閘 `set_llm_cache_read`——批次開/顯式重判與 A/B 評測關，寫入恆開）+ serving tier（flex -50%·429 自動回退標準）；對外介面不變。 |

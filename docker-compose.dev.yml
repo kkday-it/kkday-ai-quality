@@ -41,11 +41,14 @@ services:
     # dev 既有庫因此會自動套用新 migration（如加欄）——create_all 不改既有表，跳過 alembic 曾令舊庫缺新欄
     # （踩過：judgments audit 欄缺失令資料包導出 UndefinedColumn 500）。
     command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8100", "--reload"]
+    env_file:
+      - ./backend/.env  # 帶入 OPENAI_API_KEY / AIQ_SECRET_KEY（at-rest 機密解密必需）；下方 environment 顯式項優先覆蓋
     environment:
       APP_ENV: development  # 免嚴格 JWT；資料導入閘自動開
       DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality
       AIQ_ALLOW_DATA_IMPORT: "true"
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}  # 無 key → stub 模式；填 key 走真 LLM
+      # ⚠️ 勿寫 OPENAI_API_KEY: ${VAR:-}——host shell 無值時以「空字串」覆蓋 env_file 真值 → 判決靜默走 stub
+      #（2026-07-11 踩過：stub 假判覆蓋 1,452 筆真歸因，靠 pg_dump 整表還原）
       CORS_ALLOW_ORIGINS: http://localhost:5273
     volumes:
       - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
