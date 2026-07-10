@@ -1,99 +1,113 @@
 {
-  "$schema": "./source_mapping.schema.json",
-  "_meta": {
-    "version": "1.1",
-    "label": "上傳表頭校驗",
-    "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。live 版在 DB judge_rule_versions（規則配置頁線上編輯），本檔為初始 seed。",
-    "canonical_fields": [
-      "source",
-      "source_record_id",
-      "occurred_at",
-      "content",
-      "title",
-      "channel",
-      "prod_oid",
-      "pkg_oid",
-      "order_oid",
-      "supplier_oid",
-      "member_uuid",
-      "score",
-      "lang"
-    ],
-    "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。"
+ "_meta": {
+  "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。",
+  "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。",
+  "version": "1.0",
+  "canonical_fields": [
+   "source",
+   "source_record_id",
+   "occurred_at",
+   "content",
+   "title",
+   "channel",
+   "prod_oid",
+   "pkg_oid",
+   "order_oid",
+   "supplier_oid",
+   "member_uuid",
+   "score",
+   "lang"
+  ]
+ },
+ "$schema": "./source_mapping.schema.json",
+ "sources": {
+  "app_feedback": {
+   "field_map": {
+    "oid": "source_record_id",
+    "score": "score",
+    "source": "channel",
+    "comment": "content",
+    "lang_code": "lang",
+    "created_datetime": "occurred_at"
+   },
+   "const_fields": {},
+   "required_headers": [
+    "oid",
+    "comment"
+   ]
   },
-  "sources": {
-    "conversations": {
-      "required_headers": ["session_oid", "aggregated_messages"],
-      "field_map": {
-        "session_oid": "source_record_id",
-        "session_create_date": "occurred_at",
-        "aggregated_messages": "content",
-        "sessionable_type": "channel",
-        "prod_oid": "prod_oid",
-        "order_oid": "order_oid",
-        "supplier_oid": "supplier_oid"
-      },
-      "const_fields": {}
-    },
-    "freshdesk_tickets": {
-      "required_headers": ["id", "description"],
-      "field_map": {
-        "id": "source_record_id",
-        "created_at": "occurred_at",
-        "subject": "title",
-        "description": "content",
-        "st_survey_rating": "score",
-        "product_id": "prod_oid",
-        "source_name": "channel"
-      },
-      "const_fields": {}
-    },
-    "product_reviews": {
-      "required_headers": ["rec_oid", "rec_title", "rec_desc"],
-      "field_map": {
-        "rec_oid": "source_record_id",
-        "create_date": "occurred_at",
-        "rec_title": "title",
-        "rec_desc": "content",
-        "rec_scores": "score",
-        "lang_code": "lang",
-        "prod_oid": "prod_oid",
-        "pkg_oid": "pkg_oid",
-        "order_oid": "order_oid",
-        "order_mid": "order_mid",
-        "supplier_oid": "supplier_oid",
-        "member_uuid": "member_uuid",
-        "traveller_type": "traveller_type",
-        "lst_dt_go": "go_date",
-        "product_category": "product_category"
-      },
-      "const_fields": {
-        "channel": "review"
-      }
-    },
-    "app_feedback": {
-      "required_headers": ["oid", "comment"],
-      "field_map": {
-        "oid": "source_record_id",
-        "created_datetime": "occurred_at",
-        "comment": "content",
-        "score": "score",
-        "source": "channel",
-        "lang_code": "lang"
-      },
-      "const_fields": {}
-    },
-    "mixpanel_tracker": {
-      "required_headers": ["event", "feedback_signal"],
-      "field_map": {
-        "insert_id": "source_record_id",
-        "time": "occurred_at",
-        "negative_items": "content",
-        "event": "channel",
-        "prod_mid": "prod_oid",
-        "pkg_oid": "pkg_oid"
-      },
-      "const_fields": {}
-    }
+  "conversations": {
+   "field_map": {
+    "prod_oid": "prod_oid",
+    "order_oid": "order_oid",
+    "session_oid": "source_record_id",
+    "supplier_oid": "supplier_oid",
+    "sessionable_type": "channel",
+    "aggregated_messages": "content",
+    "session_create_date": "occurred_at"
+   },
+   "const_fields": {},
+   "required_headers": [
+    "session_oid",
+    "aggregated_messages"
+   ]
+  },
+  "product_reviews": {
+   "field_map": {
+    "pkg_oid": "pkg_oid",
+    "rec_oid": "source_record_id",
+    "prod_oid": "prod_oid",
+    "rec_desc": "content",
+    "lang_code": "lang",
+    "lst_dt_go": "go_date",
+    "order_mid": "order_mid",
+    "order_oid": "order_oid",
+    "rec_title": "title",
+    "rec_scores": "score",
+    "create_date": "occurred_at",
+    "member_uuid": "member_uuid",
+    "supplier_oid": "supplier_oid",
+    "traveller_type": "traveller_type",
+    "product_category": "product_category"
+   },
+   "const_fields": {
+    "channel": "review"
+   },
+   "required_headers": [
+    "rec_oid",
+    "rec_desc"
+   ]
+  },
+  "mixpanel_tracker": {
+   "field_map": {
+    "time": "occurred_at",
+    "event": "channel",
+    "pkg_oid": "pkg_oid",
+    "prod_mid": "prod_oid",
+    "insert_id": "source_record_id",
+    "negative_items": "content"
+   },
+   "const_fields": {},
+   "required_headers": [
+    "event",
+    "feedback_signal"
+   ]
+  },
+  "freshdesk_tickets": {
+   "field_map": {
+    "id": "source_record_id",
+    "subject": "title",
+    "created_at": "occurred_at",
+    "product_id": "prod_oid",
+    "description": "content",
+    "source_name": "channel",
+    "st_survey_rating": "score"
+   },
+   "const_fields": {},
+   "required_headers": [
+    "id",
+    "description"
+   ]
   }
+ }
 }

@@ -45,7 +45,7 @@
        "neutral"
       ]
      },
-     "description": "哪些整體傾向進歸因（positive/unknown 恆 non_issue，不可列入）。"
+     "description": "哪些整體傾向進歸因（positive 恆 non_issue，不可列入）。"
     },
     "note": {
      "type": "string"
