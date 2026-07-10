@@ -1,54 +1,7 @@
 {
  "_comment": "判決顯示與信心閾值——判決領域 SSOT（前端 @config/ai_judge/judgment.json、後端 prejudge.py / db.py 同讀）。信心閾值/prejudge 旋鈕/傾向・分層 label 集中此檔；QC 校準後需免改碼調 auto_accept/jury 分層。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
- "confidence_tiers": {
-  "auto_accept": 0.8,
-  "jury_low": 0.5,
-  "jury_high": 0.7
- },
- "auto_confirm": {
-  "_comment": "G1 自動確認路由：auto_accept+judged 的判決自動採信、不進人工佇列（status=auto_confirmed）；audit_sample_rate 比例抽樣回 new 交人工複核（防自動化偏誤——LLM 高召回低精確）。QC 免改碼調（本檔已納 RULE_CODES 熱重載）。",
-  "enabled": true,
-  "audit_sample_rate": 0.05
- },
- "true_label": {
-  "_comment": "標真值把關（防亂標/故意修改）：人工用級聯選 L1→L2→L3 標真值分類，確認時 LLM 對『該真值 vs 反饋原文』重判評分，與原判信心對比。當『原判信心 − LLM 真值信心』> reason_required_drop 時，強制填修改理由才能存（理由入 audit）。evaluate_model=null → 用 prejudge.stage1_model 便宜模型。QC 免改碼調。",
-  "reason_required_drop": 0.15,
-  "evaluate_model": null
- },
- "ui_confidence_bands": {
-  "high": 0.85,
-  "mid": 0.7
- },
- "tier_labels": {
-  "auto_accept": "自動採信",
-  "jury": "評審覆核",
-  "needs_review": "人工覆核"
- },
- "polarity_labels": {
-  "positive": "正向",
-  "negative": "負向",
-  "neutral": "中立",
-  "unknown": "傾向不明"
- },
- "stage_labels": {
-  "unjudged": "未判",
-  "judged": "已判決",
-  "pending_review": "待覆核",
-  "pending_data": "待數據補充",
-  "insufficient": "資訊不足"
- },
  "prejudge": {
-  "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門＋cascade Stage A 域分類的 fallback 模型（cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者（同域換葉；跨域重路由另見 global_rule cascade.reroute_on_low_conf）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝cascade 域分類／attribute＝歸因；null＝沿用主 config；gpt-5 系列預設 effort 的 reasoning tokens 佔全量重判總費 ~62%（2026-07-06 實測），降檔省 completion 須先 A/B 驗準）；batch_service_tier：批次判決 serving tier（null＝標準；\"flex\"＝OpenAI flex processing -50% 計價換變動延遲·僅 OpenAI provider 生效·429 資源不足自動回退標準）；flex_min_items：套 flex 的最小批量（小批次如單筆重判走標準 tier 保互動延遲）。",
-  "stage1_model": "gpt-5-mini",
-  "polarity_reasoning_effort": "minimal",
-  "stage_a_reasoning_effort": null,
-  "attribute_reasoning_effort": null,
-  "batch_service_tier": "flex",
-  "flex_min_items": 10,
-  "enable_stage0_skip": true,
-  "stage0_max_comment_len": 8,
-  "enable_adaptive_rejudge": true,
-  "max_attributions": 2,
+  "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門＋cascade Stage A 域分類的 fallback 模型（cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者（同域換葉；跨域重路由另見 global_rule cascade.reroute_on_low_conf）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝cascade 域分類／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；stage_a/attribute 降檔須先更大樣本 A/B 驗準）。",
   "neg_keywords": [
    "退款",
    "退費",
@@ -69,7 +22,57 @@
    "貴",
    "拒絕",
    "無法",
-   "不符"
-  ]
+   "不符",
+   "壞了",
+   "當機",
+   "卡住",
+   "連不上",
+   "危險"
+  ],
+  "stage1_model": "gpt-5-mini",
+  "flex_min_items": 10,
+  "max_attributions": 2,
+  "batch_service_tier": "flex",
+  "enable_stage0_skip": true,
+  "stage0_max_comment_len": 8,
+  "enable_adaptive_rejudge": true,
+  "stage_a_reasoning_effort": null,
+  "polarity_reasoning_effort": "minimal",
+  "attribute_reasoning_effort": null
+ },
+ "true_label": {
+  "_comment": "標真值把關（防亂標/故意修改）：人工用級聯選 L1→L2→L3 標真值分類，確認時 LLM 對『該真值 vs 反饋原文』重判評分，與原判信心對比。當『原判信心 − LLM 真值信心』> reason_required_drop 時，強制填修改理由才能存（理由入 audit）。evaluate_model=null → 用 prejudge.stage1_model 便宜模型。QC 免改碼調。",
+  "evaluate_model": null,
+  "reason_required_drop": 0.15
+ },
+ "tier_labels": {
+  "jury": "評審覆核",
+  "auto_accept": "自動採信",
+  "needs_review": "人工覆核"
+ },
+ "auto_confirm": {
+  "enabled": true,
+  "_comment": "G1 自動確認路由：auto_accept+judged 的判決自動採信、不進人工佇列（status=auto_confirmed）；audit_sample_rate 比例抽樣回 new 交人工複核（防自動化偏誤——LLM 高召回低精確）。QC 免改碼調（本檔已納 RULE_CODES 熱重載）。",
+  "audit_sample_rate": 0.05
+ },
+ "stage_labels": {
+  "judged": "已判決",
+  "unjudged": "未判",
+  "pending_data": "待數據補充",
+  "pending_review": "待覆核"
+ },
+ "polarity_labels": {
+  "neutral": "中性",
+  "negative": "負向",
+  "positive": "正向"
+ },
+ "confidence_tiers": {
+  "jury_low": 0.5,
+  "jury_high": 0.7,
+  "auto_accept": 0.8
+ },
+ "ui_confidence_bands": {
+  "mid": 0.7,
+  "high": 0.85
  }
 }
