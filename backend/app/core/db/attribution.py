@@ -209,7 +209,7 @@ def attribution_overview(
 
     by_polarity = [
         {
-            "polarity": r["k"] or "unknown",
+            "polarity": r["k"] or "unjudged",  # NULL＝未判（尚未進判決管線，非中立）
             "label": _POLARITY_LABEL_ZH.get(r["k"], r["k"] or "未判"),
             "n": r["n"],
         }

@@ -6,9 +6,9 @@ import type { ProblemRow } from '@/features/judge/constants';
 export interface GetProblemsParams {
   source?: string;
   judged?: boolean;
-  /** 傾向篩選（多選 positive/neutral/negative/unknown；CSV 傳後端）。 */
+  /** 傾向篩選（多選 positive/neutral/negative；CSV 傳後端）。 */
   polarity?: string[];
-  /** 判決階段篩選（多選；unjudged/judged/pending_review/pending_data/insufficient；CSV 傳後端）。 */
+  /** 判決階段篩選（多選；unjudged/judged/pending_review/pending_data；CSV 傳後端）。 */
   stage?: string[];
   /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
   productVerticals?: string[];

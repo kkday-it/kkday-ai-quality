@@ -45,8 +45,8 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
     tier_c: Counter = Counter()
     stage_c: Counter = Counter()
     for r in rows:
-        pol = r.get("polarity") or "unknown"  # 未判 / None → 傾向不明
-        pol_c[_POLARITY_LABEL_ZH.get(pol, pol)] += 1
+        pol = r.get("polarity")  # None＝未判（尚未進判決管線，非中立）
+        pol_c[_POLARITY_LABEL_ZH.get(pol, pol) if pol else "未判"] += 1
         for a in r.get("attributions") or []:
             l1 = (a.get("l1") or {}).get("label")
             if l1:

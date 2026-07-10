@@ -55,12 +55,11 @@ export const HAS_EXTERNAL_OPTS = [
   { value: 'false', label: '無外部評論' },
 ];
 
-/** 傾向篩選選項（順序：負向/中立/正向/情緒不明；直接按 judgments.polarity 篩，含無情緒分的 unknown）。 */
+/** 傾向篩選選項（順序：負向/中立/正向；直接按 judgments.polarity 篩）。 */
 export const POLARITY_FILTER_OPTS = [
   { value: 'negative', label: '負向' },
   { value: 'neutral', label: '中立' },
   { value: 'positive', label: '正向' },
-  { value: 'unknown', label: '情緒不明' },
 ];
 /** 階段 / 分層選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
@@ -79,7 +78,7 @@ export const countActiveFilters = (f: AttributionFilters): number =>
   (f.orderOid.trim() ? 1 : 0);
 
 /** 篩選 → getProblems / 導出 API 參數（統一轉換，空值一律 undefined 不送）。
- *  傾向直接按 judgments.polarity 多選篩（正向/中性/負向/傾向不明）。 */
+ *  傾向直接按 judgments.polarity 多選篩（正向/中性/負向）。 */
 export const filtersToParams = (f: AttributionFilters) => {
   return {
     polarity: f.polarity.length ? f.polarity : undefined,

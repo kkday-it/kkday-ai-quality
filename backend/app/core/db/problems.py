@@ -213,11 +213,9 @@ def _derive_stage(dto: dict) -> str:
     """階段派生（僅供 stage 欄空的 legacy 列相容顯示；新資料 stage 欄已存值）。
 
     dto＝attribution_dto 產物（巢狀）。負向且無 L3→pending_data；auto_accept→judged 否則
-    pending_review；unknown→insufficient；正/中→judged。
+    pending_review；正/中→judged。
     """
     pol = dto.get("polarity")
-    if pol == "unknown":
-        return "insufficient"
     if pol != "negative":
         return "judged"
     if not (dto.get("l3") or {}).get("code"):
@@ -399,7 +397,7 @@ def _list_problems_spec(
             stmt = stmt.where(~has_jg)
         jg = T.judgments
         if polarity:
-            # 傾向多選（positive/neutral/negative/unknown）；含 unknown 亦可（其無情緒分，故按 polarity 篩）
+            # 傾向多選（positive/neutral/negative）；直接按 judgments.polarity 篩
             pol_list = [polarity] if isinstance(polarity, str) else polarity
             stmt = stmt.where(_jg_exists(spec, jg.c.polarity.in_(pol_list)))
         if sentiment:

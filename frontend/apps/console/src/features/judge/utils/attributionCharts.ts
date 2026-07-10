@@ -13,7 +13,7 @@ export interface CountItem {
   n: number;
 }
 
-/** 傾向分布項（positive/negative/neutral/unknown）。 */
+/** 傾向分布項（positive/negative/neutral；unjudged＝未判 NULL 桶）。 */
 export interface PolarityItem {
   polarity: string;
   label: string;

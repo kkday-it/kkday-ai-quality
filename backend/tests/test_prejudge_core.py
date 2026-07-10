@@ -47,8 +47,7 @@ def test_tier_for_boundaries(fixed_config) -> None:
 
 
 def test_derive_stage_all_branches() -> None:
-    """判決階段派生（歸因 finding 專用；混合中性歸因與負向同規則，polarity 僅 unknown 特判）。"""
-    assert prejudge._derive_stage("unknown", "", "jury", False) == "insufficient"
+    """判決階段派生（歸因 finding 專用；混合中性歸因與負向同規則）。"""
     # 無 L3 或 evidence-cap → pending_data（不分負向/混合中性）
     assert prejudge._derive_stage("negative", "", "auto_accept", False) == "pending_data"
     assert prejudge._derive_stage("neutral", "", "jury", False) == "pending_data"
@@ -276,7 +275,7 @@ def test_has_neg_kw(fixed_config) -> None:
 
 
 def test_stub_polarity_heuristic(fixed_config) -> None:
-    """stub 極性：回 (polarity, sentiment 1-5)。rating≤2 負(1-2) / ≥4 正(4-5) / 中間看負向詞 / 無詞有字 unknown / 無字 neutral(3)。"""
+    """stub 極性：回 (polarity, sentiment 1-5)。rating≤2 負(1-2) / ≥4 正(4-5) / 中間看負向詞 / 無法判別兜底 neutral(3)。"""
     pol = prejudge._stub_polarity
     assert pol({"rating": 1}, "隨便") == ("negative", 1)
     assert pol({"rating": 2}, "隨便") == ("negative", 2)
@@ -286,7 +285,7 @@ def test_stub_polarity_heuristic(fixed_config) -> None:
         "negative",
         1,
     )  # 中間 + 負向詞（無 rating 區間，預設 1）
-    assert pol({"rating": 3}, "普通") == ("unknown", 0)  # 中間 + 無負向詞 + 有字
+    assert pol({"rating": 3}, "普通") == ("neutral", 3)  # 中間 + 無負向詞 + 有字 → 兜底中立 3
     assert pol({}, "誤導消費者") == ("negative", 1)  # 無 rating 靠負向詞
     assert pol({}, "") == ("neutral", 3)  # 無 rating 無字
 
@@ -342,13 +341,14 @@ def test_to_findings_negative_unattributed_pending_data(stub_engine) -> None:
     assert f.needs_review is True
 
 
-def test_to_findings_unknown_polarity_insufficient(stub_engine) -> None:
-    """中間評分 + 無負向詞 + 有字 → 傾向不明 → insufficient（資訊不足）。"""
+def test_to_findings_middling_review_neutral_judged(stub_engine) -> None:
+    """中間評分 + 無負向詞 + 有字 → 兜底中立 3 → judged（傾向只有三態，無 unknown/insufficient）。"""
     out = prejudge.to_findings(_item(3, "普通"), model="gpt-5-nano")
     assert len(out) == 1
     f = out[0]
-    assert f.polarity == "unknown"
-    assert f.judgment_stage == "insufficient"
+    assert f.polarity == "neutral"
+    assert f.sentiment_score == 3
+    assert f.judgment_stage == "judged"
 
 
 # ── 歸因處理正確性（_evidence_grounded / _finalize_attr）───────────────────

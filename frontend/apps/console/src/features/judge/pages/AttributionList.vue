@@ -4,7 +4,7 @@
  *
  * 分頁/篩選/排序皆走後端（/api/problems limit-offset；occurred_at DESC 穩定）；表頭固定、表身內滾動、
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
- * 正向/中性/傾向不明 不歸因，只有負向才有 L1→L3。
+ * 正向/中性 不歸因，只有負向才有 L1→L3。
  *
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
@@ -47,21 +47,19 @@ import {
 import { useAttributionList } from '../composables';
 import { fmtDt } from '../utils';
 
-/** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰 / 傾向不明橙）。 */
+/** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰）。 */
 const POLARITY_COLOR: Record<string, string> = {
   positive: 'green',
   negative: 'red',
   neutral: 'gray',
-  unknown: 'orange',
 };
 
-/** 判決階段語義色（未判灰 / 已判決綠 / 待覆核橙 / 待數據補充藍 / 資訊不足灰）。 */
+/** 判決階段語義色（未判灰 / 已判決綠 / 待覆核橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
   unjudged: 'gray',
   judged: 'green',
   pending_review: 'orange',
   pending_data: 'arcoblue',
-  insufficient: 'gray',
 };
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
@@ -726,7 +724,7 @@ onMounted(init);
             <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
             <div v-if="a.content?.summary" class="flex gap-1.5">
               <span
-                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
                 >摘要</span
               >
               <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
@@ -736,7 +734,7 @@ onMounted(init);
             <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
             <div class="flex gap-1.5">
               <span
-                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
                 >歸因</span
               >
               <div class="min-w-0">
@@ -766,7 +764,7 @@ onMounted(init);
             <!-- 信心（值 + 分層 + 判決階段 + 人工覆核徽章）-->
             <div class="flex gap-1.5">
               <span
-                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
                 >信心</span
               >
               <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -799,7 +797,7 @@ onMounted(init);
             <!-- 操作（確認採信(綠)/忽略駁回(紅)/標真值/備註；選中覆核狀態填色 primary）-->
             <div class="flex gap-1.5">
               <span
-                class="min-w-[3rem] shrink-0 self-start rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
                 >操作</span
               >
               <div class="flex min-w-0 flex-wrap items-center gap-1.5">

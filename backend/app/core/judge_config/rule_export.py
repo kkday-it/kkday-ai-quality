@@ -100,8 +100,13 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
     ws.freeze_panes = f"{chr(65 + freeze_cols)}2"
     ws.auto_filter.ref = ws.dimensions
 
+    # 欄寬下限＝表頭標題一行所需寬（CJK 以 2 計）＋篩選箭頭佔位，保證標題不換行
+    import unicodedata
+
     for i, w in enumerate(widths, 1):
-        ws.column_dimensions[chr(64 + i)].width = w
+        head = str(ws.cell(row=1, column=i).value or "")
+        head_w = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in head)
+        ws.column_dimensions[chr(64 + i)].width = max(w, head_w + 3)
 
     for r, row in enumerate(ws.iter_rows(min_row=2), start=2):  # 資料列
         for c in row:

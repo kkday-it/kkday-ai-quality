@@ -1,6 +1,7 @@
 """問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。
 
-整列底色依 polarity（正綠/中灰/負紅）；另附「歸因統計」圖表工作表
+整列底色依 polarity（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱
+長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）；另附「歸因統計」圖表工作表
 （本次導出的情緒傾向/L1/L2/分層/階段分佈，見 export_stats.py）。
 """
 
@@ -35,12 +36,16 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ),  # rec_desc：評論正文（review 級，判決主輸入）；凍結邊界：前 4 欄（編號～評論內容）橫捲固定
     ("評論星等", "score", 8),
     ("評論時間", "occurred_at", 20),
-    ("外部評論情緒傾向", "ext_sentiment", 12),  # 外部評論系統情緒分 1-5（僅商品評論來源有值）
-    ("外部評論 Free Tag", "ext_free_tag", 40),  # 外部評論面向標籤摘要（每面向一行）
     ("訂單號", "order_mid", 16),
     ("出發日", "go_date", 14),
     ("商品編號", "prod_oid", 12),
     ("商品名稱", "prod_name", 28),
+    ("方案編號", "pkg_oid", 12),
+    (
+        "方案名稱",
+        "package_name",
+        28,
+    ),  # order_snap_json 多語快照取 package_name（僅有訂單快照的來源有值）
     (
         "問題摘要",
         "summary",
@@ -58,13 +63,12 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
 _XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
+# 資料列每行文字高度（pt）：Excel 預設字體（Calibri 11）單行列高
+_LINE_HEIGHT_PT = 15
+
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化、外部 free_tag 摘要化，其餘原樣。"""
-    if key == "ext_free_tag":  # list[dict] → 多行摘要（空 list 亦回空字串，須先於下方 falsy 判斷）
-        from app.core.db.comparison import ext_free_tag_summary
-
-        return ext_free_tag_summary(value)
+    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化，其餘原樣。"""
     if value is None or value == "":
         return ""
     if key == "occurred_at":
@@ -229,7 +233,7 @@ def export_problems_xlsx(
         merges.append((r_excel, n))
         r_excel += n
     _style_header(ws, [c[2] for c in cols], freeze_cols=4)  # 凍結表頭 + 前 4 欄（編號～評論內容）
-    # polarity 整列底色（正綠/中灰/負紅；傾向不明不上色）。置於「合併前」——此時全為普通 cell，
+    # polarity 整列底色（正綠/中灰/負紅；未判不上色）。置於「合併前」——此時全為普通 cell，
     # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header 故覆蓋其斑馬紋。
     _pol_fill = {
         "positive": PatternFill("solid", fgColor="DCF3E3"),  # 正向：淡綠
@@ -248,6 +252,28 @@ def export_problems_xlsx(
         if n > 1:
             for ci in review_col_idx:
                 ws.merge_cells(start_row=sr, start_column=ci, end_row=sr + n - 1, end_column=ci)
+    # 顯式行高＝排除長文欄後各欄所需換行行數之最大值：超長的評論內容/商品名稱不再把整列
+    # 撐爆，其餘欄位仍完整可見（wrap_text 下 Excel 只對「未設高」的列 auto-fit，設高即鎖定）。
+    # review 級合併欄的值在合併首列（sr），其所需行數平攤到 n 列。
+    _height_exempt = {
+        "content",
+        "prod_name",
+        "package_name",
+    }  # 長文欄：不參與行高計算，超出交給截斷顯示
+    for sr, n in merges:
+        base = 1  # review 級欄（合併區塊整體）平攤後的每列行數
+        for ci in review_col_idx:
+            _t, key, w = cols[ci - 1]
+            if key in _height_exempt:
+                continue
+            need = -(-_wrapped_lines(ws.cell(row=sr, column=ci).value, w) // n)  # ceil
+            base = max(base, need)
+        for rr in range(sr, sr + n):
+            lines = base
+            for ci, (_t, key, w) in enumerate(cols, start=1):
+                if key in _attr_keys:  # 歸因級欄逐列有值、不合併
+                    lines = max(lines, _wrapped_lines(ws.cell(row=rr, column=ci).value, w))
+            ws.row_dimensions[rr].height = lines * _LINE_HEIGHT_PT
     # 緊接資料表後附「歸因統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段分佈；所見即所得）
     from app.core.db.export_stats import append_stats_sheet
 
@@ -257,3 +283,28 @@ def export_problems_xlsx(
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _wrapped_lines(value, col_width: int) -> int:
+    """估算儲存格值在指定欄寬（Excel 字元單位）wrap 後的顯示行數。
+
+    欄寬單位≈半形字元數；CJK/全形字以 2 計（east_asian_width W/F）。逐 \\n 段落
+    各自 ceil(顯示寬/可用寬) 後加總。估算值供顯式行高用，允許 ±1 行誤差。
+
+    Args:
+        value: 儲存格值（None/數字/字串皆可，內部字串化）。
+        col_width: 該欄欄寬（_EXPORT_XLSX_COLS 第三元素）。
+
+    Returns:
+        至少 1 的行數估計。
+    """
+    import unicodedata
+
+    if value is None or value == "":
+        return 1
+    usable = max(col_width - 1, 1)  # 扣約 1 字元 cell 內距
+    lines = 0
+    for seg in str(value).split("\n"):
+        width = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in seg)
+        lines += max(1, -(-width // usable))  # ceil
+    return lines

@@ -35,7 +35,7 @@ def prejudge_target_ids(
 
     選取邏輯（兩分支聯集去重）：
     - stages 含 'unjudged' → 收「無 finding 列」特徵 id（首判）。
-    - stages 含已判階段（judged/pending_review/pending_data/insufficient）→ 收
+    - stages 含已判階段（judged/pending_review/pending_data）→ 收
       judgments.stage ∈ 該些階段，並可再收斂 target_polarity / max_confidence /
       confidence_tier / taxonomy（只重判負向低信心等場景，避免浪費 token 重判已確定者）。
     - 表級篩選（垂直分類/日期區間/關聯 oid/有無外部評論）兩分支皆套，語義與統一問題列表

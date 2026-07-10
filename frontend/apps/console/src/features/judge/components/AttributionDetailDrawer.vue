@@ -26,15 +26,13 @@ const POLARITY_COLOR: Record<string, string> = {
   positive: 'green',
   negative: 'red',
   neutral: 'gray',
-  unknown: 'orange',
 };
 
-/** 判決階段語義色（同列表：已判決綠 / 待覆核橙 / 待數據補充藍 / 資訊不足灰）。 */
+/** 判決階段語義色（同列表：已判決綠 / 待覆核橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
   judged: 'green',
   pending_review: 'orange',
   pending_data: 'arcoblue',
-  insufficient: 'gray',
 };
 
 /** 信心分層語義色（auto_accept 可採信綠 / jury 需覆核橙 / needs_review 必人工紅）。 */

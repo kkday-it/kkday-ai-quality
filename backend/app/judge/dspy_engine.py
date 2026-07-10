@@ -36,7 +36,7 @@ class PolarityJudge(dspy.Signature):
     """判斷 KKday 旅遊商品進線評論的整體情緒傾向；只判傾向、不做任何歸因。"""
 
     review: str = dspy.InputField(desc="評論 / 進線原文")
-    polarity: str = dspy.OutputField(desc="整體傾向：positive / negative / neutral / unknown 之一")
+    polarity: str = dspy.OutputField(desc="整體傾向：positive / negative / neutral 之一")
 
 
 class AttributionJudge(dspy.Signature):
@@ -64,8 +64,8 @@ class DspyJudge(dspy.Module):
     def forward(self, item: dict[str, Any]) -> list[TicketFinding]:
         text = prejudge._text_of(item)
         pol = str(self.polarity(review=text).polarity or "").strip()
-        if pol not in ("positive", "negative", "neutral", "unknown"):
-            pol = "unknown"
+        if pol not in ("positive", "negative", "neutral"):
+            pol = "neutral"  # 非法輸出兜底中立（傾向只有三態）
         if pol != "negative":
             return [prejudge._non_issue_finding(item, pol, "dspy")]
 

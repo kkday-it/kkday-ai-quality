@@ -224,14 +224,11 @@ def _evidence_cap(l1_domain: str, item: dict, raw_conf: float) -> float:
 def _derive_stage(polarity: str, l3_code: str, tier: str, evidence_capped: bool) -> str:
     """判決階段派生（歸因 finding 專用；non_issue 於 _non_issue_finding 直接設 stage）。
 
-    歸因列不分整體傾向（負向或混合中性的問題面向同規則），polarity 僅 unknown 特判：
-    - insufficient 資訊不足：連傾向都判不出（unknown），評論本身太少，外部資料救不了。
+    歸因列不分整體傾向（負向或混合中性的問題面向同規則）：
     - judged 已判決：歸到 L3+高信心+未觸 cap。
     - pending_data 待數據補充：L3 空(abstain) 或 evidence-cap 觸發(缺訂單/商品頁)——需外部佐證、能救。
     - pending_review 待覆核：有 L3+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
     """
-    if polarity == "unknown":
-        return "insufficient"
     if evidence_capped or not l3_code:
         return "pending_data"
     return "judged" if tier == "auto_accept" else "pending_review"
@@ -449,7 +446,8 @@ def _attr_user(text: str) -> str:
 def _stub_polarity(item: dict, text: str) -> tuple[str, int]:
     """rating + 負向關鍵詞 啟發式極性（stub）；回 (polarity, sentiment 1-5)。
 
-    sentiment 取 rating 細分並夾區間：rating≤2→負向(1-2)、≥4→正向(4-5)、中間看負向詞。
+    sentiment 取 rating 細分並夾區間：rating≤2→負向(1-2)、≥4→正向(4-5)、中間看負向詞；
+    無法判別一律兜底中立 3（傾向只有 positive/negative/neutral 三態）。
     """
     r = item.get("rating")
     if isinstance(r, int):
@@ -459,9 +457,7 @@ def _stub_polarity(item: dict, text: str) -> tuple[str, int]:
             return "positive", min(5, r)  # rating 4→4、5→5
     if _has_neg_kw(text):
         return "negative", 1
-    if not text:
-        return "neutral", 3
-    return "unknown", 0
+    return "neutral", 3
 
 
 # ── 解析與淨化 ──────────────────────────────────────────────────────────────
@@ -513,17 +509,16 @@ def _base_kwargs(item: dict) -> dict:
 
 def _non_issue_finding(item: dict, polarity: str, model: str, sentiment: int = 0) -> TicketFinding:
     """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。sentiment＝情緒分 1-5（0＝未判）。"""
-    conf = 1.0 if polarity in ("positive", "neutral") else 0.5
     return TicketFinding(
         **_base_kwargs(item),
         dimension="non_content",
         recommended_action="no_action",
         polarity=polarity,
         sentiment_score=sentiment,
-        confidence=conf,
-        raw_confidence=conf,
-        confidence_tier="auto_accept" if polarity != "unknown" else "needs_review",
-        judgment_stage="insufficient" if polarity == "unknown" else "judged",
+        confidence=1.0,
+        raw_confidence=1.0,
+        confidence_tier="auto_accept",
+        judgment_stage="judged",
         model_used=model,
     )
 
@@ -594,7 +589,7 @@ def _clamp_sentiment(raw: Any, polarity: str) -> int:
     """LLM 情緒分正規化為 1-5，並夾進 polarity 對應區間確保與傾向一致（負面 1-2 / 中立 3 / 正面 4-5）。
 
     區間鉗制：保證我方 polarity（驅動歸因）與 sentiment 不矛盾，同時保留正/負向內 1-2、4-5 的細分；
-    中立恆為 3（doc 定義單點）；unknown 回 0（未判）。raw 缺失/非法時取該區間預設中值。
+    中立恆為 3（doc 定義單點）。raw 缺失/非法時取該區間預設中值。
     """
     try:
         v = int(round(float(raw)))
@@ -604,9 +599,7 @@ def _clamp_sentiment(raw: Any, polarity: str) -> int:
         return min(5, max(4, v)) if v else 5
     if polarity == "negative":
         return min(2, max(1, v)) if v else 1
-    if polarity == "neutral":
-        return 3
-    return 0  # unknown
+    return 3  # neutral（含非法 polarity 兜底：中立恆 3）
 
 
 def _stage1_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
@@ -621,7 +614,8 @@ def _stage1_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
         effort=_polarity_effort(),
     )
     pol = str(out.get("polarity", "")).strip().lower()
-    pol = pol if pol in ("positive", "negative", "neutral") else "unknown"
+    # 非法輸出兜底中立（傾向只有三態；Structured Outputs 下極少觸發）
+    pol = pol if pol in ("positive", "negative", "neutral") else "neutral"
     return pol, _clamp_sentiment(out.get("sentiment"), pol)
 
 
@@ -1188,7 +1182,7 @@ def score_true_label(text: str, proposed_code: str, model: str) -> dict:
 def _attribute_when() -> frozenset[str]:
     """哪些整體傾向進歸因（global_rule.polarity_gate.attribute_when；SSOT＝DB active 版）。
 
-    容錯：字串（legacy attribute_only_when 單值）與清單皆收；只認 negative/neutral（positive/unknown
+    容錯：字串（legacy attribute_only_when 單值）與清單皆收；只認 negative/neutral（positive
     恆 non_issue，防 config 誤填放行好評歸因）；config 缺失/全無效 → 回退 {"negative"}（保守舊行為）。
     """
     gate = global_rule.polarity_gate()

@@ -47,11 +47,11 @@ judgments = Table(
     Column("prod_oid", Text),
     Column("dimension", Text),
     # ── 傾向 / 階段 ──
-    Column("polarity", Text),  # positive | negative | neutral | unknown
+    Column("polarity", Text),  # positive | negative | neutral
     # 情緒分 1-5（LLM 讀原文判；與 polarity 同段輸出：負面1-2/中立3/正面4-5）——與外部評論 sentiment
-    # 同尺度，供評論對比表逐則比對；null＝未判/傾向不明。
+    # 同尺度，供評論對比表逐則比對；null＝未判。
     Column("sentiment_score", Integer),
-    Column("stage", Text),  # judged / pending_review / pending_data / insufficient
+    Column("stage", Text),  # judged / pending_review / pending_data
     # ── 歸因分類 L1→L3（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
     Column("l1_code", Text),
     Column("l1_label", Text),

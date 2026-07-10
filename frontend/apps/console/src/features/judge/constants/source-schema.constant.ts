@@ -22,7 +22,7 @@ export interface PolarityFilterDef {
   type: 'polarity';
 }
 
-/** 判決階段篩選（多選；選項來自 STAGE_LABELS，值 unjudged/judged/pending_review/pending_data/insufficient）。 */
+/** 判決階段篩選（多選；選項來自 STAGE_LABELS，值 unjudged/judged/pending_review/pending_data）。 */
 export interface StageFilterDef {
   type: 'stage';
 }
@@ -88,7 +88,7 @@ export interface AttributionContent {
 export interface Attribution {
   finding_id?: string;
   polarity?: string;
-  /** 判決階段（judged/pending_review/pending_data/insufficient）。 */
+  /** 判決階段（judged/pending_review/pending_data）。 */
   stage?: string;
   l1?: AttributionLevel;
   l2?: AttributionLevel;

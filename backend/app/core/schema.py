@@ -132,15 +132,13 @@ class TicketFinding(BaseModel):
     l3_candidates: list[dict] = Field(
         default_factory=list
     )  # top-3 符合度 [{code,label,score}]（透明檢視）
-    polarity: str = (
-        ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral / unknown(傾向不明)
-    )
-    # 情緒分 1-5（LLM 讀原文細分，夾進 polarity 區間：負面 1-2 / 中立 3 / 正面 4-5）；0＝未判/傾向不明。
+    polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral(中立)
+    # 情緒分 1-5（LLM 讀原文細分，夾進 polarity 區間：負面 1-2 / 中立 3 / 正面 4-5）；0＝未判。
     # 與外部評論 sentiment 同尺度，供評論對比表逐則比對。
     sentiment_score: int = 0
     confidence_tier: str = ""  # 信心分層：auto_accept / jury / needs_review
     # 判決階段（prejudge 派生；未判＝無 finding 於 enrich 層補）：
-    # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充 / insufficient 資訊不足
+    # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充
     judgment_stage: str = ""
     model_used: str = (
         ""  # 判決使用的 LLM 模型（stub 時為 "stub"；ensemble 聯合判決時為 "ensemble"）
