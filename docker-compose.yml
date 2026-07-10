@@ -10,6 +10,7 @@ name: kkday-ai-quality # 固定專案名（與 dev 同名共用前綴；dev/prod
 services:
   db:
     image: postgres:17-alpine
+    container_name: kkday-ai-quality-db-prod # 去 -1 尾碼；-prod 後綴與 dev 容器名區隔
     restart: unless-stopped
     environment:
       POSTGRES_DB: kkdb_ai_quality
@@ -32,6 +33,7 @@ services:
       dockerfile: backend/Dockerfile
     # 顯式 :prod tag：與 dev 分 tag，兩形態 build 互不覆蓋（同專案名+服務名時 compose 預設共用 tag）
     image: kkday-ai-quality-backend:prod
+    container_name: kkday-ai-quality-backend-prod
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -61,6 +63,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     image: kkday-ai-quality-frontend:prod # 同 backend：與 dev 分 tag 防互蓋
+    container_name: kkday-ai-quality-frontend-prod
     restart: unless-stopped
     ports:
       - "8080:80"
