@@ -45,22 +45,19 @@ def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
         assert isinstance(qc_body["value"], list) and qc_body["ttl"] > 0
 
         qc_perms, admin_perms = set(qc_body["value"]), set(admin_body["value"])
-        # qc 有質檢作業權限、無 admin-tier
+        # qc 有質檢作業權限（含資料包導入導出——業務拍板：登入即可用全部資料導入功能）、無 admin-tier
         assert "finding.review.update" in qc_perms
         assert "data.source.upload" in qc_perms
+        assert "data.datapack.import" in qc_perms
         assert "judge-rule.version.manage" not in qc_perms
-        assert "data.datapack.import" not in qc_perms
+        assert "config.file.write" not in qc_perms
         # admin 全量且為 qc 超集
         assert qc_perms <= admin_perms
-        assert {
-            "judge-rule.version.manage",
-            "config.file.write",
-            "data.datapack.import",
-        } <= admin_perms
+        assert {"judge-rule.version.manage", "config.file.write"} <= admin_perms
 
 
 def test_qc_forbidden_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
-    """qc 打 admin-tier 端點（規則管理 / config 覆寫 / 資料包匯入）一律 403。"""
+    """qc 打 admin-tier 端點（規則管理 / config 覆寫）一律 403。"""
     from app.api.main import app
 
     with TestClient(app) as client:
@@ -73,12 +70,16 @@ def test_qc_forbidden_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
             ).status_code
             == 403
         )
-        assert (
-            client.post(
-                "/api/admin/import/validate", files={"file": ("x.zip", b"x")}, headers=qc
-            ).status_code
-            == 403
-        )
+
+
+def test_qc_allowed_on_datapack_import(temp_db, roles_cfg) -> None:
+    """qc 打資料包匯入端點非 401/403（登入即可用全部資料導入功能；壞 zip 為 handler 內 4xx 非權限擋）。"""
+    from app.api.main import app
+
+    with TestClient(app) as client:
+        qc = _auth(_login(client, "someone@kkday.com"))
+        r = client.post("/api/admin/import/validate", files={"file": ("x.zip", b"x")}, headers=qc)
+        assert r.status_code not in (401, 403), r.text
 
 
 def test_qc_allowed_on_qc_tier_endpoints(temp_db, roles_cfg) -> None:

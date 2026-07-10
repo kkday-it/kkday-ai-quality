@@ -6,6 +6,7 @@
     "finding.true-label.update",
     "data.source.upload",
     "data.datapack.export",
+    "data.datapack.import",
     "problem.list.export"
   ]
 }

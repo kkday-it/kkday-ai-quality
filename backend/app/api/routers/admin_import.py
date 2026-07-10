@@ -2,8 +2,9 @@
 
 安全（現階段）：
 - 僅執行「純資料灌入白名單表」，不執行上傳內容為 SQL（見 db.datapack）。
-- 匯入端點掛 `require_permission(data.datapack.import)`（admin 級）、導出掛 `data.datapack.export`（qc+admin）——
-  權限經可替換框架 provider 判定（見 app/core/permissions），日後換 be2 零改此檔。
+- 匯入掛 `require_permission(data.datapack.import)`、導出掛 `data.datapack.export`——現 qc+admin 皆有
+  （登入即可用全部資料導入功能；role_permissions.json 拍板），權限經可替換框架 provider 判定
+  （見 app/core/permissions），日後要收緊只改 config、換 be2 零改此檔。
 - 環境閘 `AIQ_ALLOW_DATA_IMPORT`：None＝依環境（development 開、其餘關），防生產誤觸（權限之外的第二道保險）。
 - 破壞性動作需 type-to-confirm（confirm_phrase 由 datapack.CONFIRM_PHRASE 定義，validate 回傳給前端）。
 """

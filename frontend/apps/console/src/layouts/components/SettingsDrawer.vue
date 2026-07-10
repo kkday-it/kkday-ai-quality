@@ -6,7 +6,8 @@ import { ProductVerticalSettingsPanel } from '@/features/judge/components';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 
-// 資料導入 tab 需 data.datapack.import 權限（admin 級·破壞性整庫覆蓋）；無權限者不顯示該分頁。
+// 資料導入 tab 需 data.datapack.import 權限——現 qc+admin 皆有（登入即可用全部資料導入功能）；
+// gating 接線保留，日後要收緊只改 config/global/role_permissions.json，前端零改。
 const { can } = usePermission();
 
 // ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 模型連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料導入。

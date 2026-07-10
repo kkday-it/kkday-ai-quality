@@ -116,7 +116,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | PATCH | `/api/findings/{id}/status` · `/{id}/true_label` | 單筆歸因人工覆核（確認/忽略/已修）· 標註真值分類（歸因列表操作欄用）。**需登入**，記操作者/時間 audit |
 | POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
-| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。需 `data.datapack.import` 權限（admin 級）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘雙重保險 |
+| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。登入即可用（qc+admin 皆有 `data.datapack.import`）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
 
 > 完整 API：啟動後開 Swagger UI http://localhost:8100/docs
 
