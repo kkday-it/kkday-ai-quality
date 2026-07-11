@@ -20,8 +20,19 @@ import { versionLabel } from '../utils';
 const props = defineProps<{ active?: boolean }>();
 
 const LABEL = '商品垂直分類';
-const { code, edited, version, createdAt, loading, error, dirty, load, setEdited, save, resetDefault } =
-  useProductVerticalRule();
+const {
+  code,
+  edited,
+  version,
+  createdAt,
+  loading,
+  error,
+  dirty,
+  load,
+  setEdited,
+  save,
+  resetDefault,
+} = useProductVerticalRule();
 
 const loaded = ref(false);
 const saving = ref(false);
@@ -65,7 +76,8 @@ async function doSave() {
 function doReset() {
   Modal.confirm({
     title: '恢復默認',
-    content: '確定將商品垂直分類恢復為檔案默認內容？會新增一個版本覆蓋當前（保留歷史，可從「歷史」還原）。',
+    content:
+      '確定將商品垂直分類恢復為檔案默認內容？會新增一個版本覆蓋當前（保留歷史，可從「歷史」還原）。',
     okText: '恢復默認',
     cancelText: '取消',
     onOk: async () => {
@@ -96,9 +108,11 @@ async function onRestored() {
         <span v-if="dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
       </span>
       <div class="flex-1" />
-      <a-button size="small" @click="(historyOpen = true)">歷史</a-button>
+      <a-button size="small" @click="historyOpen = true">歷史</a-button>
       <a-button size="small" @click="doReset">恢復默認</a-button>
-      <a-button type="primary" size="small" :disabled="!dirty" @click="(saveOpen = true)"> 儲存 </a-button>
+      <a-button type="primary" size="small" :disabled="!dirty" @click="saveOpen = true">
+        儲存
+      </a-button>
     </div>
 
     <div class="min-h-0 flex-1">
@@ -114,11 +128,25 @@ async function onRestored() {
     </div>
 
     <!-- 存檔備註 -->
-    <a-modal v-model:visible="saveOpen" title="存入 PostgreSQL" :confirm-loading="saving" @ok="doSave">
-      <a-textarea v-model="saveNote" placeholder="本次修改備註（選填）" :auto-size="{ minRows: 2 }" />
+    <a-modal
+      v-model:visible="saveOpen"
+      title="存入 PostgreSQL"
+      :confirm-loading="saving"
+      @ok="doSave"
+    >
+      <a-textarea
+        v-model="saveNote"
+        placeholder="本次修改備註（選填）"
+        :auto-size="{ minRows: 2 }"
+      />
     </a-modal>
 
     <!-- 歷史對比恢復（code 驅動·恢復後 onRestored 重載）-->
-    <RuleHistoryModal v-model:visible="historyOpen" :code="code" :label="LABEL" @restored="onRestored" />
+    <RuleHistoryModal
+      v-model:visible="historyOpen"
+      :code="code"
+      :label="LABEL"
+      @restored="onRestored"
+    />
   </div>
 </template>

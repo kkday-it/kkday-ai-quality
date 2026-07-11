@@ -36,8 +36,10 @@ const editorB = ref<InstanceType<typeof JsonEditor>>();
 
 const diff = shallowRef(diffJsonPaths({}, {}));
 /** onClassName：變動節點回傳標紅 class（兩欄共用同一變動集合）。 */
-const classFn = computed(() => (path: JsonPath): string | undefined =>
-  diff.value.changed.has(jsonPathKey(path)) ? 'jse-diff-changed' : undefined,
+const classFn = computed(
+  () =>
+    (path: JsonPath): string | undefined =>
+      diff.value.changed.has(jsonPathKey(path)) ? 'jse-diff-changed' : undefined,
 );
 
 /** version → 秒級時間戳版本名（供並排面板標頭）。 */
@@ -135,7 +137,8 @@ watch([verA, verB], loadPanes);
       <a-spin v-if="loading" :size="14" />
       <span class="text-xs text-[var(--color-text-3)]">
         <template v-if="diff.changed.size">
-          <span class="text-[rgb(var(--danger-6))]">● {{ diff.changed.size }}</span> 處變動（紅色標記）
+          <span class="text-[rgb(var(--danger-6))]">● {{ diff.changed.size }}</span>
+          處變動（紅色標記）
         </template>
         <template v-else-if="!loading">兩版內容一致</template>
       </span>
@@ -143,11 +146,15 @@ watch([verA, verB], loadPanes);
     <!-- 並排 JSON 檢視對比（左＝前版 / 右＝後版）；內容於載入後推入，變動處標紅並展開對齊 -->
     <div class="grid grid-cols-2 gap-3">
       <div class="min-w-0">
-        <div class="mb-1 font-mono text-xs text-[var(--color-text-3)]">{{ labelOf(verA) }}（前）</div>
+        <div class="mb-1 font-mono text-xs text-[var(--color-text-3)]">
+          {{ labelOf(verA) }}（前）
+        </div>
         <JsonEditor ref="editorA" :json="contentA" read-only mode="tree" :on-class-name="classFn" />
       </div>
       <div class="min-w-0">
-        <div class="mb-1 font-mono text-xs text-[var(--color-text-3)]">{{ labelOf(verB) }}（後）</div>
+        <div class="mb-1 font-mono text-xs text-[var(--color-text-3)]">
+          {{ labelOf(verB) }}（後）
+        </div>
         <JsonEditor ref="editorB" :json="contentB" read-only mode="tree" :on-class-name="classFn" />
       </div>
     </div>

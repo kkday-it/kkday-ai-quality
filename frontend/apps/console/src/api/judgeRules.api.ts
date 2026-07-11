@@ -43,7 +43,9 @@ export const listRules = (): Promise<RuleMeta[]> => j<RuleMeta[]>(`${BASE}/judge
 
 /** 讀某 rule active content（或指定 version）。 */
 export const getRule = (code: RuleCode, version?: number): Promise<RuleContentResp> =>
-  j<RuleContentResp>(`${BASE}/judge-rules/${encodeURIComponent(code)}${version ? `?version=${version}` : ''}`);
+  j<RuleContentResp>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}${version ? `?version=${version}` : ''}`,
+  );
 
 /** 某 rule 全版本清單（新到舊）。 */
 export const getRuleHistory = (code: RuleCode): Promise<RuleVersionMeta[]> =>
@@ -54,11 +56,7 @@ export const getRuleVersion = (code: RuleCode, version: number): Promise<RuleCon
   j<RuleContentResp>(`${BASE}/judge-rules/${encodeURIComponent(code)}/versions/${version}`);
 
 /** 存檔（後端先 jsonschema 驗證 → 新 active 版）。 */
-export const saveRule = (
-  code: RuleCode,
-  content: unknown,
-  note = '',
-): Promise<RuleSaveResult> =>
+export const saveRule = (code: RuleCode, content: unknown, note = ''): Promise<RuleSaveResult> =>
   j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}`, {
     method: 'POST',
     headers: JSON_HEADERS,

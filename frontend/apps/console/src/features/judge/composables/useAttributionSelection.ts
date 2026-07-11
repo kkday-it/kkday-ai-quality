@@ -64,5 +64,13 @@ export function useAttributionSelection(deps: SelectionDeps) {
     }
   };
 
-  return { selectedKeys, selectedRowKeys, runCount, clearSelection, onSelectionChange, pageSpec, selectPages };
+  return {
+    selectedKeys,
+    selectedRowKeys,
+    runCount,
+    clearSelection,
+    onSelectionChange,
+    pageSpec,
+    selectPages,
+  };
 }

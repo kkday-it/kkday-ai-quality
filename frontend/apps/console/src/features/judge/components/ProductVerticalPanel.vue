@@ -53,7 +53,8 @@ const groupNames = computed(() => {
 const valid = computed(() => {
   const groups = model.value.groups ?? {};
   return Object.entries(groups).every(
-    ([name, codes]) => name.trim().length > 0 && Array.isArray(codes) && codes.every((c) => c.trim().length > 0),
+    ([name, codes]) =>
+      name.trim().length > 0 && Array.isArray(codes) && codes.every((c) => c.trim().length > 0),
   );
 });
 
@@ -166,7 +167,9 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between">
             <span class="inline-flex items-center gap-1">
               <!-- 分組拖曳把手（SortableJS handle） -->
-              <IconDragDotVertical class="group-drag-handle cursor-move text-[var(--color-text-3)]" />
+              <IconDragDotVertical
+                class="group-drag-handle cursor-move text-[var(--color-text-3)]"
+              />
               <span class="font-mono text-sm">{{ name }}</span>
             </span>
             <a-popconfirm :content="`刪除分組「${name}」？`" @ok="removeGroup(name)">

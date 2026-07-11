@@ -4,12 +4,7 @@
 // 本 composable 持有自己的 local state，直接呼叫 rule 版本化 API（固定 code=product_vertical），
 // 與規則頁完全解耦。
 import { computed, ref } from 'vue';
-import {
-  getRule,
-  getRuleHistory,
-  resetRuleDefault,
-  saveRule,
-} from '@/api/judgeRules.api';
+import { getRule, getRuleHistory, resetRuleDefault, saveRule } from '@/api/judgeRules.api';
 
 const CODE = 'product_vertical';
 

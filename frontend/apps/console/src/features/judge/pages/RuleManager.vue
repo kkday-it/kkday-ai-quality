@@ -73,7 +73,9 @@ const jsonEditorMode = computed<'tree' | 'text'>(() =>
   isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
 );
 // 重掛 key：rule + active 版本 + 模式 → 切換時 editor 以新內容重置
-const editorKey = computed(() => `${store.activeCode}-${store.currentMeta?.version ?? 0}-${mode.value}`);
+const editorKey = computed(
+  () => `${store.activeCode}-${store.currentMeta?.version ?? 0}-${mode.value}`,
+);
 
 onMounted(async () => {
   verticalFilter.loadOptions();
@@ -119,7 +121,8 @@ async function doSave() {
 function doReset() {
   Modal.confirm({
     title: '恢復默認',
-    content: '確定將此規則恢復為檔案默認內容？會新增一個版本覆蓋當前（保留歷史，可從「歷史」還原）。',
+    content:
+      '確定將此規則恢復為檔案默認內容？會新增一個版本覆蓋當前（保留歷史，可從「歷史」還原）。',
     okText: '恢復默認',
     cancelText: '取消',
     onOk: async () => {
@@ -142,7 +145,8 @@ function doExport() {
 function doResetAll() {
   Modal.confirm({
     title: '恢復所有規則為默認',
-    content: '確定將規則配置頁所有規則（schema / 整體規則 / 歸因分類 C-N）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
+    content:
+      '確定將規則配置頁所有規則（schema / 整體規則 / 歸因分類 C-N）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {
@@ -161,162 +165,181 @@ function doResetAll() {
 <template>
   <div class="flex h-full flex-col gap-2">
     <a-alert v-if="!canManage" type="warning" banner>
-      唯讀模式：規則發布／恢復默認需 judge-rule.version.manage 權限；儲存 / 恢復按鈕已停用（後端亦以 403 兜底）。
+      唯讀模式：規則發布／恢復默認需 judge-rule.version.manage 權限；儲存 / 恢復按鈕已停用（後端亦以
+      403 兜底）。
     </a-alert>
-  <div class="flex min-h-0 flex-1 gap-4">
-    <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
-    <!-- 面板標題移除：頂部 tab 已是「規則配置」，此處不再重複；全部恢復默認移至右側工具列 -->
-    <div class="flex h-full w-52 shrink-0 flex-col gap-3">
-      <!-- 兩組：整體配置（schema/global/judgment 純 JSON）+ 歸因分類（C-N 判準樹）-->
-      <a-menu
-        :selected-keys="[store.activeCode]"
-        class="min-h-0 flex-1 overflow-auto rounded-lg border"
-        @menu-item-click="pick"
-      >
-        <a-menu-item-group title="整體配置">
-          <a-menu-item key="schema">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
-            <span class="ml-2">{{ store.labelFor('schema') }}</span>
-          </a-menu-item>
-          <a-menu-item key="global_rule">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
-            <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
-          </a-menu-item>
-          <a-menu-item key="judgment">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
-            <span class="ml-2">{{ store.labelFor('judgment') }}</span>
-          </a-menu-item>
-          <a-menu-item key="source_mapping">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>
-            <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
-          </a-menu-item>
-        </a-menu-item-group>
-        <a-menu-item-group title="歸因分類">
-          <a-menu-item v-for="c in domainCodes" :key="c">
-            <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
-            <span class="ml-2">{{ store.labelFor(c) }}</span>
-          </a-menu-item>
-        </a-menu-item-group>
-      </a-menu>
+    <div class="flex min-h-0 flex-1 gap-4">
+      <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
+      <!-- 面板標題移除：頂部 tab 已是「規則配置」，此處不再重複；全部恢復默認移至右側工具列 -->
+      <div class="flex h-full w-52 shrink-0 flex-col gap-3">
+        <!-- 兩組：整體配置（schema/global/judgment 純 JSON）+ 歸因分類（C-N 判準樹）-->
+        <a-menu
+          :selected-keys="[store.activeCode]"
+          class="min-h-0 flex-1 overflow-auto rounded-lg border"
+          @menu-item-click="pick"
+        >
+          <a-menu-item-group title="整體配置">
+            <a-menu-item key="schema">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
+              <span class="ml-2">{{ store.labelFor('schema') }}</span>
+            </a-menu-item>
+            <a-menu-item key="global_rule">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
+              <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
+            </a-menu-item>
+            <a-menu-item key="judgment">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
+              <span class="ml-2">{{ store.labelFor('judgment') }}</span>
+            </a-menu-item>
+            <a-menu-item key="source_mapping">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>
+              <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
+            </a-menu-item>
+          </a-menu-item-group>
+          <a-menu-item-group title="歸因分類">
+            <a-menu-item v-for="c in domainCodes" :key="c">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+              <span class="ml-2">{{ store.labelFor(c) }}</span>
+            </a-menu-item>
+          </a-menu-item-group>
+        </a-menu>
 
-      <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
-      <div class="flex-none rounded-lg border p-3">
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-medium">商品垂直分類選項池</span>
-        </div>
-        <a-select
-          :model-value="verticalFilter.pool"
-          multiple
-          size="small"
-          placeholder="選分類分組"
-          :max-tag-count="1"
-          :options="verticalFilter.allOptions.map((g) => ({ value: g, label: g }))"
-          @change="(v) => verticalFilter.setPool(v as string[])"
-        />
-        <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-3)]">
-          配置歸因列表工具列可選的分類（選項池／總 list）；實際篩選於工具列進行，此處不直接篩資料（複選；至少 1 個）。
+        <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
+        <div class="flex-none rounded-lg border p-3">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-xs font-medium">商品垂直分類選項池</span>
+          </div>
+          <a-select
+            :model-value="verticalFilter.pool"
+            multiple
+            size="small"
+            placeholder="選分類分組"
+            :max-tag-count="1"
+            :options="verticalFilter.allOptions.map((g) => ({ value: g, label: g }))"
+            @change="(v) => verticalFilter.setPool(v as string[])"
+          />
+          <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-3)]">
+            配置歸因列表工具列可選的分類（選項池／總
+            list）；實際篩選於工具列進行，此處不直接篩資料（複選；至少 1 個）。
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
-    <div class="flex min-w-0 flex-1 flex-col">
-      <div class="mb-3 flex flex-none items-center gap-3">
-        <!-- 當前規則的檢視/編輯模式（面板編輯 / JSON 原始 / 歷史對比——歷史改頁內展示，不再彈窗）；
+      <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
+      <div class="flex min-w-0 flex-1 flex-col">
+        <div class="mb-3 flex flex-none items-center gap-3">
+          <!-- 當前規則的檢視/編輯模式（面板編輯 / JSON 原始 / 歷史對比——歷史改頁內展示，不再彈窗）；
              面板僅 C-N 歸因樹有（schema/global/judgment 純 JSON），歷史所有規則皆可看 -->
-        <a-radio-group v-model="mode" type="button" size="small">
-          <a-radio v-if="isDomainTree" value="panel">面板</a-radio>
-          <a-radio value="json">JSON</a-radio>
-          <a-radio value="history">歷史</a-radio>
-        </a-radio-group>
-        <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
-          {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
-          <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
-        </span>
-        <div class="flex-1" />
-        <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置右 -->
-        <a-button
-          size="small"
-          type="text"
-          status="warning"
-          :disabled="!canManage"
-          @click="doResetAll"
-          >全部恢復默認</a-button
-        >
-        <a-button size="small" type="outline" :loading="exporting" @click="doExport">
-          <template #icon><icon-download /></template>
-          導出規則
-        </a-button>
-      </div>
+          <a-radio-group v-model="mode" type="button" size="small">
+            <a-radio v-if="isDomainTree" value="panel">面板</a-radio>
+            <a-radio value="json">JSON</a-radio>
+            <a-radio value="history">歷史</a-radio>
+          </a-radio-group>
+          <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
+            {{ versionLabel(store.currentMeta.created_at, store.currentMeta.version) }}
+            <span v-if="store.dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
+          </span>
+          <div class="flex-1" />
+          <!-- 全部規則層級操作（作用於所有規則，非當前選中）：置右 -->
+          <a-button
+            size="small"
+            type="text"
+            status="warning"
+            :disabled="!canManage"
+            @click="doResetAll"
+            >全部恢復默認</a-button
+          >
+          <a-button size="small" type="outline" :loading="exporting" @click="doExport">
+            <template #icon><icon-download /></template>
+            導出規則
+          </a-button>
+        </div>
 
-      <!-- 導出實時進度：導出進行中才顯示（背景 job + SSE，可停止）-->
-      <ExportProgressBar
-        v-if="exporting"
-        class="mb-3 flex-none"
-        label="導出規則"
-        :status="exportStatus"
-        :processed="exportProgress.processed"
-        :total="exportProgress.total"
-        :pct="exportPct"
-        @cancel="cancelExport"
-      />
+        <!-- 導出實時進度：導出進行中才顯示（背景 job + SSE，可停止）-->
+        <ExportProgressBar
+          v-if="exporting"
+          class="mb-3 flex-none"
+          label="導出規則"
+          :status="exportStatus"
+          :processed="exportProgress.processed"
+          :total="exportProgress.total"
+          :pct="exportPct"
+          @cancel="cancelExport"
+        />
 
-      <!-- 當前規則標頭：碼 + 名稱（左）＋ 針對「當前規則」的恢復默認 / 儲存（右），明示只作用於選中的這條 -->
-      <div class="mb-2 flex flex-none items-center gap-2">
-        <span class="rounded bg-[rgb(var(--primary-1))] px-2 py-0.5 font-mono text-xs font-semibold text-[rgb(var(--primary-6))]">
-          {{ store.activeCode }}
-        </span>
-        <span class="text-sm font-medium text-[var(--color-text-1)]">{{ store.labelFor(store.activeCode) }}</span>
-        <div class="flex-1" />
-        <a-button
-          size="small"
-          type="outline"
-          status="warning"
-          :disabled="!canManage"
-          @click="doReset"
-          >恢復默認</a-button
-        >
-        <a-button
-          type="primary"
-          size="small"
-          :disabled="!store.dirty || !canManage"
-          @click="(saveOpen = true)"
-          >儲存</a-button
-        >
-      </div>
+        <!-- 當前規則標頭：碼 + 名稱（左）＋ 針對「當前規則」的恢復默認 / 儲存（右），明示只作用於選中的這條 -->
+        <div class="mb-2 flex flex-none items-center gap-2">
+          <span
+            class="rounded bg-[rgb(var(--primary-1))] px-2 py-0.5 font-mono text-xs font-semibold text-[rgb(var(--primary-6))]"
+          >
+            {{ store.activeCode }}
+          </span>
+          <span class="text-sm font-medium text-[var(--color-text-1)]">{{
+            store.labelFor(store.activeCode)
+          }}</span>
+          <div class="flex-1" />
+          <a-button
+            size="small"
+            type="outline"
+            status="warning"
+            :disabled="!canManage"
+            @click="doReset"
+            >恢復默認</a-button
+          >
+          <a-button
+            type="primary"
+            size="small"
+            :disabled="!store.dirty || !canManage"
+            @click="saveOpen = true"
+            >儲存</a-button
+          >
+        </div>
 
-      <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
-      <div class="min-h-0 flex-1">
-        <StateGuard :loading="store.loading" :error="store.error">
-          <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
-          <RuleHistoryPanel v-if="mode === 'history'" :key="`hist-${store.activeCode}`" class="h-full" />
-          <!-- 只有真正的 C-N 歸因分類（isDomainTree）＋面板模式才走 RuleTreePanel；其餘（schema/global/
+        <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
+        <div class="min-h-0 flex-1">
+          <StateGuard :loading="store.loading" :error="store.error">
+            <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
+            <RuleHistoryPanel
+              v-if="mode === 'history'"
+              :key="`hist-${store.activeCode}`"
+              class="h-full"
+            />
+            <!-- 只有真正的 C-N 歸因分類（isDomainTree）＋面板模式才走 RuleTreePanel；其餘（schema/global/
                judgment，及被抽屜共用 store 帶入的 product_vertical）一律 JsonEditor，歸因 schema 也僅對 C-N 套用 -->
-          <RuleTreePanel
-            v-else-if="mode === 'panel' && isDomainTree && store.edited"
-            :key="editorKey"
-            class="h-full"
-            :content="store.edited"
-            @change="onChange"
-          />
-          <JsonEditor
-            v-else-if="store.edited"
-            :key="editorKey"
-            class="h-full"
-            fill
-            :json="store.edited"
-            :schema="isDomainTree ? (schemaContent ?? undefined) : undefined"
-            :mode="jsonEditorMode"
-            @change="onChange"
-          />
-        </StateGuard>
+            <RuleTreePanel
+              v-else-if="mode === 'panel' && isDomainTree && store.edited"
+              :key="editorKey"
+              class="h-full"
+              :content="store.edited"
+              @change="onChange"
+            />
+            <JsonEditor
+              v-else-if="store.edited"
+              :key="editorKey"
+              class="h-full"
+              fill
+              :json="store.edited"
+              :schema="isDomainTree ? (schemaContent ?? undefined) : undefined"
+              :mode="jsonEditorMode"
+              @change="onChange"
+            />
+          </StateGuard>
+        </div>
       </div>
-    </div>
 
-    <!-- 存檔備註 -->
-    <a-modal v-model:visible="saveOpen" title="存入 PostgreSQL" :confirm-loading="saving" @ok="doSave">
-      <a-textarea v-model="saveNote" placeholder="本次修改備註（選填）" :auto-size="{ minRows: 2 }" />
-    </a-modal>
-  </div>
+      <!-- 存檔備註 -->
+      <a-modal
+        v-model:visible="saveOpen"
+        title="存入 PostgreSQL"
+        :confirm-loading="saving"
+        @ok="doSave"
+      >
+        <a-textarea
+          v-model="saveNote"
+          placeholder="本次修改備註（選填）"
+          :auto-size="{ minRows: 2 }"
+        />
+      </a-modal>
+    </div>
   </div>
 </template>

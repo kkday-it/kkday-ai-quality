@@ -69,7 +69,12 @@ const label = computed({
 
     <!-- 判準清單左右兩欄：第一列 允許｜禁止、第二列 好範例｜壞範例（LIST_FIELDS 順序對應）-->
     <div class="grid grid-cols-2 gap-x-4">
-      <a-form-item v-for="f in LIST_FIELDS" :key="String(f.key)" :field="String(f.key)" :label="f.label">
+      <a-form-item
+        v-for="f in LIST_FIELDS"
+        :key="String(f.key)"
+        :field="String(f.key)"
+        :label="f.label"
+      >
         <div class="w-full space-y-1">
           <div
             v-for="(item, i) in (node[f.key] as string[]) ?? []"

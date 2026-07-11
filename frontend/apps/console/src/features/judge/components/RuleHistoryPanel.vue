@@ -49,14 +49,24 @@ const columns = [
     <!-- 對比兩版（並排 JSON + 變動標紅 + 展開對齊）-->
     <VersionDiffCompare class="mb-4" :history="store.history" :fetch="fetchVersion" active />
     <!-- 版本清單 + 恢復 -->
-    <a-table :data="store.history" :columns="columns" size="small" :pagination="false" row-key="version">
+    <a-table
+      :data="store.history"
+      :columns="columns"
+      size="small"
+      :pagination="false"
+      row-key="version"
+    >
       <template #ver="{ record }">
         <span class="font-mono text-xs">{{ versionLabel(record.created_at, record.version) }}</span>
       </template>
       <template #ts="{ record }">{{ fmtTs(record.created_at) }}</template>
       <template #op="{ record }">
         <a-tag v-if="record.is_active" color="green" size="small">active</a-tag>
-        <a-popconfirm v-else content="恢復此版本？（新增 active 版本）" @ok="restore(record.version)">
+        <a-popconfirm
+          v-else
+          content="恢復此版本？（新增 active 版本）"
+          @ok="restore(record.version)"
+        >
           <a-button size="mini">恢復</a-button>
         </a-popconfirm>
       </template>

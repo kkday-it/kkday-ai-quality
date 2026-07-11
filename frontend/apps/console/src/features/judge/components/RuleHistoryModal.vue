@@ -70,7 +70,11 @@ const columns = [
       <template #ts="{ record }">{{ fmtTs(record.created_at) }}</template>
       <template #op="{ record }">
         <a-tag v-if="record.is_active" color="green" size="small">active</a-tag>
-        <a-popconfirm v-else content="恢復此版本？（新增 active 版本）" @ok="restore(record.version)">
+        <a-popconfirm
+          v-else
+          content="恢復此版本？（新增 active 版本）"
+          @ok="restore(record.version)"
+        >
           <a-button size="mini">恢復</a-button>
         </a-popconfirm>
       </template>

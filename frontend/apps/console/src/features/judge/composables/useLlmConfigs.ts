@@ -27,7 +27,7 @@ export function useLlmConfigs() {
       provider: c.provider || '',
       model: c.model || '',
       reasoning_effort: c.reasoning_effort || 'default',
-    }))
+    })),
   );
   const activeLlmId = computed(() => store.activeLlmId || '');
   // 選中恆跟隨全域啟用中（設定抽屜或工具列切換都會帶動）；modal 內臨時改選僅影響該次送出
@@ -36,7 +36,7 @@ export function useLlmConfigs() {
     (id) => {
       llmConfigId.value = id || llmConfigs.value[0]?.id || '';
     },
-    { immediate: true }
+    { immediate: true },
   );
   const loadConfigs = async (): Promise<void> => {
     try {

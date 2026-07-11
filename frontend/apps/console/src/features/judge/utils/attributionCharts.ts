@@ -180,9 +180,19 @@ export function buildContentBarOption(items: ContentBarItem[]) {
       },
     },
     xAxis: { type: 'value', minInterval: 1 },
-    yAxis: { type: 'category', data: cats, axisLabel: { fontSize: 11, width: 96, overflow: 'truncate' } },
+    yAxis: {
+      type: 'category',
+      data: cats,
+      axisLabel: { fontSize: 11, width: 96, overflow: 'truncate' },
+    },
     series: [
-      { name: '筆數', type: 'bar', barMaxWidth: 22, itemStyle: { color: '#165dff', borderRadius: [0, 3, 3, 0] }, data: rev.map((i) => i.n) },
+      {
+        name: '筆數',
+        type: 'bar',
+        barMaxWidth: 22,
+        itemStyle: { color: '#165dff', borderRadius: [0, 3, 3, 0] },
+        data: rev.map((i) => i.n),
+      },
     ],
   };
 }

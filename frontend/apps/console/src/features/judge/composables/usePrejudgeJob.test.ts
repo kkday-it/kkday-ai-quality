@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computed, ref } from 'vue';
 
-vi.mock('@arco-design/web-vue', () => ({ Message: { success: vi.fn(), warning: vi.fn(), info: vi.fn(), error: vi.fn() } }));
+vi.mock('@arco-design/web-vue', () => ({
+  Message: { success: vi.fn(), warning: vi.fn(), info: vi.fn(), error: vi.fn() },
+}));
 vi.mock('@/api', () => ({
   getProblems: vi.fn(),
   previewPrejudgeCount: vi.fn(),
@@ -31,7 +33,9 @@ class MockEventSource {
   close() {}
 }
 
-const mk = (opts: { selected?: string[]; verticals?: string[]; filters?: Record<string, unknown> } = {}) =>
+const mk = (
+  opts: { selected?: string[]; verticals?: string[]; filters?: Record<string, unknown> } = {},
+) =>
   usePrejudgeJob({
     source: () => 'product_reviews',
     llmConfigId: ref('cfg1'),
@@ -122,7 +126,12 @@ describe('usePrejudgeJob doRun body 建構', () => {
     job.doRun();
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     const body = startPrejudgeMock.mock.calls[0][0];
-    expect(body).toMatchObject({ source: 'product_reviews', scope: 'all', product_verticals: ['Tour'], stages: ['unjudged'] });
+    expect(body).toMatchObject({
+      source: 'product_reviews',
+      scope: 'all',
+      product_verticals: ['Tour'],
+      stages: ['unjudged'],
+    });
     expect(body).not.toHaveProperty('target_polarity');
     expect(body).not.toHaveProperty('max_confidence');
   });
@@ -142,8 +151,12 @@ describe('usePrejudgeJob doRun body 建構', () => {
 
   it('scope 模式 + 目標篩選草稿（openPrejudge 以頁面篩選初始化）→ 表級全帶、判決級只在已判階段帶', async () => {
     const filters = {
-      polarity: ['negative'], confidenceTier: 'jury', taxonomy: ['content'],
-      dateFrom: '2026-07-01', dateTo: '2026-07-07', prodOid: 'P1',
+      polarity: ['negative'],
+      confidenceTier: 'jury',
+      taxonomy: ['content'],
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-07',
+      prodOid: 'P1',
     };
     // 僅未判：表級（日期/oid）帶、判決級（confidence_tier/taxonomy）不帶
     const job = mk({ filters });

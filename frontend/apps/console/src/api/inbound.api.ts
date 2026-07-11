@@ -17,7 +17,9 @@ export interface SheetValidation {
  * @param file 使用者選的檔案（CSV 單表 / xlsx 多分頁）
  * @returns { filename, sheets: SheetValidation[] }
  */
-export const validateInbound = (file: File): Promise<{ filename: string; sheets: SheetValidation[] }> => {
+export const validateInbound = (
+  file: File,
+): Promise<{ filename: string; sheets: SheetValidation[] }> => {
   const fd = new FormData();
   fd.append('file', file);
   return j<{ filename: string; sheets: SheetValidation[] }>(`${BASE}/inbound/validate`, {
@@ -60,7 +62,14 @@ export const uploadInbound = (
   selections: { sheet_name: string; source: string; note?: string }[],
 ): Promise<{
   job_id: string;
-  sheets: { sheet_name: string; source: string; label: string; total: number; valid: boolean; reason: string }[];
+  sheets: {
+    sheet_name: string;
+    source: string;
+    label: string;
+    total: number;
+    valid: boolean;
+    reason: string;
+  }[];
 }> => {
   const fd = new FormData();
   fd.append('file', file);

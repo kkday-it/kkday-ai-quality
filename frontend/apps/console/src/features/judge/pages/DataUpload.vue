@@ -247,7 +247,8 @@ const exportBatch = (batch: any) => {
       <!-- 驗證階段：勾選工作表 -->
       <template v-if="!uploadJob">
         <p class="mb-3 text-xs text-gray-500">
-          共偵測 {{ sheets.length }} 張工作表，其中 {{ okSheets.length }} 張可上傳。勾選要匯入的工作表後按確認；不可上傳者已停用勾選。
+          共偵測 {{ sheets.length }} 張工作表，其中
+          {{ okSheets.length }} 張可上傳。勾選要匯入的工作表後按確認；不可上傳者已停用勾選。
         </p>
         <a-table :data="sheets" :pagination="false" size="small" row-key="sheet_name">
           <template #columns>
@@ -298,7 +299,9 @@ const exportBatch = (batch: any) => {
               <b>{{ sh.label }}</b> · <span class="text-gray-500">{{ sh.sheet_name }}</span>
             </span>
             <span class="text-xs text-gray-500">
-              {{ sh.processed }} / {{ sh.total }}（成功 {{ sh.inserted }}<template v-if="sh.failed">、略過 {{ sh.failed }}</template>）
+              {{ sh.processed }} / {{ sh.total }}（成功 {{ sh.inserted
+              }}<template v-if="sh.failed">、略過 {{ sh.failed }}</template
+              >）
             </span>
           </div>
           <a-progress
@@ -311,11 +314,7 @@ const exportBatch = (batch: any) => {
             {{ sh.errors.slice(0, 3).join('；') }}
           </div>
         </div>
-        <div
-          v-for="inv in uploadJob.invalid"
-          :key="inv.sheet_name"
-          class="text-xs text-red-500"
-        >
+        <div v-for="inv in uploadJob.invalid" :key="inv.sheet_name" class="text-xs text-red-500">
           {{ inv.sheet_name }}：{{ inv.reason }}（未匯入）
         </div>
       </template>
