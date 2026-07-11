@@ -28,6 +28,7 @@ export const PERM = {
   findingReviewUpdate: 'finding.review.update',
   findingTrueLabelUpdate: 'finding.true-label.update',
   problemListExport: 'problem.list.export',
+  judgmentPrejudgeRun: 'judgment.prejudge.run',
 } as const;
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM];

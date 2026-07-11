@@ -29,7 +29,9 @@ import {
   type FindingNote,
   type TrueLabelEval,
 } from '@/api';
+import { PERM } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
+import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { AttributionDetailDrawer, AttributionFilterBar } from '../components';
 import {
@@ -63,6 +65,13 @@ const STAGE_COLOR: Record<string, string> = {
 };
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
+
+// 按鈕級權限遮罩（後端 403 兜底；此處 disabled 讓無權者一眼可辨「功能存在但不可用」）
+const { can } = usePermission();
+const canPrejudge = computed(() => can(PERM.judgmentPrejudgeRun));
+const canReview = computed(() => can(PERM.findingReviewUpdate));
+const canTrueLabel = computed(() => can(PERM.findingTrueLabelUpdate));
+const canExport = computed(() => can(PERM.problemListExport));
 
 // 歸因歷史抽屜（點開才載；每次批量/選取/單筆重判的 LLM 使用紀錄）
 const JudgmentRunsDrawer = defineAsyncComponent(
@@ -505,7 +514,13 @@ onMounted(init);
         @change="onSwitchLlm"
       />
       <!-- 統一操作區：主行為 primary、次要 outline（見 rules/frontend-vue.md 按鈕規範）-->
-      <a-button type="primary" size="small" :loading="running" @click="openPrejudge">
+      <a-button
+        type="primary"
+        size="small"
+        :loading="running"
+        :disabled="!canPrejudge"
+        @click="openPrejudge"
+      >
         初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
       <!-- 歸因歷史：純檢視（每次批量/選取/單筆重判的 LLM 使用紀錄），緊鄰初判入口 -->
@@ -513,7 +528,13 @@ onMounted(init);
         <template #icon><icon-history /></template>
         歸因歷史
       </a-button>
-      <a-button size="small" type="outline" :loading="exporting" @click="openExport">
+      <a-button
+        size="small"
+        type="outline"
+        :loading="exporting"
+        :disabled="!canExport"
+        @click="openExport"
+      >
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
@@ -627,7 +648,7 @@ onMounted(init);
               size="small"
               type="outline"
               status="success"
-              :disabled="!runCount"
+              :disabled="!runCount || !canReview"
               @click="batchReview('confirmed')"
             >
               <template #icon><IconCheck /></template>
@@ -641,7 +662,12 @@ onMounted(init);
               cancel-text="取消"
               @ok="batchReview('dismissed')"
             >
-              <a-button size="small" type="outline" status="warning" :disabled="!runCount">
+              <a-button
+                size="small"
+                type="outline"
+                status="warning"
+                :disabled="!runCount || !canReview"
+              >
                 <template #icon><IconClose /></template>
                 批量忽略
               </a-button>
@@ -861,6 +887,7 @@ onMounted(init);
                         ? 'rounded bg-[var(--color-fill-2)] font-semibold'
                         : ''
                     "
+                    :disabled="!canReview"
                     @click="reviewFinding(a, 'confirmed')"
                   >
                     <template #icon><IconCheck /></template>
@@ -877,13 +904,19 @@ onMounted(init);
                         ? 'rounded bg-[var(--color-fill-2)] font-semibold'
                         : ''
                     "
+                    :disabled="!canReview"
                     @click="reviewFinding(a, 'dismissed')"
                   >
                     <template #icon><IconClose /></template>
                     忽略
                   </a-button>
                 </a-tooltip>
-                <a-button size="mini" type="text" @click="openTrueLabel(record)">
+                <a-button
+                  size="mini"
+                  type="text"
+                  :disabled="!canTrueLabel"
+                  @click="openTrueLabel(record)"
+                >
                   <template #icon><IconEdit /></template>
                   標真值
                 </a-button>
@@ -981,7 +1014,12 @@ onMounted(init);
             cancel-text="取消"
             @ok="onRejudge(record._group)"
           >
-            <a-button type="primary" size="small" :loading="isRowBusy(record._group)">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="isRowBusy(record._group)"
+              :disabled="!canPrejudge"
+            >
               初判歸因
             </a-button>
           </a-popconfirm>
@@ -990,6 +1028,7 @@ onMounted(init);
             type="primary"
             size="small"
             :loading="isRowBusy(record._group)"
+            :disabled="!canPrejudge"
             @click="onRejudge(record._group)"
           >
             初判歸因
