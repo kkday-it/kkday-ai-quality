@@ -166,79 +166,86 @@ const statusText = (e: JudgmentHistoryEntry): string => {
       <!-- 左：評論級事件時間軸（判決快照 / 覆核轉移 / 備註，新到舊）；佈局 7:3 -->
       <div class="min-w-0 flex-[7]">
         <StateGuard :loading="loading" error="">
-          <a-timeline v-if="list.length" class="max-h-[440px] overflow-auto pl-1 pr-2">
-            <a-timeline-item v-for="e in list" :key="e.id" :dot-color="DOT_COLOR[e.kind]">
-              <!-- 首行：時間 + 事件身分 -->
-              <div
-                class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-text-3)]"
-              >
-                <span>{{ fmtTime(e.created_at) }}</span>
-                <template v-if="e.kind === 'judgment'">
-                  <a-tag size="small" color="purple">{{ e.model || '—' }}</a-tag>
-                  <a-tag
-                    v-for="c in changesById[e.id] || []"
-                    :key="c"
-                    size="small"
-                    color="arcoblue"
-                    bordered
+          <!-- 滾動容器包在 a-timeline 外層：.arco-timeline 是 flex column、item 有 min-height 78px，
+               若把 max-h+overflow 直接掛在 timeline 上，超高時 flex-shrink 會把各 item 壓到下限
+               → 高內容溢出蓋到下一項（時間軸堆疊 bug）。外包一層讓 timeline 自然撐高、由外層滾動。 -->
+          <div v-if="list.length" class="max-h-[440px] overflow-auto">
+            <a-timeline class="pl-1 pr-2">
+              <a-timeline-item v-for="e in list" :key="e.id" :dot-color="DOT_COLOR[e.kind]">
+                <!-- 首行：時間 + 事件身分 -->
+                <div
+                  class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-text-3)]"
+                >
+                  <span>{{ fmtTime(e.created_at) }}</span>
+                  <template v-if="e.kind === 'judgment'">
+                    <a-tag size="small" color="purple">{{ e.model || '—' }}</a-tag>
+                    <a-tag
+                      v-for="c in changesById[e.id] || []"
+                      :key="c"
+                      size="small"
+                      color="arcoblue"
+                      bordered
+                    >
+                      {{ c }}
+                    </a-tag>
+                    <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
+                  </template>
+                  <template v-else-if="e.kind === 'status'">
+                    <a-tag size="small" color="orange">人工覆核</a-tag>
+                    <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
+                  </template>
+                  <template v-else>
+                    <a-tag size="small" color="gray">備註</a-tag>
+                    <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
+                  </template>
+                </div>
+                <!-- 內容：依事件類型 -->
+                <div v-if="e.kind === 'judgment'" class="mt-1 flex flex-col gap-1">
+                  <div
+                    v-for="(s, si) in snapsOf(e)"
+                    :key="si"
+                    class="rounded bg-[var(--color-fill-1)] px-2 py-1 text-xs leading-snug"
                   >
-                    {{ c }}
-                  </a-tag>
-                  <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
-                </template>
-                <template v-else-if="e.kind === 'status'">
-                  <a-tag size="small" color="orange">人工覆核</a-tag>
-                  <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
-                </template>
-                <template v-else>
-                  <a-tag size="small" color="gray">備註</a-tag>
-                  <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
-                </template>
-              </div>
-              <!-- 內容：依事件類型 -->
-              <div v-if="e.kind === 'judgment'" class="mt-1 flex flex-col gap-1">
-                <div
-                  v-for="(s, si) in snapsOf(e)"
-                  :key="si"
-                  class="rounded bg-[var(--color-fill-1)] px-2 py-1 text-xs leading-snug"
-                >
-                  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span class="font-medium text-[rgb(var(--primary-6))]">{{ snapPath(s) }}</span>
-                    <span class="text-[var(--color-text-3)]">
-                      {{ POLARITY_LABELS[s.polarity || ''] || s.polarity || '—'
-                      }}<template v-if="s.sentiment_score">
-                        · 情緒分 {{ s.sentiment_score }}/5</template
-                      >
-                      <template v-if="typeof s.confidence?.value === 'number'">
-                        · 信心 {{ s.confidence.value.toFixed(2) }}</template
-                      >
-                    </span>
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span class="font-medium text-[rgb(var(--primary-6))]">{{
+                        snapPath(s)
+                      }}</span>
+                      <span class="text-[var(--color-text-3)]">
+                        {{ POLARITY_LABELS[s.polarity || ''] || s.polarity || '—'
+                        }}<template v-if="s.sentiment_score">
+                          · 情緒分 {{ s.sentiment_score }}/5</template
+                        >
+                        <template v-if="typeof s.confidence?.value === 'number'">
+                          · 信心 {{ s.confidence.value.toFixed(2) }}</template
+                        >
+                      </span>
+                    </div>
+                    <div v-if="snapSummary(s)" class="mt-0.5 text-[var(--color-text-2)]">
+                      {{ snapSummary(s) }}
+                    </div>
                   </div>
-                  <div v-if="snapSummary(s)" class="mt-0.5 text-[var(--color-text-2)]">
-                    {{ snapSummary(s) }}
+                  <div
+                    v-if="((e.params as any)?.voter_models || []).length"
+                    class="text-[11px] text-[var(--color-text-3)]"
+                  >
+                    ensemble voters：{{ ((e.params as any).voter_models as string[]).join('、') }}
                   </div>
                 </div>
                 <div
-                  v-if="((e.params as any)?.voter_models || []).length"
-                  class="text-[11px] text-[var(--color-text-3)]"
+                  v-else-if="e.kind === 'status'"
+                  class="mt-0.5 text-xs text-[var(--color-text-1)]"
                 >
-                  ensemble voters：{{ ((e.params as any).voter_models as string[]).join('、') }}
+                  {{ statusText(e) }}
                 </div>
-              </div>
-              <div
-                v-else-if="e.kind === 'status'"
-                class="mt-0.5 text-xs text-[var(--color-text-1)]"
-              >
-                {{ statusText(e) }}
-              </div>
-              <div
-                v-else
-                class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
-              >
-                {{ e.content }}
-              </div>
-            </a-timeline-item>
-          </a-timeline>
+                <div
+                  v-else
+                  class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
+                >
+                  {{ e.content }}
+                </div>
+              </a-timeline-item>
+            </a-timeline>
+          </div>
           <a-empty v-else description="尚無判決歷史" />
         </StateGuard>
       </div>
