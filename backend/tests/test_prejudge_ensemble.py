@@ -67,8 +67,10 @@ def test_ensemble_sampling_audits_high_conf(monkeypatch):
     monkeypatch.setattr(
         prejudge,
         "_resolve_attrs_multi",
-        lambda *a, **k: called.append(1)
-        or [{"l1_domain_code": "content", "confidence": 0.9, "l3_code": "C-1-1-1"}],
+        lambda *a, **k: (
+            called.append(1)
+            or [{"l1_domain_code": "content", "confidence": 0.9, "l3_code": "C-1-1-1"}]
+        ),
     )
     monkeypatch.setattr(prejudge, "_use_config", lambda cfg: nullcontext())
     high = [{"l1_domain_code": "content", "confidence": 0.95, "l3_code": "C-1-1-1"}]

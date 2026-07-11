@@ -24,6 +24,8 @@ export interface GetProblemsParams {
   orderOid?: string;
   /** 信心分層過濾（單選；auto_accept/jury/needs_review）。 */
   confidenceTier?: string;
+  /** 覆核狀態過濾（多選 new/auto_confirmed/confirmed/dismissed；CSV 傳後端）。 */
+  status?: string[];
   /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 product_reviews 生效）。 */
   hasExternal?: string;
   /** 歸因分類過濾（多選任意層級 code；後端 l1/l2/l3_code 任一 IN 命中＝子樹語義）。 */
@@ -57,6 +59,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
+  if (params.status?.length) q.set('status', params.status.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
@@ -88,6 +91,8 @@ export const startProblemsExport = (p: {
   confidence_tier?: string;
   /** 歸因分類（多選任意層級 code；子樹語義）。 */
   taxonomy?: string[];
+  /** 覆核狀態（多選 new/auto_confirmed/confirmed/dismissed）。 */
+  status?: string[];
   /** 有無外部評論（'true'/'false'）。 */
   has_external?: boolean;
   /** 精確 id 篩選。 */

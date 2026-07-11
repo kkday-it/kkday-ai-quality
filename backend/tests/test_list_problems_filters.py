@@ -42,9 +42,11 @@ def _seed_product_vertical(monkeypatch) -> None:
     monkeypatch.setattr(
         db,
         "get_rule_active",
-        lambda code: {"groups": {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}}
-        if code == "product_vertical"
-        else None,
+        lambda code: (
+            {"groups": {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}}
+            if code == "product_vertical"
+            else None
+        ),
     )
 
 

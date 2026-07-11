@@ -100,8 +100,8 @@ class TicketFinding(BaseModel):
     hit_rule_id: str = (
         ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
     )
-    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed·fixed=人工覆核
-    status: Literal["new", "auto_confirmed", "confirmed", "dismissed", "fixed"] = "new"
+    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed=人工覆核
+    status: Literal["new", "auto_confirmed", "confirmed", "dismissed"] = "new"
     created_at: str = ""
     # 負責單位（owner_role）不存於 finding：改由 db._shared.attribution_dto 讀取時自 l1_code 派生
     # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。

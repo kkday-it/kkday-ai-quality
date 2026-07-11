@@ -87,7 +87,8 @@ const otherLangs = (a: Attribution): [string, string][] =>
           {{ row.content || '（無評論內容）' }}
         </div>
         <div class="mt-1.5 text-[11px] text-[var(--color-text-3)]">
-          #{{ row.source_record_id || row.source_id || '—' }} · {{ fmtDt(String(row.occurred_at ?? '')) || '—' }}
+          #{{ row.source_record_id || row.source_id || '—' }} ·
+          {{ fmtDt(String(row.occurred_at ?? '')) || '—' }}
         </div>
       </div>
 
@@ -108,7 +109,8 @@ const otherLangs = (a: Attribution): [string, string][] =>
         <a-descriptions-item label="商品">
           <div v-if="row.prod_name" class="font-medium">{{ row.prod_name }}</div>
           <div class="text-xs text-[var(--color-text-2)]">
-            OID {{ cell(row.prod_oid) }} · {{ cell(row.product_category_main) }} · {{ cell(row.lang) }}
+            OID {{ cell(row.prod_oid) }} · {{ cell(row.product_category_main) }} ·
+            {{ cell(row.lang) }}
           </div>
         </a-descriptions-item>
         <a-descriptions-item label="方案">
@@ -140,7 +142,9 @@ const otherLangs = (a: Attribution): [string, string][] =>
           <template #title>
             <div class="flex flex-wrap items-center gap-1.5">
               <span>歸因 {{ ai + 1 }}</span>
-              <a-tag v-if="a.is_primary && row.attributions.length > 1" size="small" color="purple">主歸因</a-tag>
+              <a-tag v-if="a.is_primary && row.attributions.length > 1" size="small" color="purple"
+                >主歸因</a-tag
+              >
               <a-tag v-if="a.status" size="small" :color="STATUS_COLOR[a.status]">
                 {{ STATUS_LABEL[a.status] || a.status }}
               </a-tag>
@@ -149,10 +153,14 @@ const otherLangs = (a: Attribution): [string, string][] =>
           </template>
           <a-descriptions-item label="歸因分類">
             <span>{{ attrPath(a) }}</span>
-            <span v-if="attrCode(a)" class="ml-1.5 text-xs text-[var(--color-text-3)]">{{ attrCode(a) }}</span>
+            <span v-if="attrCode(a)" class="ml-1.5 text-xs text-[var(--color-text-3)]">{{
+              attrCode(a)
+            }}</span>
           </a-descriptions-item>
           <a-descriptions-item label="信心 / 分層">
-            <b>{{ typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—' }}</b>
+            <b>{{
+              typeof a.confidence?.value === 'number' ? a.confidence.value.toFixed(2) : '—'
+            }}</b>
             <a-tag
               v-if="a.confidence?.tier"
               size="small"
@@ -163,7 +171,9 @@ const otherLangs = (a: Attribution): [string, string][] =>
             </a-tag>
             <!-- 校準後 value ≠ LLM 原始 raw 時並列原始值，供覆核者判讀校準幅度 -->
             <span
-              v-if="typeof a.confidence?.raw === 'number' && a.confidence.raw !== a.confidence.value"
+              v-if="
+                typeof a.confidence?.raw === 'number' && a.confidence.raw !== a.confidence.value
+              "
               class="ml-1.5 text-xs text-[var(--color-text-3)]"
             >
               原始 {{ a.confidence.raw.toFixed(2) }}
@@ -175,11 +185,20 @@ const otherLangs = (a: Attribution): [string, string][] =>
             </a-tag>
             <span v-else>—</span>
           </a-descriptions-item>
+          <a-descriptions-item label="判決模型">
+            <a-tag v-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
+            <span v-else>—</span>
+          </a-descriptions-item>
           <a-descriptions-item label="反饋摘要">
             <div>{{ a.content?.summary || '—' }}</div>
             <!-- 其他語系摘要（原文語言版本；zh-tw 已為主顯示）-->
-            <div v-for="[lang, text] in otherLangs(a)" :key="lang" class="mt-0.5 text-xs text-[var(--color-text-3)]">
-              <a-tag size="small" class="mr-1">{{ lang }}</a-tag>{{ text }}
+            <div
+              v-for="[lang, text] in otherLangs(a)"
+              :key="lang"
+              class="mt-0.5 text-xs text-[var(--color-text-3)]"
+            >
+              <a-tag size="small" class="mr-1">{{ lang }}</a-tag
+              >{{ text }}
             </div>
           </a-descriptions-item>
           <a-descriptions-item label="逐字佐證">
@@ -199,7 +218,9 @@ const otherLangs = (a: Attribution): [string, string][] =>
             {{ a.true_label }}
           </a-descriptions-item>
           <a-descriptions-item label="finding">
-            <span class="break-all text-xs text-[var(--color-text-3)]">{{ a.finding_id || '—' }}</span>
+            <span class="break-all text-xs text-[var(--color-text-3)]">{{
+              a.finding_id || '—'
+            }}</span>
           </a-descriptions-item>
         </a-descriptions>
       </template>

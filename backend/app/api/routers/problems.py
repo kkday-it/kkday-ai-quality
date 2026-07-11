@@ -45,6 +45,7 @@ def get_problems(
     order_oid: str | None = None,
     confidence_tier: str | None = None,
     taxonomy: str | None = None,
+    status: str | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -56,6 +57,7 @@ def get_problems(
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
     商品垂直分類 product_verticals / 判決階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2/l3_code 任一 IN 命中＝子樹語義）為多值判決過濾。
+    status（覆核狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
@@ -75,6 +77,7 @@ def get_problems(
         order_oid=order_oid,
         confidence_tier=confidence_tier,
         taxonomy=_csv_strs(taxonomy),
+        status=_csv_strs(status),
         has_external=has_external,
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -98,6 +101,7 @@ class ExportProblemsIn(BaseModel):
     stage: list[str] | None = None
     confidence_tier: str | None = None
     taxonomy: list[str] | None = None
+    status: list[str] | None = None
     has_external: bool | None = None
     rec_oid: str | None = None
     prod_oid: str | None = None
@@ -131,6 +135,7 @@ def export_problems(
             stage=body.stage,
             confidence_tier=body.confidence_tier,
             taxonomy=body.taxonomy,
+            status=body.status,
             has_external=body.has_external,
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,

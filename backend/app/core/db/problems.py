@@ -33,6 +33,7 @@ _JG_COLS = (
     "summary",
     "evidence",
     "action",
+    "model",
     "is_primary",
     "status",
     "true_label",
@@ -227,7 +228,9 @@ def _derive_stage(dto: dict) -> str:
 
 def _attribution_of(r: dict) -> dict:
     """單筆 judgments fan-out 列（jg_ 前綴 typed 欄）→ 一條歸因的乾淨巢狀 DTO（供列表堆疊 / 導出）。"""
-    dto = attribution_dto(_jg_unwrap(r))
+    unwrapped = _jg_unwrap(r)
+    unwrapped["notes_count"] = r.get("jg_notes_count")  # fan-out subquery 欄（不在 _JG_COLS）
+    dto = attribution_dto(unwrapped)
     if dto["finding_id"] and not dto["stage"]:  # legacy 空 stage 相容派生
         dto["stage"] = _derive_stage(dto)
     return dto
@@ -259,6 +262,17 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         item_ids = [r[0] for r in c.execute(id_sel)]
         if not item_ids:
             return {"rows": [], "total": total}
+        fn = T.finding_notes
+        # 備註數 correlated scalar subquery：外層已被當頁 item_ids 窄化（單頁 ≤ 200 列），
+        # 對每列走 idx_finding_notes_finding 索引查找——非全表 GROUP BY，成本可忽略。
+        notes_count = (
+            select(func.count())
+            .select_from(fn)
+            .where(fn.c.finding_id == jg.c.finding_id)
+            .correlate(jg)
+            .scalar_subquery()
+            .label("jg_notes_count")
+        )
         fan = (
             select(
                 tbl,
@@ -267,6 +281,7 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
                 ],  # typed 判決欄（含 status/true_label）
                 jg.c.needs_review.label("jg_needs_review"),
                 jg.c.dimension.label("jg_dimension"),
+                notes_count,
             )
             .select_from(tbl.outerjoin(jg, _jg_join_cond(spec)))
             .where(nk.in_(item_ids))
@@ -308,6 +323,7 @@ def list_problems(
     order_oid: str | None = None,
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
+    status: list[str] | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -329,6 +345,7 @@ def list_problems(
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
         taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2/l3_code 任一 IN 命中＝子樹語義）。
+        status: 覆核狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
 
     Returns:
@@ -357,6 +374,7 @@ def list_problems(
         sort_dir,
         has_external=has_external,
         sentiment=sentiment,
+        status=status,
     )
 
 
@@ -380,6 +398,7 @@ def _list_problems_spec(
     sort_dir: str = "desc",
     has_external: bool | None = None,
     sentiment: list[int] | None = None,
+    status: list[str] | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN judgments。
 
@@ -415,6 +434,9 @@ def _list_problems_spec(
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
+        if status:
+            # 覆核狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
+            stmt = stmt.where(_jg_exists(spec, jg.c.status.in_(status)))
         if taxonomy:
             # 歸因分類多選：任意層級 code，l1/l2/l3_code 任一 IN 命中＝子樹語義
             # （選 L1 涵蓋整域，含只判到 L2 的列；選 L3 精確到葉）

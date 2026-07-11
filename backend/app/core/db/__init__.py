@@ -14,6 +14,7 @@ from app.core.db.attribution import (
 from app.core.db.export import export_problems_xlsx
 from app.core.db.findings import (
     add_finding_note,
+    batch_update_finding_status,
     get_finding,
     insert_finding,
     list_finding_notes,
@@ -28,6 +29,10 @@ from app.core.db.ingest import (
     insert_source_batch,
     list_batches,
     update_batch_inserted,
+)
+from app.core.db.judgment_history import (
+    add_history_note,
+    list_judgment_history,
 )
 from app.core.db.judgment_runs import (
     any_judged,
@@ -99,7 +104,10 @@ __all__ = [
     "seed_rules_from_files",
     "get_finding",
     "add_finding_note",
+    "add_history_note",
+    "batch_update_finding_status",
     "list_finding_notes",
+    "list_judgment_history",
     "insert_llm_usage_row",
     "insert_llm_usage_rows",
     "llm_usage_overview",

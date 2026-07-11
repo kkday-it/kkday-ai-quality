@@ -980,6 +980,12 @@ def _resolve_attrs_multi(
         if dom not in by_domain or a.get("confidence", 0.0) > by_domain[dom].get("confidence", 0.0):
             by_domain[dom] = a
     ranked = sorted(by_domain.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
+    # 次要歸因信心閘門（config evidence_policy.secondary_min_confidence；0＝關）：多歸因時
+    # 非 primary 條目要求更高信心——低信心第二歸因（實測 conf 0.49~0.65 的「順帶一提」面向）
+    # 是與多模型多數決不一致的 extra 簇主因；primary 不受影響，仍走 attr_min_confidence。
+    smin = _as_float(global_rule.evidence_policy().get("secondary_min_confidence"), 0.0)
+    if smin and len(ranked) > 1:
+        ranked = [ranked[0]] + [a for a in ranked[1:] if a.get("confidence", 0.0) >= smin]
     return ranked[:max_n]
 
 

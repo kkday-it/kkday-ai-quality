@@ -21,9 +21,18 @@ from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 # 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
 # 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
+# status_labels code-side fallback：judgment SSOT＝DB active 版（可熱編輯），舊 active 版尚無
+# status_labels 鍵時仍需有 label（seed 檔同步有此鍵，QC 存新版後以 DB 為準）。
+_DEFAULT_STATUS_LABELS: dict[str, str] = {
+    "new": "待處理",
+    "auto_confirmed": "自動確認",
+    "confirmed": "已確認",
+    "dismissed": "已忽略",
+}
 _POLARITY_LABEL_ZH: dict[str, str] = {}
 _TIER_LABEL_ZH: dict[str, str] = {}
 _STAGE_LABEL_ZH: dict[str, str] = {}
+_STATUS_LABEL_ZH: dict[str, str] = {}
 _CONFIDENCE_TIERS: dict = {}
 
 
@@ -35,6 +44,8 @@ def _apply_judgment_cfg(cfg: dict) -> None:
     _TIER_LABEL_ZH.update(cfg.get("tier_labels", {}))
     _STAGE_LABEL_ZH.clear()
     _STAGE_LABEL_ZH.update(cfg.get("stage_labels", {}))
+    _STATUS_LABEL_ZH.clear()
+    _STATUS_LABEL_ZH.update(cfg.get("status_labels") or _DEFAULT_STATUS_LABELS)
     _CONFIDENCE_TIERS.clear()
     _CONFIDENCE_TIERS.update(cfg.get("confidence_tiers", _DEFAULT_TIERS))
 
@@ -110,7 +121,7 @@ def attribution_dto(r: dict) -> dict:
     Returns:
         巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
         confidence:{value,raw,tier}, content:{summary,evidence,action},
-        owner, is_primary, status, true_label}。
+        owner, model, notes_count, is_primary, status, true_label}。
     """
     l1_code = r.get("l1_code")
     summary_langs = _summary_langs(r.get("summary"))
@@ -138,6 +149,8 @@ def attribution_dto(r: dict) -> dict:
         },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
         "owner": _domain_owner(l1_code or ""),
+        "model": r.get("model"),  # 判決模型（stub / ensemble 同 judgments.model 語意）
+        "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
         "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
         "true_label": r.get("true_label"),  # 人工標註真值分類

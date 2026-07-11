@@ -52,7 +52,8 @@ def batch_env(monkeypatch):
     monkeypatch.setattr(
         db,
         "replace_source_findings",
-        lambda src, sid, findings: state["replaced"].append((src, sid)) or len(findings),
+        # **kw 吸收評論級歷史 kwargs（params/job_id/triggered_by），mock 不落史
+        lambda src, sid, findings, **kw: state["replaced"].append((src, sid)) or len(findings),
     )
     monkeypatch.setattr(
         db, "insert_llm_usage_rows", lambda rows: state["usage_flushed"].append(len(rows)) or 0

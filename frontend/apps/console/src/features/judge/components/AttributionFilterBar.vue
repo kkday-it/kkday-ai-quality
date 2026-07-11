@@ -13,6 +13,7 @@ import {
   HAS_EXTERNAL_OPTS,
   POLARITY_FILTER_OPTS,
   STAGE_OPTS,
+  STATUS_OPTS,
   TIER_OPTS,
   type AttributionFilters,
   type FilterField,
@@ -47,6 +48,7 @@ const FIELD_FLEX: Record<FilterField, string> = {
   polarity: '190px',
   stage: '190px',
   tier: '190px',
+  status: '190px',
   taxonomy: '230px',
   hasExternal: '190px',
   dateRange: '190px',
@@ -58,7 +60,14 @@ const has = (f: FilterField) => props.fields.includes(f);
 
 /** 兩行分組：第一行＝精確查詢 id + 反饋時間；第二行＝各下拉維度篩選。只渲染 fields 命中的欄。 */
 const PRIMARY_FIELDS: FilterField[] = ['recOid', 'prodOid', 'orderOid', 'dateRange'];
-const SECONDARY_FIELDS: FilterField[] = ['polarity', 'stage', 'tier', 'taxonomy', 'hasExternal'];
+const SECONDARY_FIELDS: FilterField[] = [
+  'polarity',
+  'stage',
+  'tier',
+  'status',
+  'taxonomy',
+  'hasExternal',
+];
 const hasPrimary = computed(() => PRIMARY_FIELDS.some((f) => props.fields.includes(f)));
 const hasSecondary = computed(() => SECONDARY_FIELDS.some((f) => props.fields.includes(f)));
 
@@ -222,6 +231,18 @@ function applyRecentDays(n: number): void {
           placeholder="信心分層"
           class="w-full"
           :options="TIER_OPTS"
+          @change="onChange"
+        />
+      </a-col>
+      <a-col v-if="has('status')" :flex="FIELD_FLEX.status">
+        <a-select
+          v-model="state.status"
+          multiple
+          :size="size"
+          :max-tag-count="1"
+          placeholder="覆核狀態"
+          class="w-full"
+          :options="STATUS_OPTS"
           @change="onChange"
         />
       </a-col>

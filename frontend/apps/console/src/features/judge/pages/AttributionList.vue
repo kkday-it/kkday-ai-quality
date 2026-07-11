@@ -70,6 +70,18 @@ const JudgmentRunsDrawer = defineAsyncComponent(
 );
 const runsDrawerVisible = ref(false);
 
+// 判決歷史彈窗（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
+const JudgmentHistoryModal = defineAsyncComponent(
+  () => import('../components/JudgmentHistoryModal.vue'),
+);
+const historyOpen = ref(false);
+const historyRow = ref<ProblemRow | null>(null);
+/** 開某則評論的判決歷史時間軸（source_id 級；與 run 級「歸因歷史」抽屜不同層）。 */
+const openJudgmentHistory = (record: ProblemRow) => {
+  historyRow.value = record;
+  historyOpen.value = true;
+};
+
 const source = ref('product_reviews');
 
 const {
@@ -131,6 +143,7 @@ const {
   isRowBusy,
   rejudgeRow,
   reviewFinding,
+  batchReview,
   init,
 } = useAttributionList(source);
 
@@ -405,6 +418,7 @@ const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   polarity: 'polarity',
   stage: 'stage',
   tier: 'tier',
+  status: 'status',
   taxonomy: 'taxonomy',
   hasExternal: 'hasExternal',
   dateRange: 'dateRange',
@@ -509,6 +523,9 @@ onMounted(init);
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
+  <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
+  <JudgmentHistoryModal v-model:visible="historyOpen" :source="source" :row="historyRow" />
+
   <div class="flex h-full flex-col gap-4">
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
     <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
@@ -603,6 +620,32 @@ onMounted(init);
           <a-col flex="none">
             <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
             <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
+          </a-col>
+          <!-- 批量覆核：作用於已勾選評論的**全部**歸因（同值列冪等跳過；轉移記入判決歷史）-->
+          <a-col flex="none">
+            <a-button
+              size="small"
+              type="outline"
+              status="success"
+              :disabled="!runCount"
+              @click="batchReview('confirmed')"
+            >
+              <template #icon><IconCheck /></template>
+              批量確認
+            </a-button>
+          </a-col>
+          <a-col flex="none">
+            <a-popconfirm
+              :content="`將把已選 ${runCount} 則評論的全部歸因標為「已忽略」。確定執行？`"
+              ok-text="批量忽略"
+              cancel-text="取消"
+              @ok="batchReview('dismissed')"
+            >
+              <a-button size="small" type="outline" status="warning" :disabled="!runCount">
+                <template #icon><IconClose /></template>
+                批量忽略
+              </a-button>
+            </a-popconfirm>
           </a-col>
           <a-col flex="auto" class="flex items-center justify-end gap-2">
             <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
@@ -761,7 +804,7 @@ onMounted(init);
                 </a-tooltip>
               </div>
             </div>
-            <!-- 信心（值 + 分層 + 判決階段 + 人工覆核徽章）-->
+            <!-- 信心（值 + 分層 + 判決模型；stage 僅異常態顯示——三軸標籤收斂：status 移操作列）-->
             <div class="flex gap-1.5">
               <span
                 class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
@@ -781,9 +824,25 @@ onMounted(init);
                     a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—'
                   }}
                 </span>
-                <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
+                <!-- 判決模型（溯源；重判後更新）-->
+                <a-tag v-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
+                <!-- 判決階段：僅非 judged 的異常態才提示（已判決＝常態不佔位；全量三軸見詳情抽屜）-->
+                <a-tag
+                  v-if="a.stage && a.stage !== 'judged'"
+                  size="small"
+                  :color="STAGE_COLOR[a.stage]"
+                >
                   {{ STAGE_LABELS[a.stage] || a.stage }}
                 </a-tag>
+              </div>
+            </div>
+            <!-- 操作（覆核徽章 + 確認採信(綠)/忽略駁回(紅)/標真值/備註；再點選中態＝撤銷覆核）-->
+            <div class="flex gap-1.5">
+              <span
+                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+                >操作</span
+              >
+              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                 <a-tag
                   v-if="a.status && a.status !== 'new'"
                   size="small"
@@ -792,52 +851,48 @@ onMounted(init);
                 >
                   {{ STATUS_LABEL[a.status] || a.status }}
                 </a-tag>
-              </div>
-            </div>
-            <!-- 操作（確認採信(綠)/忽略駁回(紅)/標真值/備註；選中覆核狀態填色 primary）-->
-            <div class="flex gap-1.5">
-              <span
-                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-                >操作</span
-              >
-              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-                <a-button
-                  size="mini"
-                  type="text"
-                  status="success"
-                  :class="
-                    a.status === 'confirmed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''
-                  "
-                  @click="reviewFinding(a, 'confirmed')"
-                >
-                  <template #icon><IconCheck /></template>
-                  確認
-                </a-button>
-                <a-button
-                  size="mini"
-                  type="text"
-                  status="danger"
-                  :class="
-                    a.status === 'dismissed' ? 'rounded bg-[var(--color-fill-2)] font-semibold' : ''
-                  "
-                  @click="reviewFinding(a, 'dismissed')"
-                >
-                  <template #icon><IconClose /></template>
-                  忽略
-                </a-button>
+                <a-tooltip :content="a.status === 'confirmed' ? '再點一次撤銷覆核' : '確認採信'">
+                  <a-button
+                    size="mini"
+                    type="text"
+                    status="success"
+                    :class="
+                      a.status === 'confirmed'
+                        ? 'rounded bg-[var(--color-fill-2)] font-semibold'
+                        : ''
+                    "
+                    @click="reviewFinding(a, 'confirmed')"
+                  >
+                    <template #icon><IconCheck /></template>
+                    確認
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip :content="a.status === 'dismissed' ? '再點一次撤銷覆核' : '忽略駁回'">
+                  <a-button
+                    size="mini"
+                    type="text"
+                    status="danger"
+                    :class="
+                      a.status === 'dismissed'
+                        ? 'rounded bg-[var(--color-fill-2)] font-semibold'
+                        : ''
+                    "
+                    @click="reviewFinding(a, 'dismissed')"
+                  >
+                    <template #icon><IconClose /></template>
+                    忽略
+                  </a-button>
+                </a-tooltip>
                 <a-button size="mini" type="text" @click="openTrueLabel(record)">
                   <template #icon><IconEdit /></template>
                   標真值
                 </a-button>
-                <a-button
-                  v-if="a.finding_id"
-                  size="mini"
-                  type="text"
-                  @click="openNotes(a.finding_id)"
-                >
-                  <template #icon><IconMessage /></template>
-                  備註
-                </a-button>
+                <a-badge v-if="a.finding_id" :count="a.notes_count || 0" :max-count="99">
+                  <a-button size="mini" type="text" @click="openNotes(a.finding_id)">
+                    <template #icon><IconMessage /></template>
+                    備註
+                  </a-button>
+                </a-badge>
               </div>
             </div>
           </div>
@@ -940,12 +995,11 @@ onMounted(init);
             初判歸因
           </a-button>
           <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
-          <a-button
-            size="small"
-            type="outline"
-            @click="viewDetail(record)"
-          >
-            查看詳情
+          <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
+          <!-- 判決歷史（評論級時間軸：歷次判決快照/覆核轉移/備註；輕量檢視 → text）-->
+          <a-button size="small" type="text" @click="openJudgmentHistory(record)">
+            <template #icon><IconHistory /></template>
+            判決歷史
           </a-button>
         </div>
       </template>
@@ -993,7 +1047,8 @@ onMounted(init);
               @change="refreshTargetCount"
             />
             <div class="mt-1 text-xs text-gray-400">
-              星等 / 日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1 僅對「已判」階段生效（未判列尚無判決可比對）。
+              星等 / 日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1
+              僅對「已判」階段生效（未判列尚無判決可比對）。
             </div>
           </div>
           <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
@@ -1042,7 +1097,11 @@ onMounted(init);
         </div>
         <div>
           <div class="mb-1 text-xs text-gray-500">導出範圍篩選（已帶入列表當前篩選，可重選）</div>
-          <AttributionFilterBar :model="exportFilters" :fields="toolbarFields" :cascade-options="cascadeOptions" />
+          <AttributionFilterBar
+            :model="exportFilters"
+            :fields="toolbarFields"
+            :cascade-options="cascadeOptions"
+          />
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
       </div>

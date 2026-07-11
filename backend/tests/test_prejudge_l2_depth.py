@@ -44,23 +44,25 @@ def test_l2_depth_single_call_produces_l2_only_attrs(monkeypatch):
     monkeypatch.setattr(
         prejudge,
         "_call",
-        lambda *a, **k: calls.append(1)
-        or {
-            "attributions": [
-                {
-                    "l2_code": "C-1-2",
-                    "confidence": 0.9,
-                    "summary": [{"lang": "zh-tw", "text": "行程與頁面不符"}],
-                    "evidence_quote": "雨天沒座位",
-                },
-                {
-                    "l2_code": "C-9-9",
-                    "confidence": 0.9,
-                    "summary": [],
-                    "evidence_quote": "雨天沒座位",
-                },
-            ]
-        },
+        lambda *a, **k: (
+            calls.append(1)
+            or {
+                "attributions": [
+                    {
+                        "l2_code": "C-1-2",
+                        "confidence": 0.9,
+                        "summary": [{"lang": "zh-tw", "text": "行程與頁面不符"}],
+                        "evidence_quote": "雨天沒座位",
+                    },
+                    {
+                        "l2_code": "C-9-9",
+                        "confidence": 0.9,
+                        "summary": [],
+                        "evidence_quote": "雨天沒座位",
+                    },
+                ]
+            }
+        ),
     )
     attrs = prejudge._resolve_attrs_multi({}, "因為下雨天沒座位很失望", "m", 2, "negative")
     assert len(calls) == 1  # 單呼叫（無 Stage B）

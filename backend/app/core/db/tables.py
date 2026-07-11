@@ -77,8 +77,9 @@ judgments = Table(
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
-    Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed
-    # 人工覆核 audit：誰、何時改了 status（人工確認/忽略/已修）——非系統自動路由，供操作留痕可追。
+    Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed
+    # 人工覆核 audit：誰、何時最後改了 status（人工確認/忽略/撤銷）——非系統自動路由；
+    # 完整轉移軌跡在 judgment_history（kind='status'）。
     Column("status_updated_by", Text),  # 最後改 status 的操作者 email（系統自動路由不寫）
     Column("status_updated_at", Text),  # 最後改 status 的時間（ISO 字串，與 created_at 同形態）
     Column("true_label", Text),  # 人工標註真值分類（級聯選出的葉 code）
@@ -349,6 +350,38 @@ judgment_runs = Table(
     Column("started_at", DateTime(timezone=True), server_default=func.now()),
     Column("finished_at", DateTime(timezone=True)),  # 終態時間（執行中為空）
     Index("idx_judgment_runs_started_at", "started_at"),
+)
+
+# 判決歷史（評論級 append-only：每則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註）。
+# 補 judgments「刪+插」重判不留痕的缺口（judgment_runs 是 run 級、llm_usage 是 call 級，皆無法
+# 重建單一評論的判決演進）。寫入點：judgment（replace_source_findings 同交易去重寫入，model+params
+# +result_digest 全同前一筆即 skip）/ status（update_finding_status 轉移時）/ note（使用者手動）。
+# 無 FK：finding_id 重判會更換，比照 finding_notes/judgment_runs 慣例以邏輯鍵關聯。
+judgment_history = Table(
+    "judgment_history",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("source", Text, nullable=False),  # 反饋來源 code（product_reviews…）
+    Column("source_id", Text, nullable=False),  # 該來源特徵 id（評論級鍵）
+    Column(
+        "kind", Text, nullable=False
+    ),  # 事件類型：judgment（判決快照）/ status（覆核轉移）/ note
+    Column("model", Text),  # 判決模型（kind=judgment；stub/ensemble 同 judgments.model 語意）
+    Column("model_votes", JSONB),  # ensemble 各 voter 票（單模型 NULL；供多模型對比）
+    # 事件細節：judgment 存 {model, voter_models, ensemble_sample_rate, …}（精餾小字典，
+    # 回填列為 {"backfilled": true}）；status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，
+    # 避免對 judgment/note 恆 NULL 的稀疏欄）。
+    Column("params", JSONB),
+    Column("attributions", JSONB),  # 判決快照（attribution_dto 形狀陣列；kind=judgment 才有）
+    Column("result_digest", Text),  # 快照全欄位（排 judged_at）正規化 sha256，供去重比對
+    Column("job_id", Text),  # 觸發批次（與 judgment_runs.job_id 對齊；status/note 為空）
+    Column("triggered_by", Text),  # 觸發人（user email；kind=judgment）
+    Column("author", Text),  # 操作者/備註人（kind=status/note）
+    Column("content", Text),  # 備註內容（kind=note）
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 評論時間軸查詢熱路徑：(source, source_id) 定位 + created_at 排序
+    Index("idx_judgment_history_source_id", "source", "source_id", "created_at"),
+    Index("idx_judgment_history_created_at", "created_at"),
 )
 
 

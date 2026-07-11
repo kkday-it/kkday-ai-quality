@@ -32,6 +32,11 @@ export interface TierFilterDef {
   type: 'tier';
 }
 
+/** 覆核狀態篩選（多選；選項來自 STATUS_LABEL，值 new/auto_confirmed/confirmed/dismissed）。 */
+export interface StatusFilterDef {
+  type: 'status';
+}
+
 /** 歸因分類篩選（a-cascader L1→L3 級聯複選；選項來自 getTaxonomyCascade，任意層級 code 子樹語義）。 */
 export interface TaxonomyFilterDef {
   type: 'taxonomy';
@@ -47,6 +52,7 @@ export type SourceFilterDef =
   | PolarityFilterDef
   | StageFilterDef
   | TierFilterDef
+  | StatusFilterDef
   | TaxonomyFilterDef
   | HasExternalFilterDef
   | ProductVerticalFilterDef
@@ -97,8 +103,12 @@ export interface Attribution {
   content?: AttributionContent;
   /** 負責單位（後端自 l1 域 rule _meta.owner_role 派生；業務未填時為空字串，不顯示標籤）。 */
   owner?: string;
+  /** 判決模型（如 gpt-5-mini；stub＝假判、ensemble＝聯合判決）——判決溯源標籤用。 */
+  model?: string;
+  /** 備註數（finding_notes fan-out 計數）——備註按鈕 badge 用。 */
+  notes_count?: number;
   is_primary?: boolean;
-  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed / fixed）——覆核徽章用。 */
+  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——覆核徽章用。 */
   status?: string;
   /** 人工標註真值分類 true_label——標真值功能用。 */
   true_label?: string;
@@ -149,11 +159,12 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 歸因分類 / 日期區間。 */
+/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 覆核狀態 / 歸因分類 / 日期區間。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },
   { type: 'tier' },
+  { type: 'status' },
   { type: 'taxonomy' },
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];

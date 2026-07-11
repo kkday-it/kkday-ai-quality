@@ -144,10 +144,10 @@ def test_patch_finding_status_not_found_and_success(client, auth_headers) -> Non
 
 
 def test_patch_finding_status_rejects_invalid_value(client, auth_headers) -> None:
-    # Literal 僅 confirmed/dismissed/fixed；'new' 等非法 → 422
+    # Literal 僅 confirmed/dismissed/new（new＝撤銷覆核）；fixed 已撤除、其餘非法值 → 422
     assert (
         client.patch(
-            "/api/findings/x/status", json={"status": "new"}, headers=auth_headers
+            "/api/findings/x/status", json={"status": "fixed"}, headers=auth_headers
         ).status_code
         == 422
     )
@@ -180,3 +180,76 @@ def test_problems_list_contract(client, auth_headers) -> None:
     assert r.status_code == 200
     body = r.json()
     assert set(body.keys()) == {"rows", "total"} and body["total"] == 0
+
+
+def test_problems_status_filter_and_model_in_dto(client, auth_headers) -> None:
+    """status 篩選命中/未命中 + attribution DTO 帶 model/notes_count（列表 model 標籤資料源）。"""
+    _seed_one_finding()
+    hit = client.get("/api/problems?source=product_reviews&status=new", headers=auth_headers).json()
+    assert hit["total"] == 1
+    a = hit["rows"][0]["attributions"][0]
+    assert "model" in a and a["notes_count"] == 0
+    miss = client.get(
+        "/api/problems?source=product_reviews&status=dismissed", headers=auth_headers
+    ).json()
+    assert miss["total"] == 0
+
+
+# ── findings：備註權限 / 批量覆核 ─────────────────────────────────
+def test_get_finding_notes_requires_auth(client) -> None:
+    # 匿名讀備註（內部 QC 討論內容）→ 401（原漏洞：無任何驗證）
+    assert client.get("/api/findings/x/notes").status_code == 401
+
+
+def test_batch_status_endpoint(client, auth_headers) -> None:
+    """批量覆核端點：空清單 422；成功回實際更新數（同值冪等跳過語義在 db 層測）。"""
+    assert (
+        client.patch(
+            "/api/findings/batch/status",
+            json={"source": "product_reviews", "source_ids": [], "status": "confirmed"},
+            headers=auth_headers,
+        ).status_code
+        == 422
+    )
+    _seed_one_finding()
+    r = client.patch(
+        "/api/findings/batch/status",
+        json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["updated"] == 1 and body["status"] == "confirmed"
+
+
+def test_batch_status_requires_auth(client) -> None:
+    assert (
+        client.patch(
+            "/api/findings/batch/status",
+            json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
+        ).status_code
+        == 401
+    )
+
+
+# ── judgment-history（評論級判決歷史時間軸）──────────────────────
+def test_judgment_history_endpoints(client, auth_headers) -> None:
+    """歷史列表（判決事件）+ 評論級備註新增；匿名一律 401。"""
+    assert client.get("/api/judgment-history?source=x&source_id=y").status_code == 401
+    _seed_one_finding()
+    r = client.get(
+        "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
+    )
+    assert r.status_code == 200
+    events = r.json()
+    assert len(events) == 1 and events[0]["kind"] == "judgment"
+    rn = client.post(
+        "/api/judgment-history/notes",
+        json={"source": "product_reviews", "source_id": "R1", "content": "e2e 備註"},
+        headers=auth_headers,
+    )
+    assert rn.status_code == 200 and rn.json()["kind"] == "note"
+    events = client.get(
+        "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
+    ).json()
+    assert [e["kind"] for e in events] == ["note", "judgment"]

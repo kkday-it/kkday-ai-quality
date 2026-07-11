@@ -61,6 +61,12 @@
   "pending_data": "待數據補充",
   "pending_review": "待覆核"
  },
+ "status_labels": {
+  "new": "待處理",
+  "auto_confirmed": "自動確認",
+  "confirmed": "已確認",
+  "dismissed": "已忽略"
+ },
  "polarity_labels": {
   "neutral": "中性",
   "negative": "負向",

@@ -1,6 +1,7 @@
 // 歸因列表篩選狀態 SSOT：型別 + 空值 + 選項 + 計數 + → API 參數轉換。
 // 三處共用（工具列 / 導出彈窗 / 初判目標篩選）皆以此型別為單一真相，避免各寫一份而漂移。
 import { STAGE_LABELS, TIER_LABELS } from './judgment.constant';
+import { STATUS_LABEL } from './status.constant';
 
 /** 歸因列表可篩選欄位（值型別對齊各控制項 v-model）。 */
 export interface AttributionFilters {
@@ -10,6 +11,8 @@ export interface AttributionFilters {
   stage: string[];
   /** 信心分層（單選）。 */
   tier: string;
+  /** 覆核狀態（多選 new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。 */
+  status: string[];
   /** 歸因分類（多選任意層級 code；L1/L2/L3 皆可，後端子樹語義命中）。 */
   taxonomy: string[];
   /** 有無外部評論（''=全部 / 'true'=有 / 'false'=無）。 */
@@ -32,6 +35,7 @@ export const emptyFilters = (): AttributionFilters => ({
   polarity: [],
   stage: [],
   tier: '',
+  status: [],
   taxonomy: [],
   hasExternal: '',
   dateRange: [],
@@ -45,6 +49,7 @@ export const cloneFilters = (f: AttributionFilters): AttributionFilters => ({
   ...f,
   polarity: [...f.polarity],
   stage: [...f.stage],
+  status: [...f.status],
   taxonomy: [...f.taxonomy],
   dateRange: [...f.dateRange],
 });
@@ -61,15 +66,17 @@ export const POLARITY_FILTER_OPTS = [
   { value: 'neutral', label: '中立' },
   { value: 'positive', label: '正向' },
 ];
-/** 階段 / 分層選項（自 label 常數衍生，單一真相）。 */
+/** 階段 / 分層 / 覆核狀態選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
+export const STATUS_OPTS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 
 /** 已套用的篩選項數（計數徽章用；空值不計）。 */
 export const countActiveFilters = (f: AttributionFilters): number =>
   (f.polarity.length ? 1 : 0) +
   (f.stage.length ? 1 : 0) +
   (f.tier ? 1 : 0) +
+  (f.status.length ? 1 : 0) +
   (f.taxonomy.length ? 1 : 0) +
   (f.hasExternal ? 1 : 0) +
   (f.dateRange.length ? 1 : 0) +
@@ -84,6 +91,7 @@ export const filtersToParams = (f: AttributionFilters) => {
     polarity: f.polarity.length ? f.polarity : undefined,
     stage: f.stage.length ? f.stage : undefined,
     confidenceTier: f.tier || undefined,
+    status: f.status.length ? f.status : undefined,
     taxonomy: f.taxonomy.length ? f.taxonomy : undefined,
     hasExternal: f.hasExternal || undefined,
     dateFrom: f.dateRange?.[0] || undefined,

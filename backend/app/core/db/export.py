@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from app.core.db._shared import (
     _POLARITY_LABEL_ZH,
     _STAGE_LABEL_ZH,
+    _STATUS_LABEL_ZH,
     _TIER_LABEL_ZH,
     fmt_datetime,
 )
@@ -58,6 +59,8 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("信心度", "confidence", 8),
     ("判決分層", "confidence_tier", 12),
     ("判決階段", "judgment_stage", 12),
+    ("覆核狀態", "status", 10),  # 人工處置軸（待處理/自動確認/已確認/已忽略；attr 級）
+    ("真值", "true_label", 12),  # 人工標註真值分類（葉 code；attr 級）
 ]
 
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
@@ -83,6 +86,8 @@ def _export_cell(key: str, value) -> str:
         return _TIER_LABEL_ZH.get(value, value)
     if key == "judgment_stage":
         return _STAGE_LABEL_ZH.get(value, value)
+    if key == "status":
+        return _STATUS_LABEL_ZH.get(value, value)
     return value
 
 
@@ -101,6 +106,8 @@ def _flat_attr(a: dict) -> dict:
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
         "judgment_stage": a.get("stage"),
         "summary": (a.get("content") or {}).get("summary"),
+        "status": a.get("status"),
+        "true_label": a.get("true_label"),
     }
 
 
@@ -142,6 +149,7 @@ def export_problems_xlsx(
     stage: list[str] | None = None,
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
+    status: list[str] | None = None,
     has_external: bool | None = None,
     rec_oid: str | None = None,
     prod_oid: str | None = None,
@@ -185,6 +193,7 @@ def export_problems_xlsx(
         stage=stage,
         confidence_tier=confidence_tier,
         taxonomy=taxonomy,
+        status=status,
         has_external=has_external,
         rec_oid=rec_oid,
         prod_oid=prod_oid,

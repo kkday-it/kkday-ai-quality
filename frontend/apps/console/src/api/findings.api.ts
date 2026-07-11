@@ -32,7 +32,10 @@ export interface TrueLabelEval {
 }
 
 /** LLM 對「提議真值 vs 反饋原文」重判評分（標真值確認時跑）；回信心對比 + 是否需填理由。 */
-export const evaluateTrueLabel = (findingId: string, proposedLabel: string): Promise<TrueLabelEval> =>
+export const evaluateTrueLabel = (
+  findingId: string,
+  proposedLabel: string,
+): Promise<TrueLabelEval> =>
   j<TrueLabelEval>(`${BASE}/findings/${encodeURIComponent(findingId)}/true_label/evaluate`, {
     method: 'POST',
     headers: JSON_HEADERS,
@@ -73,4 +76,66 @@ export const addFindingNote = (findingId: string, content: string): Promise<Find
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ content }),
+  });
+
+/**
+ * 批量覆核：對多則評論（sourceIds＝勾選的 source_id）的全部歸因設定 status
+ * （confirmed/dismissed/new＝撤銷）；後端單交易逐筆 diff（同值冪等跳過）並記入判決歷史。
+ */
+export const batchPatchStatus = (
+  source: string,
+  sourceIds: string[],
+  status: string,
+): Promise<{ status: string; updated: number; finding_ids: string[] }> =>
+  j<{ status: string; updated: number; finding_ids: string[] }>(`${BASE}/findings/batch/status`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ source, source_ids: sourceIds, status }),
+  });
+
+/** 判決歷史事件（評論級時間軸一項；kind 決定有值欄位：judgment 快照 / status 轉移 / note 備註）。 */
+export interface JudgmentHistoryEntry {
+  id: number;
+  source: string;
+  source_id: string;
+  /** 事件類型：judgment（判決快照）/ status（覆核轉移）/ note（評論級備註）。 */
+  kind: 'judgment' | 'status' | 'note';
+  /** 判決模型（kind=judgment；stub/ensemble 同 judgments.model 語意）。 */
+  model?: string | null;
+  /** ensemble 各 voter 票（單模型 null；供多模型對比）。 */
+  model_votes?: unknown;
+  /** 事件細節：judgment＝{model, voter_models, ensemble_sample_rate}（回填列 {backfilled:true}）；
+   *  status＝{to, changes:[{finding_id, from}]}。 */
+  params?: Record<string, unknown> | null;
+  /** 判決快照（kind=judgment；每筆形狀近 Attribution：l1-l3/傾向/情緒分/信心/內容）。 */
+  attributions?: Record<string, unknown>[] | null;
+  result_digest?: string | null;
+  job_id?: string | null;
+  triggered_by?: string | null;
+  /** 操作者/備註人（kind=status/note）。 */
+  author?: string | null;
+  /** 備註內容（kind=note）。 */
+  content?: string | null;
+  created_at: string | null;
+}
+
+/** 取某則評論的判決歷史時間軸（新到舊；judgment/status/note 三類事件混排）。 */
+export const getJudgmentHistory = (
+  source: string,
+  sourceId: string,
+): Promise<JudgmentHistoryEntry[]> => {
+  const q = new URLSearchParams({ source, source_id: sourceId });
+  return j<JudgmentHistoryEntry[]>(`${BASE}/judgment-history?${q.toString()}`);
+};
+
+/** 為某則評論新增一則評論級備註（判決歷史時間軸內；與 finding 級備註並存）。 */
+export const addJudgmentHistoryNote = (
+  source: string,
+  sourceId: string,
+  content: string,
+): Promise<JudgmentHistoryEntry> =>
+  j<JudgmentHistoryEntry>(`${BASE}/judgment-history/notes`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ source, source_id: sourceId, content }),
   });

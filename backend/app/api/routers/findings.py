@@ -14,8 +14,35 @@ router = APIRouter()
 
 
 class StatusIn(BaseModel):
-    # 人工只可改這三態；new / auto_confirmed 由系統設定（初判 + G1 自動確認路由）。非法值 Pydantic 自動回 422。
-    status: Literal["confirmed", "dismissed", "fixed"]
+    # 人工可設 confirmed / dismissed，或 new＝撤銷覆核回待處理；auto_confirmed 僅系統設定
+    # （G1 自動確認路由）。fixed 已撤除（死狀態，migration a3b9d5e72f04 併入 confirmed）。
+    status: Literal["confirmed", "dismissed", "new"]
+
+
+class BatchStatusIn(BaseModel):
+    """批量覆核：對多則評論（source_id 清單）的全部歸因設定 status（同值列冪等跳過）。"""
+
+    source: str
+    source_ids: list[str]
+    status: Literal["confirmed", "dismissed", "new"]
+
+
+# 必須註冊於 /api/findings/{finding_id}/status 之前：FastAPI 依註冊序匹配，
+# 置後會被參數路由攔截（finding_id="batch"）。
+@router.patch("/api/findings/batch/status")
+def batch_patch_finding_status(
+    body: BatchStatusIn,
+    user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE)),
+) -> dict:
+    """批量更新覆核狀態（勾選多則評論一鍵確認/忽略/撤銷）；需 finding.review.update 權限。
+
+    單一交易內逐筆 diff（已是目標狀態者跳過），實際轉移按評論聚合記入判決歷史。
+    """
+    if not body.source_ids:
+        raise HTTPException(status_code=422, detail="source_ids 不可為空")
+    actor = user.get("email") or user.get("user_id") or "unknown"
+    result = db.batch_update_finding_status(body.source, body.source_ids, body.status, actor=actor)
+    return {"status": body.status, **result}
 
 
 @router.patch("/api/findings/{finding_id}/status")
@@ -24,7 +51,10 @@ def patch_finding_status(
     body: StatusIn,
     user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE)),
 ) -> dict:
-    """更新 Finding 狀態（出口A 確認/忽略/已修）；需 finding.review.update 權限，記操作者/時間 audit。"""
+    """更新 Finding 狀態（確認/忽略/撤銷覆核）；需 finding.review.update 權限。
+
+    同值冪等 no-op；實際轉移記操作者/時間 audit + 評論級歷史（judgment_history kind='status'）。
+    """
     actor = user.get("email") or user.get("user_id") or "unknown"
     if not db.update_finding_status(finding_id, body.status, actor=actor):
         raise HTTPException(status_code=404, detail="finding not found")
@@ -169,8 +199,8 @@ class NoteIn(BaseModel):
 
 
 @router.get("/api/findings/{finding_id}/notes")
-def get_finding_notes(finding_id: str) -> list[dict]:
-    """列某條歸因的備註歷史（新到舊：id / 備註人 / 備註時間 / 備註內容）。"""
+def get_finding_notes(finding_id: str, user: dict = Depends(auth.get_current_user)) -> list[dict]:
+    """列某條歸因的備註歷史（新到舊：id / 備註人 / 備註時間 / 備註內容）；需登入（內部 QC 討論內容）。"""
     return db.list_finding_notes(finding_id)
 
 
@@ -186,4 +216,36 @@ def add_finding_note(
         raise HTTPException(status_code=404, detail="finding not found")
     return db.add_finding_note(
         finding_id, author=user.get("email") or user.get("user_id") or "unknown", content=content
+    )
+
+
+@router.get("/api/judgment-history")
+def get_judgment_history(
+    source: str, source_id: str, user: dict = Depends(auth.get_current_user)
+) -> list[dict]:
+    """某則評論的判決歷史時間軸（新到舊；judgment 快照 / status 覆核轉移 / note 備註混排）。"""
+    return db.list_judgment_history(source, source_id)
+
+
+class HistoryNoteIn(BaseModel):
+    """新增評論級備註（判決歷史時間軸內；與 finding 級備註 finding_notes 並存）。"""
+
+    source: str
+    source_id: str
+    content: str
+
+
+@router.post("/api/judgment-history/notes")
+def add_judgment_history_note(
+    body: HistoryNoteIn, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """為某則評論新增一則評論級備註（kind='note'，append-only）；備註人＝登入 email。"""
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="備註內容不可為空")
+    return db.add_history_note(
+        body.source,
+        body.source_id,
+        author=user.get("email") or user.get("user_id") or "unknown",
+        content=content,
     )

@@ -165,14 +165,16 @@ def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
     monkeypatch.setattr(
         prejudge,
         "_stage_b",
-        lambda item, text, d, model: {
-            "l1_domain_code": "",
-            "l2_code": "",
-            "l3_code": "",
-            "confidence": 0.5,
-        }
-        if d == "product_quality"
-        else {"l1_domain_code": d, "l2_code": "", "l3_code": "", "confidence": 0.8},
+        lambda item, text, d, model: (
+            {
+                "l1_domain_code": "",
+                "l2_code": "",
+                "l3_code": "",
+                "confidence": 0.5,
+            }
+            if d == "product_quality"
+            else {"l1_domain_code": d, "l2_code": "", "l3_code": "", "confidence": 0.8}
+        ),
     )
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["customer"] and len(calls) == 2
@@ -567,3 +569,35 @@ def test_to_findings_negative_pending_stays_new(stub_engine) -> None:
     """負向未歸因（needs_review+pending_data）→ status=new（需人工）。"""
     out = prejudge.to_findings(_item(1, "服務很差要退款"), model="gpt-5-nano")
     assert out[0].status == "new"
+
+
+def test_resolve_attrs_secondary_min_confidence_gate(monkeypatch, fixed_config) -> None:
+    """次要歸因信心閘門：非 primary 條目低於 secondary_min_confidence 丟棄只留主因；primary 不受影響；缺鍵=關閉。"""
+    from app.core import global_rule
+
+    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
+    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
+    primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
+    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.55}
+    monkeypatch.setattr(
+        prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(primary), dict(weak2nd)]
+    )
+    monkeypatch.setattr(
+        global_rule,
+        "evidence_policy",
+        lambda: {"attr_min_confidence": 0.2, "secondary_min_confidence": 0.6},
+    )
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.55 次要歸因被殺、主因保留
+    # 單條 primary 信心 0.4（低於 secondary 閘門、高於 attr 閘門）→ 不受影響（閘門只管非 primary）
+    lone = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.4}
+    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(lone)])
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 1
+    # 閘門關閉（缺鍵=0）→ 兩條都保留（向後相容）
+    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    monkeypatch.setattr(
+        prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(primary), dict(weak2nd)]
+    )
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 2

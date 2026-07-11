@@ -78,6 +78,7 @@ def _work_one(
     source: str | None,
     voter_cfgs: list[dict] | None = None,
     sample_rate: float = 0.0,
+    triggered_by: str = "",
 ) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
@@ -106,7 +107,20 @@ def _work_one(
             findings = prejudge.to_findings(
                 norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate
             )
-            db.replace_source_findings(src, source_id, findings)
+            # 判決參數精餾快照（評論級歷史去重比對鍵之一；勿塞 job 級大清單）
+            history_params = {
+                "model": model,
+                "voter_models": [v.get("model") or "" for v in (voter_cfgs or [])],
+                "ensemble_sample_rate": sample_rate,
+            }
+            db.replace_source_findings(
+                src,
+                source_id,
+                findings,
+                params=history_params,
+                job_id=job_id,
+                triggered_by=triggered_by,
+            )
             _bump(job_id, ok=True)
         except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
             _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item.get("item_id"))
@@ -147,6 +161,7 @@ def _run(
     voter_cfgs: list[dict] | None = None,
     sample_rate: float = 0.0,
     cache_read: bool = True,
+    triggered_by: str = "",
 ) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
     _reload_judge_rules()  # 硬保證：本批每筆 LLM 判決都採用『當前 DB active 版規則』（防 server 記憶體舊快取）
@@ -205,7 +220,15 @@ def _run(
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
                     in_flight.add(
                         ex.submit(
-                            c.run, _work_one, job_id, item, model, source, voter_cfgs, sample_rate
+                            c.run,
+                            _work_one,
+                            job_id,
+                            item,
+                            model,
+                            source,
+                            voter_cfgs,
+                            sample_rate,
+                            triggered_by,
                         )
                     )
                 if cancel and cancel.is_set():
@@ -364,7 +387,17 @@ def start_job(
         _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(job_id, item_ids, eff, model, source, voter_cfgs, sample_rate, cache_read),
+        args=(
+            job_id,
+            item_ids,
+            eff,
+            model,
+            source,
+            voter_cfgs,
+            sample_rate,
+            cache_read,
+            triggered_by,
+        ),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()

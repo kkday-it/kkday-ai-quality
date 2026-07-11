@@ -52,6 +52,7 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "finding_notes",
     "llm_usage",
     "judgment_runs",
+    "judgment_history",
 )
 
 # 敏感表：含帳號 / 加密機密，預設不匯入（避免跨環境金鑰不符靜默清空、或還原 users 鎖死當前帳號）。
@@ -62,6 +63,7 @@ _SEQUENCE_TABLES: tuple[tuple[str, str], ...] = (
     ("judge_rule_versions", "id"),
     ("finding_notes", "id"),
     ("llm_usage", "id"),
+    ("judgment_history", "id"),
 )
 
 _CHUNK = 2000  # 分塊 insert 大小（對齊 upload_batch 既有分塊量級）
