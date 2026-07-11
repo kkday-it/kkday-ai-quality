@@ -163,8 +163,8 @@ const statusText = (e: JudgmentHistoryEntry): string => {
 <template>
   <a-modal v-model:visible="open" title="判決歷史" :footer="false" :width="860" unmount-on-close>
     <div class="flex gap-5">
-      <!-- 左：評論級事件時間軸（判決快照 / 覆核轉移 / 備註，新到舊）-->
-      <div class="min-w-0 flex-1">
+      <!-- 左：評論級事件時間軸（判決快照 / 覆核轉移 / 備註，新到舊）；佈局 7:3 -->
+      <div class="min-w-0 flex-[7]">
         <StateGuard :loading="loading" error="">
           <a-timeline v-if="list.length" class="max-h-[440px] overflow-auto pl-1 pr-2">
             <a-timeline-item v-for="e in list" :key="e.id" :dot-color="DOT_COLOR[e.kind]">
@@ -242,9 +242,9 @@ const statusText = (e: JudgmentHistoryEntry): string => {
           <a-empty v-else description="尚無判決歷史" />
         </StateGuard>
       </div>
-      <!-- 右：新增評論級備註（固定寬；與 finding 級「歸因備註」並存）-->
+      <!-- 右：新增評論級備註（佔 3/10；與 finding 級「歸因備註」並存）-->
       <div
-        class="flex w-[260px] shrink-0 flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5"
+        class="flex min-w-0 flex-[3] flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5"
       >
         <a-textarea
           v-model="draft"
