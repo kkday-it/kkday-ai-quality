@@ -13,6 +13,8 @@ export interface AttributionFilters {
   tier: string;
   /** 覆核狀態（多選 new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。 */
   status: string[];
+  /** 判決模型（多選；judgments.model IN——當前判決維度，任一歸因命中即列出）。 */
+  model: string[];
   /** 歸因分類（多選任意層級 code；L1/L2/L3 皆可，後端子樹語義命中）。 */
   taxonomy: string[];
   /** 有無外部評論（''=全部 / 'true'=有 / 'false'=無）。 */
@@ -36,6 +38,7 @@ export const emptyFilters = (): AttributionFilters => ({
   stage: [],
   tier: '',
   status: [],
+  model: [],
   taxonomy: [],
   hasExternal: '',
   dateRange: [],
@@ -50,6 +53,7 @@ export const cloneFilters = (f: AttributionFilters): AttributionFilters => ({
   polarity: [...f.polarity],
   stage: [...f.stage],
   status: [...f.status],
+  model: [...f.model],
   taxonomy: [...f.taxonomy],
   dateRange: [...f.dateRange],
 });
@@ -77,6 +81,7 @@ export const countActiveFilters = (f: AttributionFilters): number =>
   (f.stage.length ? 1 : 0) +
   (f.tier ? 1 : 0) +
   (f.status.length ? 1 : 0) +
+  (f.model.length ? 1 : 0) +
   (f.taxonomy.length ? 1 : 0) +
   (f.hasExternal ? 1 : 0) +
   (f.dateRange.length ? 1 : 0) +
@@ -92,6 +97,7 @@ export const filtersToParams = (f: AttributionFilters) => {
     stage: f.stage.length ? f.stage : undefined,
     confidenceTier: f.tier || undefined,
     status: f.status.length ? f.status : undefined,
+    model: f.model.length ? f.model : undefined,
     taxonomy: f.taxonomy.length ? f.taxonomy : undefined,
     hasExternal: f.hasExternal || undefined,
     dateFrom: f.dateRange?.[0] || undefined,

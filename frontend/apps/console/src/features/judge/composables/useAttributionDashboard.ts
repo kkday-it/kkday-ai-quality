@@ -1,5 +1,5 @@
 import { ref, computed, watch, toValue, type MaybeRefOrGetter } from 'vue';
-import { getAttributionOverview, getAttributionBreakdown } from '@/api';
+import { getAttributionOverview, getAttributionBreakdown, getJudgmentModels } from '@/api';
 import { useVerticalFilterStore } from '@/stores';
 import { buildDonutOption, buildBarOption, buildTrendOption } from '@/shared/charts';
 import {
@@ -20,7 +20,18 @@ const TIERS = [
 ] as const;
 
 /** L1 歸因域配色（依 by_l1 顯示序循環取色；固定序保證圓餅 / 長條同域同色）。 */
-const L1_PALETTE = ['#165dff', '#00b42a', '#ff7d00', '#f53f3f', '#722ed1', '#14c9c9', '#eb0aa4', '#7bc616', '#f7ba1e', '#3491fa'];
+const L1_PALETTE = [
+  '#165dff',
+  '#00b42a',
+  '#ff7d00',
+  '#f53f3f',
+  '#722ed1',
+  '#14c9c9',
+  '#eb0aa4',
+  '#7bc616',
+  '#f7ba1e',
+  '#3491fa',
+];
 
 /** useAttributionDashboard 的響應式查詢輸入（日期區間 + 趨勢粒度；皆可 ref / getter / 純值）。 */
 export interface AttrDashboardQuery {
@@ -58,6 +69,26 @@ export function useAttributionDashboard(
   const onVerticalChange = (v: unknown) =>
     verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
 
+  // 判決模型篩選（工具列多選；judgments.model IN——當前判決維度）。空＝不篩選。
+  // ⚠️ 語義：套用後 judged 變「所選模型的判決覆蓋數」，與總反饋差額含「他模型判過」非皆未判
+  //（KPI 文案由頁面依 modelFiltered 揭露）。
+  const modelFilter = ref<string[]>([]);
+  /** 判決模型選項（歷來實際判過的模型；載一次）；失敗回空不阻斷概覽。 */
+  const modelOptions = ref<{ value: string; label: string }[]>([]);
+  getJudgmentModels()
+    .then((models) => {
+      modelOptions.value = models.map((m) => ({
+        value: m,
+        label: m === 'stub' ? 'stub（測試假判，非真實模型）' : m,
+      }));
+    })
+    .catch(() => {
+      modelOptions.value = [];
+    });
+  /** 是否已套用判決模型篩選（KPI 文案揭露口徑用）。 */
+  const modelFiltered = computed(() => modelFilter.value.length > 0);
+  const effModel = () => (modelFilter.value.length ? [...modelFilter.value] : undefined);
+
   const data = ref<AttributionOverview | null>(null);
   const loading = ref(true);
   const error = ref('');
@@ -82,6 +113,7 @@ export function useAttributionDashboard(
       dateFrom: toValue(query.dateFrom),
       dateTo: toValue(query.dateTo),
       productVerticals: effVerticals(),
+      model: effModel(),
     };
     try {
       data.value = (await getAttributionOverview({
@@ -89,7 +121,10 @@ export function useAttributionDashboard(
         granularity: toValue(query.granularity),
       })) as AttributionOverview;
       // 商品內容細化圖所需（失敗不阻斷縱覽主體）；預設選中筆數最多的 L2 讓右側 L3 有初值。
-      contentBreakdown.value = (await getAttributionBreakdown('content', q)) as AttributionBreakdown;
+      contentBreakdown.value = (await getAttributionBreakdown(
+        'content',
+        q,
+      )) as AttributionBreakdown;
       const top = contentBreakdown.value?.by_l2?.[0];
       selectedL2.value = top ? { code: top.code, label: top.label } : null;
     } catch (e: unknown) {
@@ -112,7 +147,9 @@ export function useAttributionDashboard(
   };
 
   /** 左側 L2 面向長條（占比＝該 L2 / 全 L2 總數）。 */
-  const contentL2Bar = computed(() => buildContentBarOption(toContentItems(contentBreakdown.value?.by_l2 ?? [])));
+  const contentL2Bar = computed(() =>
+    buildContentBarOption(toContentItems(contentBreakdown.value?.by_l2 ?? [])),
+  );
 
   /** 右側 L3 細項長條：僅選中 L2 底下的 L3（占比＝該 L3 / 選中 L2 內 L3 總數，非全域）。 */
   const contentL3Bar = computed(() => {
@@ -138,6 +175,7 @@ export function useAttributionDashboard(
         dateFrom: toValue(query.dateFrom),
         dateTo: toValue(query.dateTo),
         productVerticals: effVerticals(),
+        model: effModel(),
       })) as AttributionBreakdown;
     } catch (e: unknown) {
       error.value = '下鑽失敗：' + (e instanceof Error ? e.message : String(e));
@@ -160,6 +198,7 @@ export function useAttributionDashboard(
       toValue(query.dateTo),
       toValue(query.granularity),
       verticalFilter.activeGroups, // 全局垂直分類變更 → 縱覽同步重載
+      modelFilter.value, // 判決模型篩選變更 → 重載
     ],
     reload,
     { immediate: true },
@@ -203,7 +242,9 @@ export function useAttributionDashboard(
   );
 
   /** 歸因佔比——圓餅（占比視角，甜甜圈 + 右側可捲動 legend）。 */
-  const attributionShareDonut = computed(() => buildDonutOption({ title: '歸因佔比', unit: '筆', items: attrShareItems.value }));
+  const attributionShareDonut = computed(() =>
+    buildDonutOption({ title: '歸因佔比', unit: '筆', items: attrShareItems.value }),
+  );
 
   /** 歸因佔比——長條（排名視角，最大值置頂）。與圓餅同資料，供圖表切換多維呈現。 */
   const attributionShareBar = computed(() =>
@@ -284,6 +325,10 @@ export function useAttributionDashboard(
     verticalOptions,
     verticalGroups,
     onVerticalChange,
+    // 判決模型篩選（縱覽工具列；當前判決維度）
+    modelFilter,
+    modelOptions,
+    modelFiltered,
     // 圖表 option
     attributionShareDonut,
     attributionShareBar,

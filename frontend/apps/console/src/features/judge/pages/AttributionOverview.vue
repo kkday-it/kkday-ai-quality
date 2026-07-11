@@ -75,7 +75,9 @@ const shareChart = ref<'donut' | 'bar'>('donut');
 // 日期區間（a-range-picker，'YYYY-MM-DD' 陣列）+ 趨勢粒度（年/月/日），驅動所有面板重載
 const dateRange = ref<string[]>([]);
 const granularity = ref('month');
-const granLabel = computed(() => ({ year: '年', month: '月', day: '日' })[granularity.value] ?? '月');
+const granLabel = computed(
+  () => ({ year: '年', month: '月', day: '日' })[granularity.value] ?? '月',
+);
 
 // source / 日期 / 粒度 以 getter 傳入，任一變更即觸發 composable 內 watch 自動重載
 const {
@@ -91,6 +93,9 @@ const {
   verticalOptions,
   verticalGroups,
   onVerticalChange,
+  modelFilter,
+  modelOptions,
+  modelFiltered,
   attributionShareDonut,
   attributionShareBar,
   scoreBar,
@@ -168,6 +173,17 @@ const onExport = async () => {
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
+      <!-- 判決模型篩選（judgments.model 當前判決維度；套用後 KPI 卡揭露口徑，見下方 caption）-->
+      <a-select
+        v-model="modelFilter"
+        multiple
+        size="small"
+        style="width: 200px"
+        :max-tag-count="1"
+        allow-clear
+        placeholder="判決模型"
+        :options="modelOptions"
+      />
       <a-range-picker
         v-model="dateRange"
         size="small"
@@ -204,13 +220,26 @@ const onExport = async () => {
   >
     <div v-if="kpi" ref="reportRef" class="flex flex-col gap-4">
       <!-- ── 核心指標 ── -->
-      <CardSection data-report-block title="核心指標" hint="整體反饋結構：反饋量、歸因進度與問題比率">
+      <CardSection
+        data-report-block
+        title="核心指標"
+        hint="整體反饋結構：反饋量、歸因進度與問題比率"
+      >
         <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
           <KpiCard label="總反饋" :value="kpi.total" subtext="全部錄入標的" />
-          <KpiCard label="已歸因" :value="kpi.judged" subtext="已完成初判歸因" />
+          <KpiCard
+            :label="modelFiltered ? '已歸因（所選模型）' : '已歸因'"
+            :value="kpi.judged"
+            :subtext="modelFiltered ? '所選模型的判決覆蓋' : '已完成初判歸因'"
+          />
           <KpiCard label="問題占比" :value="kpi.problemPct" unit="%" subtext="負向 / 已判" />
           <KpiCard label="自動採信率" :value="kpi.autoPct" unit="%" subtext="auto_accept / 已判" />
           <KpiCard label="待人工" :value="kpi.needsReview" subtext="低信心需複核" />
+        </div>
+        <!-- 判決模型篩選口徑揭露：judgments 為「當前判決」，每評論僅一個 model 值——
+             與「總反饋」的差額含「未判」與「被其他模型判過但未被選中」兩種情況，非皆未判 -->
+        <div v-if="modelFiltered" class="mt-2 text-xs text-[var(--color-text-3)]">
+          已套用判決模型篩選：數字為「當前判決＝所選模型」的覆蓋；與「總反饋」的差額包含「未判」與「由其他模型判決」兩種情況，非皆為未判。
         </div>
       </CardSection>
 
@@ -224,7 +253,12 @@ const onExport = async () => {
         <a-row :gutter="16" align="stretch">
           <a-col :span="12">
             <div class="mb-1 text-xs text-gray-500">L2 面向（點擊切換右側）</div>
-            <v-chart :option="contentL2Bar" class="h-[360px]" autoresize @click="onContentL2Click" />
+            <v-chart
+              :option="contentL2Bar"
+              class="h-[360px]"
+              autoresize
+              @click="onContentL2Click"
+            />
           </a-col>
           <a-col :span="12">
             <div class="mb-1 text-xs text-gray-500">
@@ -257,7 +291,11 @@ const onExport = async () => {
           </CardSection>
         </a-col>
         <a-col :span="12">
-          <CardSection data-report-block :title="`問題量趨勢（${granLabel}）`" hint="依評論時間聚合 · 已判 vs 負向問題量">
+          <CardSection
+            data-report-block
+            :title="`問題量趨勢（${granLabel}）`"
+            hint="依評論時間聚合 · 已判 vs 負向問題量"
+          >
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
@@ -266,12 +304,20 @@ const onExport = async () => {
       <!-- ── 問題歸因 ── -->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col :span="12">
-          <CardSection data-report-block title="歸因漏斗" hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂">
+          <CardSection
+            data-report-block
+            title="歸因漏斗"
+            hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂"
+          >
             <v-chart :option="funnel" class="h-[320px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="12">
-          <CardSection data-report-block title="L1 歸因域分布" hint="負向問題的六大歸因域 · 點長條下鑽 L2/L3">
+          <CardSection
+            data-report-block
+            title="L1 歸因域分布"
+            hint="負向問題的六大歸因域 · 點長條下鑽 L2/L3"
+          >
             <v-chart :option="l1Bar" class="h-[320px]" autoresize @click="onL1Click" />
           </CardSection>
         </a-col>

@@ -97,6 +97,7 @@ const {
   schema,
   filters,
   cascadeOptions,
+  modelOptions,
   verticalOptions,
   verticalGroups,
   onVerticalChange,
@@ -142,6 +143,7 @@ const {
   cancelJob,
   exportOpen,
   exportFilters,
+  exportSnapshotModel,
   openExport,
   doExport,
   exporting,
@@ -428,6 +430,7 @@ const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   stage: 'stage',
   tier: 'tier',
   status: 'status',
+  model: 'model',
   taxonomy: 'taxonomy',
   hasExternal: 'hasExternal',
   dateRange: 'dateRange',
@@ -619,6 +622,7 @@ onMounted(init);
           :model="filters"
           :fields="toolbarFields"
           :cascade-options="cascadeOptions"
+          :model-options="modelOptions"
           class="mb-2"
           @change="onFilterChange"
         />
@@ -1134,12 +1138,32 @@ onMounted(init);
         <div v-if="runCount" class="text-xs text-[rgb(var(--warning-6))]">
           已勾選 {{ runCount }} 筆 → 只導出勾選列（下方篩選僅供參考，不套用）。
         </div>
+        <!-- 輸出結果版本：與「判決模型」篩選（圈哪些評論）語義獨立——這裡決定輸出「哪個模型判的內容」 -->
+        <div>
+          <div class="mb-1 text-xs text-gray-500">輸出結果版本</div>
+          <a-row :gutter="[8, 8]" align="center">
+            <a-col flex="260px">
+              <a-select
+                v-model="exportSnapshotModel"
+                size="small"
+                allow-clear
+                class="w-full"
+                placeholder="當前判決結果（預設）"
+                :options="modelOptions"
+              />
+            </a-col>
+            <a-col flex="auto" class="text-xs text-gray-400">
+              留空＝各評論的最新（當前）判決；選特定模型＝輸出該模型當時判的內容與統計（下方篩選仍依當前判決圈選評論；該模型未判過的評論將被排除）。
+            </a-col>
+          </a-row>
+        </div>
         <div>
           <div class="mb-1 text-xs text-gray-500">導出範圍篩選（已帶入列表當前篩選，可重選）</div>
           <AttributionFilterBar
             :model="exportFilters"
             :fields="toolbarFields"
             :cascade-options="cascadeOptions"
+            :model-options="modelOptions"
           />
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
@@ -1248,21 +1272,25 @@ onMounted(init);
         <!-- 左：append-only 歷史時間軸（新到舊；佔 7/10）-->
         <div class="min-w-0 flex-[7]">
           <StateGuard :loading="noteLoading" error="">
-            <a-timeline v-if="noteList.length" class="max-h-[360px] overflow-auto pl-1">
-              <a-timeline-item v-for="n in noteList" :key="n.id">
-                <div
-                  class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]"
-                >
-                  <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
-                  <span>{{ fmtNoteTime(n.created_at) }}</span>
-                </div>
-                <div
-                  class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
-                >
-                  {{ n.content }}
-                </div>
-              </a-timeline-item>
-            </a-timeline>
+            <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryModal）：timeline 是 flex column、
+                 item min-height 78px，max-h+overflow 直掛 timeline 會被 flex-shrink 壓縮致內容堆疊。 -->
+            <div v-if="noteList.length" class="max-h-[360px] overflow-auto">
+              <a-timeline class="pl-1">
+                <a-timeline-item v-for="n in noteList" :key="n.id">
+                  <div
+                    class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]"
+                  >
+                    <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
+                    <span>{{ fmtNoteTime(n.created_at) }}</span>
+                  </div>
+                  <div
+                    class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
+                  >
+                    {{ n.content }}
+                  </div>
+                </a-timeline-item>
+              </a-timeline>
+            </div>
             <a-empty v-else description="尚無備註" />
           </StateGuard>
         </div>

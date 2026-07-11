@@ -37,6 +37,11 @@ export interface StatusFilterDef {
   type: 'status';
 }
 
+/** 判決模型篩選（多選；選項來自 /api/judgment-history/models，值 judgments.model 當前判決維度）。 */
+export interface ModelFilterDef {
+  type: 'model';
+}
+
 /** 歸因分類篩選（a-cascader L1→L3 級聯複選；選項來自 getTaxonomyCascade，任意層級 code 子樹語義）。 */
 export interface TaxonomyFilterDef {
   type: 'taxonomy';
@@ -53,6 +58,7 @@ export type SourceFilterDef =
   | StageFilterDef
   | TierFilterDef
   | StatusFilterDef
+  | ModelFilterDef
   | TaxonomyFilterDef
   | HasExternalFilterDef
   | ProductVerticalFilterDef
@@ -159,12 +165,13 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 覆核狀態 / 歸因分類 / 日期區間。 */
+/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 覆核狀態 / 判決模型 / 歸因分類 / 日期區間。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },
   { type: 'tier' },
   { type: 'status' },
+  { type: 'model' },
   { type: 'taxonomy' },
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];

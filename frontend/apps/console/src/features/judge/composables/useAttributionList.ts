@@ -7,6 +7,7 @@ import {
   batchPatchStatus,
   getProblems,
   getTaxonomyCascade,
+  getJudgmentModels,
   type CascadeNode,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
@@ -61,6 +62,20 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       cascadeOptions.value = await getTaxonomyCascade();
     } catch {
       cascadeOptions.value = [];
+    }
+  };
+  /** 判決模型選項（歷來實際判過的模型；載一次供 篩選/導出輸出版本 下拉共用）。 */
+  const modelOptions = ref<{ value: string; label: string }[]>([]);
+  /** 載入模型清單；stub 標註「測試假判」防誤當可比口徑；失敗回空不阻斷（選單無選項仍可用）。 */
+  const loadModelOptions = async () => {
+    if (modelOptions.value.length) return;
+    try {
+      modelOptions.value = (await getJudgmentModels()).map((m) => ({
+        value: m,
+        label: m === 'stub' ? 'stub（測試假判，非真實模型）' : m,
+      }));
+    } catch {
+      modelOptions.value = [];
     }
   };
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
@@ -160,6 +175,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       if (!filterTypes.has('stage')) filters.stage = [];
       if (!filterTypes.has('tier')) filters.tier = '';
       if (!filterTypes.has('status')) filters.status = [];
+      if (!filterTypes.has('model')) filters.model = [];
       if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
       if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
       if (!filterTypes.has('dateRange')) filters.dateRange = [];
@@ -183,6 +199,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadConfigs();
     verticalFilter.loadOptions();
     loadCascadeOptions();
+    loadModelOptions();
     loadPage();
     loadUnjudged();
   };
@@ -212,9 +229,15 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const exportOpen = ref(false);
   /** 導出草稿篩選（與列表篩選同形狀；彈窗內可重選，不影響列表本身）。 */
   const exportFilters = reactive(emptyFilters());
+  /**
+   * 導出「輸出結果版本」：''＝當前判決（預設）；指定模型＝內容替換為該模型的 judgment_history
+   * 最新快照（真多模型對比輸出）。與 exportFilters.model（篩哪些評論）語義獨立，可並用。
+   */
+  const exportSnapshotModel = ref('');
   /** 開導出彈窗：草稿深拷貝列表當前篩選（有勾選時提示只導勾選列，篩選欄仍顯示以供參考）。 */
   const openExport = () => {
     Object.assign(exportFilters, cloneFilters(filters));
+    exportSnapshotModel.value = '';
     exportOpen.value = true;
   };
   /** 確認導出：以草稿篩選啟動背景 job（歸因列表）；有勾選 review 則只導那些（item_ids 優先於篩選）。 */
@@ -230,6 +253,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           stage: p.stage,
           confidence_tier: p.confidenceTier,
           status: p.status,
+          model: p.model,
+          snapshot_model: exportSnapshotModel.value || undefined,
           taxonomy: p.taxonomy,
           has_external: p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
           date_from: p.dateFrom,
@@ -290,6 +315,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     // 篩選（單一 reactive 物件；AttributionFilterBar 綁定）
     filters,
     cascadeOptions,
+    modelOptions,
     verticalOptions,
     verticalGroups,
     onVerticalChange,
@@ -321,6 +347,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     // 導出（彈窗草稿流程 + 型態選擇 + 背景 job + 實時進度 + 停止）
     exportOpen,
     exportFilters,
+    exportSnapshotModel,
     openExport,
     doExport,
     exporting: exportJob.exporting,

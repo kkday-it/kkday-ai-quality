@@ -26,6 +26,8 @@ export interface GetProblemsParams {
   confidenceTier?: string;
   /** 覆核狀態過濾（多選 new/auto_confirmed/confirmed/dismissed；CSV 傳後端）。 */
   status?: string[];
+  /** 判決模型過濾（多選；judgments.model IN——當前判決維度；CSV 傳後端）。 */
+  model?: string[];
   /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 product_reviews 生效）。 */
   hasExternal?: string;
   /** 歸因分類過濾（多選任意層級 code；後端 l1/l2/l3_code 任一 IN 命中＝子樹語義）。 */
@@ -60,6 +62,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
   if (params.status?.length) q.set('status', params.status.join(','));
+  if (params.model?.length) q.set('model', params.model.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
@@ -93,6 +96,10 @@ export const startProblemsExport = (p: {
   taxonomy?: string[];
   /** 覆核狀態（多選 new/auto_confirmed/confirmed/dismissed）。 */
   status?: string[];
+  /** 判決模型篩選（多選；當前判決維度，圈選哪些評論）。 */
+  model?: string[];
+  /** 輸出結果版本：省略＝當前判決；指定模型＝內容替換為該模型的 judgment_history 最新快照。 */
+  snapshot_model?: string;
   /** 有無外部評論（'true'/'false'）。 */
   has_external?: boolean;
   /** 精確 id 篩選。 */
@@ -186,6 +193,8 @@ export interface AttrQuery {
   granularity?: string;
   /** 全局商品垂直分類分組（多選；僅 product_reviews 生效） */
   productVerticals?: string[];
+  /** 判決模型多選（judgments.model IN——當前判決維度；僅套判決級指標，total_intake 不受影響） */
+  model?: string[];
 }
 
 /**
@@ -200,6 +209,7 @@ export const getAttributionOverview = (opts: AttrQuery = {}) => {
   if (opts.dateTo) q.set('date_to', opts.dateTo);
   if (opts.granularity) q.set('granularity', opts.granularity);
   if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
+  if (opts.model?.length) q.set('model', opts.model.join(','));
   return j(`${BASE}/problems/attribution_overview?${q.toString()}`);
 };
 
@@ -214,6 +224,7 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   if (opts.dateFrom) q.set('date_from', opts.dateFrom);
   if (opts.dateTo) q.set('date_to', opts.dateTo);
   if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
+  if (opts.model?.length) q.set('model', opts.model.join(','));
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
 
@@ -282,3 +293,7 @@ export const getJudgmentRun = (jobId: string) =>
   j<JudgmentRun & { stages: JudgmentRunStage[] }>(
     `${BASE}/v1/judgment/runs/${encodeURIComponent(jobId)}`,
   );
+
+/** 歷來實際判決過的模型清單（judgments 當前 ∪ judgment_history 快照 distinct；stub 排最後）。 */
+export const getJudgmentModels = (): Promise<string[]> =>
+  j<string[]>(`${BASE}/judgment-history/models`);

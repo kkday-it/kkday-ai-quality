@@ -27,10 +27,12 @@ const props = withDefaults(
     fields: FilterField[];
     /** 歸因分類級聯選項（L1→L3 樹；有 taxonomy 欄時必給，來自 getTaxonomyCascade）。 */
     cascadeOptions?: CascadeNode[];
+    /** 判決模型選項（有 model 欄時必給，來自 getJudgmentModels；注入模式，元件不發請求）。 */
+    modelOptions?: { value: string; label: string }[];
     /** 控制項尺寸。 */
     size?: 'mini' | 'small' | 'medium' | 'large';
   }>(),
-  { cascadeOptions: () => [], size: 'small' },
+  { cascadeOptions: () => [], modelOptions: () => [], size: 'small' },
 );
 
 const emit = defineEmits<{ change: [] }>();
@@ -49,6 +51,7 @@ const FIELD_FLEX: Record<FilterField, string> = {
   stage: '190px',
   tier: '190px',
   status: '190px',
+  model: '210px',
   taxonomy: '230px',
   hasExternal: '190px',
   dateRange: '190px',
@@ -65,6 +68,7 @@ const SECONDARY_FIELDS: FilterField[] = [
   'stage',
   'tier',
   'status',
+  'model',
   'taxonomy',
   'hasExternal',
 ];
@@ -243,6 +247,18 @@ function applyRecentDays(n: number): void {
           placeholder="覆核狀態"
           class="w-full"
           :options="STATUS_OPTS"
+          @change="onChange"
+        />
+      </a-col>
+      <a-col v-if="has('model')" :flex="FIELD_FLEX.model">
+        <a-select
+          v-model="state.model"
+          multiple
+          :size="size"
+          :max-tag-count="1"
+          placeholder="判決模型"
+          class="w-full"
+          :options="modelOptions"
           @change="onChange"
         />
       </a-col>
