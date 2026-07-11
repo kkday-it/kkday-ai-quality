@@ -1140,7 +1140,7 @@ onMounted(init);
         </div>
         <!-- 輸出結果版本：與「判決模型」篩選（圈哪些評論）語義獨立——這裡決定輸出「哪個模型判的內容」 -->
         <div>
-          <div class="mb-1 text-xs text-gray-500">輸出結果版本</div>
+          <div class="mb-1 text-xs text-gray-500">輸出結果版本（要看哪個模型判的結果）</div>
           <a-row :gutter="[8, 8]" align="center">
             <a-col flex="260px">
               <a-select
@@ -1152,10 +1152,22 @@ onMounted(init);
                 :options="modelOptions"
               />
             </a-col>
-            <a-col flex="auto" class="text-xs text-gray-400">
-              留空＝各評論的最新（當前）判決；選特定模型＝輸出該模型當時判的內容與統計（下方篩選仍依當前判決圈選評論；該模型未判過的評論將被排除）。
-            </a-col>
           </a-row>
+          <!-- 兩種模式 + 篩選口徑分點說明（原單行三概念擠一起難讀）-->
+          <div class="mt-1 space-y-0.5 text-xs text-gray-400">
+            <div>
+              <b class="font-medium text-gray-500">當前判決結果</b>
+              ：每則評論輸出「最近一次判決」的內容——不同評論可能由不同模型判出（判決模型欄可辨識）。
+            </div>
+            <div>
+              <b class="font-medium text-gray-500">選特定模型</b>
+              ：改輸出「該模型判過的版本」（取其最新一次），用於多模型結果對比；該模型沒判過的評論不會出現在檔案中，明細與統計表都會換成該模型的結果。
+            </div>
+            <div>
+              <b class="font-medium text-gray-500">注意</b>
+              ：下方「導出範圍篩選」一律以<b>當前判決</b>決定哪些評論入選（例：篩「負向」＝當前判決為負向），與此處選的輸出版本無關。
+            </div>
+          </div>
         </div>
         <div>
           <div class="mb-1 text-xs text-gray-500">導出範圍篩選（已帶入列表當前篩選，可重選）</div>
