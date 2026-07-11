@@ -191,3 +191,33 @@ def test_history_note_append_and_order(temp_db) -> None:
     rows = _history("N1")
     assert [r["kind"] for r in rows] == ["note", "judgment"]  # 新到舊
     assert rows[0]["content"] == "已與供應商核對"
+
+
+# ── latest_snapshots / list_judgment_models（多模型對比導出）─────────────────
+def test_latest_snapshots_takes_newest_per_model(temp_db) -> None:
+    """DISTINCT ON 語意鎖定：每評論只取該模型**最新**一筆快照；跨模型互不干擾。"""
+    db.insert_source_batch("product_reviews", [_pr_row("LS1")])
+    _replace("LS1", [_finding("LS1", summary="第一版")])
+    _replace("LS1", [_finding("LS1", summary="第二版")])  # 同模型重判（結果變 → 新快照）
+    _replace(
+        "LS1", [_finding("LS1", model="seed-2-0-lite", summary="他模型版")], model="seed-2-0-lite"
+    )
+    snaps = db.latest_snapshots("product_reviews", "gpt-5-mini")
+    assert set(snaps) == {"LS1"}
+    summary = snaps["LS1"]["attributions"][0]["content"]["summary"]
+    assert summary == {"zh-tw": "第二版"}  # 取最新，非第一版
+    other = db.latest_snapshots("product_reviews", "seed-2-0-lite")
+    assert other["LS1"]["attributions"][0]["content"]["summary"] == {"zh-tw": "他模型版"}
+    assert db.latest_snapshots("product_reviews", "nonexistent") == {}
+
+
+def test_list_judgment_models_union_and_stub_last(temp_db) -> None:
+    """models 清單＝judgments ∪ 歷史快照 distinct；字母序、stub 排最後。"""
+    db.insert_source_batch("product_reviews", [_pr_row("LM1"), _pr_row("LM2")])
+    _replace("LM1", [_finding("LM1")])  # gpt-5-mini
+    _replace(
+        "LM1", [_finding("LM1", model="stub", summary="假判")], model="stub"
+    )  # 當前=stub、歷史留 gpt-5-mini
+    _replace("LM2", [_finding("LM2", model="a-model")], model="a-model")
+    models = db.list_judgment_models()
+    assert models == ["a-model", "gpt-5-mini", "stub"]  # 字母序 + stub 最後（union 含歷史快照）

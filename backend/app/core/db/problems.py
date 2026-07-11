@@ -324,6 +324,7 @@ def list_problems(
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
     status: list[str] | None = None,
+    model: list[str] | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -346,6 +347,7 @@ def list_problems(
         confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
         taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2/l3_code 任一 IN 命中＝子樹語義）。
         status: 覆核狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
+        model: 判決模型多選（judgments.model IN——當前判決維度；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
 
     Returns:
@@ -375,6 +377,7 @@ def list_problems(
         has_external=has_external,
         sentiment=sentiment,
         status=status,
+        model=model,
     )
 
 
@@ -399,6 +402,7 @@ def _list_problems_spec(
     has_external: bool | None = None,
     sentiment: list[int] | None = None,
     status: list[str] | None = None,
+    model: list[str] | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN judgments。
 
@@ -437,6 +441,9 @@ def _list_problems_spec(
         if status:
             # 覆核狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
             stmt = stmt.where(_jg_exists(spec, jg.c.status.in_(status)))
+        if model:
+            # 判決模型多選（當前判決維度）；任一歸因命中即列出
+            stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))
         if taxonomy:
             # 歸因分類多選：任意層級 code，l1/l2/l3_code 任一 IN 命中＝子樹語義
             # （選 L1 涵蓋整域，含只判到 L2 的列；選 L3 精確到葉）

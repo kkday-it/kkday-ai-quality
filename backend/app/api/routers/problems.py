@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -46,6 +48,7 @@ def get_problems(
     confidence_tier: str | None = None,
     taxonomy: str | None = None,
     status: str | None = None,
+    model: str | None = None,
     has_external: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -59,6 +62,7 @@ def get_problems(
     商品垂直分類 product_verticals / 判決階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
     confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2/l3_code 任一 IN 命中＝子樹語義）為多值判決過濾。
     status（覆核狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
+    model（判決模型 CSV 多選：judgments.model IN——當前判決維度）。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
@@ -79,6 +83,7 @@ def get_problems(
         confidence_tier=confidence_tier,
         taxonomy=_csv_strs(taxonomy),
         status=_csv_strs(status),
+        model=_csv_strs(model),
         has_external=has_external,
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -103,6 +108,10 @@ class ExportProblemsIn(BaseModel):
     confidence_tier: str | None = None
     taxonomy: list[str] | None = None
     status: list[str] | None = None
+    # 判決模型篩選（當前判決維度，圈選哪些評論）；snapshot_model＝輸出結果版本（內容替換成
+    # 該模型的 judgment_history 最新快照）——兩者語義獨立，可並用。
+    model: list[str] | None = None
+    snapshot_model: str | None = None
     has_external: bool | None = None
     rec_oid: str | None = None
     prod_oid: str | None = None
@@ -137,6 +146,8 @@ def export_problems(
             confidence_tier=body.confidence_tier,
             taxonomy=body.taxonomy,
             status=body.status,
+            model=body.model,
+            snapshot_model=body.snapshot_model,
             has_external=body.has_external,
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,
@@ -144,7 +155,10 @@ def export_problems(
             ctx=ctx,
         )
 
-    filename = f"problems_{body.source or 'all'}.xlsx"
+    # 快照導出檔名帶模型（非法字元清洗同 _export_sheet_title；口徑細節在 xlsx「歸因統計」A2）
+    safe_model = re.sub(r"[:\\/?*\[\]]", "", body.snapshot_model) if body.snapshot_model else ""
+    snap_tag = f"_{safe_model}" if safe_model else ""
+    filename = f"problems_{body.source or 'all'}{snap_tag}.xlsx"
     job_id = export_jobs.start_export(_builder, filename)
     return {"job_id": job_id, "filename": filename}
 
@@ -156,12 +170,14 @@ def get_attribution_overview(
     date_to: str | None = None,
     granularity: str = "month",
     product_verticals: str | None = None,
+    model: str | None = None,
     _user: dict = Depends(auth.get_current_user),
 ) -> dict:
     """歸因概覽聚合（概覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
 
     可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）；
-    product_verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）。
+    product_verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）；
+    model（逗號串，判決模型多選——當前判決維度，僅套判決級指標，total_intake 不受影響）。
     """
     return db.attribution_overview(
         source=source,
@@ -169,6 +185,7 @@ def get_attribution_overview(
         date_to=date_to,
         granularity=granularity,
         product_vertical=_csv_strs(product_verticals),
+        model=_csv_strs(model),
     )
 
 
@@ -179,13 +196,15 @@ def get_attribution_breakdown(
     date_from: str | None = None,
     date_to: str | None = None,
     product_verticals: str | None = None,
+    model: str | None = None,
     _user: dict = Depends(auth.get_current_user),
 ) -> dict:
-    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類。"""
+    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類 + 判決模型（CSV 多選）。"""
     return db.attribution_breakdown(
         source=source,
         l1=l1,
         date_from=date_from,
         date_to=date_to,
         product_vertical=_csv_strs(product_verticals),
+        model=_csv_strs(model),
     )

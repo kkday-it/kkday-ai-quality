@@ -32,7 +32,9 @@ from app.core.db.ingest import (
 )
 from app.core.db.judgment_history import (
     add_history_note,
+    latest_snapshots,
     list_judgment_history,
+    list_judgment_models,
 )
 from app.core.db.judgment_runs import (
     any_judged,
@@ -106,8 +108,10 @@ __all__ = [
     "add_finding_note",
     "add_history_note",
     "batch_update_finding_status",
+    "latest_snapshots",
     "list_finding_notes",
     "list_judgment_history",
+    "list_judgment_models",
     "insert_llm_usage_row",
     "insert_llm_usage_rows",
     "llm_usage_overview",

@@ -177,3 +177,54 @@ def add_history_note(source: str, source_id: str, *, author: str, content: str) 
     )
     with T.get_engine().begin() as c:
         return _history_row(dict(c.execute(ins).mappings().first()))
+
+
+def latest_snapshots(source: str, model: str) -> dict[str, dict]:
+    """某來源下、指定模型的**每評論最新**判決快照（多模型對比導出用）。
+
+    PG `DISTINCT ON (source_id)` + `ORDER BY source_id, created_at DESC, id DESC`＝每評論
+    只取該模型最新一筆 kind='judgment'（同模型重判多次只回最新；去重機制下相鄰快照必有差異）。
+    SQLAlchemy `.distinct(col)` 為 PG 方言 DISTINCT ON——codebase 首用，語意由專測鎖定。
+
+    Returns:
+        {source_id: {"attributions": 快照陣列, "created_at": ISO 字串}}；該模型未判過的評論不在其中。
+    """
+    h = T.judgment_history
+    stmt = (
+        select(h.c.source_id, h.c.attributions, h.c.created_at)
+        .distinct(h.c.source_id)
+        .where(and_(h.c.source == source, h.c.kind == "judgment", h.c.model == model))
+        .order_by(h.c.source_id, h.c.created_at.desc(), h.c.id.desc())
+    )
+    with T.get_engine().connect() as c:
+        return {
+            r.source_id: {
+                "attributions": r.attributions or [],
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in c.execute(stmt)
+        }
+
+
+def list_judgment_models() -> list[str]:
+    """歷來實際判決過的模型清單（judgments 當前判決 ∪ judgment_history 快照，distinct 非空）。
+
+    供前端「判決模型」篩選與導出「輸出結果版本」下拉選項。字母序；`stub`（無 key 假判）
+    降權排最後——保留而非隱藏，否則純 stub 環境下拉空白、功能整支失效。
+    """
+    jg, h = T.judgments, T.judgment_history
+    with T.get_engine().connect() as c:
+        models = {
+            r[0]
+            for r in c.execute(
+                select(jg.c.model).distinct().where(jg.c.model.isnot(None), jg.c.model != "")
+            )
+        } | {
+            r[0]
+            for r in c.execute(
+                select(h.c.model)
+                .distinct()
+                .where(h.c.kind == "judgment", h.c.model.isnot(None), h.c.model != "")
+            )
+        }
+    return sorted(models, key=lambda m: (m == "stub", m))

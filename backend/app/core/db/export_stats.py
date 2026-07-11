@@ -5,7 +5,7 @@
 
 維度與 grain：
 - 情緒傾向（評論級）：每則評論一次，count r["polarity"]（正/中/負/不明）。
-- L1 分類 / L2 分類 / 判決分層 / 判決階段（歸因級）：每條歸因一次。
+- L1 分類 / L2 分類 / 判決分層 / 判決階段 / 判決模型（歸因級）：每條歸因一次。
 
 圖表自動選型：類別數 ≤ 6 → 圓餅圖；> 6 → 橫向長條圖（L2 可達數十類，圓餅會擠）。
 """
@@ -31,7 +31,7 @@ _PIE_MAX_CATEGORIES = 6
 
 
 def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
-    """由 per-review rows 算五維度分佈（情緒傾向評論級；L1/L2/分層/階段歸因級）。
+    """由 per-review rows 算六維度分佈（情緒傾向評論級；L1/L2/分層/階段/模型歸因級）。
 
     Args:
         rows: list_problems 產出的 per-review dict（含 polarity + attributions 巢狀 DTO）。
@@ -44,6 +44,7 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
     l2_c: Counter = Counter()
     tier_c: Counter = Counter()
     stage_c: Counter = Counter()
+    model_c: Counter = Counter()
     for r in rows:
         pol = r.get("polarity")  # None＝未判（尚未進判決管線，非中立）
         pol_c[_POLARITY_LABEL_ZH.get(pol, pol) if pol else "未判"] += 1
@@ -60,19 +61,26 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
             stage = a.get("stage")
             if stage:
                 stage_c[_STAGE_LABEL_ZH.get(stage, stage)] += 1
+            # 判決模型：當前判決模式反映混合模型佔比；快照模式全同值（誠實反映輸出版本）
+            m = a.get("model")
+            if m:
+                model_c[m] += 1
     return [
         ("情緒傾向分佈（評論級）", pol_c),
         ("L1 分類分佈（歸因級）", l1_c),
         ("L2 分類分佈（歸因級）", l2_c),
         ("判決分層分佈（歸因級）", tier_c),
         ("判決階段分佈（歸因級）", stage_c),
+        ("判決模型分佈（歸因級）", model_c),
     ]
 
 
-def append_stats_sheet(wb: Workbook, rows: list[dict]) -> None:
-    """在 wb 追加「歸因統計」工作表：五維度各一資料塊（分類 / 數量 / 佔比）+ 分佈圖。
+def append_stats_sheet(wb: Workbook, rows: list[dict], note: str | None = None) -> None:
+    """在 wb 追加「歸因統計」工作表：六維度各一資料塊（分類 / 數量 / 佔比）+ 分佈圖。
 
     圖表自動選型（≤6 類圓餅、>6 類橫向長條）；某維度無資料則只留標題不畫圖。全維度皆空則不附表。
+    note：口徑附註（快照導出時標「輸出結果版本＝模型 X；篩選命中/排除筆數」，不受 sheet
+    title 31 字限制的唯一揭露位置）。
     """
     from openpyxl.chart import BarChart, PieChart, Reference
 
@@ -83,7 +91,7 @@ def append_stats_sheet(wb: Workbook, rows: list[dict]) -> None:
     ws = wb.create_sheet("歸因統計")
     ws["A1"] = "歸因數據統計（本次導出）"
     ws["A1"].font = Font(bold=True, size=13)
-    ws["A2"] = f"評論 {len(rows)} 則"
+    ws["A2"] = f"評論 {len(rows)} 則" + (f"　·　{note}" if note else "")
     ws.column_dimensions["A"].width = 26
     ws.column_dimensions["B"].width = 8
     ws.column_dimensions["C"].width = 8

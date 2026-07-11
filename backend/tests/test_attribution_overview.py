@@ -86,3 +86,68 @@ def test_attribution_overview_date_upper_bound_includes_full_day(temp_db) -> Non
     assert ov["total_intake"] == 1  # 僅 R3（當日有時間分量仍入選）
     assert ov["attributed"] == 1
     assert {r["code"] for r in ov["by_l1"]} == {"supplier"}
+
+
+def test_attribution_overview_model_filter_source_branch(temp_db) -> None:
+    """model 篩選（source branch）：只計所選模型的判決級指標；total_intake 不受影響（進線語義）。"""
+    _seed(temp_db)
+    # R1/R2 用預設空 model；改 R3 為另一模型（重判快照語義：judgments.model=當前判決模型）
+    db.replace_source_findings(
+        "product_reviews",
+        "R3",
+        [
+            TicketFinding(
+                finding_id="fd_product_reviews_R3__supplier",
+                ticket_id="R3",
+                dimension="non_content",
+                recommended_action="no_action",
+                polarity="negative",
+                l1_domain_code="supplier",
+                l1_label="供應商履約",
+                confidence=0.6,
+                raw_confidence=0.6,
+                confidence_tier="auto_accept",
+                judgment_stage="judged",
+                model_used="seed-2-0-lite",
+            )
+        ],
+    )
+    ov = db.attribution_overview(source="product_reviews", model=["seed-2-0-lite"])
+    assert ov["total_intake"] == 4  # 進線數不受 model 篩選影響
+    assert ov["judged"] == 1 and ov["attributed"] == 1  # 僅 R3
+    assert {r["code"] for r in ov["by_l1"]} == {"supplier"}
+
+
+def test_attribution_overview_model_filter_all_sources_branch(temp_db) -> None:
+    """model 篩選（縱覽 branch，source=None）：judgments 直接聚合也吃 model 條件。"""
+    _seed(temp_db)
+    db.replace_source_findings(
+        "product_reviews",
+        "R1",
+        [
+            TicketFinding(
+                finding_id="fd_product_reviews_R1__content",
+                ticket_id="R1",
+                dimension="non_content",
+                recommended_action="no_action",
+                polarity="negative",
+                l1_domain_code="content",
+                l1_label="商品內容",
+                confidence=0.9,
+                raw_confidence=0.9,
+                confidence_tier="auto_accept",
+                judgment_stage="judged",
+                model_used="gpt-5-mini",
+            )
+        ],
+    )
+    ov = db.attribution_overview(source=None, model=["gpt-5-mini"])
+    assert ov["judged"] == 1 and ov["attributed"] == 1  # 僅 R1（其餘列 model 為空）
+    assert {r["code"] for r in ov["by_l1"]} == {"content"}
+
+
+def test_attribution_breakdown_model_filter(temp_db) -> None:
+    """breakdown 的 model 篩選經 extra 統一套用（L2/L3 兩層一次覆蓋）。"""
+    _seed(temp_db)
+    ov = db.attribution_breakdown(source="product_reviews", l1="content", model=["nonexistent"])
+    assert ov["by_l2"] == [] and ov["by_l3"] == []  # 無該模型判決 → 空分布

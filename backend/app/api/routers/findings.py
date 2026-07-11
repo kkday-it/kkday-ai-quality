@@ -227,6 +227,15 @@ def get_judgment_history(
     return db.list_judgment_history(source, source_id)
 
 
+@router.get("/api/judgment-history/models")
+def get_judgment_models(user: dict = Depends(auth.get_current_user)) -> list[str]:
+    """歷來實際判決過的模型清單（judgments 當前 ∪ judgment_history 快照 distinct）。
+
+    供「判決模型」篩選與導出「輸出結果版本」下拉選項；字母序、stub 排最後。
+    """
+    return db.list_judgment_models()
+
+
 class HistoryNoteIn(BaseModel):
     """新增評論級備註（判決歷史時間軸內；與 finding 級備註 finding_notes 並存）。"""
 

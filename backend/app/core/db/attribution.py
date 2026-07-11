@@ -22,6 +22,7 @@ def attribution_overview(
     date_to: str | None = None,
     granularity: str = "month",
     product_vertical: str | list[str] | None = None,
+    model: list[str] | None = None,
 ) -> dict:
     """歸因概覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
@@ -29,6 +30,11 @@ def attribution_overview(
     polarity/l1 取自 judgments.data JSON（JSONB 抽出 GROUP BY，與 list_problems 同手法）；星等取
     spec.score_col；月份用 date_col 前 7 字（YYYY-MM）。信心分層走 Python 即時聚合（資料量小）。
     source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
+
+    model：判決模型多選（judgments.model IN——**當前判決**維度；歷史快照級聚合另計）。
+    僅套用於判決級指標（judged/attributed/分布/趨勢），total_intake/by_score 為進線/星等
+    語義不受影響——套用後 judged 語義變「所選模型的判決覆蓋數」，與 total_intake 差額含
+    「他模型判過」非皆未判（前端 KPI 文案需揭露）。
 
     Returns:
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
@@ -64,6 +70,10 @@ def attribution_overview(
             ] += 1
         return bt
 
+    def _jgm(stmt):
+        """套判決模型篩選（僅判決級 query 呼叫；進線/星等 query 勿套——語義見 docstring）。"""
+        return stmt.where(jg.c.model.in_(model)) if model else stmt
+
     with T.get_engine().connect() as c:
         if spec is not None:
             # 單一來源：join 該表（可套 date / vertical / 星等 / 趨勢）
@@ -89,24 +99,26 @@ def attribution_overview(
             total_intake = c.execute(_src(select(cnt).select_from(tbl))).scalar() or 0
             judged = (
                 c.execute(
-                    _src(select(cnt).select_from(j).where(jg.c.finding_id.isnot(None)))
+                    _jgm(_src(select(cnt).select_from(j).where(jg.c.finding_id.isnot(None))))
                 ).scalar()
                 or 0
             )
             attributed = (
                 c.execute(
-                    _src(select(cnt).select_from(j).where(l1c.isnot(None), l1c != ""))
+                    _jgm(_src(select(cnt).select_from(j).where(l1c.isnot(None), l1c != "")))
                 ).scalar()
                 or 0
             )
             by_polarity_raw = (
                 c.execute(
-                    _src(
-                        select(pol.label("k"), cnt)
-                        .select_from(j)
-                        .where(jg.c.finding_id.isnot(None))
-                        .group_by(pol)
-                        .order_by(cnt.desc())
+                    _jgm(
+                        _src(
+                            select(pol.label("k"), cnt)
+                            .select_from(j)
+                            .where(jg.c.finding_id.isnot(None))
+                            .group_by(pol)
+                            .order_by(cnt.desc())
+                        )
                     )
                 )
                 .mappings()
@@ -114,12 +126,14 @@ def attribution_overview(
             )
             by_l1_raw = (
                 c.execute(
-                    _src(
-                        select(l1c.label("code"), l1l.label("label"), cnt)
-                        .select_from(j)
-                        .where(l1c.isnot(None), l1c != "")
-                        .group_by(l1c, l1l)
-                        .order_by(cnt.desc())
+                    _jgm(
+                        _src(
+                            select(l1c.label("code"), l1l.label("label"), cnt)
+                            .select_from(j)
+                            .where(l1c.isnot(None), l1c != "")
+                            .group_by(l1c, l1l)
+                            .order_by(cnt.desc())
+                        )
                     )
                 )
                 .mappings()
@@ -142,10 +156,12 @@ def attribution_overview(
             )
             by_tier = _by_tier(
                 c.execute(
-                    _src(
-                        select(jg.c.conf_value.label("confidence"))
-                        .select_from(j)
-                        .where(jg.c.conf_value.isnot(None))
+                    _jgm(
+                        _src(
+                            select(jg.c.conf_value.label("confidence"))
+                            .select_from(j)
+                            .where(jg.c.conf_value.isnot(None))
+                        )
                     )
                 ).mappings()
             )
@@ -154,16 +170,20 @@ def attribution_overview(
             ym = func.substr(date_col, 1, glen).label("ym")
             trend_rows = (
                 c.execute(
-                    _src(
-                        select(
-                            ym,
-                            func.count(jg.c.finding_id).label("judged"),
-                            func.count().filter(pol == "negative").label("negative"),
+                    _jgm(
+                        _src(
+                            select(
+                                ym,
+                                func.count(jg.c.finding_id).label("judged"),
+                                func.count().filter(pol == "negative").label("negative"),
+                            )
+                            .select_from(j)
+                            .where(
+                                date_col.isnot(None), date_col != "", jg.c.finding_id.isnot(None)
+                            )
+                            .group_by(ym)
+                            .order_by(ym.asc())
                         )
-                        .select_from(j)
-                        .where(date_col.isnot(None), date_col != "", jg.c.finding_id.isnot(None))
-                        .group_by(ym)
-                        .order_by(ym.asc())
                     )
                 )
                 .mappings()
@@ -174,25 +194,34 @@ def attribution_overview(
             total_intake = sum(
                 (c.execute(select(func.count()).select_from(t)).scalar() or 0) for t in _ALL_TABLES
             )
-            judged = c.execute(select(cnt).select_from(jg)).scalar() or 0
+            judged = c.execute(_jgm(select(cnt).select_from(jg))).scalar() or 0
             attributed = (
-                c.execute(select(cnt).select_from(jg).where(l1c.isnot(None), l1c != "")).scalar()
+                c.execute(
+                    _jgm(select(cnt).select_from(jg).where(l1c.isnot(None), l1c != ""))
+                ).scalar()
                 or 0
             )
             by_polarity_raw = (
                 c.execute(
-                    select(pol.label("k"), cnt).select_from(jg).group_by(pol).order_by(cnt.desc())
+                    _jgm(
+                        select(pol.label("k"), cnt)
+                        .select_from(jg)
+                        .group_by(pol)
+                        .order_by(cnt.desc())
+                    )
                 )
                 .mappings()
                 .all()
             )
             by_l1_raw = (
                 c.execute(
-                    select(l1c.label("code"), l1l.label("label"), cnt)
-                    .select_from(jg)
-                    .where(l1c.isnot(None), l1c != "")
-                    .group_by(l1c, l1l)
-                    .order_by(cnt.desc())
+                    _jgm(
+                        select(l1c.label("code"), l1l.label("label"), cnt)
+                        .select_from(jg)
+                        .where(l1c.isnot(None), l1c != "")
+                        .group_by(l1c, l1l)
+                        .order_by(cnt.desc())
+                    )
                 )
                 .mappings()
                 .all()
@@ -200,9 +229,11 @@ def attribution_overview(
             by_score_raw = []
             by_tier = _by_tier(
                 c.execute(
-                    select(jg.c.conf_value.label("confidence"))
-                    .select_from(jg)
-                    .where(jg.c.conf_value.isnot(None))
+                    _jgm(
+                        select(jg.c.conf_value.label("confidence"))
+                        .select_from(jg)
+                        .where(jg.c.conf_value.isnot(None))
+                    )
                 ).mappings()
             )
             trend_rows = []
@@ -240,11 +271,13 @@ def attribution_breakdown(
     date_from: str | None = None,
     date_to: str | None = None,
     product_vertical: str | list[str] | None = None,
+    model: list[str] | None = None,
 ) -> dict:
     """某 L1 歸因域下的 L2 / L3 細項分布（縱覽下鑽·懶載）。
 
     L2/L3 取自 judgments.data JSON，限定該 L1 域；GROUP BY code（carry label），依筆數降序。
     source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
+    model：判決模型多選（judgments.model IN，當前判決維度；與 attribution_overview 同口徑）。
 
     Returns:
         {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n, neg, avg_conf, auto}]，
@@ -275,6 +308,9 @@ def attribution_breakdown(
     else:
         frm = jg
         extra = []
+    if model:
+        # 判決模型篩選：進 extra 統一由 _level() 套用（L2/L3 兩層一次覆蓋）
+        extra.append(jg.c.model.in_(model))
 
     # 多指標（供商品內容細化表）：負向數 / 平均信心 / 自動採信數（占比與自動採信率由前端 n 換算）。
     neg = func.count().filter(jg.c.polarity == "negative").label("neg")

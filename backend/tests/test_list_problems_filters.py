@@ -360,3 +360,45 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
     ) == ["R1", "R3"]
     # 空清單＝空範圍（非「不限」）
     assert db.prejudge_target_ids("product_reviews", stages=["unjudged"], within_ids=[]) == []
+
+
+def test_list_problems_model_filter(temp_db) -> None:
+    """model 篩選（judgments.model IN——當前判決維度）：單選/多選命中、未命中排除。"""
+    db.insert_source_batch(
+        "product_reviews",
+        [_pr_row(rec_oid="M1", rec_scores="2"), _pr_row(rec_oid="M2", rec_scores="1")],
+    )
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_M1",
+            ticket_id="M1",
+            dimension="non_content",
+            recommended_action="no_action",
+            polarity="negative",
+            l1_domain_code="content",
+            l1_label="商品內容",
+            model_used="gpt-5-mini",
+        ),
+        "product_reviews",
+    )
+    db.insert_finding(
+        TicketFinding(
+            finding_id="fd_product_reviews_M2",
+            ticket_id="M2",
+            dimension="non_content",
+            recommended_action="no_action",
+            polarity="negative",
+            l1_domain_code="supplier",
+            l1_label="供應商履約",
+            model_used="seed-2-0-lite",
+        ),
+        "product_reviews",
+    )
+    r = db.list_problems(source="product_reviews", model=["gpt-5-mini"])
+    assert r["total"] == 1 and r["rows"][0]["_group"] == "M1"
+    # DTO 帶 model（列表 model 標籤資料源）
+    assert r["rows"][0]["attributions"][0]["model"] == "gpt-5-mini"
+    r = db.list_problems(source="product_reviews", model=["gpt-5-mini", "seed-2-0-lite"])
+    assert r["total"] == 2
+    r = db.list_problems(source="product_reviews", model=["nonexistent"])
+    assert r["total"] == 0

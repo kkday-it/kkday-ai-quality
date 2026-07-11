@@ -2,7 +2,7 @@
 
 整列底色依 polarity（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱
 長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）；另附「歸因統計」圖表工作表
-（本次導出的情緒傾向/L1/L2/分層/階段分佈，見 export_stats.py）。
+（本次導出的情緒傾向/L1/L2/分層/階段/模型分佈，見 export_stats.py）。
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ from app.core.db._shared import (
     _STAGE_LABEL_ZH,
     _STATUS_LABEL_ZH,
     _TIER_LABEL_ZH,
+    _domain_owner,
+    _summary_langs,
     fmt_datetime,
 )
 from app.core.db.problems import list_problems
@@ -59,6 +61,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("信心度", "confidence", 8),
     ("判決分層", "confidence_tier", 12),
     ("判決階段", "judgment_stage", 12),
+    ("判決模型", "model", 14),  # 判決溯源（attr 級；快照模式＝所選輸出版本模型）
     ("覆核狀態", "status", 10),  # 人工處置軸（待處理/自動確認/已確認/已忽略；attr 級）
     ("真值", "true_label", 12),  # 人工標註真值分類（葉 code；attr 級）
 ]
@@ -106,8 +109,39 @@ def _flat_attr(a: dict) -> dict:
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
         "judgment_stage": a.get("stage"),
         "summary": (a.get("content") or {}).get("summary"),
+        "model": a.get("model"),
         "status": a.get("status"),
         "true_label": a.get("true_label"),
+    }
+
+
+def _adapt_snapshot(a: dict, model: str) -> dict:
+    """judgment_history 快照單筆（snapshot_of 形狀）→ attribution_dto 輸出形狀（快照導出用）。
+
+    - content.summary：快照存原始語系 map → 複用 `_summary_langs` 重算 {summary zh-tw 字串,
+      summary_langs}，與當前判決導出完全同形。
+    - owner：純函式 `_domain_owner(l1.code)` 讀取時派生（與 attribution_dto 同源）。
+    - notes_count＝0：快照 finding_id 是歷史值，重判後與現行 finding_notes 的對應不可靠，
+      且那些備註語義上屬「當時那次判決」——不 join、不冒充。
+    - status/true_label＝None：人工覆核軸綁「當前判決」可變狀態，歷史快照是不可變切片，
+      硬塞會產生假象（xlsx 該兩欄輸出空白屬預期）。
+    """
+    content = a.get("content") or {}
+    langs = _summary_langs(content.get("summary"))
+    l1_code = (a.get("l1") or {}).get("code")
+    return {
+        **a,
+        "content": {
+            "summary": langs.get("zh-tw") or next(iter(langs.values()), None),
+            "summary_langs": langs,
+            "evidence": content.get("evidence"),
+            "action": content.get("action"),
+        },
+        "owner": _domain_owner(l1_code or ""),
+        "model": model,
+        "notes_count": 0,
+        "status": None,
+        "true_label": None,
     }
 
 
@@ -150,6 +184,8 @@ def export_problems_xlsx(
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
     status: list[str] | None = None,
+    model: list[str] | None = None,
+    snapshot_model: str | None = None,
     has_external: bool | None = None,
     rec_oid: str | None = None,
     prod_oid: str | None = None,
@@ -163,8 +199,11 @@ def export_problems_xlsx(
 
     Args:
         source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
-        stage/confidence_tier/taxonomy/has_external/rec_oid/prod_oid/order_oid: 同 list_problems，
-            使導出＝列表所見即所得（全篩選對齊，非只部分）。
+        stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid:
+            同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分）。
+        snapshot_model: 輸出結果版本——None/空＝當前判決（現行為）；指定模型＝內容替換為該
+            模型的 judgment_history 最新快照（真多模型對比輸出）。篩選仍依**當前判決**圈選
+            評論（表級照常、判決級口徑落差以統計表附註揭露）；該模型未判過的評論整列排除。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
         ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
             None＝同步直呼（測試 / 腳本）。
@@ -194,6 +233,7 @@ def export_problems_xlsx(
         confidence_tier=confidence_tier,
         taxonomy=taxonomy,
         status=status,
+        model=model,
         has_external=has_external,
         rec_oid=rec_oid,
         prod_oid=prod_oid,
@@ -204,6 +244,30 @@ def export_problems_xlsx(
     if item_ids:
         idset = set(item_ids)
         rows = [r for r in rows if r.get("_group") in idset]
+    stats_note: str | None = None
+    if snapshot_model:
+        # 輸出結果版本＝指定模型：內容替換為該模型最新歷史快照（該模型未判過的評論整列排除），
+        # 並同步 row 級 polarity/our_sentiment——否則整列底色/情緒傾向欄仍是當前判決值，
+        # 與被替換的 L1/L2/摘要（快照值）自相矛盾。
+        from app.core.db.judgment_history import latest_snapshots
+
+        snaps = latest_snapshots(source or "", snapshot_model)
+        matched = [r for r in rows if r.get("_group") in snaps]
+        stats_note = (
+            f"輸出結果版本＝{snapshot_model}；篩選命中 {len(rows)} 則，"
+            f"其中 {len(matched)} 則有該模型判決紀錄（已排除 {len(rows) - len(matched)} 則）"
+        )
+        rows = matched
+        for r in rows:
+            adapted = [
+                _adapt_snapshot(a, snapshot_model) for a in snaps[r["_group"]]["attributions"]
+            ]
+            r["attributions"] = adapted
+            primary = next(
+                (a for a in adapted if a.get("is_primary")), adapted[0] if adapted else None
+            )
+            r["polarity"] = primary.get("polarity") if primary else None
+            r["our_sentiment"] = primary.get("sentiment_score") if primary else None
     total = len(rows)
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
@@ -212,7 +276,9 @@ def export_problems_xlsx(
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
     ws.append([c[0] for c in cols])
-    # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級
+    # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級。
+    # ⚠️ 新增歸因級欄位必須同步三處：_EXPORT_XLSX_COLS + _flat_attr + 本集合——缺此集合會
+    # fallback 讀 row 級（_enrich_problem 的 status 恆 None）→ 欄位靜默空白（status/true_label 曾踩）。
     _attr_keys = {
         "l1_label",
         "l2_label",
@@ -221,6 +287,9 @@ def export_problems_xlsx(
         "confidence_tier",
         "judgment_stage",
         "summary",
+        "model",
+        "status",
+        "true_label",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
@@ -283,10 +352,11 @@ def export_problems_xlsx(
                 if key in _attr_keys:  # 歸因級欄逐列有值、不合併
                     lines = max(lines, _wrapped_lines(ws.cell(row=rr, column=ci).value, w))
             ws.row_dimensions[rr].height = lines * _LINE_HEIGHT_PT
-    # 緊接資料表後附「歸因統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段分佈；所見即所得）
+    # 緊接資料表後附「歸因統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段/模型分佈；
+    # 所見即所得——快照模式下 rows 已替換為所選模型內容，統計自動跟隨；note 揭露輸出版本口徑）
     from app.core.db.export_stats import append_stats_sheet
 
-    append_stats_sheet(wb, rows)
+    append_stats_sheet(wb, rows, note=stats_note)
     if ctx is not None:
         ctx.report(total, total)  # 組檔完成（save 為單次序列化，無法再細分進度）
     buf = BytesIO()

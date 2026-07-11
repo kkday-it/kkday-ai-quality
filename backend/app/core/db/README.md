@@ -27,10 +27,10 @@
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；判決級（僅已判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
-| `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；另附「歸因統計」圖表表，見 `export_stats.py`）。 |
+| `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；另附「歸因統計」圖表表，見 `export_stats.py`；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 judgment_history 最新快照〔`_adapt_snapshot`·覆核軸留空·未判過的評論排除·口徑寫統計表 A2〕）。 |
 | `export_stats.py` | 導出歸因統計（由 in-memory rows 直接算情緒傾向/L1/L2/判決分層/判決階段分佈，附「歸因統計」表；≤6 類圓餅、>6 類橫向長條）。所見即所得。 |
 | `comparison.py` | AI 判決 vs 外部評論匹配分析（情緒分桶 + free_tag 面向→L1/L2 歸類比對 + 匹配率統計餅圖）；僅離線腳本 `scripts/tools/build_comparison_report.py` 用。 |
 | `llm_usage.py` | AI 使用紀錄（llm_usage：per-call 寫入 + 消耗 dashboard 聚合 `llm_usage_overview`）。 |
 | `judgment_runs.py` | 歸因歷史（judgment_runs：run 級——每次批量/選取/單筆重判一列；建檔/狀態回寫/終態統計 + 列表分頁 + `judgment_run_detail` 聚合 llm_usage per-stage 明細 + `any_judged` 重判判定）。 |
-| `judgment_history.py` | 判決歷史（judgment_history：**評論級** append-only 事件流——kind=`judgment` 判決快照〔`insert_judgment_event` 於 replace_source_findings 同交易寫入 + FOR UPDATE 防並發；model+params+result_digest 全欄位嚴格去重，僅排 judged_at〕/ `status` 覆核轉移〔params 記 {to, changes:[{finding_id, from}]}〕/ `note` 評論級備註。補 judgments「刪+插」重判不留痕缺口，model 維度供多模型對比；migration `f2a8c4d61e93` 建表 + 回填既有已判評論初始快照〔created_at=judged_at·params.backfilled〕）。 |
+| `judgment_history.py` | 判決歷史（judgment_history：**評論級** append-only 事件流——kind=`judgment` 判決快照〔`insert_judgment_event` 於 replace_source_findings 同交易寫入 + FOR UPDATE 防並發；model+params+result_digest 全欄位嚴格去重，僅排 judged_at〕/ `status` 覆核轉移〔params 記 {to, changes:[{finding_id, from}]}〕/ `note` 評論級備註。補 judgments「刪+插」重判不留痕缺口，model 維度供多模型對比；migration `f2a8c4d61e93` 建表 + 回填既有已判評論初始快照〔created_at=judged_at·params.backfilled〕；`latest_snapshots(source, model)`＝每評論該模型最新快照〔PG DISTINCT ON·快照導出用·partial index `b5c7e91f3a26`〕+ `list_judgment_models()`＝歷來判過的模型清單〔judgments ∪ 快照 distinct·stub 排最後〕）。 |
 | `datapack.py` | 全庫資料包導出/匯入核心（`TABLE_LOAD_ORDER` 13 表 SSOT / `SENSITIVE_TABLES` / `current_alembic_head` / `validate_datapack` 乾跑白名單校驗 / `load_datapack` 單交易 truncate-load+序列重置 / `build_datapack` 匯出 zip）。匯入只灌白名單表·`table.insert()` 綁定參數·零 SQL 拼接；CLI `scripts/tools/dump_datapack.py` 與匯出端點共用打包邏輯。 |
