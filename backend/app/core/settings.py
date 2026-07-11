@@ -401,3 +401,23 @@ def _persist(user_id: str, data: dict) -> None:
     for key in ("provider_tokens", "qc_passwords"):
         stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
     db.save_user_settings(user_id, stored)
+
+
+def resolve_provider_token(eff: dict) -> str:
+    """由 effective LLM dict 解出當前 provider 實際生效的 token（provider_tokens 優先，fallback env）。
+
+    與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（judgment router /
+    prejudge_batch 第二道防線）據此判斷「本次批量是否將落為 stub 假判」，兩處邏輯合一防漂移
+    （曾因 env 空值覆蓋致 stub 假判覆蓋 1,452 筆真歸因）。
+
+    Args:
+        eff: effective LLM dict（`effective_llm_dict()` 產出或 contextvar `current()` 讀出，
+            須含 base_url / provider_tokens 兩鍵；缺鍵視為空）。
+
+    Returns:
+        實際生效 token；解不出任何 token 回空字串（呼叫端以 falsy 判 stub）。
+    """
+    from app.core.config import env  # 函式內 import：維持 settings 不在頂層依賴 config
+
+    provider = provider_id_for(eff.get("base_url") or "")
+    return (eff.get("provider_tokens") or {}).get(provider) or env.openai_api_key

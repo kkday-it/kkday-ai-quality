@@ -80,6 +80,28 @@ def test_register_explicit_override_in_production(client, monkeypatch) -> None:
     assert r.status_code == 200
 
 
+def test_start_prejudge_blocked_in_production_without_token(
+    client, auth_headers, monkeypatch
+) -> None:
+    """正式環境 stub 主閘：解不出 LLM token 的批量判決啟動一律 403（防假判覆蓋真歸因）。"""
+    from app.core import config
+
+    monkeypatch.setattr(config.env, "app_env", "production")
+    monkeypatch.setattr(config.env, "openai_api_key", "")
+    r = client.post("/api/v1/judgment/prejudge", json={"scope": "all"}, headers=auth_headers)
+    assert r.status_code == 403
+    assert "stub" in r.json()["detail"]
+
+
+def test_start_prejudge_stub_allowed_in_development(client, auth_headers, monkeypatch) -> None:
+    """development 保留零 key 跑通閉環的既有行為（stub 是 dev 合法路徑，回歸鎖定）。"""
+    from app.core import config
+
+    monkeypatch.setattr(config.env, "openai_api_key", "")
+    r = client.post("/api/v1/judgment/prejudge", json={"item_ids": []}, headers=auth_headers)
+    assert r.status_code == 200
+
+
 def test_login_failed_error_code_contract(client) -> None:
     """帳密錯 → 401 且 detail.code = AUTH.LOGIN_FAILED（error-code i18n 框架契約）。"""
     r = client.post("/api/auth/login", json={"email": "nope@kkday.com", "password": "x"})

@@ -15,9 +15,28 @@ from pydantic import BaseModel
 
 from app.core import auth, db
 from app.core import settings as app_settings
+from app.core.config import env, is_production
 from app.judge import prejudge_batch
 
 router = APIRouter(prefix="/judgment", tags=["judgment"])
+
+
+def _guard_not_stub_in_production(eff: dict) -> None:
+    """正式環境 stub 硬閘：解不出真 token（將全程走 stub 啟發式假判）→ 403 拒啟動批量。
+
+    dev 保留零 key 跑通閉環的既有行為；正式環境假判會靜默覆蓋真實歸因
+    （曾致 1,452 筆假判事故，靠 pg_dump 還原），故在入口即擋、給明確錯誤。
+
+    Raises:
+        HTTPException: 403，正式環境且 effective 設定解不出任何 LLM token。
+    """
+    if is_production() and not app_settings.resolve_provider_token(eff):
+        raise HTTPException(
+            status_code=403,
+            detail=f"目前環境（APP_ENV={env.app_env}）偵測不到有效 LLM token，"
+            "拒絕以 stub 啟發式模式執行批量判決（假判決會覆蓋真實歸因）。"
+            "請至設定面板配置 provider token，或設定環境變數 OPENAI_API_KEY。",
+        )
 
 
 class PrejudgeIn(BaseModel):
@@ -94,6 +113,7 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
     uid = user.get("user_id", "")
     s = app_settings.load_settings(uid)
     eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
+    _guard_not_stub_in_production(eff)
     model = eff.get("model", "")
     # 跨廠 ensemble voter：勾選的其他 config 各組整套 effective dict（排除與主判決同一 config；空→None＝不 ensemble）
     voter_cfgs = [

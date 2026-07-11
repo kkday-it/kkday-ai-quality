@@ -189,3 +189,27 @@ def test_copy_context_carries_settings_into_worker(batch_env, monkeypatch):
     for cur in seen:
         assert cur.get("model") == "gpt-5.4"
         assert cur.get("provider_tokens", {}).get("openai") == "sk-ctx-test"
+
+
+def test_run_second_gate_blocks_stub_in_production(batch_env, monkeypatch):
+    """正式環境 stub 第二道防線：解不出任何 token 的批次直接標 error、零筆處理。
+
+    主閘在 judgment router；此閘防繞過 API 直呼 start_job 的路徑（腳本/排程誤用）。
+    """
+    from app.core import config
+
+    monkeypatch.setattr(pb, "is_production", lambda: True)
+    monkeypatch.setattr(config.env, "openai_api_key", "")  # 斷開 env fallback，確保解不出 token
+    job_id = pb.start_job(["r1", "r2"], dict(_EFF), "gpt-5-mini", source="product_reviews")
+    snap = _wait_status(job_id, {"error"})
+    assert snap["processed"] == 0
+    assert batch_env["replaced"] == []  # 零筆落庫
+
+
+def test_run_second_gate_passes_with_token_in_production(batch_env, monkeypatch):
+    """正式環境有真 token（provider_tokens 命中當前 provider）→ 防線放行、整批照跑。"""
+    monkeypatch.setattr(pb, "is_production", lambda: True)
+    eff = {**_EFF, "provider_tokens": {"openai": "sk-real"}}
+    job_id = pb.start_job(["r1", "r2"], eff, "gpt-5-mini", source="product_reviews")
+    snap = _wait_status(job_id, {"done"})
+    assert snap["processed"] == 2

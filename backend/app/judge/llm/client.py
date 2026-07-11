@@ -222,8 +222,7 @@ def _resolve() -> dict:
     """
     cfg = _settings.current()
     base_url = (cfg.get("base_url") or "").strip()
-    provider = _settings.provider_id_for(base_url)
-    token = (cfg.get("provider_tokens") or {}).get(provider) or env.openai_api_key
+    token = _settings.resolve_provider_token(cfg)  # 與 API 層 stub 硬閘共用同一判定，防漂移
     model = cfg.get("model") or env.ai_judge_model
     return {
         "token": token,

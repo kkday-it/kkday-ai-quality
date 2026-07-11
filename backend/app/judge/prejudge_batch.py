@@ -21,7 +21,7 @@ from contextvars import copy_context
 
 from app.core import db, pricing
 from app.core import settings as app_settings
-from app.core.config import env
+from app.core.config import env, is_production
 from app.judge import prejudge
 from app.judge.llm import client
 
@@ -164,6 +164,12 @@ def _run(
     triggered_by: str = "",
 ) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
+    # 正式環境 stub 第二道防線（主閘在 judgment router）：擋繞過 API 直呼 start_job 的路徑
+    # （腳本/排程誤用）與 eff 中途被清空的極端情況——假判會靜默覆蓋真實歸因，寧錯殺不放行。
+    if is_production() and not app_settings.resolve_provider_token(eff):
+        _log.error("job=%s 正式環境偵測不到有效 LLM token，拒絕以 stub 執行（第二道防線）", job_id)
+        _set_status(job_id, "error")
+        return
     _reload_judge_rules()  # 硬保證：本批每筆 LLM 判決都採用『當前 DB active 版規則』（防 server 記憶體舊快取）
     # 批次 serving tier（judgment.json prejudge.batch_service_tier；flex＝-50% 換延遲，小批不套）：
     # 注入 eff 後由 client 依 provider 守門送出；429 資源不足 client 自動回退標準 tier。
