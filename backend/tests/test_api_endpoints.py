@@ -59,6 +59,27 @@ def test_register_duplicate_email_conflict(client) -> None:
     assert detail["code"] == "AUTH.EMAIL_EXISTS" and detail["message"]
 
 
+def test_register_disabled_in_production(client, monkeypatch) -> None:
+    """production 未顯式開放 → 自助註冊 403（環境自動收緊；dev 不受影響）。"""
+    from app.core import config
+
+    monkeypatch.setattr(config.env, "app_env", "production")
+    monkeypatch.setattr(config.env, "aiq_allow_self_register", None)
+    r = client.post("/api/auth/register", json={"email": "p@kkday.com", "password": "secret1"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "AUTH.REGISTER_DISABLED"
+
+
+def test_register_explicit_override_in_production(client, monkeypatch) -> None:
+    """production 顯式 AIQ_ALLOW_SELF_REGISTER=true → 放行（bootstrap admin 用）。"""
+    from app.core import config
+
+    monkeypatch.setattr(config.env, "app_env", "production")
+    monkeypatch.setattr(config.env, "aiq_allow_self_register", True)
+    r = client.post("/api/auth/register", json={"email": "p2@kkday.com", "password": "secret1"})
+    assert r.status_code == 200
+
+
 def test_login_failed_error_code_contract(client) -> None:
     """帳密錯 → 401 且 detail.code = AUTH.LOGIN_FAILED（error-code i18n 框架契約）。"""
     r = client.post("/api/auth/login", json={"email": "nope@kkday.com", "password": "x"})

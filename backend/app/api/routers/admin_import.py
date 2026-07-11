@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core import export_jobs, import_jobs
-from app.core.config import env
+from app.core.config import env, is_production
 from app.core.db import datapack
 from app.core.permissions import permission_keys, require_permission
 
@@ -30,7 +30,7 @@ def _import_allowed() -> bool:
     """匯入是否放行：顯式 AIQ_ALLOW_DATA_IMPORT 優先，未設則僅 development 放行。"""
     if env.aiq_allow_data_import is not None:
         return env.aiq_allow_data_import
-    return env.app_env == "development"
+    return not is_production()
 
 
 def _guard() -> None:

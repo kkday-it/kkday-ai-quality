@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # 全庫資料包匯入開關（破壞性：清空並覆蓋整庫）。None＝依環境（development 開、其餘關）；
     # 顯式 true/false 覆蓋。防生產誤觸；上線收緊 admin 閘後仍建議留此環境級保險。
     aiq_allow_data_import: bool | None = None
+    # 自助註冊開關。None＝依環境（development 開、其餘關）；顯式 true/false 覆蓋。
+    # 防生產環境任何人自助建帳號即取得 qc 角色全權（含 datapack.import 全庫覆寫）；
+    # prod 首次部署 bootstrap admin 時臨時設 true，建完帳號即移除（見 docker/README.md）。
+    aiq_allow_self_register: bool | None = None
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）
@@ -77,3 +81,12 @@ class Settings(BaseSettings):
 
 # 單例：import 時即載入 .env，全後端共用。
 env = Settings()
+
+
+def is_production() -> bool:
+    """非 development 一律視為正式環境（含 staging）。
+
+    收斂 auth/crypto/admin_import/judgment 各處散落的 `env.app_env != "development"`
+    字串比較——環境尺度只此一份，避免各處各寫一次語意漂移（如誤寫 == "production" 漏掉 staging）。
+    """
+    return env.app_env != "development"

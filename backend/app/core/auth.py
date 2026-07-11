@@ -16,7 +16,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core import db
-from app.core.config import env
+from app.core.config import env, is_production
 
 _log = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ _MIN_SECRET_BYTES = 32  # JWT secret 最低位元組數（HS256 弱 secret 可�
 
 # 啟動即檢查：非 development 環境的 AIQ_JWT_SECRET 必須存在且夠強（≥32 bytes）→ 否則拒絕啟動。
 # 避免正式環境靜默用可預測的 dev secret、或用過短 secret 簽發可被偽造的 JWT（本模組被 main.py import，啟動即觸發）。
-if env.app_env != "development":
+if is_production():
     _secret_val = (env.aiq_jwt_secret or "").strip()
     if not _secret_val:
         raise RuntimeError(

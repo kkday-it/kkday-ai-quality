@@ -36,9 +36,27 @@ def _public_user(user: dict) -> dict:
     }
 
 
+def _register_allowed() -> bool:
+    """自助註冊是否放行：顯式 AIQ_ALLOW_SELF_REGISTER 優先，未設則僅 development 放行。
+
+    防生產環境任何人自助建帳號即取得 qc 角色全權（含 datapack.import 全庫覆寫）；
+    prod 首次部署 bootstrap admin 時臨時設 true，建完帳號即移除（見 docker/README.md）。
+    """
+    if config.env.aiq_allow_self_register is not None:
+        return config.env.aiq_allow_self_register
+    return not config.is_production()
+
+
 @router.post("/api/auth/register")
 def register(body: RegisterIn) -> dict:
-    """註冊新帳號 → 回 JWT + user。email 重複回 409。"""
+    """註冊新帳號 → 回 JWT + user。email 重複回 409；非放行環境回 403。"""
+    if not _register_allowed():
+        raise_api_error(
+            "AUTH.REGISTER_DISABLED",
+            f"目前環境（APP_ENV={config.env.app_env}）未開放自助註冊；"
+            "設 AIQ_ALLOW_SELF_REGISTER=true 才可用。",
+            status_code=403,
+        )
     email = body.email.strip().lower()
     if "@" not in email or len(body.password) < config.env.min_password_length:
         raise_api_error(

@@ -18,7 +18,7 @@ import hashlib
 import logging
 from functools import lru_cache
 
-from app.core.config import env
+from app.core.config import env, is_production
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ ENC_PREFIX = "enc:v1:"
 # 啟動即檢查：非 development 環境缺 AIQ_SECRET_KEY → 拒絕啟動。
 # 未設 key 時 encrypt_secret 明文直通（見下），正式環境將令 provider token / QC 密碼明文落庫。
 # 本模組於啟動時由 settings.py（→ settings_router）import → 啟動即觸發，與 auth.py 的 JWT 閘對稱。
-if not (env.aiq_secret_key or "").strip() and env.app_env != "development":
+if not (env.aiq_secret_key or "").strip() and is_production():
     raise RuntimeError(
         f"APP_ENV={env.app_env} 為正式環境，必須設定 AIQ_SECRET_KEY；"
         "拒絕以明文儲存 user_settings 機密（provider token / QC 密碼）。"

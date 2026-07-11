@@ -2,6 +2,7 @@
   "AUTH": {
     "INVALID_CREDENTIALS_FORMAT": "Email 格式錯誤或密碼長度不足",
     "EMAIL_EXISTS": "此 Email 已註冊",
-    "LOGIN_FAILED": "Email 或密碼錯誤"
+    "LOGIN_FAILED": "Email 或密碼錯誤",
+    "REGISTER_DISABLED": "目前環境未開放自助註冊，請聯絡管理員"
   }
 }
