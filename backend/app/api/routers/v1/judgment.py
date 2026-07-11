@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.core import auth, db
 from app.core import settings as app_settings
 from app.core.config import env, is_production
+from app.core.permissions import permission_keys, require_permission
 from app.judge import prejudge_batch
 
 router = APIRouter(prefix="/judgment", tags=["judgment"])
@@ -104,7 +105,10 @@ def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -
 
 
 @router.post("/prejudge")
-def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)) -> dict:
+def start_prejudge(
+    body: PrejudgeIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
     """啟動初判歸因批量任務 → {job_id, total, model}（立即回，背景派工）。
 
     標的解析：_resolve_target_ids（item_ids 顯式 > scope=all 目標選取，可 within_ids 交集勾選範圍）。
@@ -165,7 +169,9 @@ def start_prejudge(body: PrejudgeIn, user: dict = Depends(auth.get_current_user)
 
 
 @router.post("/prejudge/pause")
-def pause_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
+def pause_prejudge(
+    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+) -> dict:
     """暫停執行中的初判歸因任務（提交迴圈阻塞、已在跑的收斂後 processed 停增）→ 回更新後快照。"""
     if not prejudge_batch.pause_job(job_id):
         raise HTTPException(status_code=409, detail=f"job 不存在或非執行中，無法暫停：{job_id}")
@@ -173,7 +179,9 @@ def pause_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> dic
 
 
 @router.post("/prejudge/resume")
-def resume_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
+def resume_prejudge(
+    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+) -> dict:
     """恢復已暫停的初判歸因任務（提交迴圈續跑）→ 回更新後快照。"""
     if not prejudge_batch.resume_job(job_id):
         raise HTTPException(status_code=409, detail=f"job 不存在或非暫停中，無法恢復：{job_id}")
@@ -181,7 +189,9 @@ def resume_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> di
 
 
 @router.post("/prejudge/cancel")
-def cancel_prejudge(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
+def cancel_prejudge(
+    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+) -> dict:
     """停止初判歸因任務（不再派新工，已在跑的收斂後轉 cancelled）→ 回更新後快照。
 
     已判 finding 已即時落庫保留；欲繼續可對「剩餘未判」重新發起（scope=all）。

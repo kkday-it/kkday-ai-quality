@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.core import db
+from app.core import auth, db
 from app.core.permissions import permission_keys, require_permission
 
 router = APIRouter()
@@ -51,6 +51,7 @@ def get_problems(
     sort_dir: str = "desc",
     limit: int = 100,
     offset: int = 0,
+    _user: dict = Depends(auth.get_current_user),
 ) -> dict:
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
@@ -155,6 +156,7 @@ def get_attribution_overview(
     date_to: str | None = None,
     granularity: str = "month",
     product_verticals: str | None = None,
+    _user: dict = Depends(auth.get_current_user),
 ) -> dict:
     """歸因概覽聚合（概覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
 
@@ -177,6 +179,7 @@ def get_attribution_breakdown(
     date_from: str | None = None,
     date_to: str | None = None,
     product_verticals: str | None = None,
+    _user: dict = Depends(auth.get_current_user),
 ) -> dict:
     """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類。"""
     return db.attribution_breakdown(

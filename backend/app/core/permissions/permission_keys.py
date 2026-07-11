@@ -15,9 +15,10 @@ DATA_DATAPACK_IMPORT = "data.datapack.import"  # 全庫資料包匯入（truncat
 # ── 日常質檢作業（qc 級·qc + admin 皆可）──
 DATA_DATAPACK_EXPORT = "data.datapack.export"  # 全庫資料包導出
 DATA_SOURCE_UPLOAD = "data.source.upload"  # 上傳 5 來源資料落庫
-FINDING_REVIEW_UPDATE = "finding.review.update"  # 歸因人工覆核（確認 / 忽略 / 已修）
+FINDING_REVIEW_UPDATE = "finding.review.update"  # 歸因人工覆核（確認 / 忽略 / 撤銷）
 FINDING_TRUE_LABEL_UPDATE = "finding.true-label.update"  # 標註歸因真值分類
 PROBLEM_LIST_EXPORT = "problem.list.export"  # 導出問題列表 xlsx
+JUDGMENT_PREJUDGE_RUN = "judgment.prejudge.run"  # 啟動/暫停/恢復/停止批量初判歸因（消耗 LLM 額度）
 
 # 全量 key：admin 慣例值 '*' 展開用 + local provider 過濾 config 打錯的未知 key。
 ALL_KEYS: frozenset[str] = frozenset(
@@ -30,5 +31,6 @@ ALL_KEYS: frozenset[str] = frozenset(
         FINDING_REVIEW_UPDATE,
         FINDING_TRUE_LABEL_UPDATE,
         PROBLEM_LIST_EXPORT,
+        JUDGMENT_PREJUDGE_RUN,
     }
 )
