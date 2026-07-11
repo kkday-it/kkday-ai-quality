@@ -1,7 +1,7 @@
 # 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。完整命令見 docker/README.md。
 # 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
 #
-#   啟動：   AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... docker compose up -d --build
+#   啟動：   POSTGRES_PASSWORD=... AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
 #   停止：   docker compose down                    （資料保留於 pgdata volume）
 #   看 log： docker compose logs -f backend
 #
@@ -14,13 +14,13 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: kkdb_ai_quality
-      # 示範用免密；生產請改 POSTGRES_PASSWORD（走 secret）並同步 backend DATABASE_URL
-      POSTGRES_HOST_AUTH_METHOD: trust
+      # 生產必填密碼（缺即 compose 拒啟動）；backend DATABASE_URL 同步引用同一變數
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?須設定 POSTGRES_PASSWORD（生產不可 trust 免密；隨機字串經 secret 注入）}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # seed 自動還原：官方鏡像首啟（空卷）時執行 initdb.d 內 *.sql.gz。
-      # 掛整個目錄（非單檔）→ 目錄空也安全；先跑 ./scripts/dev/fetch-seed.sh 取得 seed.sql.gz。
-      - ./docker/seed:/docker-entrypoint-initdb.d:ro
+      # 注意：生產不掛 ./docker/seed 進 initdb.d（dev 專屬；官方鏡像空卷首啟會無條件灌入
+      # 開發 seed，誤入正式庫）。schema 由 backend entrypoint 建立（空庫 init_db / 既有庫 alembic
+      # upgrade）；資料以 datapack 匯入或 scripts/ops/restore-db.sh 還原。
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -37,11 +37,13 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: production
-      DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?須設定 POSTGRES_PASSWORD}@db:5432/kkdb_ai_quality
       # production 缺 JWT 秘鑰會拒啟動（auth.py）；未注入即在此報錯，不帶病啟動
       AIQ_JWT_SECRET: ${AIQ_JWT_SECRET:?須設定 AIQ_JWT_SECRET（≥32 bytes；python -c "import secrets;print(secrets.token_urlsafe(32))"）}
       # user_settings 機密 at-rest 加密 key；未設則 provider token / QC 密碼明文落庫（crypto.py 正式環境拒啟動）
       AIQ_SECRET_KEY: ${AIQ_SECRET_KEY:?須設定 AIQ_SECRET_KEY（同上方式生成）}
+      # LLM key（fallback；使用者可於設定面板配 per-provider token）。可空啟動，但 production
+      # 有 stub 硬閘：解不出任何 token 的批量判決一律 403（防 stub 假判覆蓋真歸因）
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # 前端對外網域（逗號分隔多個）；預設對齊本 compose 的 frontend 埠
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080}
