@@ -1,7 +1,7 @@
 # scripts/ — 開發腳本（按職責分層）
 
 **開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed）、
-`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/encrypt_user_secrets/dump_datapack）、
+`ops/`（生產維運：backup-db/restore-db）、`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/encrypt_user_secrets/dump_datapack）、
 `refeed/`（rule 反哺飛輪：rule_refeed）。
 **例外：`start.sh` / `stop.sh` 放 repo 根**（與 docker-compose 同級·onboarding 入口，clone 後一眼可見免翻子夾）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
@@ -12,6 +12,8 @@
 | `./start.sh`（repo 根） | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務背景起（PG+後端+前端，hot reload）→ 等就緒 → **自動開前端網頁**（Swagger 只印 URL）；停止用 `./stop.sh` | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up -d` |
 | `./stop.sh`（repo 根） | 停止所有服務（**只停止·資料一律保留**；清庫刻意不提供，須顯式 `down -v`） | `docker compose -f docker-compose.dev.yml down` |
 | `./scripts/dev/dump-seed.sh` | 產全庫 seed（pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum） | `pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
+| `./scripts/ops/backup-db.sh` | 生產庫備份（容器化 pg_dump+gzip → `backups/db/`；`--keep N` 保留份數預設 7；crontab 排程範例見檔頭） | `docker compose exec -T db pg_dump --clean ... \| gzip` |
+| `./scripts/ops/restore-db.sh <file>` | 還原備份（**破壞性**·type-to-confirm；還原後 restart backend 自動補 migration） | `gunzip -c file \| docker compose exec -T db psql` |
 | `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原 | `gunzip -c docker/seed/seed.sql.gz \| psql kkdb_ai_quality` |
 | `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |
 | `./scripts/dev/seed.sh` | 重置 mock 判決資料（20 筆全場景） | `cd backend && .venv/bin/python seed_mock.py` |
