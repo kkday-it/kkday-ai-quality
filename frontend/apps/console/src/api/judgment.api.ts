@@ -164,6 +164,40 @@ export const previewPrejudgeCount = (body: PrejudgeBody): Promise<{ total: numbe
     body: JSON.stringify(body),
   });
 
+/** 單支 Prompt 測試結果（Prompt-as-Source 調適閉環）：指標 + 分歧清單。域指標與極性指標依 prompt 別填。 */
+export interface PromptEvalResult {
+  prompt: string;
+  source: string;
+  model: string;
+  n: number;
+  /** 域 prompt 指標。 */
+  primary_match_rate?: number | null;
+  abstain_correct_rate?: number | null;
+  hit_rate?: number | null;
+  over_report_rate?: number | null;
+  /** 極性 prompt 指標。 */
+  polarity_match_rate?: number | null;
+  sentiment_match_rate?: number | null;
+  counts?: Record<string, number>;
+  /** 與參照分歧的逐案清單。 */
+  mismatches: Array<{
+    id: string;
+    ref: unknown;
+    pack: unknown;
+    ref_primary?: string | null;
+    text: string;
+  }>;
+}
+
+/** 單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標 + 分歧（消耗 LLM 額度）。
+ * @param prompt "polarity" 或 "C-1".."C-6"（呼叫端由 rule_code 去 prompt_ 前綴）。 */
+export const evalPrompt = (prompt: string, n: number): Promise<PromptEvalResult> =>
+  j<PromptEvalResult>(`${BASE}/v1/judgment/prompt-eval`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, n }),
+  });
+
 /**
  * 初判歸因進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。
  * @param jobId startPrejudge 回傳的 job_id（capability token，端點免 auth header）

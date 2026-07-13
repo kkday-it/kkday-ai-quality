@@ -20,6 +20,7 @@ import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import PromptHistoryPanel from '../components/PromptHistoryPanel.vue';
+import PromptEvalModal from '../components/PromptEvalModal.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
 
@@ -69,6 +70,8 @@ const mode = ref<'panel' | 'json' | 'history'>('panel');
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
+// 初判 Prompt 快測彈窗（Prompt-as-Source 調適閉環）
+const evalOpen = ref(false);
 // 導出背景 job（實時進度 + 停止；與問題列表導出共用 useExportJob）
 const {
   exporting,
@@ -306,6 +309,10 @@ function doResetAll() {
             store.labelFor(store.activeCode)
           }}</span>
           <div class="flex-1" />
+          <!-- 初判 Prompt 快測（對現行判決）：調適閉環——編 → 測 → 看指標 → 迭代 -->
+          <a-button v-if="isPrompt" size="small" type="outline" @click="evalOpen = true"
+            >測試</a-button
+          >
           <a-button
             size="small"
             type="outline"
@@ -381,6 +388,9 @@ function doResetAll() {
           :auto-size="{ minRows: 2 }"
         />
       </a-modal>
+
+      <!-- 初判 Prompt 快測彈窗（僅 prompt_* 開；抽現行判決 N 則跑當前這支 → 指標 + 分歧）-->
+      <PromptEvalModal v-model:visible="evalOpen" :prompt-code="store.activeCode" />
     </div>
   </div>
 </template>

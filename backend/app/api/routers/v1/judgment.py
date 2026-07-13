@@ -98,6 +98,44 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
     return []
 
 
+class PromptEvalIn(BaseModel):
+    """單支 Prompt 測試（Prompt-as-Source 調適閉環）：prompt（polarity/C-1..C-6）+ N 樣本 + 可選 LLM 配置。"""
+
+    prompt: str
+    n: int = 8
+    llm_config_id: str | None = None
+
+
+@router.post("/prompt-eval")
+async def prompt_eval(
+    body: PromptEvalIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
+    """單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標（primary/命中/棄權/多報）+ 分歧清單。
+
+    同步評測以 asyncio.to_thread 卸到執行緒（不阻塞 event loop 單 worker）；set_current 的 contextvar 隨
+    to_thread 的 copy_context 複製，故執行緒內 client 讀得到 effective LLM 設定。N 限 1~30（UI 快測；
+    大樣本 / --source golden|mock / --compare 用 CLI scripts/tools/eval_prompt_single.py）。
+    """
+    from app.judge import prompt_eval as pe
+    from app.judge.llm import client
+
+    n = max(1, min(int(body.n or 8), 30))
+    eff = app_settings.effective_llm_dict(
+        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+    )
+    _guard_not_stub_in_production(eff)
+    app_settings.set_current(eff)
+    client.set_llm_cache_read(False)  # 量測真實行為（寫入照常回填）
+    client.set_usage_context({"job_id": f"prompt_eval_{body.prompt}"})
+    try:
+        result = await asyncio.to_thread(pe.run_eval, body.prompt, n)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    result["model"] = eff.get("model", "")
+    return result
+
+
 @router.post("/prejudge/count")
 def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
     """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""
