@@ -1,6 +1,7 @@
 """標真值把關核心邏輯——級聯樹 / 路徑 label / LLM 評分器（stub）。
 
-皆走 ai_judge 的 seed 檔 fallback（DB 無 active 版時讀 config/ai_judge/rule_C-*.json），故免測試庫。
+皆走 ai_judge（Prompt-as-Source：結構自 prompt_source.structure() 派生，SSOT＝docs/prompts/prompts/*.md，
+DB 無 active 版時回退檔案），故免測試庫。
 """
 
 from app.core.judge_config import ai_judge
@@ -8,24 +9,25 @@ from app.judge import prejudge
 
 
 def test_cascade_tree_nested_shape() -> None:
-    """級聯樹回巢狀 {value,label,children}：6 個 L1 域，L1 下有 L2，L2 下有 L3。"""
+    """級聯樹回巢狀 {value,label,children}：6 個 L1 域，L1 下有 L2 面向（無 L3，已退役）。"""
     ai_judge.reload()
     tree = ai_judge.cascade_tree()
-    assert len(tree) == 6  # content/quality/supplier/redemption/service/expectation
+    assert len(tree) == 6  # content/quality/supplier/platform/service/customer
     l1 = tree[0]
     assert l1["value"] and l1["label"] and l1.get("children")
     l2 = l1["children"][0]
     assert l2["value"].startswith("C-") and l2["label"]
     assert all("value" in n and "label" in n for n in l1["children"])
+    assert "children" not in l2  # L2 為葉，無 L3 深度
 
 
 def test_path_label_full_chain() -> None:
-    """path_label：L1 域 code 回域名；L3 C-code 回「L1 › L2 › L3」完整路徑。"""
+    """path_label：L1 域 code 回域名；L2 面向 code 回「L1 › L2」完整路徑。"""
     ai_judge.reload()
     assert ai_judge.path_label("content") == "商品內容"
-    leaf = ai_judge.cascade_tree()[0]["children"][0]["children"][0]["value"]
+    leaf = ai_judge.cascade_tree()[0]["children"][0]["value"]
     path = ai_judge.path_label(leaf)
-    assert path.count("›") == 2  # 三層路徑兩個分隔
+    assert path.count("›") == 1  # 兩層路徑一個分隔
 
 
 def test_path_label_unknown_returns_empty() -> None:
