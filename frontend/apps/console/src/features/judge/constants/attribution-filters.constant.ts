@@ -1,6 +1,6 @@
 // 歸因列表篩選狀態 SSOT：型別 + 空值 + 選項 + 計數 + → API 參數轉換。
 // 三處共用（工具列 / 導出彈窗 / 初判目標篩選）皆以此型別為單一真相，避免各寫一份而漂移。
-import { STAGE_LABELS, TIER_LABELS } from './judgment.constant';
+import { POLARITY_LABELS, STAGE_LABELS, TIER_LABELS } from './judgment.constant';
 import { STATUS_LABEL } from './status.constant';
 
 /** 歸因列表可篩選欄位（值型別對齊各控制項 v-model）。 */
@@ -64,12 +64,11 @@ export const HAS_EXTERNAL_OPTS = [
   { value: 'false', label: '無外部評論' },
 ];
 
-/** 傾向篩選選項（順序：負向/中立/正向；直接按 judgments.polarity 篩）。 */
-export const POLARITY_FILTER_OPTS = [
-  { value: 'negative', label: '負向' },
-  { value: 'neutral', label: '中立' },
-  { value: 'positive', label: '正向' },
-];
+/** 傾向篩選選項（順序：負向/中立/正向；label 衍生自 POLARITY_LABELS SSOT，禁再寫死第二份）。 */
+export const POLARITY_FILTER_OPTS = ['negative', 'neutral', 'positive'].map((value) => ({
+  value,
+  label: POLARITY_LABELS[value],
+}));
 /** 階段 / 分層 / 覆核狀態選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
