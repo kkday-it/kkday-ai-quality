@@ -206,6 +206,36 @@ export const evalPrompt = (
     body: JSON.stringify({ prompt, n, filters }),
   });
 
+/** 測試歷史列表單筆（B2；不含 mismatches，指標摘要走 metrics）。 */
+export interface PromptEvalRunSummary {
+  run_id: string;
+  prompt_id: string;
+  prompt_version: number | null;
+  source: string;
+  n: number;
+  metrics: Record<string, unknown>;
+  model: string;
+  triggered_by: string;
+  created_at: string;
+}
+
+/** 某支 prompt 的測試歷史列表（B2；created_at 降冪分頁）→ {total, items}——供「改 prompt 前後對比」。
+ * @param promptArg "polarity" 或 "C-1".."C-6"。 */
+export const listPromptEvalRuns = (
+  promptArg: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ total: number; items: PromptEvalRunSummary[] }> =>
+  j<{ total: number; items: PromptEvalRunSummary[] }>(
+    `${BASE}/v1/judgment/prompt-eval/runs?prompt_id=${encodeURIComponent(promptArg)}&limit=${limit}&offset=${offset}`,
+  );
+
+/** 單一測試 run 完整詳情（含 filters/mismatches 逐案分歧）。 */
+export const getPromptEvalRun = (
+  runId: string,
+): Promise<PromptEvalRunSummary & { filters: PrejudgeBody | null; mismatches: unknown[] }> =>
+  j(`${BASE}/v1/judgment/prompt-eval/runs/${encodeURIComponent(runId)}`);
+
 /** 六域裁決（B0 診斷理由 overlay）：命中域帶歸因+理由，棄權域帶棄權理由——六域皆有交代。 */
 export interface DomainVerdict {
   domain: string;

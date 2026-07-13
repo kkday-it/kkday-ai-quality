@@ -11,8 +11,16 @@
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { evalPrompt, type PrejudgeBody, type PromptEvalResult } from '@/api/judgment.api';
+import {
+  evalPrompt,
+  getPromptEvalRun,
+  listPromptEvalRuns,
+  type PrejudgeBody,
+  type PromptEvalResult,
+  type PromptEvalRunSummary,
+} from '@/api/judgment.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import { fmtDt } from '../utils';
 
 const props = withDefaults(
   defineProps<{
@@ -49,7 +57,11 @@ const promptOptions = computed(() =>
     .filter((m) => m.rule_code.startsWith('prompt_'))
     .map((m) => ({ value: m.rule_code, label: store.labelFor(m.rule_code) }))
     .sort((a, b) =>
-      a.value === 'prompt_polarity' ? -1 : b.value === 'prompt_polarity' ? 1 : a.value.localeCompare(b.value),
+      a.value === 'prompt_polarity'
+        ? -1
+        : b.value === 'prompt_polarity'
+          ? 1
+          : a.value.localeCompare(b.value),
     ),
 );
 
@@ -95,10 +107,40 @@ async function run() {
   result.value = null;
   try {
     result.value = await evalPrompt(promptArg.value, n.value, props.filters);
+    await loadHistory(); // 本次測試已落歷史（後端同步 insert）→ 立即反映在歷史列表最上方
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '測試失敗');
   } finally {
     loading.value = false;
+  }
+}
+
+// ── 測試歷史（B2）：對「當前選中這支 prompt」查歷次測試結果，供改 prompt 前後對比 ──
+const history = ref<PromptEvalRunSummary[]>([]);
+const historyLoading = ref(false);
+async function loadHistory() {
+  if (!promptArg.value) return;
+  historyLoading.value = true;
+  try {
+    const r = await listPromptEvalRuns(promptArg.value);
+    history.value = r.items;
+  } catch (e) {
+    Message.error(e instanceof Error ? e.message : '載入測試歷史失敗');
+  } finally {
+    historyLoading.value = false;
+  }
+}
+/** 查看某次歷史測試：metrics JSONB 本身已是完整 PromptEvalResult 形狀（少 mismatches），
+ * 併回 mismatches 即可直接複用現有指標卡/分歧表渲染，不必另寫一套歷史檢視 UI。 */
+async function viewHistoryRun(runId: string) {
+  try {
+    const detail = await getPromptEvalRun(runId);
+    result.value = {
+      ...(detail.metrics as unknown as PromptEvalResult),
+      mismatches: detail.mismatches as PromptEvalResult['mismatches'],
+    };
+  } catch (e) {
+    Message.error(e instanceof Error ? e.message : '載入測試紀錄失敗');
   }
 }
 
@@ -107,9 +149,14 @@ watch(
   () => props.visible,
   (v) => {
     if (v && !props.selectable && props.promptCode) selectedCode.value = props.promptCode;
+    if (v) loadHistory();
     if (!v) result.value = null;
   },
 );
+// 切換選中 prompt（selectable 模式）→ 重載該支的測試歷史。
+watch(promptArg, () => {
+  if (props.visible) loadHistory();
+});
 </script>
 
 <template>
@@ -173,8 +220,39 @@ watch(
       </template>
     </a-table>
     <a-empty v-else-if="result" description="無分歧（本支與現行判決一致）" />
-    <div v-else class="py-8 text-center text-[var(--color-text-3)]">
-      設定樣本數後點「執行測試」
-    </div>
+    <div v-else class="py-8 text-center text-[var(--color-text-3)]">設定樣本數後點「執行測試」</div>
+
+    <!-- 測試歷史（B2）：這支 prompt 的歷次測試結果，供改 prompt 前後對比 -->
+    <a-collapse class="mt-3" :bordered="false">
+      <a-collapse-item key="history" :header="`測試歷史（${history.length} 筆）`">
+        <a-spin v-if="historyLoading" class="block py-4 text-center" />
+        <a-table
+          v-else-if="history.length"
+          :data="history"
+          size="mini"
+          :pagination="false"
+          row-key="run_id"
+          :scroll="{ y: 200 }"
+        >
+          <template #columns>
+            <a-table-column title="時間" data-index="created_at" :width="150">
+              <template #cell="{ record }">{{ fmtDt(record.created_at) }}</template>
+            </a-table-column>
+            <a-table-column title="樣本" data-index="n" :width="60" />
+            <a-table-column title="來源" data-index="source" :width="80" />
+            <a-table-column title="model" data-index="model" :width="120" ellipsis tooltip />
+            <a-table-column title="觸發人" data-index="triggered_by" ellipsis tooltip />
+            <a-table-column title="" :width="70">
+              <template #cell="{ record }">
+                <a-button type="text" size="mini" @click="viewHistoryRun(record.run_id)"
+                  >查看</a-button
+                >
+              </template>
+            </a-table-column>
+          </template>
+        </a-table>
+        <a-empty v-else description="尚無測試紀錄" :image-size="32" />
+      </a-collapse-item>
+    </a-collapse>
   </a-modal>
 </template>

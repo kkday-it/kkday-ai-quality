@@ -143,7 +143,49 @@ async def prompt_eval(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     result["model"] = eff.get("model", "")
+
+    # B2：測試歷史（每次完成落一列結果快照；單條 classify-one 是即時預覽，不落——見 prompt_eval.py 模組頂）。
+    rule_code = f"prompt_{body.prompt}"
+    prompt_version = next(
+        (m["version"] for m in db.list_rule_meta() if m["rule_code"] == rule_code), None
+    )
+    db.insert_prompt_eval_run(
+        {
+            "prompt_id": body.prompt,
+            "prompt_version": prompt_version,
+            "source": "filtered" if filter_ids is not None else "production",
+            "n": result.get("n", n),
+            "filters": body.filters.model_dump(exclude_none=True) if body.filters else None,
+            "metrics": {k: v for k, v in result.items() if k != "mismatches"},
+            "mismatches": result.get("mismatches", []),
+            "model": result["model"],
+            "triggered_by": user.get("email") or user.get("user_id", ""),
+        }
+    )
     return result
+
+
+@router.get("/prompt-eval/runs")
+def list_prompt_eval_runs(
+    prompt_id: str,
+    limit: int = 20,
+    offset: int = 0,
+    user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """某支 prompt 的測試歷史列表（B2；created_at 降冪分頁）→ {total, items}——供「改 prompt 前後對比」。
+
+    items 不含 mismatches（逐案分歧體積可觀），只列指標摘要；詳情走 `/prompt-eval/runs/{run_id}`。
+    """
+    return db.list_prompt_eval_runs(prompt_id, limit=limit, offset=offset)
+
+
+@router.get("/prompt-eval/runs/{run_id}")
+def get_prompt_eval_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """單一測試 run 完整詳情（含 filters/mismatches 逐案分歧）。"""
+    row = db.prompt_eval_run_detail(run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+    return row
 
 
 class ClassifyOneIn(BaseModel):

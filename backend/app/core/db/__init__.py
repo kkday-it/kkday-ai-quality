@@ -51,6 +51,11 @@ from app.core.db.llm_usage import (
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_problems
+from app.core.db.prompt_eval_runs import (
+    insert_prompt_eval_run,
+    list_prompt_eval_runs,
+    prompt_eval_run_detail,
+)
 from app.core.db.rule_versions import (
     RULE_CODES,
     default_rule_content,
@@ -121,6 +126,9 @@ __all__ = [
     "judgment_run_detail",
     "list_judgment_runs",
     "update_judgment_run_status",
+    "insert_prompt_eval_run",
+    "list_prompt_eval_runs",
+    "prompt_eval_run_detail",
     "update_batch_inserted",
     "update_finding_status",
     "update_finding_true_label",
