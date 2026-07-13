@@ -33,3 +33,4 @@ backend/backups/
 # DB seed（含真實資料·57MB·經 SEED_URL 網盤/Release 分發，禁止 commit；保留空目錄供 docker 掛載）
 docker/seed/*.sql.gz
 backups/
+docs/prompts/prompts/*.zip
