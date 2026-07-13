@@ -179,13 +179,14 @@ export interface PromptEvalResult {
   polarity_match_rate?: number | null;
   sentiment_match_rate?: number | null;
   counts?: Record<string, number>;
-  /** 與參照分歧的逐案清單。 */
+  /** 與參照分歧的逐案清單（reason＝診斷理由：命中取首條歸因理由、棄權取 abstain_reason）。 */
   mismatches: Array<{
     id: string;
     ref: unknown;
     pack: unknown;
     ref_primary?: string | null;
     text: string;
+    reason?: string;
   }>;
 }
 
@@ -197,6 +198,24 @@ export const evalPrompt = (prompt: string, n: number): Promise<PromptEvalResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, n }),
   });
+
+/** 六域裁決（B0 診斷理由 overlay）：命中域帶歸因+理由，棄權域帶棄權理由——六域皆有交代。 */
+export interface DomainVerdict {
+  domain: string;
+  domain_label: string;
+  matched: boolean;
+  attributions: Array<{
+    l1_domain_code: string;
+    l1_label: string;
+    l2_code: string;
+    l2_label: string;
+    confidence: number;
+    evidence_quote: string;
+    summary: Record<string, string>;
+    reason: string;
+  }>;
+  abstain_reason: string;
+}
 
 /** 單條評論 dry-run 分類結果（歸因列表「測試」）：跑 prompts 判這一則 → 結果，不落庫。 */
 export interface ClassifyOneResult {
@@ -216,6 +235,8 @@ export interface ClassifyOneResult {
     evidence_quote: string;
     summary: Record<string, string>;
   }>;
+  /** 六域裁決（診斷理由；polarity 不在 attribute_when 閘門內時恆空，見後端 classify_one）。 */
+  domain_verdicts: DomainVerdict[];
 }
 
 /** 單條評論 dry-run 分類：跑 prompts 判這一則 → 結果，**不落庫**（預覽「改 prompt 後怎麼判」）。 */

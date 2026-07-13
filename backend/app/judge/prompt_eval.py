@@ -8,9 +8,16 @@
 指標：
     域 prompt：primary 一致率 / 棄權正確率 / 命中率 / 多報率。
     極性 prompt：polarity 一致率 + sentiment 一致率。
+
+診斷理由 overlay（B0）：`_diagnostic_schema`/`_diagnostic_system` 在**評測期**動態於 7 支 prompt 的
+schema/system 上附加 reason/abstain_reason 欄位（不改 md 檔本身、production 判決路徑零影響）。
+`domain_verdicts()` 對六域各自單獨呼叫診斷版 schema，回「六域裁決」：命中的域帶 l2_code+理由，
+棄權的域帶棄權理由——無論匹配與否都有交代，供調適者定位「邊界寫糊」或「例句缺」。
 """
 
 from __future__ import annotations
+
+import copy
 
 from sqlalchemy import text
 
@@ -20,6 +27,100 @@ from app.judge import prompt_source
 from app.judge.llm import client
 
 _SOURCE = "product_reviews"
+
+# ─────────────────────────── 診斷理由 overlay（B0，code-side 動態注入，不改 md）───────────────────────────
+_DIAGNOSTIC_DOMAIN_NOTE = (
+    "\n\n<diagnostic_instructions>\n"
+    "本次為調適診斷模式，額外要求：\n"
+    "- 每條 attributions 補一句 reason：為何歸這條 l2_code（一句話中文）。\n"
+    "- abstain_reason 必填：attributions 為空時，說明為何本域不收這則評論（如「問題屬其他域」"
+    "「找不到具體問題點」）；attributions 非空時留空字串即可。\n"
+    "</diagnostic_instructions>"
+)
+_DIAGNOSTIC_POLARITY_NOTE = (
+    "\n\n<diagnostic_instructions>\n"
+    "本次為調適診斷模式，額外要求：reason 補一句話中文，說明為何判此 polarity/sentiment。\n"
+    "</diagnostic_instructions>"
+)
+
+
+def _diagnostic_domain_schema(schema: dict) -> dict:
+    """域 prompt schema 動態加診斷欄位：attributions[].reason（必填）+ 頂層 abstain_reason（必填）。"""
+    out = copy.deepcopy(schema)
+    item = out["properties"]["attributions"]["items"]
+    item["properties"]["reason"] = {"type": "string"}
+    item["required"] = [*item["required"], "reason"]
+    out["properties"]["abstain_reason"] = {"type": "string"}
+    out["required"] = [*out["required"], "abstain_reason"]
+    return out
+
+
+def _diagnostic_polarity_schema(schema: dict) -> dict:
+    """極性 prompt schema 動態加 reason（必填一句話理由）。"""
+    out = copy.deepcopy(schema)
+    out["properties"]["reason"] = {"type": "string"}
+    out["required"] = [*out["required"], "reason"]
+    return out
+
+
+def domain_verdicts(
+    item: dict, text_: str, model: str, polarity: str
+) -> tuple[list[dict], list[dict]]:
+    """六域並行診斷歸因：回 (gated attrs 含 reason, verdicts 六域逐支交代)。
+
+    每域獨立呼叫該域 prompt（動態附診斷 schema/system，不動 production `_attrs_pack`），命中則附
+    reason，棄權則附 abstain_reason——無論匹配與否六個域都有交代。合流閘門委派 `prejudge._gate_attrs`
+    （與 production 同一套同域去重/信心閘門/排序規則，避免評測與生產兩份實作 drift）。
+
+    Args:
+        item: 判決輸入 item dict（供 `_finalize_attr_l2` 的證據封頂讀 order_oid 等）。
+        text_: 評論文字。
+        model: 判決模型。
+        polarity: 已判定的整體傾向（negative/neutral，用於填 {POLARITY} 槽）。
+
+    Returns:
+        (gated_attrs, verdicts)：gated_attrs 為過閘門後的最終歸因（含 reason）；
+        verdicts 為 `[{domain, domain_label, matched, attributions, abstain_reason}]`（六域皆有）。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+
+    from app.judge import prejudge
+
+    valid = prejudge._l2_label_map()
+    effort = prejudge._attr_effort()
+    pids = prompt_source.DOMAIN_PROMPT_IDS
+
+    def _one(pid: str) -> dict:
+        p = prompt_source.load(pid)
+        schema = _diagnostic_domain_schema(p["schema"])
+        system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE
+        user = prejudge._render_pack_user(p["user_template"], text_, polarity)
+        out = prejudge._call(system, user, "attribute", model, schema=schema, effort=effort)
+        domain = prompt_source._domain_of(pid)
+        dm = prompt_source._domain_meta(domain)
+        raw_attrs = [a for a in (out.get("attributions") or []) if isinstance(a, dict)]
+        finalized: list[dict] = []
+        for raw in raw_attrs[:3]:
+            f = prejudge._finalize_attr_l2(item, text_, raw, valid)
+            f["reason"] = str(raw.get("reason", ""))[:300]
+            finalized.append(f)
+        return {
+            "domain": domain,
+            "domain_label": dm.get("label", domain),
+            "matched": bool(finalized),
+            "attributions": finalized,
+            "abstain_reason": "" if finalized else str(out.get("abstain_reason", ""))[:300],
+        }
+
+    ctxs = [copy_context() for _ in pids]
+    with ThreadPoolExecutor(max_workers=len(pids)) as ex:
+        futures = [ex.submit(ctx.run, _one, pid) for ctx, pid in zip(ctxs, pids, strict=True)]
+        verdicts = [f.result() for f in futures]
+
+    all_attrs = [a for v in verdicts for a in v["attributions"]]
+    gated = prejudge._gate_attrs(all_attrs, prejudge._max_attributions())
+    return gated, verdicts
 
 
 # ─────────────────────────── prompt 對照 ───────────────────────────
@@ -178,9 +279,15 @@ def compute_polarity_metrics(records: list[dict]) -> dict:
 
 
 # ─────────────────────────── 跑單支（I/O：呼叫 LLM 產 records → 純函式算指標）───────────────────────────
-def _run_domain(pid: str, dom_code: str, samples: list[dict]) -> dict:
-    """跑單域 prompt → records → 指標 + 分歧清單。"""
+def _run_domain(pid: str, dom_code: str, samples: list[dict], *, diagnostic: bool = True) -> dict:
+    """跑單域 prompt → records → 指標 + 分歧清單。
+
+    diagnostic=True（預設）：schema/system 動態附診斷欄位（見模組頂 B0 overlay），mismatches 每案
+    附 `reason`（命中取首條歸因理由、棄權取 abstain_reason）——批量分歧的原因分佈直接可讀。
+    """
     p = prompt_source.load(pid)
+    schema = _diagnostic_domain_schema(p["schema"]) if diagnostic else p["schema"]
+    system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE if diagnostic else p["system"]
     records: list[dict] = []
     for s in samples:
         user = (
@@ -188,7 +295,7 @@ def _run_domain(pid: str, dom_code: str, samples: list[dict]) -> dict:
             .replace("{POLARITY}", s["polarity"])
             .replace("{TEXT}", s["text"][:2000])
         )
-        resp = client.chat_json(p["system"], user, stage=f"eval_{dom_code}", schema=p["schema"])
+        resp = client.chat_json(system, user, stage=f"eval_{dom_code}", schema=schema)
         attrs = sorted(
             resp.get("attributions") or [], key=lambda a: -float(a.get("confidence") or 0)
         )
@@ -198,6 +305,8 @@ def _run_domain(pid: str, dom_code: str, samples: list[dict]) -> dict:
                 "ref_l2s": s["ref_l2s"],
                 "ref_primary": s["ref_primary"],
                 "pack_l2s": [a.get("l2_code") for a in attrs],
+                "pack_reasons": [str(a.get("reason", "")) for a in attrs],
+                "abstain_reason": str(resp.get("abstain_reason", "")),
                 "text": s["text"][:120],
             }
         )
@@ -209,6 +318,11 @@ def _run_domain(pid: str, dom_code: str, samples: list[dict]) -> dict:
             "ref_primary": r["ref_primary"],
             "pack": r["pack_l2s"],
             "text": r["text"],
+            **(
+                {"reason": r["pack_reasons"][0] if r["pack_reasons"] else r["abstain_reason"]}
+                if diagnostic
+                else {}
+            ),
         }
         for r in records
         if (bool(r["pack_l2s"]) != bool(r["ref_l2s"]))
@@ -217,13 +331,15 @@ def _run_domain(pid: str, dom_code: str, samples: list[dict]) -> dict:
     return {"prompt": dom_code, **m, "mismatches": mismatches}
 
 
-def _run_polarity(pid: str, samples: list[dict]) -> dict:
-    """跑極性 prompt → records → 指標 + 分歧清單。"""
+def _run_polarity(pid: str, samples: list[dict], *, diagnostic: bool = True) -> dict:
+    """跑極性 prompt → records → 指標 + 分歧清單。diagnostic=True：mismatches 每案附一句話 reason。"""
     p = prompt_source.load(pid)
+    schema = _diagnostic_polarity_schema(p["schema"]) if diagnostic else p["schema"]
+    system = p["system"] + _DIAGNOSTIC_POLARITY_NOTE if diagnostic else p["system"]
     records: list[dict] = []
     for s in samples:
         user = p["user_template"].replace("{TEXT}", s["text"][:2000])
-        resp = client.chat_json(p["system"], user, stage="eval_polarity", schema=p["schema"])
+        resp = client.chat_json(system, user, stage="eval_polarity", schema=schema)
         records.append(
             {
                 "id": s["id"],
@@ -231,32 +347,48 @@ def _run_polarity(pid: str, samples: list[dict]) -> dict:
                 "sentiment": s["sentiment"],
                 "pack_polarity": resp.get("polarity"),
                 "pack_sentiment": resp.get("sentiment"),
+                "reason": str(resp.get("reason", "")),
                 "text": s["text"][:120],
             }
         )
     m = compute_polarity_metrics(records)
     mismatches = [
-        {"id": r["id"], "ref": r["polarity"], "pack": r["pack_polarity"], "text": r["text"]}
+        {
+            "id": r["id"],
+            "ref": r["polarity"],
+            "pack": r["pack_polarity"],
+            "text": r["text"],
+            **({"reason": r["reason"]} if diagnostic else {}),
+        }
         for r in records
         if r["pack_polarity"] != r["polarity"]
     ]
     return {"prompt": "polarity", **m, "mismatches": mismatches}
 
 
-def classify_one(source: str, source_id: str) -> dict:
+def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dict:
     """單條評論 dry-run 分類（歸因列表「測試」用）：跑 prompts 判一則 → 結果,**不落庫**。
 
     engine=prompt_pack（live）;`to_findings` 本身非落庫（落庫是 db.replace_source_findings,不呼叫即不寫）
     → 天然 dry-run,可安全預覽「改 prompt 後這條會怎麼判」而不覆寫現有判決。
 
+    diagnostic=True（預設）：極性落在 polarity_gate（negative/neutral）時，額外跑一輪六域診斷
+    （`domain_verdicts`），回傳「六域裁決」——命中域帶 l2_code+理由、棄權域帶棄權理由，無論匹配與否
+    六個域都有交代。⚠️ 這是與 `attributions`（production `to_findings` 產出）**獨立的第二輪 LLM 呼叫**
+    （schema 多 reason 一欄），非同一次呼叫回填——`attributions` 與 `domain_verdicts` 命中結果理論上
+    可能有微小差異（CoT 效應），但足供調適定位問題所在。
+
     Args:
         source: 來源 code（如 product_reviews）。
         source_id: 該來源業務 id（product_reviews→rec_oid）。
+        diagnostic: 是否附六域診斷理由（預設開；停用可省一輪六域並行呼叫）。
 
     Returns:
         {polarity, sentiment_score, model, text, attributions:[{is_primary, l1_domain_code, l1_label,
-         l2_code, l2_label, confidence, confidence_tier, judgment_stage, evidence_quote, summary}]}。
-        非問題（無歸因）→ attributions 空、僅 polarity。
+         l2_code, l2_label, confidence, confidence_tier, judgment_stage, evidence_quote, summary}],
+         domain_verdicts:[{domain, domain_label, matched, attributions, abstain_reason}]}。
+        非問題（無歸因）→ attributions 空、僅 polarity；正向（non_issue，非 polarity_gate 內）→
+        domain_verdicts 恆空（production 本就不跑六域，診斷沒有意義可交代）。
 
     Raises:
         ValueError: stub 模式（無 token）;或找不到該則評論。
@@ -302,21 +434,27 @@ def classify_one(source: str, source_id: str) -> dict:
         for f in findings
         if f.l1_domain_code  # 只列真歸因（非問題 finding 的空域不列）
     ]
+    text_ = prejudge._text_of(item)
+    verdicts: list[dict] = []
+    if diagnostic and polarity in prejudge._attribute_when():
+        _, verdicts = domain_verdicts(item, text_, model, polarity)
     return {
         "polarity": polarity,
         "sentiment_score": sentiment,
         "model": model,
-        "text": prejudge._text_of(item),
+        "text": text_,
         "attributions": attributions,
+        "domain_verdicts": verdicts,
     }
 
 
-def run_eval(prompt_arg: str, n: int) -> dict:
+def run_eval(prompt_arg: str, n: int, *, diagnostic: bool = True) -> dict:
     """單支 prompt 評測（production 參照）：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
 
     Args:
         prompt_arg: "polarity" 或 "C-1".."C-6"。
         n: 樣本數（UI 快測建議 ≤20；抽樣 md5 穩定、跨 run 可比）。
+        diagnostic: 是否開診斷理由（mismatches 每案附 reason；預設開）。
 
     Returns:
         {prompt, source, model, n, <指標>, mismatches}。
@@ -328,11 +466,11 @@ def run_eval(prompt_arg: str, n: int) -> dict:
         raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
     pid = prompt_id_of(prompt_arg)
     if prompt_arg == "polarity":
-        result = _run_polarity(pid, sample_polarity(n))
+        result = _run_polarity(pid, sample_polarity(n), diagnostic=diagnostic)
     else:
         dom = domain_of(prompt_arg)
         if not dom:
             raise ValueError(f"未知域：{prompt_arg}")
-        result = _run_domain(pid, prompt_arg, sample_domain(dom, n))
+        result = _run_domain(pid, prompt_arg, sample_domain(dom, n), diagnostic=diagnostic)
     result["source"] = "production"
     return result

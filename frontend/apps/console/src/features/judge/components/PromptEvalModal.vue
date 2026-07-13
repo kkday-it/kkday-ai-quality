@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 初判 Prompt 快測彈窗（Prompt-as-Source 調適閉環 UI）：抽 N 則現行判決為參照、只跑當前這支 prompt
- * → 指標卡（域：primary/命中/棄權/多報；極性：polarity/sentiment）+ 逐案分歧表。消耗 LLM 額度。
+ * → 指標卡（域：primary/命中/棄權/多報；極性：polarity/sentiment）+ 逐案分歧表（含診斷理由 reason，
+ * B0 overlay：命中取首條歸因理由、棄權取 abstain_reason）。消耗 LLM 額度。
  * 大樣本 / golden / mock / A/B 比較走 CLI scripts/tools/eval_prompt_single.py。
  */
 import { computed, ref, watch } from 'vue';
@@ -50,6 +51,7 @@ const mismatchColumns = [
   { title: 'id', dataIndex: 'id', width: 110, ellipsis: true, tooltip: true },
   { title: '參照', slotName: 'ref', width: 150 },
   { title: '本支', slotName: 'pack', width: 150 },
+  { title: '理由', dataIndex: 'reason', width: 220, ellipsis: true, tooltip: true },
   { title: '評論', dataIndex: 'text', ellipsis: true, tooltip: true },
 ];
 

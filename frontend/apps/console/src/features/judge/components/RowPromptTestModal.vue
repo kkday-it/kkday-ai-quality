@@ -2,7 +2,8 @@
 /**
  * 歸因列表單條「測試」彈窗（Prompt-as-Source 調適閉環）：對這一則評論即時跑 prompts → 分類結果,
  * 與現有判決並排比對。**不落庫**（dry-run 預覽「改 prompt 後這條會怎麼判」,不覆寫現有判決）。
- * 與列級「初判分類」（重判並覆寫落庫）區隔。
+ * 與列級「初判分類」（重判並覆寫落庫）區隔。下方「六域裁決」為診斷理由 overlay（B0）：無論
+ * 該域是否命中都附一句話理由，供調適時定位「邊界寫糊」或「例句缺」。
  */
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
@@ -153,5 +154,32 @@ watch(
         </div>
       </div>
     </div>
+
+    <!-- 六域裁決（診斷理由 overlay）：無論命中與否，六個域都有交代 -->
+    <a-collapse v-if="result && result.domain_verdicts.length" class="mt-3" :bordered="false">
+      <a-collapse-item key="verdicts" header="六域裁決（診斷理由）">
+        <div class="flex flex-col gap-1.5">
+          <div
+            v-for="v in result.domain_verdicts"
+            :key="v.domain"
+            class="rounded border px-2 py-1.5 text-xs"
+          >
+            <div class="flex items-center gap-1.5">
+              <a-tag size="small" :color="v.matched ? 'green' : 'gray'">{{
+                v.matched ? '✅ 命中' : '⭕ 棄權'
+              }}</a-tag>
+              <span class="font-medium">{{ v.domain_label }}</span>
+              <template v-if="v.matched">
+                <span class="text-[var(--color-text-3)]">›</span>
+                <span>{{ v.attributions[0]?.l2_label }}</span>
+              </template>
+            </div>
+            <div class="mt-1 text-[var(--color-text-2)]">
+              {{ v.matched ? v.attributions[0]?.reason : v.abstain_reason }}
+            </div>
+          </div>
+        </div>
+      </a-collapse-item>
+    </a-collapse>
   </a-modal>
 </template>
