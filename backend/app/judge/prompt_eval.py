@@ -34,10 +34,8 @@ def prompt_id_of(arg: str) -> str:
 
 
 def domain_of(arg: str) -> str:
-    """C-N → 對應歸因分類域機器值（自樹 tree[0].domain）；未知回空字串。"""
-    content = db.get_rule_active(arg) or db.default_rule_content(arg)
-    tree = (content or {}).get("tree") or []
-    return tree[0].get("domain", "") if tree else ""
+    """C-N → 對應歸因分類域機器值（自 prompt_source 檔名尾綴派生，如 C-3→supplier）；未知回空字串。"""
+    return prompt_source._domain_of(prompt_id_of(arg))
 
 
 # ─────────────────────────── 取文字 ───────────────────────────
