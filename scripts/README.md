@@ -1,7 +1,7 @@
 # scripts/ — 開發腳本（按職責分層）
 
 **開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed）、
-`ops/`（生產維運：backup-db/restore-db）、`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/encrypt_user_secrets/dump_datapack）、
+`ops/`（生產維運：backup-db/restore-db）、`audit/`（分析審計：accuracy_audit/rule_audit）、`tools/`（產生器/批次：gen_taxonomy_xlsx/prejudge_reviews/translate_summaries/boundary_ab_eval+report/multi_model_eval+report/persist_multimodel_history/taxonomy_health/encrypt_user_secrets/dump_datapack）、
 `refeed/`（rule 反哺飛輪：rule_refeed）。
 **例外：`start.sh` / `stop.sh` 放 repo 根**（與 docker-compose 同級·onboarding 入口，clone 後一眼可見免翻子夾）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
@@ -26,9 +26,11 @@
 | `./scripts/tools/boundary_ab_report.py` | A/B 報告：before/flat/cascade 對 silver label 算 content 誤判率、primary 準確率（accuracy.analyze_supervised）與混淆對 | `cd backend && .venv/bin/python ../scripts/tools/boundary_ab_report.py --help` |
 | `./scripts/tools/multi_model_eval.py` | 多模型準確度評測（唯讀不寫 judgments）：`--build-set` 建評測集（有外部 free_tag 且已判的 product_reviews）／`--run --config-id <id>` 以指定 LLM 配置逐則 `to_findings` 收集 sentiment/polarity/歸因 | `cd backend && .venv/bin/python ../scripts/tools/multi_model_eval.py --help` |
 | `./scripts/tools/multi_model_report.py` | 多模型準確度報告：對外部 free_tag「問題面向(tag_value≤門檻)」映射到當前 L1/L2 為 ground truth，算情緒/ L1-L2 精確率/free_tag 召回，出 xlsx（統計+明細+長條圖）；復用 build_comparison_report 計分原語 | `cd backend && .venv/bin/python ../scripts/tools/multi_model_report.py --help` |
+| `./scripts/tools/persist_multimodel_history.py` | 把多模型評測結果（`tmp/multi_model/*_v4.json`）灌進 `judgment_history`（kind='judgment' 每評論每模型一筆快照，**只寫歷史不碰 judgments 活表**→列表恆 gpt canonical）：供判決歷史 modal 看各模型、導出 `compare_models` 並排對比；去重天然（model+params+digest）、label 由 BD/Gemini 自帶＋ai_judge fallback 補 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/persist_multimodel_history.py --dry-run` |
 | `./scripts/tools/mock_testset_gen.py` | V1 Prompt 穩定性驗證：零 LLM 確定性生成 Mock 測試集（六域各正/負 100 則，取材自 config/ai_judge 既有正反例＋跨域『看似X實為Y』hint，含同義詞/語氣/句式重組/跨類干擾/異常輸入變體；`--seed` 保證可重現） | `cd backend && .venv/bin/python ../scripts/tools/mock_testset_gen.py --out ../tmp/mock_testset/testset_v1.jsonl` |
 | `./scripts/tools/prompt_stability_eval.py` | V1 Prompt 穩定性驗證：對 mock 測試集重複判決 N 次（唯讀，同 multi_model_eval 配方），算各域 P/R/F1＋重複一致性（完全一致率/pairwise agreement）＋variant_type 分組準確率＋混淆對 Top10；`--dry-run` 免呼叫 LLM 驗證管線 | `cd backend && .venv/bin/python ../scripts/tools/prompt_stability_eval.py --testset ../tmp/mock_testset/testset_v1.jsonl --user you@kkday.com --config-id <id>` |
 | `./scripts/tools/free_tag_coverage.py` | free tag 匯總表 → free_tag_mapping.json 加權覆蓋率驗收（顯式命中＋子字串兜底＋顯式無對應三口徑；驗收線 ≥95%） | `python3 scripts/tools/free_tag_coverage.py --csv "~/Downloads/free tag 匯總表.csv"` |
+| `./scripts/tools/taxonomy_health.py` | **歸因分類體系健檢**（多模型交叉診斷·零 LLM 成本）：不依賴人工真值，用 judgment_history 現成多模型判決快照的一致率/分歧結構反推分類體系品質——L1/L2 成對集合 F1＋完全一致率 vs 隨機基準（合理性）、純 L1 邊界爭議混淆對（邊界模糊）、L2 使用分佈（粒度失衡）、層級效度（各域 L2 清晰度）、free_tag 映射殘差（覆蓋盲區）；產 markdown 報告，改規則後重跑對比。⚠️封閉式侷限：能診斷「現有類好不好用」，「缺什麼類」需開放式歸因另探 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/taxonomy_health.py --out /tmp/taxonomy_health.md`（容器需先 `docker cp` 腳本，scripts/ 非掛載）|
 | `./scripts/tools/encrypt_user_secrets.py` | user_settings 機密 at-rest 加密遷移（明文→Fernet 密文；冪等；`--dry-run` 試跑、`--decrypt` 回滾）；需 backend/.env 已設 `AIQ_SECRET_KEY` | `cd backend && .venv/bin/python ../scripts/tools/encrypt_user_secrets.py` |
 | `./scripts/refeed/rule_refeed.sh` | rule 反哺飛輪：印 ensemble 判錯的邊界候選（content↔supplier 優先）／`--apply <RULE> <NODE> "<canon>"` 精煉某 node canon 寫回 DB active 版並熱重載 | `cd backend && .venv/bin/python ../scripts/refeed/rule_refeed.py` |
 
