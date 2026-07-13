@@ -17,11 +17,10 @@
 ```
 資料上傳（5 來源 xlsx/csv·自動辨識+校驗）
   → 各來源專表（product_reviews / conversations / freshdesk_tickets / app_feedback / mixpanel_tracker）
-  → 初判歸因（prejudge：極性閘門 → 候選域 canon 聚焦 → L1/L2/L3 + 信心 + 判決階段；
-     global_rule.prejudge_depth="l2" 時只判 L1+L2——L3 留待接上商品/訂單佐證的深判階段）
+  → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 判決階段）
   → judgments（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
   → 歸因列表 / 歸因概覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出
-判準來源＝config/ai_judge 規則樹（RuleManager 面板版本化編輯，DB append-only 快照）
+判準來源＝docs/prompts/prompts/*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，DB append-only 版本化 + 檔案 fallback）
 ```
 
 ## Monorepo 結構
@@ -128,7 +127,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## 架構要點
 - **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），judgments 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L3、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
-- **判準 SSOT**＝`config/ai_judge` 規則樹（RuleManager 面板版本化，DB `judge_rule_versions` append-only 快照）。
+- **判準 SSOT**＝`docs/prompts/prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，判決引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（pilot：auth login + AUTH.* error code），詳見 `frontend/apps/console/src/i18n/README.md`。

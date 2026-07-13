@@ -21,7 +21,7 @@ CONFIG_DIR: Path = Path(os.getenv("AIQ_CONFIG_DIR") or (REPO_ROOT / "config")).r
 GLOBAL_DIR: Path = CONFIG_DIR / "global"  # 前後端共用非機密（model 清單 / QC 預設 / 定價）
 AI_JUDGE_DIR: Path = (
     CONFIG_DIR / "ai_judge"
-)  # 判決領域規則樹（rule_C-* / source_mapping / domains）
+)  # 判決領域規則配置（global_rule / source_mapping / domains；判準文字本體在 docs/prompts/prompts）
 
 # repo 根 data/：runtime 派生產物（報表 / 校準參數），整目錄 gitignore、可整刪重生。
 # 曾散落各檔自拼 REPO_ROOT/"data"/...（calibration / accuracy），收斂至此 SSOT；env 覆蓋同 CONFIG_DIR 邏輯。

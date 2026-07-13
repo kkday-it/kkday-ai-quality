@@ -1,7 +1,6 @@
-"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule + prompt_*；append-only 快照）。
+"""判決規則版本（RULE_CODES：product_vertical + global_rule + source_mapping + prompt_*；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
-非歸因分類但復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認、存檔後熱重載）者：
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
 - global_rule（判決流程總規範），seed 放 config/ai_judge。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
@@ -10,6 +9,9 @@
   存檔驗證/drift 護欄委派 app.judge.prompt_source。
 註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES，降為專案靜態
 設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再 DB 版本化 / 不列規則頁。
+註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
+全面重構退役——判準已 100% 移入 prompt_C-1~6 的 System 自由文本，樹為冗餘雙源，歷史版本保留於 DB
+（不刪表）僅不再經此路徑寫入新版；域結構改由 app.judge.prompt_source.structure() 派生。
 """
 
 from __future__ import annotations
@@ -26,13 +28,6 @@ from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 RULE_CODES = (
-    "C-1",
-    "C-2",
-    "C-3",
-    "C-4",
-    "C-5",
-    "C-6",
-    "schema",
     "product_vertical",
     "global_rule",
     "source_mapping",
@@ -53,7 +48,7 @@ RULE_CODES = (
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（schema→rule.schema.json，product_vertical→config/global，global_rule/judgment→config/ai_judge，C-N→rule_C-N.json）。"""
+    """rule_code → 對應默認檔（product_vertical→config/global，global_rule/source_mapping→config/ai_judge）。"""
     if (
         code == "product_vertical"
     ):  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
@@ -63,14 +58,10 @@ def _rule_file(code: str) -> Path:
     ):  # 整體規則（判決流程總規範）與判決 config 同置，默認 seed 放 config/ai_judge
         return _AI_JUDGE_DIR / "global_rule.json"
     if (
-        code == "judgment"
-    ):  # 判決顯示標籤 + 信心閾值 + prejudge 旋鈕（判決 config SSOT），默認 seed = judgment.json
-        return _AI_JUDGE_DIR / "judgment.json"
-    if (
         code == "source_mapping"
     ):  # 上傳表頭校驗 + 來源欄位映射（上傳流程 SSOT），默認 seed = source_mapping.json
         return _AI_JUDGE_DIR / "source_mapping.json"
-    return _AI_JUDGE_DIR / ("rule.schema.json" if code == "schema" else f"rule_{code}.json")
+    raise ValueError(f"未知 rule code：{code}")
 
 
 def default_rule_content(code: str) -> dict:
@@ -91,11 +82,13 @@ def _jrv():  # 縮寫
 
 
 def list_rule_meta() -> list[dict]:
-    """列所有 rule 的 active 版 meta（rule_code/version/author/note/created_at/label），無 active 者略。
+    """列現行 RULE_CODES 的 active 版 meta（rule_code/version/author/note/created_at/label），無 active 者略。
 
-    label 優先取 `tree[0].label`（＝L1 域節點名，也是 AI 判決 l1_label 與歸因列表顯示名），使左側菜單
-    與樹/判決/歸因列表**單一真相源、不漂移**；無 tree 的 rule（schema/global_rule/product_vertical）
-    回退 `_meta.label`，再無則 None 由前端 fallback 補（JSONB 路徑抽出，避免拉整份 content）。
+    label 取 `_meta.label`（各 rule content 的顯示名慣例，含 prompt_* 的 default_prompt_content）；
+    缺值回 None 由前端 fallback 補（JSONB 路徑抽出，避免拉整份 content）。
+
+    以 RULE_CODES 過濾（非撈全表 active）：退役 rule_code（如已刪的 C-1~C-6/schema）的歷史列仍留在
+    DB（不刪表），若不過濾會在前端「幽靈重現」——已無管理端點卻仍顯示於清單，令人困惑。
     """
     j = _jrv()
     stmt = (
@@ -105,12 +98,9 @@ def list_rule_meta() -> list[dict]:
             j.c.author,
             j.c.note,
             j.c.created_at,
-            func.coalesce(
-                j.c.content["tree"][0]["label"].astext,
-                j.c.content["_meta"]["label"].astext,
-            ).label("label"),
+            j.c.content["_meta"]["label"].astext.label("label"),
         )
-        .where(j.c.is_active.is_(True))
+        .where(j.c.is_active.is_(True), j.c.rule_code.in_(RULE_CODES))
         .order_by(j.c.rule_code)
     )
     with T.get_engine().connect() as c:
@@ -185,23 +175,21 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復規則配置頁所有規則（schema + global_rule + C-N）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復規則配置頁「整體配置」規則（global_rule + source_mapping）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
-    範圍＝規則配置頁「歸因分類」bulk 恢復（schema 結構規格 + global_rule 整體規則 + C-N 歸因分類）；
-    **排除**（見 RuleManager）：product_vertical（設定抽屜獨立管理）、judgment（信心閾值/label/prejudge 旋鈕，
-    已有獨立編輯器 + 各自「恢復默認」；排除於 bulk 是為免「恢復歸因分類默認」誤掃 QC 調過的 auto_confirm 等配置）。
-    缺默認檔的 code 跳過不中斷（如域數調整後殘留、rule_C-*.json 已刪的 code），回報於 skipped。
+    **排除**（見 RuleManager）：product_vertical（設定抽屜獨立管理）、prompt_*（初判 Prompt，各自獨立
+    「恢復默認」；判準文本＝人工調適標的，bulk 不應連帶覆蓋 prompt 手改）。
+    缺默認檔的 code 跳過不中斷，回報於 skipped。
 
     Returns:
         {reset: [{rule_code, version}, ...], skipped: [code, ...]}（依 RULE_CODES 順序）。
     """
     done: list[dict] = []
     skipped: list[str] = []
-    # 各有獨立編輯入口·不納入歸因分類 bulk reset-all；prompt_*（初判 Prompt）另有「初判 Prompt」分組
-    # 各自恢復默認，且判準文本＝人工調適標的，bulk「恢復歸因分類默認」不應連帶覆蓋 prompt 手改。
+    # 各有獨立編輯入口·不納入 bulk reset-all；prompt_*（初判 Prompt）另有「初判 Prompt」分組
+    # 各自恢復默認，且判準文本＝人工調適標的，bulk「恢復整體配置默認」不應連帶覆蓋 prompt 手改。
     _EXCLUDED = {
         "product_vertical",
-        "judgment",
         *(c for c in RULE_CODES if c.startswith("prompt_")),
     }
     for code in RULE_CODES:

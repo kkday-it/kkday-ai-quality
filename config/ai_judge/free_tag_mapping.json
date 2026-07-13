@@ -2,7 +2,7 @@
  "_meta": {
   "version": "2.0",
   "about": "外部評論系統 free_tag 面向名 → 我方歸因分類（2026-07-11 責任軸重構後 taxonomy L1/L2 label）語義映射 SSOT。供評論對比表逐 free_tag 面向判定與我方歸因是否契合（多對多：一面向可對多分類）。顯式條目覆蓋 free tag 匯總表 cnt≥1000 頭部（佔總量 92%）＋無對應者顯式標空。（2026-07-13 v3.0 taxonomy 同步：期待落差→價值感落差/內容期待落差分流、不可抗力→天候與自然因素、看錯方案→資訊誤讀、憑證兌換/使用資格→憑證與資格）",
-  "sync_note": "L1/L2 label 須與現行歸因規則（judge_rule_versions active 版 rule_C-*）一致；taxonomy 改動時本檔須同步更新。fallback＝面向名與某 L2 label 互為子字串時視為對應。覆蓋率驗收：scripts/tools/free_tag_coverage.py（加權 ≥95%）。",
+  "sync_note": "L1/L2 label 須與現行歸因分類（docs/prompts/prompts/*.md facet_catalog，SSOT＝app.judge.prompt_source.structure()；原 rule_C-* 已於 2026-07-13 退役）一致；taxonomy 改動時本檔須同步更新。fallback＝面向名與某 L2 label 互為子字串時視為對應。覆蓋率驗收：scripts/tools/free_tag_coverage.py（加權 ≥95%）。",
   "l1_labels": [
    "商品內容",
    "商品品質",

@@ -6,10 +6,16 @@
 
 | loader | 讀取 | 提供 |
 |---|---|---|
-| `ai_judge.py` | DB active 版 rule_C-* + config/ai_judge fallback | 葉判準樹（selectable_domains / l3_nodes_for_domains / domain_action…）+ **L1 域／L2 面向分支判準**（`l1_judgment` / `l2_judgment`，供 cascade 分層界線注入）|
-| `global_rule.py` | global_rule.json（DB active）| 判決總規範（decision_tree / cascade / abstain_policy / global_boundaries）|
+| `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source，取代已退役的 DB rule_C-* 樹） | 分類結構索引（selectable_domains / l3_nodes_for_domains / domain_action / domain_owner / cascade_tree / path_label…）；判準文字本體在 `docs/prompts/prompts/*.md`，非本模組職責 |
+| `global_rule.py` | global_rule.json（DB active）| 判決流程 SSOT：極性閘門（polarity_gate）+ 證據政策（evidence_policy）；判官提示詞與域界線已全數移入 prompt |
 | `product_vertical.py` | product_vertical 規則（DB active）| 商品垂直分類分組 → CATEGORY 代碼（codes_for_group）|
 | `source_mapping.py` | DB active 版 source_mapping + config/ai_judge fallback | 5 來源欄位映射（源欄→canonical，normalize_row）+ 上傳指紋辨識／必備表頭校驗（RuleManager 線上編輯，存檔熱重載）|
 | `sources.py` | config/global/sources.json | 來源目錄（label_for / natural_key）|
 | `pricing.py` | config/global/llm_model.json | LLM per-model 單價（cost_usd）|
-| `rule_export.py` | config/ai_judge 規則樹 | 判準規則 Excel 導出 + `_style_header`（品牌樣式，db.export 複用）|
+| `rule_export.py` | `app.judge.prompt_source.structure()` | 6 域面向結構 + global 判決總規範 Excel 導出 + `_style_header`（品牌樣式，db.export 複用）|
+
+> 2026-07-13：`ai_judge.py`/`rule_export.py` 隨 Prompt-as-Source 全面重構改讀 prompt 結構，不再讀 DB
+> 規則樹（`rule_C-1`~`rule_C-6` + `schema`，含 canon/allow/forbid/正反例四欄判準面板）——判準已 100%
+> 移入 `docs/prompts/prompts/*.md`，歷史 DB 版本保留（不刪表）僅無新寫入路徑。同批退役：
+> `rule_export.py` 的樹分頁邏輯（改面向清單）、`rule_refeed.py`（反哺飛輪，寫回對象已消失）、
+> `global_rule.py` 的 `attribution_guidance`/`polarity_guidance`/`abstain_policy`/`cascade`/`prejudge_depth`。

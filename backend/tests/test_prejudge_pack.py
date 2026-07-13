@@ -1,7 +1,6 @@
-"""Prompt-as-Source 引擎（engine="prompt_pack"）確定性行為測試。
+"""Prompt-as-Source 引擎確定性行為測試（判決引擎唯一路徑，legacy 已全數退役）。
 
-覆蓋 legacy 基準線（test_prejudge_core / test_prejudge_l2_depth）未涵蓋的新路徑：
-- _engine() 預設 prompt_pack；
+覆蓋：
 - _stage1_polarity → _pack_polarity 吃 00_polarity（parse 出 polarity/sentiment）；
 - _resolve_attrs_multi → _attrs_pack 六域並行 → 各域 attribution 合流 → 共用尾段（同域去重/排序/閘門）。
 
@@ -21,8 +20,7 @@ _VALID = {
 
 
 def _pack_env(monkeypatch, *, amin: float = 0.2):
-    """prompt_pack 引擎共用環境：engine=prompt_pack + 非 stub + 面向白名單 + 政策。"""
-    monkeypatch.setattr(prejudge, "_engine", lambda: "prompt_pack")
+    """引擎共用環境：非 stub + 面向白名單 + 政策。"""
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_l2_label_map", lambda: dict(_VALID))
     monkeypatch.setattr(
@@ -47,14 +45,6 @@ def _pack_env(monkeypatch, *, amin: float = 0.2):
         }
 
     monkeypatch.setattr(prompt_source, "load", _fake_load)
-
-
-def test_engine_defaults_to_prompt_pack(monkeypatch):
-    """judgment.json 缺 engine 鍵時 _engine() 回 prompt_pack（新預設）。"""
-    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
-    assert prejudge._engine() == "prompt_pack"
-    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {"engine": "legacy"})
-    assert prejudge._engine() == "legacy"
 
 
 def test_render_pack_user_fills_slots():
@@ -97,7 +87,7 @@ def test_attrs_pack_merges_six_domains_and_dedups(monkeypatch):
     attrs = prejudge._resolve_attrs_multi({"order_oid": "O1"}, text, "gpt-5-mini", 2, "negative")
     assert len(attrs) == 1
     assert attrs[0]["l2_code"] == "C-3-1"
-    assert attrs[0]["l1_domain_code"] == "supplier"  # l2→l1 由樹映射（＝該 prompt 域）
+    assert attrs[0]["l1_domain_code"] == "supplier"  # l2→l1 由 _l2_label_map 映射（＝該 prompt 域）
     assert attrs[0]["confidence"] == 0.9
 
 

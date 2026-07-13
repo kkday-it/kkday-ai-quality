@@ -1,10 +1,10 @@
 """整體規則載入器：judge_rule_versions（rule_code='global_rule'，DB）→ 判決全局規則。
 
 SSOT＝DB active 版（`db.get_rule_active('global_rule')`），config/ai_judge/global_rule.json 為初始 seed /
-無 DB 版本時 fallback。集中極性閘門（attribute_when）/ 判官提示詞 / abstain 政策 / 證據政策
-（含 attr_min_confidence）/ cascade 設定（含 reroute_on_low_conf），供 prejudge 判決主流程引用。
-域界線 SSOT＝各 rule_C-N 的 L1 canon（ai_judge.l1_judgment），非本檔——舊 decision_tree /
-global_boundaries 已於 2026-07-07 移除（deprecated 無讀取點，歷史內容在 git / DB 舊版本可回溯）。
+無 DB 版本時 fallback。集中極性閘門（attribute_when）/ 證據政策（含 attr_min_confidence），供 prejudge
+判決主流程引用。判官提示詞與域界線 SSOT＝docs/prompts/prompts/*.md（Prompt-as-Source 架構，見
+app.judge.prompt_source）——2026-07-13 隨 JSON 樹全面退役，attribution_guidance/polarity_guidance/
+abstain_policy/cascade/prejudge_depth 已隨之移除（判準與流程深度已 100% 由 prompt 決定，非本檔）。
 
 快取：模組級 lazy 快取（判決熱路徑高頻讀）；規則寫入（存檔 / 恢復默認 / 恢復版本）後由 rules.py 呼叫
 reload() 重載，使新規則即時生效——與 ai_judge 同策略。
@@ -42,46 +42,11 @@ def reload() -> None:
     _cache = None
 
 
-def abstain_policy() -> dict[str, Any]:
-    """abstain 政策（l1/l2/l3 各層是否強制/可空）。"""
-    return _load().get("abstain_policy", {})
-
-
 def evidence_policy() -> dict[str, Any]:
-    """證據政策（require_quote_grounded / l3_min_confidence / caps）。"""
+    """證據政策（require_quote_grounded / attr_min_confidence / secondary_min_confidence）。"""
     return _load().get("evidence_policy", {})
-
-
-def cascade() -> dict[str, Any]:
-    """cascade 設定（enabled + reroute_on_low_conf + stageA_l1 + stageB）。"""
-    return _load().get("cascade", {})
-
-
-def attribution_guidance() -> str:
-    """歸因判官提示詞（角色 + 判斷流程指引；不含輸出格式與域界線）。
-
-    判準政策 SSOT：由規則配置頁「global 整體規則」編輯即時生效，取代 prejudge 寫死的 _ATTR_SYS。
-    缺值回空字串，由呼叫端回退 code 內 default。域界線/正反例走 ai_judge L1 canon，非此處。
-    """
-    return _load().get("attribution_guidance", "")
-
-
-def polarity_guidance() -> str:
-    """極性判官提示詞（只判傾向、不歸因）；規則配置頁可編輯，缺值回空由呼叫端回退 default。"""
-    return _load().get("polarity_guidance", "")
 
 
 def polarity_gate() -> dict[str, Any]:
     """極性閘門（attribute_when：哪些整體傾向進歸因）；prejudge._attribute_when 消費。"""
     return _load().get("polarity_gate", {})
-
-
-def prejudge_depth() -> str:
-    """初判歸因深度（"l3"＝完整 L1→L3 cascade；"l2"＝只判 L1+L2）。
-
-    "l2"：初判僅依評論文字，L3 細項常缺商品/訂單佐證而不可靠——改走單呼叫 32 面向目錄
-    多歸因（省掉整段 Stage B 選葉），L3 留待接上商品/訂單數據的深判階段補判。
-    預設 "l3"（未設＝零行為改變）；非法值回退 "l3"。
-    """
-    v = str(_load().get("prejudge_depth") or "l3").lower()
-    return v if v in ("l2", "l3") else "l3"

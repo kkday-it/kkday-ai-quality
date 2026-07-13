@@ -93,16 +93,13 @@ def test_attr_effort_reads_config(monkeypatch):
         lambda: {
             "attribute_reasoning_effort": "low",
             "polarity_reasoning_effort": "minimal",
-            "stage_a_reasoning_effort": "low",
         },
     )
     assert prejudge._attr_effort() == "low"
     assert prejudge._polarity_effort() == "minimal"
-    assert prejudge._stage_a_effort() == "low"
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
     assert prejudge._attr_effort() is None
     assert prejudge._polarity_effort() is None
-    assert prejudge._stage_a_effort() is None
 
 
 def test_call_effort_override_and_restore(monkeypatch):

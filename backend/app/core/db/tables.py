@@ -257,14 +257,19 @@ user_settings = Table(
     Column("updated_at", Text),
 )
 
-# ── 判決規則版本（config/ai_judge/ 的 7 rule + schema 的 live + 歷史）────────────
+# ── 判決規則版本（product_vertical/global_rule/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
-# 檔案 config/ai_judge/rule_C-*.json 為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# 檔案 config/ai_judge/*.json（product_vertical/global_rule/source_mapping）與
+# docs/prompts/prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# 註：C-1~C-6（歸因判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 退役，歷史版本保留於表中
+# 不刪（僅不再有新寫入），判準改走 prompt_C-1~6。
 judge_rule_versions = Table(
     "judge_rule_versions",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("rule_code", Text, nullable=False),  # 'C-1'..'C-7' | 'schema'
+    Column(
+        "rule_code", Text, nullable=False
+    ),  # 'product_vertical' | 'global_rule' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
     Column("version", Integer, nullable=False),  # per rule_code 遞增
     Column("content", JSONB, nullable=False),  # 完整 rule/schema JSON
     Column("note", Text),

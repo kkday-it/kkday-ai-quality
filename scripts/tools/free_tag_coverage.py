@@ -25,7 +25,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAPPING_PATH = REPO_ROOT / "config" / "ai_judge" / "free_tag_mapping.json"
 
-# 新樹 L2 label 全集（子字串兜底用；與 rule_C-1~C-6 active 版同步維護）
+# L2 label 全集（子字串兜底用；與 docs/prompts/prompts/*.md facet_catalog 同步維護，
+# SSOT＝app.judge.prompt_source.structure()，原 rule_C-1~C-6 已於 2026-07-13 退役）
 L2_LABELS = [
     # C-1 商品內容
     "商品定位", "行程流程", "費用資訊", "集合資訊", "使用／兌換", "限制與風險", "退改與服務承諾",

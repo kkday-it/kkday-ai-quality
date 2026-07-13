@@ -4,13 +4,12 @@
 （content/quality/supplier/platform/service/customer）、L2 面向（facets）來自各域 prompt 的
 `<facet_catalog>`「■ CODE LABEL」行解析、域中文名／action／owner 來自 `config/ai_judge/domains.json`
 （唯一不可從 prompt 推導的域層業務 metadata）。原 JSON 規則樹（judge_rule_versions 的 C-1~C-6）已退役
-——判準文字（canon/allow/forbid/正反例）現為 prompt 本身內容，供 LLM 直接讀，不再由本模組拼字串二次
-注入 prompt；本模組僅建「分類結構」索引（域/面向 code↔label、級聯樹、顯示序），供 15 處消費端
-（歸因列表級聯篩選、judgments 顯示、標真值 cascader、_l2_label_map 等）查詢。
+——判準文字（canon/allow/forbid/正反例）現為 prompt 本身內容，供 LLM 直接讀，本模組不再攜帶這些欄位；
+僅建「分類結構」索引（域/面向 code↔label、級聯樹、顯示序），供歸因列表級聯篩選、judgments 顯示、
+標真值 cascader、`_l2_label_map` 等消費端查詢。
 
-深度：僅 L1（域）→ L2（面向）二層（L3 已隨 legacy 引擎退役，`prejudge_depth=l2` 下判決本就只到 L2）。
-`l1_judgment`/`l2_judgment` 的 canon/allow/forbid/正反例欄恆為空（判準已在 prompt，非本模組職責）——
-唯一殘留消費端為 legacy 判決路徑（待刪），刪除前呼叫不報錯、僅取不到文字。
+深度：僅 L1（域）→ L2（面向）二層（L3 隨 legacy 判決引擎於 2026-07-13 一併退役，判決引擎 prompt_pack
+本就只判到 L2）。
 
 快取：首次存取時 lazy 載入並快取於模組級變數；reload() 連動清空 prompt_source 快取後重建，保證
 「prompt 存檔／恢復默認／批次判決入口重載」時分類結構與判決 prompt 同步刷新（不會一邊新一邊舊）。
@@ -36,12 +35,6 @@ _cascade: list[
 _path_label: dict[
     str, str
 ] = {}  # value（域機器值 / 面向 code）→ 可讀路徑「L1 › L2」（供標真值評分 prompt）
-_l1_judgment: dict[
-    str, dict[str, Any]
-] = {}  # domain 機器值 → L1 域判準殼（canon 恆空；legacy 消費端相容用）
-_l2_judgment: dict[
-    str, dict[str, Any]
-] = {}  # 恆空（原「L2 有 L3 子節點」的分支判準；現無 L3，皆為葉，見 _l3_by_code）
 _loaded = False
 
 
@@ -54,9 +47,9 @@ def _leaf_record(
     l2_label: str,
     l3_label: str,
 ) -> dict[str, Any]:
-    """組單一面向葉節點的攤平記錄（帶 L1/L2 上下文；判準欄位恆空，見模組 docstring）。
+    """組單一面向葉節點的攤平記錄（帶 L1/L2 上下文）。
 
-    l3_label 參數保留（欄位形狀相容 legacy 消費端）但呼叫端恆傳空字串——無 L3 深度。
+    l3_label 參數保留（欄位形狀相容既有消費端）但呼叫端恆傳空字串——無 L3 深度。
     """
     return {
         "code": node.get("code", ""),
@@ -66,24 +59,6 @@ def _leaf_record(
         "l2_code": l2_code,
         "l2_label": l2_label,
         "l3_label": l3_label,
-        "canon": node.get("canon", ""),
-        "allow": node.get("allow", []),
-        "forbid": node.get("forbid", []),
-        "positive_cases": node.get("positive_cases", []),
-        "negative_cases": node.get("negative_cases", []),
-    }
-
-
-def _branch_judgment(node: dict[str, Any]) -> dict[str, Any]:
-    """組域層（L1）判準殼:{code,label} + 恆空判準五欄；供 `_l1_judgment` 建值（見模組 docstring）。"""
-    return {
-        "code": node.get("code", ""),
-        "label": node.get("label", ""),
-        "canon": node.get("canon", ""),
-        "allow": node.get("allow", []),
-        "forbid": node.get("forbid", []),
-        "positive_cases": node.get("positive_cases", []),
-        "negative_cases": node.get("negative_cases", []),
     }
 
 
@@ -127,7 +102,6 @@ def _ensure_loaded() -> None:
             )
             _l3_by_domain.setdefault(domain, []).append(leaf)
             _l3_by_code[leaf["code"]] = leaf
-        _l1_judgment[domain] = _branch_judgment({"code": domain, "label": label})
         _cascade.append(
             _build_cascade(
                 {
@@ -179,8 +153,6 @@ def reload() -> None:
     _domain_owner.clear()
     _cascade.clear()
     _path_label.clear()
-    _l1_judgment.clear()
-    _l2_judgment.clear()
     _loaded = False
     from app.judge import prompt_source
 
@@ -286,22 +258,3 @@ def selectable_domains() -> list[dict[str, Any]]:
             }
         )
     return out
-
-
-def l1_judgment(domain: str) -> dict[str, Any]:
-    """域機器值（content/supplier…）→ L1 域判準殼（code/label + 恆空 canon/allow/forbid/正反例）。
-
-    ⚠️ canon 恆為空字串——判準文字已在 prompt md 本身（LLM 直接讀），本函式僅為 legacy 判決路徑
-    （待 A3 刪除）保留相容形狀，刪除前呼叫不報錯、僅取不到判準文字（該路徑本就不是 live 引擎）。
-    """
-    _ensure_loaded()
-    return _l1_judgment.get(domain, {})
-
-
-def l2_judgment(code: str) -> dict[str, Any]:
-    """恆回空 dict（原「L2 有 L3 子節點」的分支判準查詢；現無 L3，L2 皆為葉，見 l3_by_code）。
-
-    保留純為 legacy 判決路徑（待 A3 刪除）相容,呼叫不報錯。
-    """
-    _ensure_loaded()
-    return _l2_judgment.get(code, {})

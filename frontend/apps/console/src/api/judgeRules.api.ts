@@ -1,8 +1,9 @@
-// 判決規則管理 API（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment + source_mapping 的版本化）。
+// 判決規則管理 API（RULE_CODES：product_vertical + global_rule + source_mapping + prompt_* 的版本化）。
 // 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前依 code 型別驗證，非法回 422；存檔後熱重載。
+// 註：C-1~C-6（歸因判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 退役，判準改走 prompt_C-1~6。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
-/** rule code：'C-1'..'C-6' | 'schema' | 'product_vertical' | 'global_rule' | 'judgment' | 'source_mapping'。 */
+/** rule code：'product_vertical' | 'global_rule' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'。 */
 export type RuleCode = string;
 
 /** 某 rule 的 active 版 meta（清單用）。 */
@@ -77,7 +78,7 @@ export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
     headers: JSON_HEADERS,
   });
 
-/** 恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
+/** 恢復整體配置（global_rule + source_mapping）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
 export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipped: string[] }> =>
   j<{ reset: RuleSaveResult[]; skipped: string[] }>(`${BASE}/judge-rules/reset-default-all`, {
     method: 'POST',
@@ -86,7 +87,7 @@ export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipp
 
 /**
  * 啟動判決規則導出背景 job（DB active 版本）→ {job_id, filename}（立即回）。
- * C-N 歸因分類各一分頁＋ global 判決總規範，格式對齊 data/問題分類層級結構.xlsx。
+ * 6 支域 prompt 的面向結構各一分頁（L2 面向代碼/名稱）＋ global 判決總規範。
  * 進度走 /api/exports SSE（見 exports.api），完成後 downloadExport(job_id) 取檔。
  */
 export const startRulesExport = (): Promise<{ job_id: string; filename: string }> =>

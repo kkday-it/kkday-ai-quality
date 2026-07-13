@@ -1,9 +1,12 @@
-"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + source_mapping + prompt_* 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
+"""判決規則管理端點（RULE_CODES：product_vertical + global_rule + source_mapping + prompt_* 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
-（歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment/source_mapping
-各自結構驗、prompt_* 委派 prompt_source.validate 驗 md 三節 + drift 護欄），不過回 422——DB 永不存
-非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
+（product_vertical/global_rule/source_mapping 各自結構驗、prompt_* 委派 prompt_source.validate 驗
+md 三節 + drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應
+loader。全端點 JWT 守衛。
+
+註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
+重構退役——判準已全數移入 prompt_C-1~6，不再經此端點管理（歷史 DB 版本保留，僅無新寫入路徑）。
 """
 
 from __future__ import annotations
@@ -55,16 +58,13 @@ def _check_code(code: str) -> None:
 
 
 def _validate(code: str, content: dict) -> None:
-    """存檔前驗證：schema 自身用 metaschema、product_vertical 用輕量結構驗、global_rule 用自身 schema、
-    其餘（C-N 歸因分類）用 active 歸因 schema。不過拋 422。
-
-    product_vertical（商品垂直分類）/ global_rule（整體規則）內容形態皆非 L1/L2/L3 歸因樹，
-    故**不套** active 歸因 schema：前者輕量結構驗，後者驗 config/ai_judge/global_rule.schema.json。
+    """存檔前驗證：prompt_* 委派 prompt_source、product_vertical 用輕量結構驗、global_rule/
+    source_mapping 用各自 schema。不過拋 422。
     """
     if code.startswith("prompt_"):
         # 初判 Prompt（Prompt-as-Source）：content={"_meta":..., "text": md 全文}，非 L1-L3 歸因樹。
-        # 委派 prompt_source.validate：三節可解析 + Schema 合法 + {TEXT}/{POLARITY} + drift 護欄
-        # （域 prompt Schema 的 l2_code enum ⊆ 樹該域 L2 codes）。
+        # 委派 prompt_source.validate：三節可解析 + Schema 合法 + {TEXT}/{POLARITY} + 自洽 drift 護欄
+        # （facet_catalog 解析出的面向 codes == Schema l2_code enum，且域須在 domains.json 註冊）。
         from app.judge import prompt_source
 
         text = content.get("text")
@@ -75,12 +75,6 @@ def _validate(code: str, content: dict) -> None:
             prompt_source.validate(text, prompt_id)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
-        return
-    if code == "schema":
-        try:
-            jsonschema.Draft202012Validator.check_schema(content)
-        except jsonschema.exceptions.SchemaError as e:
-            raise HTTPException(status_code=422, detail=f"schema 不合法：{e.message}") from None
         return
     if code == "product_vertical":
         groups = content.get("groups")
@@ -166,14 +160,6 @@ def _validate(code: str, content: dict) -> None:
                 detail="judgment 需含 auto_confirm（enabled 為 true/false·audit_sample_rate 為 0~1 數值）——防誤刪靜默重開自動確認",
             )
         return
-    schema = db.get_rule_active("schema") or db.default_rule_content("schema")
-    errs = sorted(
-        jsonschema.Draft202012Validator(schema).iter_errors(content),
-        key=lambda e: list(e.path),
-    )
-    if errs:
-        msgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in errs[:8]]
-        raise HTTPException(status_code=422, detail={"errors": msgs, "count": len(errs)})
 
 
 @router.get("")
@@ -201,9 +187,10 @@ def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -
 def export_rules_xlsx(user: dict = Depends(auth.get_current_user)) -> dict:
     """啟動判決規則導出背景 job → {job_id, filename}（立即回，背景組檔）。
 
-    導出全部歸因分類（C-N，每域一分頁）＋ global 判決總規範（DB active 版本），格式對齊
-    data/問題分類層級結構.xlsx（L1/L2/L3 判準逐列）；供品控 / PM 離線審閱判決法典。改背景 job：
-    與問題列表導出共用 /api/exports 進度串流 / 停止 / 取檔。
+    導出 6 支域 prompt 的面向結構（prompt_source.structure()，每域一分頁，L2 面向代碼/名稱）＋
+    global 判決總規範（DB active 版本）；供品控 / PM 離線核對域/面向涵蓋範圍（完整判準文字在各域
+    prompt System，請至規則配置頁「初判 Prompt」查看）。改背景 job：與問題列表導出共用 /api/exports
+    進度串流 / 停止 / 取檔。
     """
     from app.core import export_jobs, rule_export
 
