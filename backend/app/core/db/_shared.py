@@ -59,19 +59,13 @@ def _read_judgment_file() -> dict:
 
 
 def read_judgment_config() -> dict:
-    """讀 judgment 判決配置：DB active 版優先（`rule_versions.get_rule_active('judgment')`），缺版本 /
-    DB 未就緒回退 seed 檔。不快取（呼叫端各自快取）。
+    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕）。
 
-    judgment 讀取的**單一入口**——_shared 熱重載、prejudge 旋鈕快取、flags 閾值 provider 三處共用，
-    避免各自重寫 DB-active→file 回退邏輯（Rule of Three）。
+    2026-07-13 起 judgment 降為**專案靜態設定檔**（移出 RULE_CODES、不再 DB 版本化 / 不列規則頁）——
+    直讀檔案即單一真相源，不再走 DB active。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。
+    保留此函式為 judgment 讀取的**單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
     """
-    from app.core.db import rule_versions as _rv
-
-    try:
-        cfg = _rv.get_rule_active("judgment")
-    except Exception:  # noqa: BLE001  DB 未就緒 / 查詢失敗 → 回退 seed 檔，不阻斷
-        cfg = None
-    return cfg if cfg is not None else _read_judgment_file()
+    return _read_judgment_file()
 
 
 def reload_judgment_cfg() -> None:

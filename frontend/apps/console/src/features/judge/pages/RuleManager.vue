@@ -29,9 +29,11 @@ const canManage = computed(() => can(PERM.judgeRuleManage));
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
 const verticalFilter = useVerticalFilterStore();
-// 歸因分類（C-N，schema/global/judgment 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不讀前端靜態表。
-// 非 L1-L3 歸因樹者一律排除出 C-N 迴圈、改為置頂特殊項（product_vertical 已移「配置」抽屜，此處不顯示；
-// schema＝結構規格、global＝判決總規範、judgment＝信心閾值/label/prejudge 旋鈕，皆純 JSON 編輯）。
+// 歸因分類（C-N，schema/global 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不讀前端靜態表。
+// 非 L1-L3 歸因樹者一律排除出 C-N 迴圈（product_vertical 已移「配置」抽屜；schema/global 為置頂特殊項）。
+// judgment 已降為專案靜態設定檔（config/ai_judge/judgment.json）、移出 RULE_CODES、不列規則頁——
+// 仍列於此 Set 是**防禦性**：即使前端 metas 有殘留 judgment（頁面快取未刷新），也排除出歸因域清單，
+// 不會誤渲染成 C-N 域（它無置頂 menu-item，故最終哪都不顯示）。
 const _NON_DOMAIN_CODES = new Set([
   'schema',
   'product_vertical',
@@ -186,10 +188,6 @@ function doResetAll() {
             <a-menu-item key="global_rule">
               <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
               <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
-            </a-menu-item>
-            <a-menu-item key="judgment">
-              <span class="font-mono text-xs text-[var(--color-text-3)]">judgment</span>
-              <span class="ml-2">{{ store.labelFor('judgment') }}</span>
             </a-menu-item>
             <a-menu-item key="source_mapping">
               <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>

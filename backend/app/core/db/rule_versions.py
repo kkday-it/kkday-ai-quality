@@ -1,10 +1,12 @@
-"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule + judgment；append-only 快照）。
+"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 非歸因分類但復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認、存檔後熱重載）者：
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
-- global_rule（判決流程總規範）、judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕），seed 放 config/ai_judge。
+- global_rule（判決流程總規範），seed 放 config/ai_judge。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
+註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES，降為專案靜態
+設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再 DB 版本化 / 不列規則頁。
 """
 
 from __future__ import annotations
@@ -30,9 +32,11 @@ RULE_CODES = (
     "schema",
     "product_vertical",
     "global_rule",
-    "judgment",
     "source_mapping",
 )
+# 註：judgment（判決顯示 label + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES——
+# 降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再
+# DB 版本化 / 不列於規則配置頁。其值皆非 QC 逐條熱調的判準文本，過度工程化為可熱編規則反成干擾。
 
 
 def _rule_file(code: str) -> Path:

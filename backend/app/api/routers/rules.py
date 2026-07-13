@@ -1,4 +1,4 @@
-"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + judgment + source_mapping 的 live + 版本化）。
+"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + source_mapping 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
 （歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment/source_mapping

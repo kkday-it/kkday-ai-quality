@@ -1,7 +1,7 @@
 {
- "_comment": "判決顯示與信心閾值——判決領域 SSOT（前端 @config/ai_judge/judgment.json、後端 prejudge.py / db.py 同讀）。信心閾值/prejudge 旋鈕/傾向・分層 label 集中此檔；QC 校準後需免改碼調 auto_accept/jury 分層。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
+ "_comment": "判決顯示與信心閾值——**專案靜態設定檔**（2026-07-13 起移出 RULE_CODES、不再 DB 版本化 / 不列規則配置頁；前端 @config/ai_judge/judgment.json、後端 _shared.read_judgment_config 直讀此檔）。信心閾值/prejudge 旋鈕/傾向・分層 label 集中此檔；調值＝改此檔 + 重啟後端。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
  "prejudge": {
-  "_comment": "初判歸因管線旋鈕（業務/QC 可免改碼調）。stage1_model：極性閘門＋cascade Stage A 域分類的 fallback 模型（cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（rating=5 且評論極短且無負向詞）；adaptive_rejudge：信心落 jury 帶 [jury_low,jury_high) 時對已選域做一次聚焦複判取高者（同域換葉；跨域重路由另見 global_rule cascade.reroute_on_low_conf）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝cascade 域分類／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；stage_a/attribute 降檔須先更大樣本 A/B 驗準）。",
+  "_comment": "初判歸因管線旋鈕。stage1_model：極性閘門＋Stage A 域分類的 fallback 模型（global_rule cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（enable_stage0_skip；rating 高且無負向詞）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝域分類／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；stage_a/attribute 降檔須先更大樣本 A/B 驗準）。",
   "neg_keywords": [
    "退款",
    "退費",
@@ -34,8 +34,6 @@
   "max_attributions": 2,
   "batch_service_tier": "flex",
   "enable_stage0_skip": true,
-  "stage0_max_comment_len": 8,
-  "enable_adaptive_rejudge": true,
   "stage_a_reasoning_effort": null,
   "polarity_reasoning_effort": "minimal",
   "attribute_reasoning_effort": null
