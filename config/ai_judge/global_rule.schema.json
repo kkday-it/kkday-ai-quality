@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://kkday.com/ai-quality/schema/global_rule.schema.json",
- "title": "整體規則（global_rule.json）標準 v1.1",
- "description": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when）/ 判官提示詞 / abstain 政策 / 證據政策（含 attr_min_confidence）/ cascade 兩階段（含低信心重路由）。域界線 SSOT＝各 rule_C-N 的 L1 canon，非本檔。配對資料檔：config/ai_judge/global_rule.json。",
+ "title": "整體規則（global_rule.json）標準 v1.2",
+ "description": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when）/ 判官提示詞 / abstain 政策 / 證據政策（attr_min_confidence + secondary_min_confidence 閘門）/ l2 單呼叫深度 + 低信心重路由（cascade.reroute_on_low_conf）。域界線 SSOT＝各 rule_C-N 的 L1 canon，非本檔。配對資料檔：config/ai_judge/global_rule.json。",
  "type": "object",
  "additionalProperties": false,
  "required": [
@@ -109,34 +109,14 @@
      "maximum": 1,
      "description": "attr 級最低信心：低於即整條歸因丟棄（殺 Stage 湊數殭屍列；0＝關閉）。"
     },
-    "caps": {
-     "type": "array",
-     "items": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-       "domain",
-       "require",
-       "cap"
-      ],
-      "properties": {
-       "domain": {
-        "type": "string"
-       },
-       "require": {
-        "type": "string"
-       },
-       "cap": {
-        "type": "string"
-       },
-       "note": {
-        "type": "string"
-       }
-      }
-     }
-    },
     "note": {
      "type": "string"
+    },
+    "secondary_min_confidence": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1,
+     "description": "多歸因時非 primary 條目最低信心：低於即丟棄只留主因（0＝關閉）。"
     }
    }
   },
@@ -144,49 +124,12 @@
    "type": "object",
    "additionalProperties": false,
    "required": [
-    "enabled",
-    "stageA_l1",
-    "stageB"
+    "reroute_on_low_conf"
    ],
    "properties": {
-    "enabled": {
-     "type": "boolean"
-    },
     "reroute_on_low_conf": {
      "type": "boolean",
      "description": "低信心負反饋重路由：Stage B 棄權/低於 attr_min_confidence 的選項排除後重跑一次 Stage A 改判。"
-    },
-    "stage_a_level": {
-     "type": "string",
-     "enum": [
-      "l1",
-      "l1l2"
-     ],
-     "description": "Stage A 選擇顆粒度：l1＝六域（預設）；l1l2＝直選 L2 面向（32 項含 canon，Stage B 候選縮到該面向葉）。"
-    },
-    "stageA_l1": {
-     "type": "object",
-     "additionalProperties": false,
-     "properties": {
-      "model": {
-       "type": "string"
-      },
-      "note": {
-       "type": "string"
-      }
-     }
-    },
-    "stageB": {
-     "type": "object",
-     "additionalProperties": false,
-     "properties": {
-      "model": {
-       "type": "string"
-      },
-      "note": {
-       "type": "string"
-      }
-     }
     },
     "note": {
      "type": "string"

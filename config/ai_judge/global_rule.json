@@ -1,22 +1,12 @@
 {
  "_meta": {
-  "about": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when：negative+neutral 進歸因）＋判官提示詞（attribution/polarity_guidance，規則配置頁編輯即時生效）＋abstain/證據政策（L3 降階＋attr_min_confidence 整條閘門）＋cascade 兩階段（Stage A 六域分類→Stage B 域內細項·低信心/棄權負反饋重路由）。域界線 SSOT＝各 rule_C-N 的 L1 canon＋正反例，非本檔。",
+  "about": "AI 法官整體規則（判決流程 SSOT）：極性閘門（attribute_when：negative+neutral 進歸因）＋判官提示詞（attribution/polarity_guidance，規則配置頁編輯即時生效）＋abstain/證據政策（attr_min_confidence 整條閘門 + secondary_min_confidence 次要歸因閘門）＋l2 單呼叫深度（32 面向目錄一次判到 L1+L2）+ 低信心 L2 面向重路由一次（cascade.reroute_on_low_conf）。域界線 SSOT＝各 rule_C-N 的 L1 canon＋正反例，非本檔。（2026-07-13：cascade 兩階段框架已隨 prejudge_depth=l2 退休，只留 reroute_on_low_conf 生效；死子鍵 enabled/stage_a_level/stageA_l1/stageB 已移除。）",
   "label": "整體規則",
-  "version": "1.1"
+  "version": "1.2"
  },
  "$schema": "./global_rule.schema.json",
  "cascade": {
-  "note": "enabled=false 時判決走現行單次 Stage2（可回退）；true 時走 L1→L2/L3 cascade。2026-07-06 A/B 實測（n=123·silver 雙盲三票）：content 誤判率 flat 54.1% → cascade+mini 10.8%，primary 準確率 0.395→0.644，故預設啟用。reroute_on_low_conf：低信心負反饋重路由——Stage B 產出低於 evidence_policy.attr_min_confidence 的域視為選錯，排除後重跑一次 Stage A 改判他域（重判結果同過閘門；僅丟棄會漏掉真問題）。 stage_a_level：Stage A 選擇顆粒度——l1=六域；l1l2=直選 L2 面向（31 項含 canon（2026-07-11 責任軸重構後），Stage B 候選縮到該面向葉；2026-07-07 A/B：dev acc 0.654→0.704·holdout 0.786→0.821·L3 填充率 +4.8pp，故預設 l1l2）。",
-  "stageB": {
-   "note": "Stage B 域內細項判決模型；空＝沿用主判決模型。目錄注入固定為選中域 rich 判準（葉 canon+forbid+誤判例+L2 canon 標題），非配置項。可棄權（域內無貼合細項回空→觸發重路由）。",
-   "model": ""
-  },
-  "enabled": true,
-  "stageA_l1": {
-   "note": "L1 域分類：注入六域 L1 canon 界線（rule_C-N，含鏡像正反例+forbid）。model 空＝沿用主模型/config stage1_model。域判斷是 content 誤判的關鍵層，用 gpt-5-mini（2026-07-06 A/B：nano Stage A content FP 32.4% vs mini 10.8%，每則約 $0.0014）。",
-   "model": "gpt-5-mini"
-  },
-  "stage_a_level": "l1l2",
+  "note": "l2 單呼叫深度下唯一生效的 cascade 旋鈕：低信心負反饋重路由——首輪 L2 面向低於 evidence_policy.attr_min_confidence（＝選錯訊號）時，排除該面向後重跑一次 Stage A 改判他面向，給評論改判正確分類的機會（重判結果同過閘門；僅丟棄會漏真問題）。原 cascade 兩階段（Stage A 選域→Stage B 選葉）框架已隨 prejudge_depth=l2 退休。",
   "reroute_on_low_conf": true
  },
  "polarity_gate": {
@@ -34,15 +24,7 @@
  },
  "prejudge_depth": "l2",
  "evidence_policy": {
-  "caps": [
-   {
-    "cap": "jury_low",
-    "note": "判供應商履約缺訂單佐證→信心封頂",
-    "domain": "supplier",
-    "require": "order_oid"
-   }
-  ],
-  "note": "evidence_quote 須為進線原文逐字片段才採信；未命中或 L3 信心 < l3_min_confidence → L3 降階留空。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage A 選錯域時 Stage B 湊數列 conf 常 <0.15，如 C-2-1 網路品質殭屍歸因；0＝關閉）。 secondary_min_confidence：多歸因時非 primary 條目的最低信心，低於即丟棄只留主因（2026-07-11 多模型對齊：F1 對集合大小敏感，低信心次要歸因是 extra 簇主因；0＝關閉）。",
+  "note": "evidence_quote 須為進線原文逐字片段才採信（require_quote_grounded）。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage 湊數列 conf 常 <0.15，如殭屍歸因；0＝關閉）。secondary_min_confidence：多歸因時非 primary 條目最低信心，低於即丟棄只留主因（0＝關閉）。l3_min_confidence：L3 降階閾值（現行 l2 深度不判 L3，僅 dspy 鷹架/單測用）。",
   "l3_min_confidence": 0.5,
   "attr_min_confidence": 0.2,
   "require_quote_grounded": true,
