@@ -12,6 +12,11 @@
       "sha256": "ef5f66a97c6c71d315f468499ddb467a3ce6cb9e70b050f3bd3bf3c671146e08",
       "bytes": 13724
     },
+    "01_C-1_content_v2": {
+      "path": "prompts/judges/01_C-1_content_v2.md",
+      "sha256": "42fad7a3374e70950b551b24f6b4374249bfc4cfa8bc31f73ba46cf977bafe01",
+      "bytes": 18429
+    },
     "02_C-2_quality": {
       "path": "prompts/judges/02_C-2_quality.md",
       "sha256": "cd9335c5b286af0edefa6ee6afd625042cae3df1f83cf39f03b0755e500c84f6",

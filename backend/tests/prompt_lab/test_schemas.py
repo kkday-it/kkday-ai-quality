@@ -252,7 +252,17 @@ def test_prompt_manifest_matches_files(prompts_dir):
     import hashlib
 
     manifest = json.loads((prompts_dir / "prompts_manifest.json").read_text(encoding="utf-8"))
-    assert len(manifest["judges"]) == 7
+    # 7 份域 baseline judge（polarity + C-1..C-6）恆在；候選 prompt（如 01_C-1_content_v2）可另加入。
+    baseline_judges = {
+        "00_polarity",
+        "01_C-1_content",
+        "02_C-2_quality",
+        "03_C-3_supplier",
+        "04_C-4_platform",
+        "05_C-5_service",
+        "06_C-6_customer",
+    }
+    assert baseline_judges <= set(manifest["judges"])
     for entry in list(manifest["judges"].values()) + list(manifest["generators"].values()):
         actual = hashlib.sha256((prompts_dir.parent / entry["path"]).read_bytes()).hexdigest()
         assert actual == entry["sha256"], entry["path"]

@@ -18,6 +18,7 @@ PROMPTS_DIR = Path(__file__).resolve().parents[2] / "evals" / "prompt_lab" / "pr
 JUDGES = [
     "00_polarity",
     "01_C-1_content",
+    "01_C-1_content_v2",  # C-1 候選 v2（PRD-C1-PROMPT-V2）：修 §17.1/17.2/17.3，主攻棄權
     "02_C-2_quality",
     "03_C-3_supplier",
     "04_C-4_platform",
