@@ -1,8 +1,9 @@
 # C-1 Prompt Mock 評測實驗室 — Dev 交付報告
 
 > 對應 PRD：[`PRD-C1-PROMPT-MOCK-EVAL.md`](./PRD-C1-PROMPT-MOCK-EVAL.md)｜日期：2026-07-13
-> 狀態：**Phase 0–4 同步 MVP 完成並以 fake client + dry-run 全鏈驗證**；Phase 5（Batch，可選）未啟用。
+> 狀態：**Phase 0–4 同步 MVP 完成**；已在真實 OpenAI API 上 full-scale 跑通 Layer 1+2（見 §2.5）；Phase 5（Batch，可選）未啟用。
 > 硬約束遵守：未修改生產 `prejudge.py`／DB／前端；7 份 prompt 原樣導入未改。
+> ⚠️ 本次實測為**同模型閉環 Mock**（Generator=Auditor=Judge=`gpt-5.5`）且資料集為 accept-all 未經人工複核 → 指標**偏樂觀，非真實準確率**（PRD §3/§8/§12）。
 
 ## 1. 交付物清單（PRD §21）
 
@@ -17,8 +18,8 @@
 | 7 | Markdown/JSON/CSV 報告 + Prompt diff | ✅ | `report.py`、`compare_runs.py` |
 | 8 | 單元測試 + fake-client 集成測試 | ✅ | `backend/tests/prompt_lab/`（51 passed） |
 | 9 | 使用 README | ✅ | `evals/prompt_lab/README.md`、`datasets/c1/README.md` |
-| 10 | 5 條 live smoke 脫敏結果 | ⏳ 待 API key | 見 §4 |
-| 11 | C-1 baseline Dev 報告 | ⏳ 待 API key + 人工複核 | 見 §4 |
+| 10 | 5 條 live smoke 脫敏結果 | ✅ | §2.5（gen→audit→judge 真實鏈路跑通） |
+| 11 | C-1 baseline Dev 報告 | ✅（同模型閉環·偏樂觀） | §2.5 + `tmp/prompt_lab/runs/c1-baseline-dev/summary.md` |
 | 12 | 已知問題與下一步 | ✅ | 本文件 §5、§6 |
 
 ## 2. 測試結果
@@ -35,6 +36,38 @@
   - 評測：8 份報告齊出、traceability 100%、resume 只跳成功項。
   - 對比：fixed/regressed/unchanged_wrong + slice delta 正確。
 - **Lint**：`ruff check` 全通、`ruff format` 已套（對齊 `backend/pyproject.toml [tool.ruff]`）。
+
+## 2.5 本次 live 實測（2026-07-13，真實 OpenAI API）
+
+模型演進：初試 `gpt-5.4-mini`（生成太套路）→ 使用者定案**全部 `gpt-5.5-2026-04-23`**。全程 0 失敗、evidence 100% 逐字。
+
+**資料品質：`gpt-5.5` 遠優於 `gpt-5.4-mini`**（Layer 1 審核信號對比）：
+
+| 信號 | 5.4-mini | 5.5 |
+|---|--:|--:|
+| review_required | 62 | 2 |
+| near_duplicate | 51 | **0** |
+| 負例暗含 C-1 | 4 | 0 |
+| 域標籤分歧 | 1 | 0 |
+
+**規模與判決**（`gpt-5.5`）：Layer 1 生成 130→冻結 128（89 dev/39 holdout）；Layer 2 生成 210（63 對照對成對完整）。
+baseline judge：Layer 1 dev 89×3=267 runs；Layer 2 探索 dev 146×2=292 runs。合計 ~560 judge runs，0 失敗。
+
+**指標（⚠️ 同模型閉環 + accept-all 未人審 → 偏樂觀）**：
+
+| 面向 | Layer 1 dev | Layer 2 探索 dev |
+|---|--:|--:|
+| 域 P/R/Specificity/F1 | 1.0 全數 | 1.0 全數 |
+| 對照對 Both-Correct | — | **1.0**（42 對）|
+| 各邊界 FPR（14 個）| — | **全 0.0** |
+| L2 Exact / Over-attr | 1.0 / 0.0 | 0.97 / **0.03** |
+| **uncertain 被迫歸因率** | — | **0.275**（硬塞 C-1-3×5 等）|
+| 證據 grounding | 1.0 | 1.0 |
+| 穩定性 DomainFullAgreement | 1.0 | 0.993（1 flip）|
+
+**唯一露馅點**：uncertain **被迫歸因 27.5%**（判官對模糊輸入過度自信、硬歸 C-1 而非棄權，命中 §17.3）＋ L2 **輕微過度歸因 3%**（§17.2）。其餘全 1.0 係閉環虛高，非真實力。
+
+> 冻結資料集為 accept-all 探索版（未經人工複核）→ **刻意不入 Git**（PRD 要求人審後才算正式冻結）；本節數字僅供機器驗證與 v2 靶向，非可上線 baseline。
 
 ## 3. 工程硬門檻（PRD §12）現況
 
