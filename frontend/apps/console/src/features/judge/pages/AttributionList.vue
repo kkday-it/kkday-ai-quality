@@ -33,7 +33,9 @@ import { PERM } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
+import type { PrejudgeBody } from '@/api/judgment.api';
 import { AttributionDetailDrawer, AttributionFilterBar, RowPromptTestModal } from '../components';
+import PromptEvalModal from '../components/PromptEvalModal.vue';
 import {
   POLARITY_LABELS,
   SOURCES,
@@ -187,6 +189,26 @@ const openRowTest = (record: ProblemRow) => {
   testRow.value = record;
   testOpen.value = true;
 };
+
+// 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
+// 樣本＝篩選子集（見 PromptEvalModal selectable 模式 + 後端 run_eval filter_ids）。
+const promptTestOpen = ref(false);
+const promptEvalFilters = computed<PrejudgeBody>(() => ({
+  source: source.value,
+  scope: 'all',
+  product_verticals: verticalGroups.value,
+  // 未指定判決階段時預設鎖定「已判」三態——測試需要現有判決當參照，未判列無 ground truth 可比對。
+  stages: filters.stage.length ? filters.stage : ['judged', 'pending_review', 'pending_data'],
+  target_polarity: filters.polarity.length ? filters.polarity : undefined,
+  confidence_tier: filters.tier || undefined,
+  taxonomy: filters.taxonomy.length ? filters.taxonomy : undefined,
+  date_from: filters.dateRange?.[0] || undefined,
+  date_to: filters.dateRange?.[1] || undefined,
+  rec_oid: filters.recOid.trim() || undefined,
+  prod_oid: filters.prodOid.trim() || undefined,
+  order_oid: filters.orderOid.trim() || undefined,
+  has_external: filters.hasExternal === '' ? undefined : filters.hasExternal === 'true',
+}));
 /** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
 const attrPath = (a: Attribution): string =>
   [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
@@ -550,11 +572,16 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
+      <!-- 測試 Prompt（B1）：帶當前列表篩選，選一支 prompt 測試（樣本＝篩選子集，不落庫）-->
+      <a-button size="small" type="outline" @click="promptTestOpen = true"> 測試 Prompt </a-button>
     </div>
   </Teleport>
 
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
+
+  <!-- 測試 Prompt 彈窗（B1；selectable=可選任一支、filters=帶當前列表篩選） -->
+  <PromptEvalModal v-model:visible="promptTestOpen" selectable :filters="promptEvalFilters" />
 
   <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
   <JudgmentHistoryModal v-model:visible="historyOpen" :source="source" :row="historyRow" />

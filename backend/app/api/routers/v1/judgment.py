@@ -99,11 +99,17 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
 
 
 class PromptEvalIn(BaseModel):
-    """單支 Prompt 測試（Prompt-as-Source 調適閉環）：prompt（polarity/C-1..C-6）+ N 樣本 + 可選 LLM 配置。"""
+    """單支 Prompt 測試（Prompt-as-Source 調適閉環）：prompt（polarity/C-1..C-6）+ N 樣本 + 可選 LLM 配置。
+
+    filters 給定時（B1：按目前歸因列表篩選 × 單一 prompt 測試）：與 `PrejudgeIn` 同形，走
+    `_resolve_target_ids` 解析出目標 id 集合，樣本改為該子集（取代 md5 全表抽樣）；未給沿用
+    現行 production 參照抽樣（預設行為不變）。
+    """
 
     prompt: str
     n: int = 8
     llm_config_id: str | None = None
+    filters: PrejudgeIn | None = None
 
 
 @router.post("/prompt-eval")
@@ -116,6 +122,9 @@ async def prompt_eval(
     同步評測以 asyncio.to_thread 卸到執行緒（不阻塞 event loop 單 worker）；set_current 的 contextvar 隨
     to_thread 的 copy_context 複製，故執行緒內 client 讀得到 effective LLM 設定。N 限 1~30（UI 快測；
     大樣本 / --source golden|mock / --compare 用 CLI scripts/tools/eval_prompt_single.py）。
+
+    `body.filters` 給定時（B1）：樣本＝當前歸因列表篩選子集（與 `/prejudge/count` 同一套目標解析），
+    忠實反映使用者在列表上選的範圍，而非全表 md5 抽樣。
     """
     from app.judge import prompt_eval as pe
     from app.judge.llm import client
@@ -128,8 +137,9 @@ async def prompt_eval(
     app_settings.set_current(eff)
     client.set_llm_cache_read(False)  # 量測真實行為（寫入照常回填）
     client.set_usage_context({"job_id": f"prompt_eval_{body.prompt}"})
+    filter_ids = _resolve_target_ids(body.filters) if body.filters else None
     try:
-        result = await asyncio.to_thread(pe.run_eval, body.prompt, n)
+        result = await asyncio.to_thread(pe.run_eval, body.prompt, n, filter_ids=filter_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     result["model"] = eff.get("model", "")

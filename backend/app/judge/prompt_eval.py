@@ -219,6 +219,62 @@ def sample_polarity(n: int) -> list[dict]:
     return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
 
 
+# ─────────────────────────── 抽樣（B1：按目前歸因列表篩選子集，非 md5 全表抽樣）───────────────────────────
+def sample_domain_by_ids(dom_machine: str, ids: list[str]) -> list[dict]:
+    """域參照集（按指定 id 清單；不做 pos/neg 平衡——樣本即篩選結果，忠實反映使用者選的子集）。
+
+    Args:
+        dom_machine: 域機器值（l1_code）。
+        ids: 目標特徵 id 清單（已由呼叫端截到 N 筆）。
+    """
+    if not ids:
+        return []
+    with T.get_engine().connect() as c:
+        pol = c.execute(
+            text(
+                "SELECT source_id, min(polarity) AS polarity FROM judgments "
+                "WHERE source=:s AND source_id = ANY(:ids) GROUP BY source_id"
+            ),
+            {"s": _SOURCE, "ids": ids},
+        ).all()
+        prod = c.execute(
+            text(
+                "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
+                "FROM judgments WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
+            ),
+            {"s": _SOURCE, "d": dom_machine, "ids": ids},
+        ).all()
+    by_rec: dict[str, dict] = {
+        sid: {"id": sid, "polarity": pol_ or "negative", "ref_l2s": [], "ref_primary": None}
+        for sid, pol_ in pol
+    }
+    for sid, l2, is_primary in prod:
+        if sid in by_rec:
+            by_rec[sid]["ref_l2s"].append(l2)
+            if is_primary:
+                by_rec[sid]["ref_primary"] = l2
+    texts = _review_texts(list(by_rec))
+    return [dict(v, text=texts.get(k, "")) for k, v in by_rec.items() if texts.get(k, "").strip()]
+
+
+def sample_polarity_by_ids(ids: list[str]) -> list[dict]:
+    """極性參照集（按指定 id 清單；不做三態平衡——樣本即篩選結果）。"""
+    if not ids:
+        return []
+    with T.get_engine().connect() as c:
+        rows = c.execute(
+            text(
+                "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
+                "FROM judgments WHERE source=:s AND source_id = ANY(:ids) "
+                "AND sentiment_score IS NOT NULL GROUP BY source_id"
+            ),
+            {"s": _SOURCE, "ids": ids},
+        ).all()
+    out = [{"id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows]
+    texts = _review_texts([r["id"] for r in out])
+    return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
+
+
 # ─────────────────────────── 指標（純函式，與 I/O 解耦→可單元測）───────────────────────────
 def compute_domain_metrics(records: list[dict]) -> dict:
     """逐筆 {ref_l2s, ref_primary, pack_l2s} → 域指標（純函式，不觸 LLM/DB）。
@@ -448,16 +504,20 @@ def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dic
     }
 
 
-def run_eval(prompt_arg: str, n: int, *, diagnostic: bool = True) -> dict:
+def run_eval(
+    prompt_arg: str, n: int, *, diagnostic: bool = True, filter_ids: list[str] | None = None
+) -> dict:
     """單支 prompt 評測（production 參照）：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
 
     Args:
         prompt_arg: "polarity" 或 "C-1".."C-6"。
         n: 樣本數（UI 快測建議 ≤20；抽樣 md5 穩定、跨 run 可比）。
         diagnostic: 是否開診斷理由（mismatches 每案附 reason；預設開）。
+        filter_ids: 給定時樣本＝此特徵 id 清單截前 n 筆（B1：按目前歸因列表篩選抽樣，取代
+            md5 全表抽樣，忠實反映使用者選的子集）；None＝沿用現行 md5 抽樣（預設行為不變）。
 
     Returns:
-        {prompt, source, model, n, <指標>, mismatches}。
+        {prompt, source, model, n, <指標>, mismatches, filtered}。
 
     Raises:
         ValueError: 未知 prompt / 域；stub 模式（無 token）拒跑避免假結果。
@@ -466,11 +526,20 @@ def run_eval(prompt_arg: str, n: int, *, diagnostic: bool = True) -> dict:
         raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
     pid = prompt_id_of(prompt_arg)
     if prompt_arg == "polarity":
-        result = _run_polarity(pid, sample_polarity(n), diagnostic=diagnostic)
+        samples = (
+            sample_polarity_by_ids(filter_ids[:n]) if filter_ids is not None else sample_polarity(n)
+        )
+        result = _run_polarity(pid, samples, diagnostic=diagnostic)
     else:
         dom = domain_of(prompt_arg)
         if not dom:
             raise ValueError(f"未知域：{prompt_arg}")
-        result = _run_domain(pid, prompt_arg, sample_domain(dom, n), diagnostic=diagnostic)
+        samples = (
+            sample_domain_by_ids(dom, filter_ids[:n])
+            if filter_ids is not None
+            else sample_domain(dom, n)
+        )
+        result = _run_domain(pid, prompt_arg, samples, diagnostic=diagnostic)
     result["source"] = "production"
+    result["filtered"] = filter_ids is not None
     return result

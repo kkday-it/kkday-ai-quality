@@ -170,6 +170,8 @@ export interface PromptEvalResult {
   source: string;
   model: string;
   n: number;
+  /** 樣本是否來自 B1 篩選子集（true＝filters 給定，抽樣＝篩選結果；false＝md5 全表抽樣）。 */
+  filtered?: boolean;
   /** 域 prompt 指標。 */
   primary_match_rate?: number | null;
   abstain_correct_rate?: number | null;
@@ -191,12 +193,17 @@ export interface PromptEvalResult {
 }
 
 /** 單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標 + 分歧（消耗 LLM 額度）。
- * @param prompt "polarity" 或 "C-1".."C-6"（呼叫端由 rule_code 去 prompt_ 前綴）。 */
-export const evalPrompt = (prompt: string, n: number): Promise<PromptEvalResult> =>
+ * @param prompt "polarity" 或 "C-1".."C-6"（呼叫端由 rule_code 去 prompt_ 前綴）。
+ * @param filters B1：給定時樣本＝歸因列表當前篩選子集（`PrejudgeBody` 同形，取代 md5 全表抽樣）。 */
+export const evalPrompt = (
+  prompt: string,
+  n: number,
+  filters?: PrejudgeBody,
+): Promise<PromptEvalResult> =>
   j<PromptEvalResult>(`${BASE}/v1/judgment/prompt-eval`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, n }),
+    body: JSON.stringify({ prompt, n, filters }),
   });
 
 /** 六域裁決（B0 診斷理由 overlay）：命中域帶歸因+理由，棄權域帶棄權理由——六域皆有交代。 */
