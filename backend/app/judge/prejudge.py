@@ -394,7 +394,7 @@ def _domain_boundaries() -> str:
     """六域界線塊：各域 L1 canon + forbid（鄰域路由），組成「先判域」的域層界線。
 
     修誤判根因：判官原本只吃 _ATTR_SYS 通用文字 + 每葉 canon 一行，rule tree 的 L1 域判準
-    （canon「改頁面文案就能解決」+ forbid「抱怨東西實體品質差→C-2」「頁面有寫客人沒看→C-6-3」等
+    （canon「改頁面文案就能解決」+ forbid「抱怨東西實體品質差→C-2」「頁面有寫客人沒看→C-6-6」等
     鄰域排除）從未進 prompt，導致非內容評論大量誤落商品內容。此處把 ai_judge.l1_judgment 的域界線
     注入 active 單次 prompt（免啟 cascade）。內容隨 DB active rule 版本穩定，屬靜態前綴、命中 caching。
     """

@@ -199,13 +199,13 @@ def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
     )
     monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
     monkeypatch.setattr(
-        prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-1": "customer"}
+        prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-3": "customer"}
     )
     calls: list[frozenset] = []
 
     def fake_l2s(text, model, max_n, polarity="negative", exclude=frozenset()):
         calls.append(exclude)
-        return ["C-6-1"] if exclude else ["C-3-4"]  # 首輪選錯面向；重路由改判 C-6-1
+        return ["C-6-3"] if exclude else ["C-3-4"]  # 首輪選錯面向；重路由改判 C-6-3
 
     seen_b: list[tuple[str, str]] = []
 
@@ -223,7 +223,7 @@ def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
     monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["customer"]
-    assert seen_b == [("supplier", "C-3-4"), ("customer", "C-6-1")]  # Stage B 收到面向聚焦
+    assert seen_b == [("supplier", "C-3-4"), ("customer", "C-6-3")]  # Stage B 收到面向聚焦
     assert len(calls) == 2 and "C-3-4" in calls[1]  # 重路由排除集為 L2 code
 
 
@@ -578,7 +578,7 @@ def test_resolve_attrs_secondary_min_confidence_gate(monkeypatch, fixed_config) 
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
     primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
-    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.55}
+    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.55}
     monkeypatch.setattr(
         prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(primary), dict(weak2nd)]
     )
@@ -590,7 +590,7 @@ def test_resolve_attrs_secondary_min_confidence_gate(monkeypatch, fixed_config) 
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.55 次要歸因被殺、主因保留
     # 單條 primary 信心 0.4（低於 secondary 閘門、高於 attr 閘門）→ 不受影響（閘門只管非 primary）
-    lone = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.4}
+    lone = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.4}
     monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(lone)])
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert len(out) == 1
