@@ -48,14 +48,16 @@ DOMAIN_PROMPT_IDS: tuple[str, ...] = tuple(pid for pid in PROMPT_IDS if pid != P
 PROMPT_RULE_CODES: tuple[str, ...] = tuple(_PROMPT_RULE.values())
 
 # 左選單顯示 label（list_rule_meta 對 prompt_* 無 tree，回退 _meta.label）。
+# 純中文名，不重複帶 C-N 後綴——RuleManager 選單已另外把 code（C-1 等）當前綴徽章顯示，
+# label 若又帶「C-1」會與前綴徽章重複（「C-1　商品內容 C-1」）。
 _PROMPT_LABEL: dict[str, str] = {
     "00_polarity": "情緒傾向（Step1）",
-    "01_C-1_content": "商品內容 C-1",
-    "02_C-2_quality": "商品品質 C-2",
-    "03_C-3_supplier": "供應商履約 C-3",
-    "04_C-4_platform": "平台與系統 C-4",
-    "05_C-5_service": "客服營運 C-5",
-    "06_C-6_customer": "理解期待 C-6",
+    "01_C-1_content": "商品內容",
+    "02_C-2_quality": "商品品質",
+    "03_C-3_supplier": "供應商履約",
+    "04_C-4_platform": "平台與系統",
+    "05_C-5_service": "客服營運",
+    "06_C-6_customer": "理解期待",
 }
 
 # ── 模組級解析快取（lazy；reload() 清空）──
