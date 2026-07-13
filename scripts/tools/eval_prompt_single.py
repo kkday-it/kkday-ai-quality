@@ -63,10 +63,8 @@ def _prompt_id_of(arg: str) -> str:
 
 
 def _domain_of_prompt(arg: str) -> str:
-    """--prompt C-N → 對應歸因分類域機器值（自樹 tree[0].domain）。"""
-    content = db.get_rule_active(arg) or db.default_rule_content(arg)
-    tree = (content or {}).get("tree") or []
-    return tree[0].get("domain", "") if tree else ""
+    """--prompt C-N → 對應歸因分類域機器值（自 prompt_source 檔名尾綴派生，如 C-3→supplier）。"""
+    return prompt_source._domain_of(_prompt_id_of(arg))
 
 
 def _l2_of(code: str) -> str:
@@ -233,8 +231,10 @@ def _run_domain(pid: str, dom_code: str, samples: list[dict], repeats: int) -> d
     records: list[dict] = []
     jitter = 0  # primary 抖動計數（repeats>1 時，同筆多次 primary 不一致）
     for i, s in enumerate(samples, 1):
-        user = p["user_template"].replace("{POLARITY}", s["polarity"]).replace(
-            "{TEXT}", s["text"][:2000]
+        user = (
+            p["user_template"]
+            .replace("{POLARITY}", s["polarity"])
+            .replace("{TEXT}", s["text"][:2000])
         )
         primaries: list[str] = []
         last_l2s: list[str] = []
@@ -343,12 +343,16 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=20, help="樣本數（md5 穩定排序，跨 run 可比）")
     ap.add_argument("--user", required=True, help="user_settings token 來源（email）")
     ap.add_argument(
-        "--source", default="production", choices=["production", "golden", "mock"],
+        "--source",
+        default="production",
+        choices=["production", "golden", "mock"],
         help="參照集：production（現行判決）/ golden（true_label 人審真值）/ mock（合成集）",
     )
     ap.add_argument("--mock-file", default="", help="--source mock 的 mock_testset_gen 輸出 JSON")
     ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（空＝active）")
-    ap.add_argument("--compare", default="", help="baseline.json 路徑（逐案 diff improvements/regressions）")
+    ap.add_argument(
+        "--compare", default="", help="baseline.json 路徑（逐案 diff improvements/regressions）"
+    )
     ap.add_argument("--repeats", type=int, default=1, help="同樣本重跑次數（>1 報 primary 抖動）")
     ap.add_argument("--out", default="", help="結果 JSON 輸出路徑（空＝只印 stdout）")
     args = ap.parse_args()
@@ -368,7 +372,10 @@ def main() -> None:
     pid = _prompt_id_of(args.prompt)
     if args.prompt == "polarity":
         samples = _sample_polarity(args.n)
-        print(f"樣本 {len(samples)} 則（三態分層·source={args.source}）· model={eff.get('model')}", flush=True)
+        print(
+            f"樣本 {len(samples)} 則（三態分層·source={args.source}）· model={eff.get('model')}",
+            flush=True,
+        )
         result = _run_polarity(pid, samples)
     else:
         dom = _domain_of_prompt(args.prompt)
