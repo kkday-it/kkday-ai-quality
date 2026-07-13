@@ -1,11 +1,11 @@
-"""Prompt-as-Source 載入層測試：parse / load（DB-first→檔案 fallback）/ validate / drift 護欄 / seed。
+"""Prompt-as-Source 載入層測試：parse（含 ## Meta）/ load（DB-first→檔案 fallback）/ validate / seed。
 
-drift 雙護欄（樹↔prompt 唯二耦合點）在此鎖死：
-- 存檔驗證：域 prompt Schema 的 l2_code enum ⊆ 樹該域 L2 codes（validate 單元測）。
-- 聯集護欄：六支域 prompt enum 聯集 == 樹六域全 L2 codes（單邊改動即紅）。
+自洽 drift 護欄（樹退役後 prompt 內部同源）在此鎖死：
+- 存檔驗證：域 prompt 的 Schema l2_code enum == Meta.facets codes（validate 單元測）。
+- structure()：6 支域 prompt 的 ## Meta 彙整供 ai_judge 建索引（取代 DB 樹）。
 
-測試庫（temp_db）為空 → ai_judge / prompt_source 皆回退讀 config/ai_judge seed 檔與 docs/prompts md
-（皆 git 版控現行），故 drift 測試確定性、不依賴外部 DB 狀態。
+測試庫（temp_db）為空 → prompt_source 回退讀 docs/prompts md（git 版控現行，含 Meta），
+故測試確定性、不依賴外部 DB 狀態。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import copy
 
 import pytest
 
-from app.core import ai_judge, db
+from app.core import db
 from app.judge import prompt_source as ps
 
 # ─────────────────────────── 純解析（無 DB）───────────────────────────
@@ -56,11 +56,23 @@ _SAMPLE_MD = """# 範例判官
   }
 }
 ```
+
+## Meta
+
+```json
+{
+  "domain": "supplier",
+  "domain_label": "供應商履約",
+  "action": "penalize_breach",
+  "owner": "",
+  "facets": [{"code": "C-3-1", "label": "人員服務"}, {"code": "C-3-2", "label": "駕駛接送"}]
+}
+```
 """
 
 
-def test_parse_md_extracts_four_sections():
-    """parse_md 正確抽出 title/system/user_template/schema 四節。"""
+def test_parse_md_extracts_sections_and_meta():
+    """parse_md 正確抽出 title/system/user_template/schema + 選填 ## Meta。"""
     p = ps.parse_md(_SAMPLE_MD)
     assert p["title"] == "範例判官"
     assert "<judge>" in p["system"] and "輸出 JSON" in p["system"]
@@ -69,6 +81,8 @@ def test_parse_md_extracts_four_sections():
         "C-3-1",
         "C-3-2",
     ]
+    assert p["meta"]["domain"] == "supplier"
+    assert {f["code"] for f in p["meta"]["facets"]} == {"C-3-1", "C-3-2"}
 
 
 def test_parse_md_missing_section_raises():
@@ -103,8 +117,7 @@ def test_load_all_prompts_from_file(temp_db):
 
 
 def test_validate_all_committed_prompts_pass(temp_db):
-    """git 版控的 7 支 md 全部通過 validate（含 drift 護欄；讀現行 seed 樹）。"""
-    ai_judge.reload()
+    """git 版控的 7 支 md 全部通過 validate（含自洽 drift 護欄:域 prompt enum==Meta.facets）。"""
     from app.core.paths import DOCS_PROMPTS_DIR
 
     for pid in ps.PROMPT_IDS:
@@ -126,28 +139,33 @@ def test_validate_domain_missing_polarity_raises(temp_db):
         ps.validate(bad, "03_C-3_supplier")
 
 
-def test_validate_enum_superset_of_tree_raises(temp_db):
-    """域 prompt Schema enum 含樹外 code（如 C-3-99）→ drift 護欄拒（ValueError）。"""
-    ai_judge.reload()
+def test_validate_enum_meta_mismatch_raises(temp_db):
+    """域 prompt Schema enum 與 Meta.facets 不一致（enum 有 C-3-99、Meta 無）→ 自洽護欄拒（ValueError）。"""
     bad = _SAMPLE_MD.replace('["C-3-1", "C-3-2"]', '["C-3-1", "C-3-99"]')
-    with pytest.raises(ValueError, match="樹外 code"):
+    with pytest.raises(ValueError, match="不一致"):
         ps.validate(bad, "03_C-3_supplier")
 
 
-# ─────────────────────────── drift 聯集護欄 ───────────────────────────
-def test_domain_enums_union_equals_tree_l2_codes(temp_db):
-    """六支域 prompt 的 l2_code enum 聯集 == 樹六域全 L2 codes（單邊改動即紅）。"""
-    ai_judge.reload()
+def test_validate_domain_missing_meta_raises(temp_db):
+    """域 prompt 缺 ## Meta 結構節 → ValueError。"""
+    bad = _SAMPLE_MD.split("## Meta")[0].rstrip()
+    with pytest.raises(ValueError, match="Meta"):
+        ps.validate(bad, "03_C-3_supplier")
+
+
+# ─────────────────────────── 自洽 drift 護欄 ───────────────────────────
+def test_domain_schema_enum_equals_meta_facets(temp_db):
+    """每支域 prompt 的 Schema l2_code enum == Meta.facets codes（判準 schema 與結構註冊表同源自洽）。"""
     ps.reload()
-    prompt_union: set[str] = set()
-    tree_union: set[str] = set()
+    facets_by_domain = {
+        d["domain"]: {f["code"] for f in d["facets"]} for d in ps.structure()["domains"]
+    }
     for pid in ps.DOMAIN_PROMPT_IDS:
-        prompt_union |= ps.schema_l2_enum_for(pid)
-        domain = ps._domain_of(pid)
-        tree_union |= ps.tree_l2_codes(domain)
-    assert prompt_union == tree_union, (
-        f"prompt-only={sorted(prompt_union - tree_union)}；tree-only={sorted(tree_union - prompt_union)}"
-    )
+        enum = ps.schema_l2_enum_for(pid)
+        meta = ps.load(pid)["meta"] or {}
+        facet_codes = {f["code"] for f in (meta.get("facets") or [])}
+        assert enum == facet_codes, f"{pid}: enum={sorted(enum)} facets={sorted(facet_codes)}"
+        assert facet_codes == facets_by_domain.get(meta.get("domain"), set())
 
 
 # ─────────────────────────── DB 版本化 / seed ───────────────────────────

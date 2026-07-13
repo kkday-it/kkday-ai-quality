@@ -99,17 +99,26 @@ def _extract_fenced(text: str, heading: str) -> str:
     return fm.group(1).rstrip("\n")
 
 
+def _extract_fenced_opt(text: str, heading: str) -> str | None:
+    """取 `## {heading}` 之後首個圍欄內容;該節不存在回 None（選填節,如域 prompt 的 ## Meta）。"""
+    if not re.search(rf"(?m)^##[ \t]+{re.escape(heading)}[ \t]*$", text):
+        return None
+    return _extract_fenced(text, heading)
+
+
 def parse_md(text: str) -> dict[str, Any]:
-    """解析單支 prompt md → {title, system, user_template, schema}。
+    """解析單支 prompt md → {title, system, user_template, schema, meta}。
 
     Args:
-        text: 完整 md 全文（含 H1 + System/User/Schema 三節圍欄）。
+        text: 完整 md 全文（含 H1 + System/User/Schema 三節圍欄;域 prompt 另含選填 ## Meta 結構節）。
 
     Returns:
-        {"title": str, "system": str, "user_template": str, "schema": dict}。
+        {"title": str, "system": str, "user_template": str, "schema": dict, "meta": dict|None}。
+        meta＝## Meta 節的 JSON（域 prompt 的分類結構:{domain, domain_label, action, owner, facets:[{code,label}]}）;
+        polarity prompt 無此節 → meta=None。
 
     Raises:
-        ValueError: 缺 H1／缺任一節／圍欄缺失／Schema 非合法 JSON。
+        ValueError: 缺 H1／缺任一必節／圍欄缺失／Schema 或 Meta 非合法 JSON。
     """
     title = _extract_title(text)
     if not title:
@@ -123,7 +132,22 @@ def parse_md(text: str) -> dict[str, Any]:
         raise ValueError(f"Schema JSON 解析失敗：{e}") from None
     if not isinstance(schema, dict):
         raise ValueError("Schema 須為 JSON object")
-    return {"title": title, "system": system, "user_template": user_template, "schema": schema}
+    meta_raw = _extract_fenced_opt(text, "Meta")
+    meta: dict[str, Any] | None = None
+    if meta_raw is not None:
+        try:
+            meta = json.loads(meta_raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Meta JSON 解析失敗：{e}") from None
+        if not isinstance(meta, dict):
+            raise ValueError("Meta 須為 JSON object")
+    return {
+        "title": title,
+        "system": system,
+        "user_template": user_template,
+        "schema": schema,
+        "meta": meta,
+    }
 
 
 # ─────────────────────────── 載入（DB-first → 檔案 fallback）───────────────────────────
@@ -200,26 +224,10 @@ def default_prompt_content(rule_code: str) -> dict[str, Any]:
     }
 
 
-# ─────────────────────────── 驗證（存檔閘門 + drift 護欄）───────────────────────────
-def _domain_of(prompt_id: str) -> str | None:
-    """域 prompt → 對應歸因分類域機器值（自 C-N 樹 tree[0].domain）；polarity 回 None。
-
-    不硬編碼域機器值——由樹 SSOT 推導，樹改域名時自動跟隨（drift 護欄據此對照 enum）。
-    """
-    rule_code = _PROMPT_RULE.get(prompt_id, "")
-    if not rule_code.startswith("prompt_C-"):
-        return None
-    taxo_code = rule_code[len("prompt_") :]  # prompt_C-3 → C-3
-    from app.core import db
-
-    content = db.get_rule_active(taxo_code)
-    if content is None:
-        try:
-            content = db.default_rule_content(taxo_code)
-        except FileNotFoundError:
-            return None
-    tree = (content or {}).get("tree") or []
-    return tree[0].get("domain") if tree else None
+# ─────────────────────────── 結構（## Meta）+ 驗證（自洽 drift 護欄）───────────────────────────
+def _is_domain(prompt_id: str) -> bool:
+    """是否域 prompt（有 facets 結構;polarity 無）。"""
+    return _PROMPT_RULE.get(prompt_id, "").startswith("prompt_C-")
 
 
 def _schema_l2_enum(schema: dict[str, Any]) -> set[str]:
@@ -233,23 +241,49 @@ def _schema_l2_enum(schema: dict[str, Any]) -> set[str]:
     return set(enum)
 
 
-def tree_l2_codes(domain: str) -> set[str]:
-    """樹某域所有 L2 code 集合（自 ai_judge.l3_nodes_for_domains 攤平節點的 l2_code）。"""
-    from app.core import ai_judge
-
-    return {n["l2_code"] for n in ai_judge.l3_nodes_for_domains([domain]) if n.get("l2_code")}
+def _meta_facet_codes(meta: dict[str, Any] | None) -> set[str]:
+    """Meta.facets 的 code 集合。"""
+    facets = (meta or {}).get("facets") or []
+    return {f.get("code", "") for f in facets if isinstance(f, dict) and f.get("code")}
 
 
 def schema_l2_enum_for(prompt_id: str) -> set[str]:
-    """某域 prompt（active/檔案）Schema 的 l2_code enum 集合（供 pytest 聯集護欄）。"""
+    """某域 prompt（active/檔案）Schema 的 l2_code enum 集合（供 pytest）。"""
     return _schema_l2_enum(load(prompt_id)["schema"])
+
+
+def structure() -> dict[str, Any]:
+    """彙整 6 支域 prompt 的分類結構（## Meta）——供 ai_judge loader 建索引,**取代 DB 樹**。
+
+    Returns:
+        {"domains": [{domain, domain_label, action, owner, facets:[{code,label}]}, ...]}（依 prompt_id 序;
+        polarity 不含）。domain＝機器值（content/supplier…）;facets＝該域 L2 面向 code→label。
+    """
+    out: list[dict[str, Any]] = []
+    for pid in DOMAIN_PROMPT_IDS:
+        m = load(pid).get("meta") or {}
+        out.append(
+            {
+                "domain": m.get("domain", ""),
+                "domain_label": m.get("domain_label", ""),
+                "action": m.get("action", ""),
+                "owner": m.get("owner", ""),
+                "facets": [
+                    {"code": f.get("code", ""), "label": f.get("label", "")}
+                    for f in (m.get("facets") or [])
+                    if isinstance(f, dict) and f.get("code")
+                ],
+            }
+        )
+    return {"domains": out}
 
 
 def validate(text: str, prompt_id: str) -> None:
     """存檔前驗證 prompt md（存檔閘門）；不過拋 ValueError。
 
     驗：三節可解析 + Schema 合法 JSON Schema + User 含 {TEXT}（域另需 {POLARITY}）
-    + 域 prompt Schema 的 l2_code enum ⊆ 樹該域 L2 codes（drift 護欄唯一耦合點）。
+    + **自洽 drift 護欄**:域 prompt 的 Schema l2_code enum **==** Meta.facets codes（判準 schema 與
+    結構註冊表同源自洽,取代原「enum ⊆ 樹」——樹已退役,結構在 Meta）。
 
     Args:
         text: 待存 md 全文。
@@ -272,18 +306,20 @@ def validate(text: str, prompt_id: str) -> None:
     if "{TEXT}" not in parsed["user_template"]:
         raise ValueError("User 模板必須含 {TEXT} 佔位符")
 
-    domain = _domain_of(prompt_id)
-    if domain is None:  # polarity：無域、無 l2 enum，止於前述通用驗證
+    if not _is_domain(prompt_id):  # polarity：無域、無 facets,止於前述通用驗證
         return
 
     if "{POLARITY}" not in parsed["user_template"]:
         raise ValueError("域 prompt 的 User 模板必須含 {POLARITY} 佔位符")
 
+    meta = parsed.get("meta")
+    if not isinstance(meta, dict) or not meta.get("domain"):
+        raise ValueError("域 prompt 缺 ## Meta 結構節（需含 domain + facets）")
+
     enum = _schema_l2_enum(parsed["schema"])
-    tree_codes = tree_l2_codes(domain)
-    extra = enum - tree_codes
-    if extra:
+    facet_codes = _meta_facet_codes(meta)
+    if enum != facet_codes:
         raise ValueError(
-            f"Schema l2_code enum 含樹外 code {sorted(extra)}"
-            f"（域 {domain} 樹 L2={sorted(tree_codes)}）——先改樹或修正 enum"
+            "Schema l2_code enum 與 Meta.facets 不一致:"
+            f"僅 enum={sorted(enum - facet_codes)}｜僅 Meta={sorted(facet_codes - enum)}"
         )
