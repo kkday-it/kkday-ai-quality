@@ -1,31 +1,32 @@
-"""單支 Prompt 評測 harness — 對 7 支評測 prompt（polarity / C-1~C-6）逐支獨立驗證調適效果。
+"""單支 Prompt 評測 harness — 對 7 支判決 prompt（polarity / C-1~C-6）逐支獨立驗證調適效果。
 
-定位：調適閉環的驗證端。改單支模板（config/ai_judge/prompt_templates/）或該域 DB 規則後，
-只跑這一支對 N 則已判評論驗證，與 production judgments 比對出該支指標——不跑其他六支、
-不動 production 判決管線。prompt 由 gen_eval_prompt_pack 的渲染函式**即時**從 DB active 規則
-+ 模板渲染（非讀舊 pack 檔），天然不過期。
+定位：Prompt-as-Source 調適閉環的驗證端。改單支 prompt（docs/prompts/prompts/*.md 或線上熱編 DB
+active 版）後，只跑這一支對 N 則參照集驗證，出該支指標——不跑其他六支、不動 production 判決管線。
+prompt 直接讀 **prompt_source**（判決引擎同源 SSOT：DB active→檔案 fallback），天然與線上一致。
 
-指標：
-    域 prompt（--prompt C-N）：primary 一致率（production primary 落本域者，本支最高信心 l2 是否同碼）、
-        棄權正確率（production 無本域歸因者，本支是否回空）、命中率（production 有本域歸因者本支非空）、
-        多報率（本支條數 > production 本域條數）。
-    極性 prompt（--prompt polarity）：polarity 一致率 + sentiment 完全一致率。
+參照集（--source）：
+- production（預設）：judgments 現行判決為參照（本域正/他域負各半），量測「與現行判決一致度」。
+- golden：judgments.true_label（人工標真值，非空）為參照，量測「與人審真值一致度」。
+- mock：mock_testset_gen 合成集（--mock-file；gold_l1/gold_l2 為真值），防洩題、可控分佈。
 
-抽樣：md5(source_id) 排序＝跨 run 穩定（同 N 同樣本，模板 A/B 前後可比）。
-LLM token 走 user_settings（--user → effective_llm_dict → set_current；stub 拒跑）；
-關 exact-cache 讀取量測真實行為。
+指標（純函式 _compute_*_metrics，與 I/O 解耦、可單元測）：
+    域 prompt：primary 一致率 / 棄權正確率 / 命中率 / 多報率。
+    極性 prompt：polarity 一致率 + sentiment 一致率（參照恆用 production polarity）。
 
-用法（scripts/ 未掛載，先 docker cp——比照 gen_eval_prompt_pack.py 慣例）：
-    docker cp scripts/tools/{eval_prompt_single.py,gen_eval_prompt_pack.py} \
-        kkday-ai-quality-backend:/app/scripts/tools/
+A/B（--compare baseline.json）：對上一輪結果逐案 diff（improvements / regressions），調適前後可比。
+一致性（--repeats N）：同樣本重跑 N 次，報 primary 抖動（prompt 穩定度）。
+抽樣 md5(id) 排序＝跨 run 穩定。LLM token 走 user_settings（--user；stub 拒跑），關 exact-cache 量測真實。
+
+用法（scripts/ 未掛載，先 docker cp）：
+    docker cp scripts/tools/eval_prompt_single.py kkday-ai-quality-backend:/app/scripts/tools/
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_prompt_single.py \
-        --prompt C-3 --n 20 --user alvin.bian@kkday.com --out /app/tmp/eval_C-3.json
+        --prompt C-3 --n 60 --source mock --mock-file /app/tmp/mock_testset.json \
+        --user alvin.bian@kkday.com --compare /app/tmp/BASELINE_C-3.json --out /app/tmp/eval_C-3.json
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import sys
@@ -37,26 +38,42 @@ if _BACKEND not in sys.path:
 
 from sqlalchemy import text  # noqa: E402
 
-from app.core import db  # noqa: E402
+from app.core import ai_judge, db  # noqa: E402
 from app.core import settings as app_settings  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
-from app.core.db._shared import read_judgment_config  # noqa: E402
+from app.judge import prompt_source  # noqa: E402
 from app.judge.llm import client  # noqa: E402
 
 _SOURCE = "product_reviews"
 
 
-def _load_generator():
-    """載入同目錄的 gen_eval_prompt_pack（渲染函式單一來源，禁止第三份 prompt 組裝邏輯）。"""
-    path = Path(__file__).with_name("gen_eval_prompt_pack.py")
-    spec = importlib.util.spec_from_file_location("gen_eval_prompt_pack", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+# ─────────────────────────── prompt 對照 ───────────────────────────
+def _prompt_id_of(arg: str) -> str:
+    """--prompt 值（polarity / C-1..C-6）→ prompt_source 的 prompt_id。"""
+    if arg == "polarity":
+        return prompt_source.POLARITY_ID
+    pid = prompt_source.prompt_id_for_rule(f"prompt_{arg}")  # C-3 → prompt_C-3 → 03_C-3_supplier
+    if not pid:
+        raise SystemExit(f"未知 prompt：{arg}（須為 polarity 或 C-1..C-6）")
+    return pid
 
 
+def _domain_of_prompt(arg: str) -> str:
+    """--prompt C-N → 對應歸因分類域機器值（自樹 tree[0].domain）。"""
+    content = db.get_rule_active(arg) or db.default_rule_content(arg)
+    tree = (content or {}).get("tree") or []
+    return tree[0].get("domain", "") if tree else ""
+
+
+def _l2_of(code: str) -> str:
+    """任一 C-code（L2/L3）→ 其 L2 code（自攤平樹節點）；未知回原碼。"""
+    n = ai_judge.l3_by_code(code) or {}
+    return n.get("l2_code") or code
+
+
+# ─────────────────────────── 取文字 ───────────────────────────
 def _review_texts(ids: list[str]) -> dict[str, str]:
-    """rec_oid → 評論文字（title + desc 合併，對齊判決輸入）。"""
+    """rec_oid → 評論文字（title + desc，對齊判決輸入）。"""
     if not ids:
         return {}
     with T.get_engine().connect() as c:
@@ -70,10 +87,11 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
     return {sid: (f"{t}\n{d}".strip()) for sid, t, d in rows}
 
 
-def _sample_domain(dom_machine: str, n: int) -> list[dict]:
-    """域評測集：production 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
+# ─────────────────────────── 抽樣（依 --source）───────────────────────────
+def _sample_domain_production(dom_machine: str, n: int) -> list[dict]:
+    """production 參照：judgments 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
 
-    dom_machine＝judgments.l1_code 存的機器值（supplier/content…），非 C-N。
+    回統一參照記錄：{id, text, polarity, ref_l2s, ref_primary}。
     """
     half = n // 2
     with T.get_engine().connect() as c:
@@ -99,161 +117,338 @@ def _sample_domain(dom_machine: str, n: int) -> list[dict]:
         prod = c.execute(
             text(
                 "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
-                "FROM judgments WHERE source=:s AND l1_code=:d "
-                "AND source_id = ANY(:ids)"
+                "FROM judgments WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
             ),
             {"s": _SOURCE, "d": dom_machine, "ids": [r[0] for r in pos] + [r[0] for r in neg]},
         ).all()
     by_rec: dict[str, dict] = {}
     for sid, pol in list(pos) + list(neg):
-        by_rec[sid] = {"source_id": sid, "polarity": pol, "prod_l2s": [], "prod_primary": None}
+        by_rec[sid] = {"id": sid, "polarity": pol, "ref_l2s": [], "ref_primary": None}
     for sid, l2, is_primary in prod:
-        by_rec[sid]["prod_l2s"].append(l2)
+        by_rec[sid]["ref_l2s"].append(l2)
         if is_primary:
-            by_rec[sid]["prod_primary"] = l2
+            by_rec[sid]["ref_primary"] = l2
     texts = _review_texts(list(by_rec))
     return [dict(v, text=texts.get(k, "")) for k, v in by_rec.items() if texts.get(k, "").strip()]
 
 
+def _sample_domain_golden(dom_machine: str, n: int) -> list[dict]:
+    """golden 參照：judgments.true_label（人工標真值，非空）為參照；gold 屬本域＝正、他域＝棄權分母。"""
+    with T.get_engine().connect() as c:
+        rows = c.execute(
+            text(
+                "SELECT source_id, min(polarity) AS polarity, min(true_label) AS true_label "
+                "FROM judgments WHERE source=:s AND true_label IS NOT NULL AND true_label <> '' "
+                "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
+            ),
+            {"s": _SOURCE, "k": n},
+        ).all()
+    out: list[dict] = []
+    for sid, pol, tl in rows:
+        gl2 = _l2_of(tl)
+        gnode = ai_judge.l3_by_code(tl) or {}
+        gdom = gnode.get("l1_domain", "")
+        in_dom = gdom == dom_machine
+        out.append(
+            {
+                "id": sid,
+                "polarity": pol or "negative",
+                "ref_l2s": [gl2] if in_dom else [],
+                "ref_primary": gl2 if in_dom else None,
+            }
+        )
+    texts = _review_texts([r["id"] for r in out])
+    return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
+
+
+def _sample_domain_mock(dom_machine: str, n: int, mock_file: str) -> list[dict]:
+    """mock 參照：mock_testset_gen 合成集，gold_l1（域）為真值——本域＝應命中、他域＝應棄權。
+
+    mock 種子 gold 收斂至域層（無 L2 真值）→ 量測「該域 prompt 的域鑑別力」（命中/棄權/多報）；
+    primary 一致率對 mock N/A（ref_primary=None，除非 row 另帶 gold_l2）。本域正 : 他域負 各半。
+    """
+    rows = json.loads(Path(mock_file).read_text(encoding="utf-8"))
+    rows = rows if isinstance(rows, list) else rows.get("rows", [])
+    rows = sorted(rows, key=lambda r: str(r.get("id", "")))
+    out: list[dict] = []
+    for r in rows:
+        in_dom = r.get("gold_l1") == dom_machine
+        gl2 = r.get("gold_l2") or ""  # 未來若 mock 帶 L2 真值即啟用 primary 指標
+        out.append(
+            {
+                "id": str(r.get("id", "")),
+                "text": r.get("text", ""),
+                "polarity": r.get("polarity", "negative"),
+                "ref_l2s": ([gl2] if gl2 else ["·"]) if in_dom else [],  # 域命中標記
+                "ref_primary": gl2 if (in_dom and gl2) else None,
+            }
+        )
+    pos = [r for r in out if r["ref_l2s"] and r["text"].strip()][: n - n // 2]
+    neg = [r for r in out if not r["ref_l2s"] and r["text"].strip()][: n // 2]
+    return pos + neg
+
+
+def _sample_domain(dom_machine: str, n: int, source: str, mock_file: str) -> list[dict]:
+    """依 --source 抽域參照集。"""
+    if source == "golden":
+        return _sample_domain_golden(dom_machine, n)
+    if source == "mock":
+        if not mock_file:
+            raise SystemExit("--source mock 需 --mock-file <mock_testset.json>")
+        return _sample_domain_mock(dom_machine, n, mock_file)
+    return _sample_domain_production(dom_machine, n)
+
+
 def _sample_polarity(n: int) -> list[dict]:
-    """極性評測集：三態各 n/3（md5 穩定排序），帶 production polarity/sentiment 真值。"""
+    """極性參照集：三態各 n/3（md5 穩定），帶 production polarity/sentiment 真值（極性恆用 production 參照）。"""
     per = max(1, n // 3)
     out: list[dict] = []
     with T.get_engine().connect() as c:
         for pol in ("negative", "neutral", "positive"):
             rows = c.execute(
                 text(
-                    "SELECT source_id, min(polarity) AS polarity, "
-                    "min(sentiment_score) AS sentiment FROM judgments "
-                    "WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
+                    "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
+                    "FROM judgments WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
                     "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
                 ),
                 {"s": _SOURCE, "p": pol, "k": per},
             ).all()
-            out += [
-                {"source_id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows
-            ]
-    texts = _review_texts([r["source_id"] for r in out])
-    return [dict(r, text=texts.get(r["source_id"], "")) for r in out if texts.get(r["source_id"], "").strip()]
+            out += [{"id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows]
+    texts = _review_texts([r["id"] for r in out])
+    return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
 
 
-def _run_domain(gen, dom_code: str, samples: list[dict]) -> dict:
-    """跑單域 prompt 並計指標。"""
-    domains = gen._domains()
-    dom = next(d for d in domains if d["code"] == dom_code)
-    max_n = int(read_judgment_config().get("prejudge", {}).get("max_attributions", 2))
-    p = gen._domain_prompt(dom, domains, max_lift=8, max_n=max_n)
-    stats = {"primary_total": 0, "primary_match": 0, "abstain_total": 0, "abstain_ok": 0,
-             "hit_total": 0, "hit_ok": 0, "over_report": 0}
-    mismatches = []
-    for i, s in enumerate(samples, 1):
-        user = p["user_template"].replace("{POLARITY}", s["polarity"]).replace("{TEXT}", s["text"][:2000])
-        resp = client.chat_json(p["system"], user, stage=f"eval_{dom_code}", schema=p["schema"])
-        attrs = sorted(resp.get("attributions") or [], key=lambda a: -float(a.get("confidence") or 0))
-        pack_l2s = [a.get("l2_code") for a in attrs]
-        if s["prod_l2s"]:
-            stats["hit_total"] += 1
+# ─────────────────────────── 指標（純函式，與 I/O 解耦→可單元測）───────────────────────────
+def _compute_domain_metrics(records: list[dict]) -> dict:
+    """逐筆 {ref_l2s, ref_primary, pack_l2s} → 域指標（純函式，不觸 LLM/DB）。
+
+    primary 一致率＝ref 有本域 primary 者，pack 最高信心 l2 同碼比例；
+    棄權正確率＝ref 無本域歸因者，pack 亦回空比例；
+    命中率＝ref 有本域歸因者，pack 非空比例；多報率＝pack 條數 > ref 條數比例。
+    """
+    st = {
+        "primary_total": 0,
+        "primary_match": 0,
+        "abstain_total": 0,
+        "abstain_ok": 0,
+        "hit_total": 0,
+        "hit_ok": 0,
+        "over_report": 0,
+    }
+    for r in records:
+        ref_l2s, ref_primary, pack_l2s = r["ref_l2s"], r["ref_primary"], r["pack_l2s"]
+        if ref_l2s:
+            st["hit_total"] += 1
             if pack_l2s:
-                stats["hit_ok"] += 1
+                st["hit_ok"] += 1
         else:
-            stats["abstain_total"] += 1
+            st["abstain_total"] += 1
             if not pack_l2s:
-                stats["abstain_ok"] += 1
-        if s["prod_primary"]:
-            stats["primary_total"] += 1
-            if pack_l2s and pack_l2s[0] == s["prod_primary"]:
-                stats["primary_match"] += 1
-        if len(pack_l2s) > len(s["prod_l2s"]):
-            stats["over_report"] += 1
-        ok = (bool(pack_l2s) == bool(s["prod_l2s"])) and (
-            not s["prod_primary"] or (pack_l2s and pack_l2s[0] == s["prod_primary"])
-        )
-        if not ok:
-            mismatches.append({"source_id": s["source_id"], "prod": s["prod_l2s"],
-                               "prod_primary": s["prod_primary"], "pack": pack_l2s,
-                               "text": s["text"][:120]})
-        print(f"  [{i}/{len(samples)}] {s['source_id']} prod={s['prod_l2s'] or '棄權'} pack={pack_l2s or '棄權'}", flush=True)
-    n = len(samples)
+                st["abstain_ok"] += 1
+        if ref_primary:
+            st["primary_total"] += 1
+            if pack_l2s and pack_l2s[0] == ref_primary:
+                st["primary_match"] += 1
+        if len(pack_l2s) > len(ref_l2s):
+            st["over_report"] += 1
+    n = len(records)
+
+    def _rate(a: int, b: int) -> float | None:
+        return round(a / b, 3) if b else None
+
     return {
-        "prompt": dom_code, "n": n,
-        "primary_match_rate": round(stats["primary_match"] / stats["primary_total"], 3) if stats["primary_total"] else None,
-        "abstain_correct_rate": round(stats["abstain_ok"] / stats["abstain_total"], 3) if stats["abstain_total"] else None,
-        "hit_rate": round(stats["hit_ok"] / stats["hit_total"], 3) if stats["hit_total"] else None,
-        "over_report_rate": round(stats["over_report"] / n, 3) if n else None,
-        "counts": stats, "mismatches": mismatches,
+        "n": n,
+        "primary_match_rate": _rate(st["primary_match"], st["primary_total"]),
+        "abstain_correct_rate": _rate(st["abstain_ok"], st["abstain_total"]),
+        "hit_rate": _rate(st["hit_ok"], st["hit_total"]),
+        "over_report_rate": _rate(st["over_report"], n),
+        "counts": st,
     }
 
 
-def _run_polarity(gen, samples: list[dict]) -> dict:
-    """跑極性 prompt 並計一致率。"""
-    p = gen._polarity_prompt()
-    pol_ok = sent_ok = 0
-    mismatches = []
+def _compute_polarity_metrics(records: list[dict]) -> dict:
+    """逐筆 {polarity, sentiment, pack_polarity, pack_sentiment} → 極性指標（純函式）。"""
+    n = len(records)
+    pol_ok = sum(1 for r in records if r["pack_polarity"] == r["polarity"])
+    sent_ok = sum(1 for r in records if r["pack_sentiment"] == r["sentiment"])
+    return {
+        "n": n,
+        "polarity_match_rate": round(pol_ok / n, 3) if n else None,
+        "sentiment_match_rate": round(sent_ok / n, 3) if n else None,
+    }
+
+
+# ─────────────────────────── 跑單支（I/O：呼叫 LLM 產 records → 純函式算指標）───────────────────────────
+def _run_domain(pid: str, dom_code: str, samples: list[dict], repeats: int) -> dict:
+    """跑單域 prompt（repeats 次取穩定度）→ records → 指標。"""
+    p = prompt_source.load(pid)
+    records: list[dict] = []
+    jitter = 0  # primary 抖動計數（repeats>1 時，同筆多次 primary 不一致）
+    for i, s in enumerate(samples, 1):
+        user = p["user_template"].replace("{POLARITY}", s["polarity"]).replace(
+            "{TEXT}", s["text"][:2000]
+        )
+        primaries: list[str] = []
+        last_l2s: list[str] = []
+        for _ in range(max(1, repeats)):
+            resp = client.chat_json(p["system"], user, stage=f"eval_{dom_code}", schema=p["schema"])
+            attrs = sorted(
+                resp.get("attributions") or [], key=lambda a: -float(a.get("confidence") or 0)
+            )
+            last_l2s = [a.get("l2_code") for a in attrs]
+            primaries.append(last_l2s[0] if last_l2s else "")
+        if len(set(primaries)) > 1:
+            jitter += 1
+        records.append(
+            {
+                "id": s["id"],
+                "ref_l2s": s["ref_l2s"],
+                "ref_primary": s["ref_primary"],
+                "pack_l2s": last_l2s,
+                "text": s["text"][:120],
+            }
+        )
+        print(
+            f"  [{i}/{len(samples)}] {s['id']} ref={s['ref_l2s'] or '棄權'} pack={last_l2s or '棄權'}",
+            flush=True,
+        )
+    m = _compute_domain_metrics(records)
+    mismatches = [
+        {
+            "id": r["id"],
+            "ref": r["ref_l2s"],
+            "ref_primary": r["ref_primary"],
+            "pack": r["pack_l2s"],
+            "text": r["text"],
+        }
+        for r in records
+        if (bool(r["pack_l2s"]) != bool(r["ref_l2s"]))
+        or (r["ref_primary"] and not (r["pack_l2s"] and r["pack_l2s"][0] == r["ref_primary"]))
+    ]
+    out = {"prompt": dom_code, **m, "mismatches": mismatches, "records": records}
+    if repeats > 1:
+        out["primary_jitter_rate"] = round(jitter / len(samples), 3) if samples else None
+    return out
+
+
+def _run_polarity(pid: str, samples: list[dict]) -> dict:
+    """跑極性 prompt → records → 指標。"""
+    p = prompt_source.load(pid)
+    records: list[dict] = []
     for i, s in enumerate(samples, 1):
         user = p["user_template"].replace("{TEXT}", s["text"][:2000])
         resp = client.chat_json(p["system"], user, stage="eval_polarity", schema=p["schema"])
-        if resp.get("polarity") == s["polarity"]:
-            pol_ok += 1
-        else:
-            mismatches.append({"source_id": s["source_id"], "prod": s["polarity"],
-                               "pack": resp.get("polarity"), "text": s["text"][:120]})
-        if resp.get("sentiment") == s["sentiment"]:
-            sent_ok += 1
-        print(f"  [{i}/{len(samples)}] {s['source_id']} prod={s['polarity']}/{s['sentiment']} "
-              f"pack={resp.get('polarity')}/{resp.get('sentiment')}", flush=True)
-    n = len(samples)
-    return {"prompt": "polarity", "n": n,
-            "polarity_match_rate": round(pol_ok / n, 3) if n else None,
-            "sentiment_match_rate": round(sent_ok / n, 3) if n else None,
-            "mismatches": mismatches}
+        records.append(
+            {
+                "id": s["id"],
+                "polarity": s["polarity"],
+                "sentiment": s["sentiment"],
+                "pack_polarity": resp.get("polarity"),
+                "pack_sentiment": resp.get("sentiment"),
+                "text": s["text"][:120],
+            }
+        )
+        print(
+            f"  [{i}/{len(samples)}] {s['id']} ref={s['polarity']}/{s['sentiment']} "
+            f"pack={resp.get('polarity')}/{resp.get('sentiment')}",
+            flush=True,
+        )
+    m = _compute_polarity_metrics(records)
+    mismatches = [
+        {"id": r["id"], "ref": r["polarity"], "pack": r["pack_polarity"], "text": r["text"]}
+        for r in records
+        if r["pack_polarity"] != r["polarity"]
+    ]
+    return {"prompt": "polarity", **m, "mismatches": mismatches, "records": records}
+
+
+# ─────────────────────────── A/B 比較 ───────────────────────────
+def _compare(result: dict, baseline_path: str) -> dict:
+    """對 baseline.json 逐案 diff：本輪對而基線錯＝improvement、反之＝regression（以 primary 一致為準）。"""
+    base = json.loads(Path(baseline_path).read_text(encoding="utf-8"))
+    base_rec = {r["id"]: r for r in base.get("records", [])}
+
+    def _ok(r: dict) -> bool:
+        if "pack_polarity" in r:
+            return r["pack_polarity"] == r["polarity"]
+        return (bool(r["pack_l2s"]) == bool(r["ref_l2s"])) and (
+            not r["ref_primary"] or (r["pack_l2s"] and r["pack_l2s"][0] == r["ref_primary"])
+        )
+
+    improvements, regressions = [], []
+    for r in result.get("records", []):
+        b = base_rec.get(r["id"])
+        if not b:
+            continue
+        now, was = _ok(r), _ok(b)
+        if now and not was:
+            improvements.append(r["id"])
+        elif was and not now:
+            regressions.append(r["id"])
+    return {"improvements": improvements, "regressions": regressions}
 
 
 def main() -> None:
-    """CLI：--prompt polarity|C-1..C-6 → 抽樣 → 單支跑 → 指標 JSON。"""
-    ap = argparse.ArgumentParser(description="單支 Prompt 評測（polarity / C-1~C-6）")
+    """CLI：--prompt polarity|C-1..C-6 → 抽樣（--source）→ 單支跑 → 指標 JSON（可 --compare / --repeats）。"""
+    ap = argparse.ArgumentParser(description="單支 Prompt 評測（Prompt-as-Source 調適閉環驗證端）")
     ap.add_argument("--prompt", required=True, help="polarity 或 C-1..C-6")
     ap.add_argument("--n", type=int, default=20, help="樣本數（md5 穩定排序，跨 run 可比）")
     ap.add_argument("--user", required=True, help="user_settings token 來源（email）")
+    ap.add_argument(
+        "--source", default="production", choices=["production", "golden", "mock"],
+        help="參照集：production（現行判決）/ golden（true_label 人審真值）/ mock（合成集）",
+    )
+    ap.add_argument("--mock-file", default="", help="--source mock 的 mock_testset_gen 輸出 JSON")
     ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（空＝active）")
+    ap.add_argument("--compare", default="", help="baseline.json 路徑（逐案 diff improvements/regressions）")
+    ap.add_argument("--repeats", type=int, default=1, help="同樣本重跑次數（>1 報 primary 抖動）")
     ap.add_argument("--out", default="", help="結果 JSON 輸出路徑（空＝只印 stdout）")
     args = ap.parse_args()
 
     u = db.get_user_by_email(args.user)
     if not u:
-        print(f"❌ 找不到 user：{args.user}")
-        sys.exit(1)
+        raise SystemExit(f"❌ 找不到 user：{args.user}")
     eff = app_settings.effective_llm_dict(
         app_settings.load_settings(u["user_id"]), config_id=args.config_id or None
     )
     app_settings.set_current(eff)
     if client.is_stub():
-        print("❌ stub 模式（該配置無可用 LLM token），拒跑避免假結果。")
-        sys.exit(1)
+        raise SystemExit("❌ stub 模式（該配置無可用 LLM token），拒跑避免假結果。")
     client.set_llm_cache_read(False)  # 量測真實行為（寫入照常回填）
     client.set_usage_context({"job_id": f"eval_prompt_{args.prompt}"})
 
-    gen = _load_generator()
+    pid = _prompt_id_of(args.prompt)
     if args.prompt == "polarity":
         samples = _sample_polarity(args.n)
-        print(f"樣本 {len(samples)} 則（三態分層）· model={eff.get('model')}", flush=True)
-        result = _run_polarity(gen, samples)
-    elif args.prompt.startswith("C-"):
-        dom = next((d for d in gen._domains() if d["code"] == args.prompt), None)
-        if not dom:
-            ap.error(f"未知域：{args.prompt}")
-            return
-        samples = _sample_domain(dom["domain"], args.n)
-        print(f"樣本 {len(samples)} 則（本域/他域各半）· model={eff.get('model')}", flush=True)
-        result = _run_domain(gen, args.prompt, samples)
+        print(f"樣本 {len(samples)} 則（三態分層·source={args.source}）· model={eff.get('model')}", flush=True)
+        result = _run_polarity(pid, samples)
     else:
-        ap.error("--prompt 須為 polarity 或 C-1..C-6")
-        return
+        dom = _domain_of_prompt(args.prompt)
+        if not dom:
+            raise SystemExit(f"未知域：{args.prompt}")
+        samples = _sample_domain(dom, args.n, args.source, args.mock_file)
+        print(
+            f"樣本 {len(samples)} 則（本域/他域各半·source={args.source}）· model={eff.get('model')}",
+            flush=True,
+        )
+        result = _run_domain(pid, args.prompt, samples, args.repeats)
     result["model"] = eff.get("model")
-    print(json.dumps({k: v for k, v in result.items() if k != "mismatches"}, ensure_ascii=False))
+    result["source"] = args.source
+
+    if args.compare:
+        result["compare"] = _compare(result, args.compare)
+
+    summary = {k: v for k, v in result.items() if k not in ("mismatches", "records")}
+    print(json.dumps(summary, ensure_ascii=False))
     print(f"分歧 {len(result['mismatches'])} 則" + ("（詳見 --out）" if args.out else ""))
+    if args.compare:
+        cmp = result["compare"]
+        print(f"vs baseline：改善 {len(cmp['improvements'])} · 倒退 {len(cmp['regressions'])}")
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+        Path(args.out).write_text(
+            json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         print(f"→ {args.out}")
 
 
