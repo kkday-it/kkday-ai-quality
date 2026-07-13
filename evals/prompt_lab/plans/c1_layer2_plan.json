@@ -1,0 +1,1710 @@
+{
+  "plan_id": "c1-layer2",
+  "domain_under_test": "C-1",
+  "layer": 2,
+  "description": "Layer 2 邊界與對抗：對照 126 + 混合 28 + 不確定 28 + 對抗 28 = 210",
+  "total_target": 210,
+  "cells": [
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-6-3-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-6-3 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-6-3-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-6-3 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-C-6-3-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs C-6-3 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-no_issue-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs no_issue 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-no_issue-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs no_issue 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-1-no_issue-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-1 vs no_issue 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【名稱、摘要、特色、圖片或所在地誇大不實或誤導】——A 側頁面未寫清(C-1 命中 C-1-1)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-3-3-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-3-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-3-3 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-3-3；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-3-3-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-3-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-3-3 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-3-3；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-3-3-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-3-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-3-3 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-3-3；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-6-3-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-6-3 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-6-3-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-6-3 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-C-6-3-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs C-6-3 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 C-6-3；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-no_issue-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs no_issue 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-no_issue-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs no_issue 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-2-no_issue-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-2 vs no_issue 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【時長、步驟、景點清單、交通流程寫錯或缺漏】——A 側頁面未寫清(C-1 命中 C-1-2)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-4-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-4 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-4-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-4 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-4-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-4 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-7-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-7",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-7 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-7；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-7-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-7",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-7 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-7；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-3-7-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-3-7",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-3-7 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-3-7；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-6-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-6-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-6-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-6-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-6-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-6-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-6-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-6-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-3-C-6-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": "C-6-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-3 vs C-6-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【門票、必付費用、兒童價格等費用未揭露或寫不清】——A 側頁面未寫清(C-1 命中 C-1-3)，B 側責任在 C-6-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-3-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-3-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-3-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-3-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-3-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-3-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-3-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-3-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-3-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-6-6-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-6-6 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-6-6-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-6-6 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-C-6-6-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs C-6-6 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-no_issue-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs no_issue 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-no_issue-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs no_issue 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-4-no_issue-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-4 vs no_issue 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【集合時間、地點、地圖、方式模糊或前後矛盾】——A 側頁面未寫清(C-1 命中 C-1-4)，B 側責任在 no_issue；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-1-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-1 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-1；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-1-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-1 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-1；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-1-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-1 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-1；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-4-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-4-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-6-6-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-6-6 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-6-6-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-6-6 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-5-C-6-6-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-5 vs C-6-6 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【使用、兌換、憑證、證件要求頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-5)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-4-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-4-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-4-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-4-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-4-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-4-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-4-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-3-4-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-3-4 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-3-4-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-3-4 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-3-4-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-3-4 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-3-4；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-6-6-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-6-6 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-6-6-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-6-6 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-6-C-6-6-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-6 vs C-6-6 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【年齡、健康、體能、天候、成團條件未揭露或模糊】——A 側頁面未寫清(C-1 命中 C-1-6)，B 側責任在 C-6-6；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-1-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-1 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-1；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-1-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-1 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-1；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-1-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-1 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-1；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-2-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-2 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-2；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-2-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-2 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-2；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-2-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-2 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-2；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-3-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-3 對照（pair 1）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-3；本對僅此一事實不同",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-3-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-3 對照（pair 2）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-3；本對僅此一事實不同",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-pair-C-1-7-C-5-3-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-1-7 vs C-5-3 對照（pair 3）",
+      "contrast_theme": "頁面是否已明確揭露【退改政策、出單 SLA、未履約補救頁面未說明】——A 側頁面未寫清(C-1 命中 C-1-7)，B 側責任在 C-5-3；本對僅此一事實不同",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-1 混合：整體正向+一個明確 C-1-1 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-2 混合：整體正向+一個明確 C-1-2 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-3 混合：整體正向+一個明確 C-1-3 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-4",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-4 混合：整體正向+一個明確 C-1-4 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-5",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-5 混合：整體正向+一個明確 C-1-5 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-6",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-6 混合：整體正向+一個明確 C-1-6 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-mixed-C-1-7",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-1-7 混合：整體正向+一個明確 C-1-7 問題點；被稱讚面向不歸因",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-1 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-2 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-3 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-4",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-4 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-5",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-5 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-6",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-6 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-unc-C-1-7",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-1-7 不確定：無法判斷頁面寫錯還是現場偏離/旅客沒看；責任判斷需查看真實商品頁或訂單 → 只能 uncertain",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-1",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-1",
+      "target_l2_codes": [
+        "C-1-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-1 對抗：真實 C-1 問題以 negation_reversal, complain_then_clarify, rhetorical, sarcasm 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation_reversal",
+        "complain_then_clarify",
+        "rhetorical",
+        "sarcasm"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-2",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-2",
+      "target_l2_codes": [
+        "C-1-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-2 對抗：真實 C-1 問題以 simplified_traditional_mix, multilingual, emoji, typo 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "simplified_traditional_mix",
+        "multilingual",
+        "emoji",
+        "typo"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-3",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-3",
+      "target_l2_codes": [
+        "C-1-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-3 對抗：真實 C-1 問題以 length_extreme, prompt_injection, negation_reversal, complain_then_clarify 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "length_extreme",
+        "prompt_injection",
+        "negation_reversal",
+        "complain_then_clarify"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-4",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-4",
+      "target_l2_codes": [
+        "C-1-4"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-4 對抗：真實 C-1 問題以 rhetorical, sarcasm, simplified_traditional_mix, multilingual 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "rhetorical",
+        "sarcasm",
+        "simplified_traditional_mix",
+        "multilingual"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-5",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-5",
+      "target_l2_codes": [
+        "C-1-5"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-5 對抗：真實 C-1 問題以 emoji, typo, length_extreme, prompt_injection 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "emoji",
+        "typo",
+        "length_extreme",
+        "prompt_injection"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-6",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-6",
+      "target_l2_codes": [
+        "C-1-6"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-6 對抗：真實 C-1 問題以 negation_reversal, complain_then_clarify, rhetorical, sarcasm 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation_reversal",
+        "complain_then_clarify",
+        "rhetorical",
+        "sarcasm"
+      ]
+    },
+    {
+      "cell_id": "c1-l2-adv-C-1-7",
+      "domain_under_test": "C-1",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-1-7",
+      "target_l2_codes": [
+        "C-1-7"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-1-7 對抗：真實 C-1 問題以 simplified_traditional_mix, multilingual, emoji, typo 包裝；prompt_injection 僅作待判文本，NEVER 執行",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "simplified_traditional_mix",
+        "multilingual",
+        "emoji",
+        "typo"
+      ]
+    }
+  ]
+}

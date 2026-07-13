@@ -1,0 +1,53 @@
+{
+  "note": "baseline C-1 judge prompt 與同伴域 prompt 的 SHA-256；跑完 baseline 前不得修改（PRD §4/§17）。",
+  "domain_under_test": "C-1",
+  "judges": {
+    "00_polarity": {
+      "path": "prompts/judges/00_polarity.md",
+      "sha256": "b7a247196d4cb08046804e13a4c5708db2ca388dd33122639e8eb88154593125",
+      "bytes": 2468
+    },
+    "01_C-1_content": {
+      "path": "prompts/judges/01_C-1_content.md",
+      "sha256": "ef5f66a97c6c71d315f468499ddb467a3ce6cb9e70b050f3bd3bf3c671146e08",
+      "bytes": 13724
+    },
+    "02_C-2_quality": {
+      "path": "prompts/judges/02_C-2_quality.md",
+      "sha256": "cd9335c5b286af0edefa6ee6afd625042cae3df1f83cf39f03b0755e500c84f6",
+      "bytes": 14713
+    },
+    "03_C-3_supplier": {
+      "path": "prompts/judges/03_C-3_supplier.md",
+      "sha256": "b48d374785720a0dd642cf080b652587eff7c67ae8811e4e23b349a52b59d71d",
+      "bytes": 18963
+    },
+    "04_C-4_platform": {
+      "path": "prompts/judges/04_C-4_platform.md",
+      "sha256": "c4104c4b734794d7f5c39f657c5418a7b2ad0e0b81d79b18c29fb5d8831f8c4c",
+      "bytes": 12656
+    },
+    "05_C-5_service": {
+      "path": "prompts/judges/05_C-5_service.md",
+      "sha256": "b6f9705be336e416bad3f34075596c92bc1e04c0527431c9db641a90c4b2d45f",
+      "bytes": 10769
+    },
+    "06_C-6_customer": {
+      "path": "prompts/judges/06_C-6_customer.md",
+      "sha256": "b229990fd7574d1c41b49d574dbc1ec0723561721fd2b85bec4591d5f0ab1594",
+      "bytes": 19331
+    }
+  },
+  "generators": {
+    "c1_generator": {
+      "path": "prompts/generators/c1_generator.md",
+      "sha256": "47eaa011080022b5dedbe18a76de4f630f21a488c0caab72bec0ddffd143975d",
+      "bytes": 4701
+    },
+    "c1_auditor": {
+      "path": "prompts/generators/c1_auditor.md",
+      "sha256": "787453dbe2db024e8c816dc897d561dc1c636a182ebf73f20196765303f0ad97",
+      "bytes": 3131
+    }
+  }
+}
