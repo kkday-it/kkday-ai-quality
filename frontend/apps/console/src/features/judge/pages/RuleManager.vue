@@ -6,7 +6,7 @@
  *   / source_mapping 上傳表頭校驗（required_headers 指紋 + field_map，存檔即生效於資料上傳頁）；
  *   其後為歸因分類 C-N（面板 / JSON 雙編 + active schema 驗證）。歷史對比恢復 + 單項/整批恢復默認。
  */
-import { computed, onMounted, ref, shallowRef } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref, shallowRef } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
@@ -19,8 +19,12 @@ import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
+import PromptHistoryPanel from '../components/PromptHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
+
+// 初判 Prompt 編輯器懶載入：md-editor-v3 較重，只在編輯 prompt_* 時才載入該 chunk，不壓首屏 bundle。
+const PromptEditor = defineAsyncComponent(() => import('../components/PromptEditor.vue'));
 
 // 權限：無 judge-rule.version.manage 者唯讀（後端 403 為權威，前端 disable + 提示避免做白工）
 const { can } = usePermission();
@@ -41,9 +45,23 @@ const _NON_DOMAIN_CODES = new Set([
   'judgment',
   'source_mapping',
 ]);
+/** 初判 Prompt（Prompt-as-Source）：rule_code 前綴 prompt_（prompt_polarity + prompt_C-1~6）。
+ * content 形態＝{_meta, text: md}，非 L1-L3 樹——獨立成群、走 md 編輯器 + md 歷史 diff，不套樹編輯器/JSON。 */
+const isPromptCode = (code: string): boolean => code.startsWith('prompt_');
+// 歸因分類 C-N：排除非域偽 rule 與 prompt_*（prompt 自成一群，見 promptCodes）。
 const domainCodes = computed(() =>
-  store.metas.filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code)).map((m) => m.rule_code),
+  store.metas
+    .filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code) && !isPromptCode(m.rule_code))
+    .map((m) => m.rule_code),
 );
+// 初判 Prompt 群（左選單第三組）：polarity 置頂、C-1~6 依序。
+const promptCodes = computed(() =>
+  store.metas
+    .filter((m) => isPromptCode(m.rule_code))
+    .map((m) => m.rule_code)
+    .sort((a, b) => (a === 'prompt_polarity' ? -1 : b === 'prompt_polarity' ? 1 : a.localeCompare(b))),
+);
+const isPrompt = computed(() => isPromptCode(store.activeCode));
 // 純 JSON 編輯（無 L1-L3 樹）的置頂特殊項：一律 JSON 模式、不走 RuleTreePanel、不套 schema 驗證。
 const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment', 'source_mapping']);
 // 編輯/檢視模式：panel 面板編輯 / json 原始編輯 / history 歷史對比（頁內展示，取代原彈窗）。
@@ -95,8 +113,9 @@ async function pick(code: string) {
     Message.warning('有未儲存變更，請先儲存或切換版本');
     return;
   }
-  // schema / global_rule / judgment 無 L1-L3 樹 → 只用 JSON；C-N 預設面板
-  mode.value = _NON_TREE_CODES.has(code) ? 'json' : 'panel';
+  // prompt_* → md 編輯器（panel 承載）；schema/global/judgment 無樹 → JSON；C-N → 面板樹
+  if (isPromptCode(code)) mode.value = 'panel';
+  else mode.value = _NON_TREE_CODES.has(code) ? 'json' : 'panel';
   await store.selectRule(code);
 }
 
@@ -200,6 +219,15 @@ function doResetAll() {
               <span class="ml-2">{{ store.labelFor(c) }}</span>
             </a-menu-item>
           </a-menu-item-group>
+          <!-- 初判 Prompt（判決 prompt 唯一真相源）：md 編輯 + md 歷史 diff，無 JSON -->
+          <a-menu-item-group title="初判 Prompt">
+            <a-menu-item v-for="c in promptCodes" :key="c">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">{{
+                c.replace('prompt_', '')
+              }}</span>
+              <span class="ml-2">{{ store.labelFor(c) }}</span>
+            </a-menu-item>
+          </a-menu-item-group>
         </a-menu>
 
         <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
@@ -228,9 +256,11 @@ function doResetAll() {
         <div class="mb-3 flex flex-none items-center gap-3">
           <!-- 當前規則的檢視/編輯模式（面板編輯 / JSON 原始 / 歷史對比——歷史改頁內展示，不再彈窗）；
              面板僅 C-N 歸因樹有（schema/global/judgment 純 JSON），歷史所有規則皆可看 -->
+          <!-- prompt_*：編輯（md）+ 歷史（md diff），無 JSON；C-N：面板 + JSON + 歷史；其餘：JSON + 歷史 -->
           <a-radio-group v-model="mode" type="button" size="small">
-            <a-radio v-if="isDomainTree" value="panel">面板</a-radio>
-            <a-radio value="json">JSON</a-radio>
+            <a-radio v-if="isPrompt" value="panel">編輯</a-radio>
+            <a-radio v-else-if="isDomainTree" value="panel">面板</a-radio>
+            <a-radio v-if="!isPrompt" value="json">JSON</a-radio>
             <a-radio value="history">歷史</a-radio>
           </a-radio-group>
           <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
@@ -296,9 +326,22 @@ function doResetAll() {
         <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
         <div class="min-h-0 flex-1">
           <StateGuard :loading="store.loading" :error="store.error">
+            <!-- 初判 Prompt（prompt_*）：md 歷史 diff / md 編輯器（優先於下方樹/JSON 分支）-->
+            <PromptHistoryPanel
+              v-if="isPrompt && mode === 'history'"
+              :key="`phist-${store.activeCode}`"
+              class="h-full"
+            />
+            <PromptEditor
+              v-else-if="isPrompt && store.edited"
+              :key="editorKey"
+              class="h-full"
+              :content="store.edited"
+              @change="onChange"
+            />
             <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
             <RuleHistoryPanel
-              v-if="mode === 'history'"
+              v-else-if="mode === 'history'"
               :key="`hist-${store.activeCode}`"
               class="h-full"
             />
