@@ -26,6 +26,10 @@ _SAMPLE_MD = """# 範例判官
 <judge>
 你是測試判官。輸出 JSON。
 </judge>
+<facet_catalog>
+■ C-3-1 人員服務：測試面向
+■ C-3-2 駕駛接送：測試面向
+</facet_catalog>
 ```
 
 ## User
@@ -56,33 +60,27 @@ _SAMPLE_MD = """# 範例判官
   }
 }
 ```
-
-## Meta
-
-```json
-{
-  "domain": "supplier",
-  "domain_label": "供應商履約",
-  "action": "penalize_breach",
-  "owner": "",
-  "facets": [{"code": "C-3-1", "label": "人員服務"}, {"code": "C-3-2", "label": "駕駛接送"}]
-}
-```
 """
 
 
-def test_parse_md_extracts_sections_and_meta():
-    """parse_md 正確抽出 title/system/user_template/schema + 選填 ## Meta。"""
+def test_parse_md_extracts_sections():
+    """parse_md 正確抽出 title/system/user_template/schema 四節。"""
     p = ps.parse_md(_SAMPLE_MD)
     assert p["title"] == "範例判官"
-    assert "<judge>" in p["system"] and "輸出 JSON" in p["system"]
+    assert "<judge>" in p["system"] and "facet_catalog" in p["system"]
     assert "{POLARITY}" in p["user_template"] and "{TEXT}" in p["user_template"]
     assert p["schema"]["properties"]["attributions"]["items"]["properties"]["l2_code"]["enum"] == [
         "C-3-1",
         "C-3-2",
     ]
-    assert p["meta"]["domain"] == "supplier"
-    assert {f["code"] for f in p["meta"]["facets"]} == {"C-3-1", "C-3-2"}
+
+
+def test_parse_facets_from_catalog():
+    """_parse_facets 從 facet_catalog「■ CODE LABEL」解析 L2 code→label。"""
+    p = ps.parse_md(_SAMPLE_MD)
+    facets = ps._parse_facets(p["system"])
+    assert [f["code"] for f in facets] == ["C-3-1", "C-3-2"]
+    assert facets[0]["label"] == "人員服務"
 
 
 def test_parse_md_missing_section_raises():
@@ -139,33 +137,44 @@ def test_validate_domain_missing_polarity_raises(temp_db):
         ps.validate(bad, "03_C-3_supplier")
 
 
-def test_validate_enum_meta_mismatch_raises(temp_db):
-    """域 prompt Schema enum 與 Meta.facets 不一致（enum 有 C-3-99、Meta 無）→ 自洽護欄拒（ValueError）。"""
+def test_validate_facet_schema_mismatch_raises(temp_db):
+    """域 prompt facet_catalog codes 與 Schema enum 不一致（enum 有 C-3-99、facet 無）→ 自洽護欄拒。"""
     bad = _SAMPLE_MD.replace('["C-3-1", "C-3-2"]', '["C-3-1", "C-3-99"]')
     with pytest.raises(ValueError, match="不一致"):
         ps.validate(bad, "03_C-3_supplier")
 
 
-def test_validate_domain_missing_meta_raises(temp_db):
-    """域 prompt 缺 ## Meta 結構節 → ValueError。"""
-    bad = _SAMPLE_MD.split("## Meta")[0].rstrip()
-    with pytest.raises(ValueError, match="Meta"):
+def test_validate_unregistered_domain_raises(temp_db):
+    """域機器值未在 domains.json 註冊 → ValueError（用未註冊的假 prompt_id 觸發）。"""
+    # 06_C-6_customer 的 domain=customer 已註冊;構造一個域不在註冊表的情境需假 pid,
+    # 改測 facet_catalog 缺（facet_codes 空 != enum）→ 亦被自洽護欄擋。
+    bad = _SAMPLE_MD.replace("■ C-3-1 人員服務：測試面向\n", "").replace(
+        "■ C-3-2 駕駛接送：測試面向\n", ""
+    )
+    with pytest.raises(ValueError, match="不一致"):
         ps.validate(bad, "03_C-3_supplier")
 
 
-# ─────────────────────────── 自洽 drift 護欄 ───────────────────────────
-def test_domain_schema_enum_equals_meta_facets(temp_db):
-    """每支域 prompt 的 Schema l2_code enum == Meta.facets codes（判準 schema 與結構註冊表同源自洽）。"""
+# ─────────────────────────── 自洽 drift 護欄 + 結構派生 ───────────────────────────
+def test_domain_facets_equal_schema_enum(temp_db):
+    """每支域 prompt 的 facet_catalog codes == Schema l2_code enum（facet 唯一源自洽）。"""
     ps.reload()
-    facets_by_domain = {
-        d["domain"]: {f["code"] for f in d["facets"]} for d in ps.structure()["domains"]
-    }
+    struct = {d["domain"]: {f["code"] for f in d["facets"]} for d in ps.structure()["domains"]}
     for pid in ps.DOMAIN_PROMPT_IDS:
         enum = ps.schema_l2_enum_for(pid)
-        meta = ps.load(pid)["meta"] or {}
-        facet_codes = {f["code"] for f in (meta.get("facets") or [])}
+        facet_codes = {f["code"] for f in ps._parse_facets(ps.load(pid)["system"])}
         assert enum == facet_codes, f"{pid}: enum={sorted(enum)} facets={sorted(facet_codes)}"
-        assert facet_codes == facets_by_domain.get(meta.get("domain"), set())
+        assert facet_codes == struct.get(ps._domain_of(pid), set())
+
+
+def test_structure_domains_from_filename_and_config(temp_db):
+    """structure() 域機器值＝檔名尾綴（含正名 platform/quality）、label/action 來自 domains.json。"""
+    ps.reload()
+    doms = {d["domain"]: d for d in ps.structure()["domains"]}
+    assert set(doms) == {"content", "quality", "supplier", "platform", "service", "customer"}
+    assert doms["platform"]["domain_label"] == "平台與系統"  # 正名（原 redemption）
+    assert doms["quality"]["domain_label"] == "商品品質"  # 正名（原 product_quality）
+    assert doms["content"]["action"] == "clarify_wording"
 
 
 # ─────────────────────────── DB 版本化 / seed ───────────────────────────

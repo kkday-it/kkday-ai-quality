@@ -1,0 +1,11 @@
+{
+  "_comment": "六歸因域註冊表（Prompt-as-Source 架構的域層 metadata）。判準邏輯與 facet（L2 code→label）全在 docs/prompts/prompts/*.md（facet 源自各 prompt 的 <facet_catalog>「■ CODE LABEL」，非本檔）；此檔僅存**不可從 prompt 推導**的域層業務 metadata：中文名 + recommended_action + owner。域機器值＝prompt 檔名尾綴（content/quality/supplier/platform/service/customer），順序＝顯示順序（C-1~C-6）。2026-07：機器值正名 product_quality→quality、redemption→platform（對齊檔名，judgments.l1_code 同步遷移）。",
+  "domains": [
+    { "domain": "content", "label": "商品內容", "action": "clarify_wording", "owner": "" },
+    { "domain": "quality", "label": "商品品質", "action": "penalize_breach", "owner": "" },
+    { "domain": "supplier", "label": "供應商履約", "action": "penalize_breach", "owner": "" },
+    { "domain": "platform", "label": "平台與系統", "action": "escalate_ops", "owner": "" },
+    { "domain": "service", "label": "客服營運", "action": "escalate_ops", "owner": "" },
+    { "domain": "customer", "label": "理解期待", "action": "escalate_ux", "owner": "" }
+  ]
+}
