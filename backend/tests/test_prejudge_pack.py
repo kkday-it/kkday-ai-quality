@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-from app.core import global_rule
 from app.judge import prejudge, prompt_source
 
 # 測試用面向白名單（_sanitize_l2 回填 l1/l2 label 用）
@@ -27,8 +26,8 @@ def _pack_env(monkeypatch, *, amin: float = 0.2):
         prejudge, "_tiers", lambda: {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
     )
     monkeypatch.setattr(
-        global_rule,
-        "evidence_policy",
+        prejudge,
+        "_evidence_policy",
         lambda: {"require_quote_grounded": True, "attr_min_confidence": amin},
     )
     monkeypatch.setattr(prejudge, "_attr_effort", lambda: None)

@@ -2,8 +2,9 @@
 
 讀 6 支域 prompt 的分類結構（prompt_source.structure()，每域一分頁，L2 面向代碼/名稱逐列——完整判準
 文字〔界線、正反例〕已改為自由文本存在各域 prompt 的 System 區塊，本表僅列結構性面向清單，供 QC/PM
-快速核對域/面向涵蓋範圍；完整判準請至規則配置頁「初判 Prompt」查看對應域 md）＋ global_rule 判決總規範
-（額外一分頁，區塊/項目/內容 扁平呈現）。openpyxl 為重庫，於函式內 lazy import。
+快速核對域/面向涵蓋範圍；完整判準請至規則配置頁「初判 Prompt」查看對應域 md）＋ judgment 判決配置
+（額外一分頁，區塊/項目/內容 扁平呈現；含極性閘門/證據政策/信心閾值/prejudge 旋鈕）。openpyxl 為
+重庫，於函式內 lazy import。
 """
 
 from __future__ import annotations
@@ -73,11 +74,11 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
 
 
 def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
-    """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ global 判決總規範分頁。
+    """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ judgment 判決配置分頁。
 
-    資料源＝DB active 版本（規則配置頁的當前生效內容，反映使用者最新編輯）。僅導出人閱分類法典
-    （C-N + global）；schema 結構規格、product_vertical 選項池、judgment 判決配置（信心閾值/
-    prejudge 旋鈕）皆非人閱法典，故不含（迴圈只走 C- 開頭 + global_rule 而自然排除）。
+    資料源＝6 域 prompt 分類結構（規則配置頁「初判 Prompt」的當前生效內容）＋ judgment.json
+    （靜態設定檔，改值需重啟後端，見 db/_shared.read_judgment_config）。schema 結構規格（已退役）、
+    product_vertical 選項池皆非人閱法典，故不含。
 
     Args:
         ctx: 背景 job 進度把手（可選）；給定時每完成一分頁回報進度並輪詢取消，None＝同步直呼。
@@ -90,7 +91,7 @@ def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
     """
     from openpyxl import Workbook
 
-    from app.core import db
+    from app.core.db import _shared
     from app.judge import prompt_source
 
     wb = Workbook()
@@ -117,21 +118,23 @@ def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
         if ctx is not None:
             ctx.report(done, total)
 
-    # global 判決總規範（區塊/項目/內容 扁平化；跳過 $schema/_meta 中繼欄）
+    # judgment 判決配置（區塊/項目/內容 扁平化；跳過 _comment 中繼欄）
     if ctx is not None:
         ctx.check()
-    gcontent = db.get_rule_active("global_rule")
+    gcontent = _shared.read_judgment_config()
     if gcontent:
         grows: list[list[str]] = []
         for k, v in gcontent.items():
-            if k in ("$schema", "_meta"):
+            if k == "_comment":
                 continue
             if isinstance(v, dict):
                 for sk, sv in v.items():
+                    if sk == "_comment":
+                        continue
                     grows.append([k, sk, _fmt(sv)])
             else:
                 grows.append([k, "", _fmt(v)])
-        gws = wb.create_sheet("global 判決總規範")
+        gws = wb.create_sheet("judgment 判決配置")
         gws.append(_GLOBAL_HEADERS)
         for r in grows:
             gws.append(r)

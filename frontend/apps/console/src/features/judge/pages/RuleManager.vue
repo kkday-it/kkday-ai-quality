@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
- * 選單分兩組：整體配置（global_rule / source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
+ * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
  * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff + 單支快測）。歷史對比恢復 + 單項/整批恢復默認。
  * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
- * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。
+ * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
+ * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
  */
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
@@ -69,7 +70,7 @@ const editorKey = computed(
 onMounted(async () => {
   verticalFilter.loadOptions();
   await store.loadList();
-  await store.selectRule('global_rule');
+  await store.selectRule('source_mapping');
 });
 
 async function pick(code: string) {
@@ -119,16 +120,16 @@ function doReset() {
   });
 }
 
-/** 導出 6 支域 prompt 的面向結構（每域一分頁）＋ global 判決總規範為 Excel（DB active 版本）→ 背景 job + 實時進度下載。 */
+/** 導出 6 支域 prompt 的面向結構（每域一分頁）＋ judgment 判決配置為 Excel（DB active 版本）→ 背景 job + 實時進度下載。 */
 function doExport() {
   return runExport(startRulesExport, exportName('判決規則', 'xlsx'));
 }
 
-/** 恢復整體配置（global_rule + source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
+/** 恢復整體配置（source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
 function doResetAll() {
   Modal.confirm({
     title: '恢復所有規則為默認',
-    content: '確定將整體配置（global_rule 整體規則 / source_mapping 上傳表頭校驗）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
+    content: '確定將整體配置（source_mapping 上傳表頭校驗）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {
@@ -153,17 +154,13 @@ function doResetAll() {
     <div class="flex min-h-0 flex-1 gap-4">
       <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示，不截字）-->
       <div class="flex h-full w-52 shrink-0 flex-col gap-3">
-        <!-- 兩組：整體配置（global_rule/source_mapping 純 JSON）+ 初判 Prompt（polarity + C-1~6 md） -->
+        <!-- 兩組：整體配置（source_mapping 純 JSON）+ 初判 Prompt（polarity + C-1~6 md） -->
         <a-menu
           :selected-keys="[store.activeCode]"
           class="min-h-0 flex-1 overflow-auto rounded-lg border"
           @menu-item-click="pick"
         >
           <a-menu-item-group title="整體配置">
-            <a-menu-item key="global_rule">
-              <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
-              <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
-            </a-menu-item>
             <a-menu-item key="source_mapping">
               <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>
               <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
@@ -297,7 +294,7 @@ function doResetAll() {
               :key="`hist-${store.activeCode}`"
               class="h-full"
             />
-            <!-- 整體配置（global_rule / source_mapping）：純 JSON 編輯，無面板/schema 驗證 -->
+            <!-- 整體配置（source_mapping）：純 JSON 編輯，無面板/schema 驗證 -->
             <JsonEditor
               v-else-if="store.edited"
               :key="editorKey"

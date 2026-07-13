@@ -21,7 +21,7 @@
 - **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, model, notes_count, is_primary, status, true_label}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳 `plans/1-peaceful-wirth.md`。
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
-| `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝C-1..6 + schema + product_vertical + global_rule + source_mapping（judgment 已移出＝專案靜態設定檔）。 |
+| `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝product_vertical + source_mapping + prompt_polarity + prompt_C-1~6（C-1..6/schema/global_rule/judgment 已陸續移出，見表註）。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`〔重判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入判決歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量覆核·單交易 diff〕/`update_finding_true_label` + 歸因備註）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
@@ -29,7 +29,6 @@
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
 | `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；另附「歸因統計」圖表表，見 `export_stats.py`；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 judgment_history 最新快照〔`_adapt_snapshot`·覆核軸留空·未判過的評論排除·口徑寫統計表 A2〕；`compare_models`＝並排對比模型多選：基準右側每模型附一組 review 級欄「情緒·M/L1·M/L2·M」〔`_compare_cols`/`_compare_values`·值取該模型 `latest_snapshots`·鍵前綴 `cmp__{model}__*` 不撞 attr 級鍵故自動合併儲存格·未判/判為無問題該欄空白〕）。 |
 | `export_stats.py` | 導出歸因統計（由 in-memory rows 直接算情緒傾向/L1/L2/判決分層/判決階段分佈，附「歸因統計」表；≤6 類圓餅、>6 類橫向長條）。所見即所得。 |
-| `comparison.py` | AI 判決 vs 外部評論匹配分析（情緒分桶 + free_tag 面向→L1/L2 歸類比對 + 匹配率統計餅圖）；僅離線腳本 `scripts/tools/build_comparison_report.py` 用。 |
 | `llm_usage.py` | AI 使用紀錄（llm_usage：per-call 寫入 + 消耗 dashboard 聚合 `llm_usage_overview`）。 |
 | `judgment_runs.py` | 歸因歷史（judgment_runs：run 級——每次批量/選取/單筆重判一列；建檔/狀態回寫/終態統計 + 列表分頁 + `judgment_run_detail` 聚合 llm_usage per-stage 明細 + `any_judged` 重判判定）。 |
 | `judgment_history.py` | 判決歷史（judgment_history：**評論級** append-only 事件流——kind=`judgment` 判決快照〔`insert_judgment_event` 於 replace_source_findings 同交易寫入 + FOR UPDATE 防並發；model+params+result_digest 全欄位嚴格去重，僅排 judged_at〕/ `status` 覆核轉移〔params 記 {to, changes:[{finding_id, from}]}〕/ `note` 評論級備註。補 judgments「刪+插」重判不留痕缺口，model 維度供多模型對比；migration `f2a8c4d61e93` 建表 + 回填既有已判評論初始快照〔created_at=judged_at·params.backfilled〕；`latest_snapshots(source, model)`＝每評論該模型最新快照〔PG DISTINCT ON·快照導出用·partial index `b5c7e91f3a26`〕+ `list_judgment_models()`＝歷來判過的模型清單〔judgments ∪ 快照 distinct·stub 排最後〕）。 |

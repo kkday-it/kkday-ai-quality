@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """多模型準確度評測——逐則跑指定模型收集歸因（唯讀：不寫 judgments）。
 
-用於比較不同 LLM（字節 / Gemini / Claude…）在同一評測集上的判決準確率。與 boundary_ab_eval
-同一唯讀配方（to_findings 收集、ThreadPool+copy_context 繼承 LLM 配置、cache_read=False、stub 拒跑），
-差別：① 額外收集 sentiment_score（情緒分準確度用）② 以 --config-id 明確選某一 LLM 配置切換模型
+用於比較不同 LLM（字節 / Gemini / Claude…）在同一評測集上的判決準確率。唯讀配方（to_findings
+收集、ThreadPool+copy_context 繼承 LLM 配置、cache_read=False、stub 拒跑），特點：
+① 額外收集 sentiment_score（情緒分準確度用）② 以 --config-id 明確選某一 LLM 配置切換模型
 ③ 評測集為「有外部 free_tag ground truth 且已判」的 product_reviews（供對比外部評論系統）。
 
 兩模式：

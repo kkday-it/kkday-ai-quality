@@ -1,8 +1,9 @@
 # app/judge — 判決引擎
 
 初判歸因（prejudge）核心 + 批量編排 + 上傳落庫 + LLM client + 離線準確度分析 + 信心校準。判準一律讀
-`docs/prompts/prompts/*.md`（Prompt-as-Source，經 `prompt_source` 載入；禁在此自寫判準）；結構索引讀
-`app/core` 的 `ai_judge`/`global_rule`；無 token（stub）走啟發式讓零 key 跑通閉環。
+`docs/prompts/prompts/*.md`（Prompt-as-Source，經 `prompt_source` 載入；禁在此自寫判準）；分類結構
+索引讀 `app/core.ai_judge`；極性閘門/證據政策/信心閾值/prejudge 旋鈕讀 `judgment.json`（`prejudge._cfg`，
+2026-07-13 起併入原 `global_rule.json`）；無 token（stub）走啟發式讓零 key 跑通閉環。
 
 | 項目 | 職責 |
 |---|---|

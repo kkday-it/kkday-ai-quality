@@ -1,6 +1,8 @@
 """判決規則存檔前驗證（rules._validate）——鎖 judgment 分支的結構驗證，防誤刪靜默改變行為。
 
-judgment / schema / global_rule / product_vertical 分支於套歸因 schema（需 DB）前即 return，故純函式可測、免 DB。
+judgment 分支（連同 product_vertical/source_mapping/prompt_* 分支）皆各自 return，不觸 DB，
+故純函式可測、免 DB。judgment 已移出 RULE_CODES（`_check_code` 會先擋 404），此處直呼
+`_validate` 繞過該檢查以鎖純驗證邏輯本身。
 """
 
 import json

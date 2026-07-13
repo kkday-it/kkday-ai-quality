@@ -55,28 +55,24 @@ def test_derive_stage_all_branches() -> None:
 
 def test_attribute_when_parses_config(monkeypatch) -> None:
     """極性閘門 config 解析：清單/legacy 字串皆收；只認 negative/neutral；缺失回退 {negative}。"""
-    from app.core import global_rule
-
     monkeypatch.setattr(
-        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+        prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     assert prejudge._attribute_when() == frozenset({"negative", "neutral"})
     # legacy 單值字串（attribute_only_when）
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_only_when": "negative"})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_only_when": "negative"})
     assert prejudge._attribute_when() == frozenset({"negative"})
     # 誤填 positive → 過濾；全無效回退保守舊行為
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["positive"]})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["positive"]})
     assert prejudge._attribute_when() == frozenset({"negative"})
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {})
     assert prejudge._attribute_when() == frozenset({"negative"})
 
 
 def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> None:
     """gate 含 neutral 時：混合中性評論進歸因；有問題點→歸因列帶 polarity=neutral，無→non_issue。"""
-    from app.core import global_rule
-
     monkeypatch.setattr(
-        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+        prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
@@ -112,9 +108,7 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(
     monkeypatch, fixed_config
 ) -> None:
     """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative"]})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative"]})
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
@@ -249,8 +243,8 @@ _L2_VALID = {
 def finalize_l2_env(monkeypatch, fixed_config):
     """固定 _finalize_attr_l2 的 config 依賴（證據政策），使斷言與 config 解耦。"""
     monkeypatch.setattr(
-        prejudge.global_rule,
-        "evidence_policy",
+        prejudge,
+        "_evidence_policy",
         lambda: {"require_quote_grounded": True},
     )
 
@@ -359,29 +353,25 @@ def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:
 
 def test_resolve_attrs_min_confidence_gate(non_stub, monkeypatch) -> None:
     """attr 級最低信心閘門：低於 evidence_policy.attr_min_confidence 整條丟棄（湊數殭屍列）；0=關閉。"""
-    from app.core import global_rule
-
     low = {"l1_domain_code": "quality", "l2_code": "C-2-1", "l3_code": "", "confidence": 0.09}
     ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(low), dict(ok)])
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0.2})
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.09 湊數列被殺
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0})
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0})
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert len(out) == 2  # 閘門關閉 → 保留（向後相容）
 
 
 def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> None:
     """次要歸因信心閘門：非 primary 條目低於 secondary_min_confidence 丟棄只留主因；primary 不受影響；缺鍵=關閉。"""
-    from app.core import global_rule
-
     primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
     weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.55}
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(primary), dict(weak2nd)])
     monkeypatch.setattr(
-        global_rule,
-        "evidence_policy",
+        prejudge,
+        "_evidence_policy",
         lambda: {"attr_min_confidence": 0.2, "secondary_min_confidence": 0.6},
     )
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
@@ -392,7 +382,7 @@ def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> N
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert len(out) == 1
     # 閘門關閉（缺鍵=0）→ 兩條都保留（向後相容）
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0.2})
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(primary), dict(weak2nd)])
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert len(out) == 2

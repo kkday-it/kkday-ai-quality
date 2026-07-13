@@ -59,17 +59,19 @@ def _read_judgment_file() -> dict:
 
 
 def read_judgment_config() -> dict:
-    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕）。
+    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕 +
+    極性閘門 polarity_gate + 證據政策 evidence_policy）。
 
     2026-07-13 起 judgment 降為**專案靜態設定檔**（移出 RULE_CODES、不再 DB 版本化 / 不列規則頁）——
     直讀檔案即單一真相源，不再走 DB active。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。
+    同日原 global_rule.json（polarity_gate/evidence_policy）併入本檔，減少判決 config 檔案數。
     保留此函式為 judgment 讀取的**單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
     """
     return _read_judgment_file()
 
 
 def reload_judgment_cfg() -> None:
-    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge/global_rule）。
+    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge）。
 
     就地更新 label / 閾值 dict（DB active 優先，見 read_judgment_config），使 import 引用免改碼即反映新值。
     """

@@ -1,12 +1,14 @@
-"""判決規則管理端點（RULE_CODES：product_vertical + global_rule + source_mapping + prompt_* 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
+"""判決規則管理端點（RULE_CODES：product_vertical + source_mapping + prompt_* 的 live + 版本化；
+judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
-（product_vertical/global_rule/source_mapping 各自結構驗、prompt_* 委派 prompt_source.validate 驗
-md 三節 + drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應
-loader。全端點 JWT 守衛。
+（product_vertical/source_mapping 各自結構驗、prompt_* 委派 prompt_source.validate 驗 md 三節 +
+drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。
+全端點 JWT 守衛。
 
 註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
 重構退役——判準已全數移入 prompt_C-1~6，不再經此端點管理（歷史 DB 版本保留，僅無新寫入路徑）。
+同日 global_rule（極性閘門 + 證據政策）併入 judgment.json（減少判決 config 檔案數），亦移出本端點。
 """
 
 from __future__ import annotations
@@ -26,18 +28,17 @@ _VALID_CODES = set(db.RULE_CODES)
 
 
 def _reload_judge_cache() -> None:
-    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ 判決總規範 + judgment 配置
-    （信心閾值 / 顯示 label / prejudge 旋鈕）即時反映新規則（對齊 config.py；ai_judge / global_rule /
-    judgment 皆讀 DB active 版，reload 後 prejudge 立即採用；reload 失敗不阻斷已成功的寫入）。"""
+    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ judgment 配置（極性閘門/證據
+    政策/信心閾值/顯示 label/prejudge 旋鈕）即時反映新規則（對齊 config.py；reload 失敗不阻斷已
+    成功的寫入）。"""
     try:
-        from app.core import ai_judge, flags, global_rule, source_mapping
+        from app.core import ai_judge, flags, source_mapping
         from app.core.db import _shared
         from app.judge import prejudge, prompt_source
 
         ai_judge.reload()
-        global_rule.reload()
         _shared.reload_judgment_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
-        prejudge.reload()  # 初判 prejudge 旋鈕快取
+        prejudge.reload()  # 極性閘門/證據政策/prejudge 旋鈕快取
         flags.reload()  # OpenFeature 判決閾值 cache（auto_accept/jury_*）
         source_mapping.reload()  # 上傳表頭校驗 + 欄位映射（/inbound/validate 即時採新版）
         prompt_source.reload()  # 初判 Prompt md 解析快取（判決引擎即時採新版 prompt）
@@ -58,8 +59,8 @@ def _check_code(code: str) -> None:
 
 
 def _validate(code: str, content: dict) -> None:
-    """存檔前驗證：prompt_* 委派 prompt_source、product_vertical 用輕量結構驗、global_rule/
-    source_mapping 用各自 schema。不過拋 422。
+    """存檔前驗證：prompt_* 委派 prompt_source、product_vertical 用輕量結構驗、source_mapping
+    用自身 schema。不過拋 422。
     """
     if code.startswith("prompt_"):
         # 初判 Prompt（Prompt-as-Source）：content={"_meta":..., "text": md 全文}，非 L1-L3 歸因樹。
@@ -91,24 +92,6 @@ def _validate(code: str, content: dict) -> None:
             not isinstance(order, list) or not all(isinstance(g, str) for g in order)
         ):
             raise HTTPException(status_code=422, detail="group_order 須為分組名字串清單")
-        return
-    if code == "global_rule":
-        # 整體規則：驗其自身 schema（config/ai_judge/global_rule.schema.json），非 L1-L3 歸因樹 schema。
-        from app.core.paths import AI_JUDGE_DIR
-
-        try:
-            gschema = json.loads(
-                (AI_JUDGE_DIR / "global_rule.schema.json").read_text(encoding="utf-8")
-            )
-        except (OSError, ValueError):
-            return  # 無 schema 檔 → 跳過結構驗（後端仍為最終閘）
-        gerrs = sorted(
-            jsonschema.Draft202012Validator(gschema).iter_errors(content),
-            key=lambda e: list(e.path),
-        )
-        if gerrs:
-            gmsgs = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in gerrs[:8]]
-            raise HTTPException(status_code=422, detail={"errors": gmsgs, "count": len(gerrs)})
         return
     if code == "source_mapping":
         # 上傳表頭校驗 + 欄位映射：驗自身 schema（source_mapping.schema.json），非 L1-L3 歸因樹。

@@ -8,7 +8,7 @@
 
 管線：
 - Stage 0 零 LLM 略過純好評（rating=5 + 評論極短 + 無負向詞）→ $0，不歸因。
-- Stage 1 極性閘門：進歸因傾向由 global_rule.polarity_gate.attribute_when 決定（預設 negative+neutral
+- Stage 1 極性閘門：進歸因傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral
   ——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
 - 歸因合流閘門（_resolve_attrs_multi 尾段）：同域去重（保信心最高）+ 排序 + attr_min/secondary_min。
 - G1 自動確認路由、證據封頂、grounding 壓信心、stub 雙防線等 code-side 機制不屬 prompt。
@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, get_args
 
-from app.core import ai_judge, global_rule
+from app.core import ai_judge
 from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
 from app.judge import ensemble
 from app.judge.llm import client
@@ -75,6 +75,17 @@ def _tiers() -> dict:
 
 def _prejudge_cfg() -> dict:
     return _cfg().get("prejudge", {})
+
+
+def _evidence_policy() -> dict:
+    """證據政策（judgment.json evidence_policy：attr_min_confidence / secondary_min_confidence /
+    require_quote_grounded；2026-07-13 併入原 global_rule.json，減少判決 config 檔案數）。"""
+    return _cfg().get("evidence_policy", {})
+
+
+def _polarity_gate_cfg() -> dict:
+    """極性閘門（judgment.json polarity_gate：哪些整體傾向進歸因；同上併入 judgment.json）。"""
+    return _cfg().get("polarity_gate", {})
 
 
 def _stage_effort(key: str) -> str | None:
@@ -207,7 +218,6 @@ def _tier_for(conf: float) -> str:
 def _evidence_capped(l1_domain: str, item: dict) -> bool:
     """是否因缺外部佐證觸發證據封頂（現行：供應商域缺 order_oid）。
 
-    Phase B 會改讀 global_rule.evidence_policy().caps 使多域可配置（如 content 域缺商品頁快照）。
     判決階段派生用此旗標把「需外部資料才能定論」的案子導向 pending_data（待數據補充）。
     """
     has_order = bool(item.get("order_oid") or (item.get("raw") or {}).get("order_oid"))
@@ -467,17 +477,14 @@ def _max_attributions() -> int:
     return max(1, min(n, 3))
 
 
-def _resolve_attrs_multi(
-    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
-) -> list[dict]:
-    """負向/混合中性評論 → 多條淨化 attr dict：六域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門。
+def _gate_attrs(attrs: list[dict], max_n: int) -> list[dict]:
+    """歸因合流尾段共用閘門：同域去重（信心最高）+ 過濾全 abstain + attr_min/secondary_min 信心閘門 + 排序 + cap。
 
-    去重（同 L1 域保留信心最高，因 action/owner 為域級）+ 過濾全 abstain（無域）+ 依 confidence 降冪 + cap。
+    純函式（與產生來源解耦——`_resolve_attrs_multi` 餵 `_attrs_pack` 產出、Prompt 評測診斷路徑可餵
+    自己的診斷 attrs），確保「這條歸因會不會被判決採信」的規則只有一份，不因生產/評測兩條路徑
+    各自實作而 drift。
     """
-    if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
-        return []
-    amin = _as_float(global_rule.evidence_policy().get("attr_min_confidence"), 0.0)
-    attrs = _attrs_pack(item, text, model, max_n, polarity)
+    amin = _as_float(_evidence_policy().get("attr_min_confidence"), 0.0)
     # attr 級最低信心閘門（config evidence_policy.attr_min_confidence；0＝關）：
     # 殺「強制/湊數」型歸因（實測 conf 0.09~0.12 的目錄第一組殭屍列）——信心低到這種程度
     # 代表模型自己都不信，留著只汙染列表與統計；正常弱信心（≥閘門）仍留給人審分層。
@@ -494,10 +501,20 @@ def _resolve_attrs_multi(
     # 次要歸因信心閘門（config evidence_policy.secondary_min_confidence；0＝關）：多歸因時
     # 非 primary 條目要求更高信心——低信心第二歸因（實測 conf 0.49~0.65 的「順帶一提」面向）
     # 是與多模型多數決不一致的 extra 簇主因；primary 不受影響，仍走 attr_min_confidence。
-    smin = _as_float(global_rule.evidence_policy().get("secondary_min_confidence"), 0.0)
+    smin = _as_float(_evidence_policy().get("secondary_min_confidence"), 0.0)
     if smin and len(ranked) > 1:
         ranked = [ranked[0]] + [a for a in ranked[1:] if a.get("confidence", 0.0) >= smin]
     return ranked[:max_n]
+
+
+def _resolve_attrs_multi(
+    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
+) -> list[dict]:
+    """負向/混合中性評論 → 多條淨化 attr dict：六域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門（`_gate_attrs`）。"""
+    if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
+        return []
+    attrs = _attrs_pack(item, text, model, max_n, polarity)
+    return _gate_attrs(attrs, max_n)
 
 
 @contextmanager
@@ -583,7 +600,7 @@ def to_findings(
 
     全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、判決階段、
     action），落庫為 judgments 獨立列（見 db.replace_source_findings）。
-    進歸因的傾向由 global_rule.polarity_gate.attribute_when 決定（預設 negative+neutral——
+    進歸因的傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral——
     混合中性評論的具體問題點也要歸因，kiki 2026-07-06 反饋）：
     - 正向/純好評/不在 gate 清單 → [單一 non_issue finding]（不歸因）。
     - 負向/混合中性且有歸因 → 每域一條 finding（信心最高標 is_primary；列 polarity＝整則傾向）。
@@ -611,7 +628,7 @@ def to_findings(
         # skip0＝高星短好評（rating≥5）→ 正向、情緒分 5
         return _route([_non_issue_finding(item, "positive", "heuristic", sentiment=5)])
     polarity, sentiment = _stage1_polarity(item, text, model)
-    if polarity not in _attribute_when():  # config 驅動（global_rule.polarity_gate）
+    if polarity not in _attribute_when():  # config 驅動（judgment.json polarity_gate）
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
     attrs = _resolve_attrs_multi(item, text, model, _max_attributions(), polarity)
@@ -694,12 +711,12 @@ def score_true_label(text: str, proposed_code: str, model: str) -> dict:
 
 
 def _attribute_when() -> frozenset[str]:
-    """哪些整體傾向進歸因（global_rule.polarity_gate.attribute_when；SSOT＝DB active 版）。
+    """哪些整體傾向進歸因（judgment.json polarity_gate.attribute_when；SSOT＝該靜態檔）。
 
     容錯：字串（legacy attribute_only_when 單值）與清單皆收；只認 negative/neutral（positive
     恆 non_issue，防 config 誤填放行好評歸因）；config 缺失/全無效 → 回退 {"negative"}（保守舊行為）。
     """
-    gate = global_rule.polarity_gate()
+    gate = _polarity_gate_cfg()
     raw = gate.get("attribute_when") or gate.get("attribute_only_when") or []
     vals = [raw] if isinstance(raw, str) else list(raw or [])
     allowed = frozenset(
@@ -774,7 +791,7 @@ def _finalize_attr_l2(
     conf = _evidence_cap(resolved["l1_domain_code"], item, raw_conf)
     evidence = str(out.get("evidence_quote", ""))[:300]
     summary = _summary_map(out.get("summary"))
-    ev = global_rule.evidence_policy()
+    ev = _evidence_policy()
     grounded = (not ev.get("require_quote_grounded", True)) or _evidence_grounded(text, evidence)
     if resolved["l2_code"] and not grounded:
         conf = min(

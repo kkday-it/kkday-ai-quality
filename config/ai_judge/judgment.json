@@ -1,8 +1,20 @@
 {
- "_comment": "判決顯示與信心閾值——**專案靜態設定檔**（2026-07-13 起移出 RULE_CODES、不再 DB 版本化 / 不列規則配置頁；前端 @config/ai_judge/judgment.json、後端 _shared.read_judgment_config 直讀此檔）。信心閾值/prejudge 旋鈕/傾向・分層 label 集中此檔；調值＝改此檔 + 重啟後端。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。",
+ "_comment": "判決流程總配置——**專案靜態設定檔**（2026-07-13 起移出 RULE_CODES、不再 DB 版本化 / 不列規則配置頁；前端 @config/ai_judge/judgment.json、後端 _shared.read_judgment_config 直讀此檔）。信心閾值/prejudge 旋鈕/極性閘門/證據政策/傾向・分層 label 集中此檔（2026-07-13 併入原 global_rule.json 的 polarity_gate/evidence_policy，減少判決 config 檔案數）；調值＝改此檔 + 重啟後端。tier_labels/polarity_labels 為顯示用繁中 label（DB 仍存 code）。判官提示詞與域界線 SSOT＝docs/prompts/prompts/*.md（Prompt-as-Source），非本檔。",
+ "polarity_gate": {
+  "_comment": "哪些整體傾向進歸因（清單；positive 恆 non_issue 不歸因）。neutral 涵蓋『整體滿意但含具體問題點』的混合評論——其問題面向也要歸因（kiki 2026-07-06 反饋：好評裡的問題訊號不能被整體語氣蓋掉）；歸因後找不到具體問題點時仍回 non_issue。",
+  "attribute_when": [
+   "negative",
+   "neutral"
+  ]
+ },
+ "evidence_policy": {
+  "_comment": "evidence_quote 須為進線原文逐字片段才採信（require_quote_grounded）。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage 湊數列 conf 常 <0.15，如殭屍歸因；0＝關閉）。secondary_min_confidence：多歸因時非 primary 條目最低信心，低於即丟棄只留主因（0＝關閉）。",
+  "attr_min_confidence": 0.2,
+  "require_quote_grounded": true,
+  "secondary_min_confidence": 0.6
+ },
  "prejudge": {
-  "_comment": "初判歸因管線旋鈕。engine：判決引擎——'prompt_pack'（Prompt-as-Source，判決 prompt 唯一真相源＝docs/prompts/prompts/*.md，極性 00_polarity + 六域 01_C-1~06_C-6 並行歸因；新預設）或 'legacy'（舊單呼叫 32 面向目錄路徑，驗收期回滾用；驗收通過後 legacy 路徑刪除、本旗標降常數）。stage1_model：極性閘門＋Stage A 域分類的 fallback 模型（global_rule cascade.stageA_l1.model 未設時用；同 provider token）；stage0：零 LLM 略過純好評（enable_stage0_skip；rating 高且無負向詞）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／stage_a＝域分類／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；stage_a/attribute 降檔須先更大樣本 A/B 驗準）。",
-  "engine": "prompt_pack",
+  "_comment": "初判歸因管線旋鈕。判決引擎恆為 prompt_pack（Prompt-as-Source，判決 prompt 唯一真相源＝docs/prompts/prompts/*.md，極性 00_polarity + 六域 01_C-1~06_C-6 並行歸因；舊 legacy 單呼叫 32 面向目錄引擎已於 2026-07-13 全數退役刪除）。stage1_model：極性閘門 fallback 模型（同 provider token）；stage0：零 LLM 略過純好評（enable_stage0_skip；rating 高且無負向詞）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 3）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；attribute 降檔須先更大樣本 A/B 驗準）。",
   "neg_keywords": [
    "退款",
    "退費",
@@ -35,7 +47,6 @@
   "max_attributions": 2,
   "batch_service_tier": "flex",
   "enable_stage0_skip": true,
-  "stage_a_reasoning_effort": null,
   "polarity_reasoning_effort": "minimal",
   "attribute_reasoning_effort": null
  },
@@ -51,7 +62,7 @@
  },
  "auto_confirm": {
   "enabled": true,
-  "_comment": "G1 自動確認路由：auto_accept+judged 的判決自動採信、不進人工佇列（status=auto_confirmed）；audit_sample_rate 比例抽樣回 new 交人工複核（防自動化偏誤——LLM 高召回低精確）。QC 免改碼調（本檔已納 RULE_CODES 熱重載）。",
+  "_comment": "G1 自動確認路由：auto_accept+judged 的判決自動採信、不進人工佇列（status=auto_confirmed）；audit_sample_rate 比例抽樣回 new 交人工複核（防自動化偏誤——LLM 高召回低精確）。改值＝改本檔 + 重啟後端（judgment.json 為靜態設定檔，非 DB 版本化）。",
   "audit_sample_rate": 0.05
  },
  "stage_labels": {

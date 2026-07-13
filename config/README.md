@@ -20,10 +20,12 @@
 > `app.judge.prompt_source.structure()` 從 prompt 派生（不再讀 DB 樹）。
 
 - `domains.json` — 六域註冊表（domain 機器值 → 中文名 / recommended_action / owner）：唯一無法從 prompt md 推導的域層業務 metadata，與 prompt 檔名尾綴 + facet_catalog 共同組成 `structure()`
-- `global_rule.json`（+`.schema`）— 判決流程 SSOT：極性閘門（`polarity_gate.attribute_when`：哪些整體傾向進歸因）+ 證據政策（`evidence_policy`：`attr_min_confidence`/`secondary_min_confidence` 閘門）；判官提示詞與域界線已全數移入 prompt md，本檔不再存
-- `judgment.json` — 信心分層閾值 + 傾向/分層/判決階段/覆核狀態中文 label（`status_labels`：new/auto_confirmed/confirmed/dismissed；後端 `_shared._STATUS_LABEL_ZH` 有 code-side fallback 容忍舊 DB active 版缺鍵）+ prejudge 旋鈕（per-stage `*_reasoning_effort` 省 token 旋鈕：polarity／attribute，null＝沿用主 config；`batch_service_tier`：批次判決 serving tier，"flex"＝OpenAI flex processing -50% 計價換變動延遲、429 自動回退標準、`flex_min_items` 以下小批走標準）+ **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**（前後端同讀；**2026-07-13 起降為專案靜態設定檔**——移出 RULE_CODES、不再經 RuleManager 版本化編輯，改值＝改此檔 + 重啟後端）
+- `judgment.json` — 判決流程總配置（**專案靜態設定檔**，改值＝改此檔 + 重啟後端）：極性閘門（`polarity_gate.attribute_when`：哪些整體傾向進歸因）+ 證據政策（`evidence_policy`：`attr_min_confidence`/`secondary_min_confidence`/`require_quote_grounded` 閘門；2026-07-13 併入原 `global_rule.json`，減少判決 config 檔案數）+ 信心分層閾值 + 傾向/分層/判決階段/覆核狀態中文 label（`status_labels`：new/auto_confirmed/confirmed/dismissed；後端 `_shared._STATUS_LABEL_ZH` 有 code-side fallback 容忍舊 DB active 版缺鍵）+ prejudge 旋鈕（per-stage `*_reasoning_effort` 省 token 旋鈕：polarity／attribute，null＝沿用主 config；`batch_service_tier`：批次判決 serving tier，"flex"＝OpenAI flex processing -50% 計價換變動延遲、429 自動回退標準、`flex_min_items` 以下小批走標準）+ **auto_confirm（G1 自動確認路由：enabled + audit_sample_rate）**。判官提示詞與域界線已全數移入 prompt md，本檔不再存。已移出 RULE_CODES、不再經 RuleManager 版本化編輯。
 - `source_mapping.json`（+`.schema`）— 5 來源欄位映射（源欄→canonical）+ 上傳指紋辨識／必備表頭校驗（已納入 RULE_CODES＝可經「規則配置 › 上傳表頭校驗」版本化編輯 + 存檔熱重載；本檔為初始 seed）
-- `free_tag_mapping.json` — 外部評論系統 free_tag 面向名 → 我方歸因分類（現行 taxonomy L1/L2 label）語義映射 SSOT；由 `app.core.db.comparison` 讀取供評論對比表判定 free_tag 與歸因是否契合（多對多）。⚠️ L1/L2 label 須與現行歸因分類（docs/prompts/prompts facet_catalog）同步；覆蓋率驗收見 `scripts/tools/free_tag_coverage.py`（加權 ≥95%）
+
+> `free_tag_mapping.json`（外部評論系統 free_tag 面向名 → 我方歸因分類映射）+ 讀取它的
+> `app.core.db.comparison`/`scripts/tools/free_tag_coverage.py`/`build_comparison_report.py`/
+> `multi_model_report.py`/`boundary_ab_eval.py`（+`_report.py`）已於 2026-07-13 全數移除。
 
 ## overview/（總覽儀表板）
 - `dashboard.json` — 質檢概覽 config-驅動版面（views 分區 + charts catalog）；前端 `@config/overview/dashboard.json` 讀取（DashboardView），業務可調版面免改碼

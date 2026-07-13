@@ -29,7 +29,7 @@ backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
   app/
     core/                    # 領域基礎層（見 core/README.md）
       db/                    # 資料存取（tables/source_registry + 8 職責模組 + barrel）
-      judge_config/          # 7 判準 config loader（ai_judge/global_rule/…）
+      judge_config/          # 6 判準 config loader（ai_judge/product_vertical/source_mapping/…）
       auth · config · paths · schema · settings
     judge/                   # 判決引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
     api/                     # FastAPI gateway（main.py + routers/v1）

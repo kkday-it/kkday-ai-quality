@@ -1,14 +1,15 @@
-"""判決規則版本（RULE_CODES：product_vertical + global_rule + source_mapping + prompt_*；append-only 快照）。
+"""判決規則版本（RULE_CODES：product_vertical + source_mapping + prompt_*；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
-- global_rule（判決流程總規範），seed 放 config/ai_judge。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
 - prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：判決 prompt 唯一真相源＝
   docs/prompts/prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
   存檔驗證/drift 護欄委派 app.judge.prompt_source。
-註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES，降為專案靜態
-設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再 DB 版本化 / 不列規則頁。
+註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕 + 極性閘門 + 證據政策）已於 2026-07-13 移出
+RULE_CODES，降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀
+檔案），不再 DB 版本化 / 不列規則頁。同日原 global_rule（極性閘門 polarity_gate + 證據政策
+evidence_policy）併入 judgment.json 一併退出 RULE_CODES，減少判決 config 檔案數。
 註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
 全面重構退役——判準已 100% 移入 prompt_C-1~6 的 System 自由文本，樹為冗餘雙源，歷史版本保留於 DB
 （不刪表）僅不再經此路徑寫入新版；域結構改由 app.judge.prompt_source.structure() 派生。
@@ -29,7 +30,6 @@ from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 RULE_CODES = (
     "product_vertical",
-    "global_rule",
     "source_mapping",
     # 初判 Prompt（Prompt-as-Source 架構）：判決 prompt 唯一真相源＝docs/prompts/prompts/*.md，
     # 經此機制 DB 版本化（線上熱編 + 歷史 + 恢復默認）。content={"_meta":..., "text": md 全文}，
@@ -48,15 +48,11 @@ RULE_CODES = (
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（product_vertical→config/global，global_rule/source_mapping→config/ai_judge）。"""
+    """rule_code → 對應默認檔（product_vertical→config/global，source_mapping→config/ai_judge）。"""
     if (
         code == "product_vertical"
     ):  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
         return _GLOBAL_DIR / "product_vertical.json"
-    if (
-        code == "global_rule"
-    ):  # 整體規則（判決流程總規範）與判決 config 同置，默認 seed 放 config/ai_judge
-        return _AI_JUDGE_DIR / "global_rule.json"
     if (
         code == "source_mapping"
     ):  # 上傳表頭校驗 + 來源欄位映射（上傳流程 SSOT），默認 seed = source_mapping.json
@@ -175,7 +171,7 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復規則配置頁「整體配置」規則（global_rule + source_mapping）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復規則配置頁「整體配置」規則（source_mapping）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
 
     **排除**（見 RuleManager）：product_vertical（設定抽屜獨立管理）、prompt_*（初判 Prompt，各自獨立
     「恢復默認」；判準文本＝人工調適標的，bulk 不應連帶覆蓋 prompt 手改）。

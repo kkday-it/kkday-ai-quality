@@ -128,20 +128,19 @@ def _work_one(
 
 
 def _reload_judge_rules() -> None:
-    """批次判決啟動前強制 reload 各判準 loader（ai_judge 規則樹 / global_rule 整體規則 + 判官提示詞 /
-    judgment 旋鈕 / flags 閾值），保證本批每筆判決都採用『當前 DB active 版規則』。
+    """批次判決啟動前強制 reload 各判準 loader（ai_judge 分類結構 / judgment 極性閘門+證據政策+旋鈕 /
+    flags 閾值 / prompt_source），保證本批每筆判決都採用『當前 DB active 版規則』。
 
     根因：判決 server 把規則快取在 process 記憶體，規則經 UI 存檔雖由 rules._reload_judge_cache 熱重載
     「該台 server」，但 out-of-band 改動（腳本 / migration / 別台 server 發布）不會通知本 process → 快取
     stale → LLM 判到舊規則。批次入口再 reload 一次即成硬保證，與『每次判決用最新規則』的預期一致。
     """
-    from app.core import ai_judge, flags, global_rule
+    from app.core import ai_judge, flags
     from app.core.db import _shared
     from app.judge import prejudge
 
     for fn in (
-        ai_judge.reload,
-        global_rule.reload,
+        ai_judge.reload,  # 連動清 prompt_source md 快取（見 ai_judge.reload docstring）
         _shared.reload_judgment_cfg,
         prejudge.reload,
         flags.reload,
