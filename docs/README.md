@@ -10,6 +10,7 @@
 | `frontend/.../features/README.md` | 前端 feature 模組地圖 |
 | [config/README.md](../config/README.md) / [constants/README.md](../constants/README.md) | 前後端共用配置 / 常數 SSOT 說明 |
 | [scripts/README.md](../scripts/README.md) | 開發腳本索引 |
+| [類別定義_V0.1.md](./類別定義_V0.1.md) | 六域判準人讀版（C1 交付物）：由 `scripts/tools/gen_taxonomy_doc.py` 從 `prompts/prompts/*.md` **單向生成**，改判準請改 prompt md 後重新產生，不得手改本檔 |
 
 ## archive/ — 封存（僅供追溯，非現行契約）
 
