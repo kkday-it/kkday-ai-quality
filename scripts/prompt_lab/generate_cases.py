@@ -200,6 +200,7 @@ def process_cell(
 
 def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> int:
     """CLI 入口。gateway 可注入（fake client 測試用）；None 則依 env 建真 gateway。"""
+    common.load_env()  # 先載入 evals/prompt_lab/.env（真實 env 優先），再讓下方 default 讀 env
     ap = argparse.ArgumentParser(description="C-1 Mock 樣本生成")
     ap.add_argument("--plan", required=True)
     ap.add_argument("--out", required=True)

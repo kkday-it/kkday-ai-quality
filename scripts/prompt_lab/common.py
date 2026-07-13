@@ -15,6 +15,29 @@ from typing import Any
 from pydantic import BaseModel
 
 
+_ENV_PATH = Path(__file__).resolve().parents[2] / "evals" / "prompt_lab" / ".env"
+
+
+def load_env(path: str | Path | None = None) -> None:
+    """把 `evals/prompt_lab/.env` 的 KEY=VALUE 載入 os.environ（僅補未設者，不覆蓋既有）。
+
+    無第三方依賴的極簡 .env 解析：忽略空行與 `#` 註解，去除值兩端引號。CLI 於 main() 開頭呼叫，
+    使 OPENAI_API_KEY / OPENAI_BASE_URL / PROMPT_LAB_*_MODEL 可從本機 .env 提供（.env 已 gitignore）。
+    真實環境變數（export 或 CLI）優先，故已設者不覆蓋。
+    """
+    p = Path(path) if path else _ENV_PATH
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key, val = key.strip(), val.strip().strip('"').strip("'")
+        if key and key not in os.environ:  # 真實環境優先，不覆蓋
+            os.environ[key] = val
+
+
 def read_jsonl(path: str | Path) -> list[dict]:
     """讀 JSONL 為 dict list（檔案不存在回空清單；跳過空行）。"""
     p = Path(path)

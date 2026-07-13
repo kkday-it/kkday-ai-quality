@@ -219,6 +219,7 @@ def write_review_queue(path: str, rows: list[dict]) -> None:
 
 def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> int:
     """CLI 入口。gateway 可注入（fake client 測試）。"""
+    common.load_env()
     ap = argparse.ArgumentParser(description="C-1 Mock 樣本審核")
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)

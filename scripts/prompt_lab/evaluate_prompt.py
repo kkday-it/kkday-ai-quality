@@ -117,6 +117,7 @@ def _filter_cases(cases: list[dict], args) -> list[dict]:
 
 def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> int:
     """CLI 入口。gateway 可注入（fake client 測試）。"""
+    common.load_env()
     ap = argparse.ArgumentParser(description="C-1 Judge Runner")
     ap.add_argument("--prompt", default=str(_DEFAULT_PROMPT))
     ap.add_argument("--dataset", required=True)
