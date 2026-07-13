@@ -9,6 +9,8 @@ dist/
 .playwright-mcp/
 findings/
 .venv/
+.venv-promptlab/
+# Prompt Lab 隔離 venv（openai Responses API + pydantic；離線評測用，不入 Git）
 backend/data/
 # 根層 /data：原始進線資料匯出（CSV，含個資/大檔，禁止 commit）
 /data/
