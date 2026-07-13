@@ -1,10 +1,13 @@
-"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule；append-only 快照）。
+"""判決規則版本（RULE_CODES：C-1..6 歸因分類 + schema + product_vertical + global_rule + prompt_*；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 非歸因分類但復用同一 judge_rule_versions 機制（經 RuleManager 面板編輯/歷史/恢復默認、存檔後熱重載）者：
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
 - global_rule（判決流程總規範），seed 放 config/ai_judge。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
+- prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：判決 prompt 唯一真相源＝
+  docs/prompts/prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
+  存檔驗證/drift 護欄委派 app.judge.prompt_source。
 註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES，降為專案靜態
 設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再 DB 版本化 / 不列規則頁。
 """
@@ -33,6 +36,16 @@ RULE_CODES = (
     "product_vertical",
     "global_rule",
     "source_mapping",
+    # 初判 Prompt（Prompt-as-Source 架構）：判決 prompt 唯一真相源＝docs/prompts/prompts/*.md，
+    # 經此機制 DB 版本化（線上熱編 + 歷史 + 恢復默認）。content={"_meta":..., "text": md 全文}，
+    # 非 L1/L2/L3 歸因樹（default seed 讀 md 而非 JSON，見 default_rule_content）。
+    "prompt_polarity",
+    "prompt_C-1",
+    "prompt_C-2",
+    "prompt_C-3",
+    "prompt_C-4",
+    "prompt_C-5",
+    "prompt_C-6",
 )
 # 註：judgment（判決顯示 label + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES——
 # 降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再
@@ -61,7 +74,15 @@ def _rule_file(code: str) -> Path:
 
 
 def default_rule_content(code: str) -> dict:
-    """讀默認檔內容（恢復默認用）；檔不存在拋 FileNotFoundError。"""
+    """讀默認檔內容（恢復默認用）；檔不存在拋 FileNotFoundError。
+
+    prompt_*（初判 Prompt）默認 seed 非 JSON 檔，而是 docs/prompts/prompts/*.md 原文——委派
+    prompt_source.default_prompt_content 讀 md 包成 {"_meta":..., "text": md} 版本化格式。
+    """
+    if code.startswith("prompt_"):
+        from app.judge.prompt_source import default_prompt_content  # lazy：避免頂層循環依賴
+
+        return default_prompt_content(code)
     return json.loads(_rule_file(code).read_text(encoding="utf-8"))
 
 
@@ -176,7 +197,13 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    _EXCLUDED = {"product_vertical", "judgment"}  # 各有獨立編輯入口·不納入歸因分類 bulk reset-all
+    # 各有獨立編輯入口·不納入歸因分類 bulk reset-all；prompt_*（初判 Prompt）另有「初判 Prompt」分組
+    # 各自恢復默認，且判準文本＝人工調適標的，bulk「恢復歸因分類默認」不應連帶覆蓋 prompt 手改。
+    _EXCLUDED = {
+        "product_vertical",
+        "judgment",
+        *(c for c in RULE_CODES if c.startswith("prompt_")),
+    }
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

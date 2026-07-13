@@ -1,8 +1,9 @@
-"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + source_mapping 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
+"""判決規則管理端點（RULE_CODES：C-1..6 + schema + product_vertical + global_rule + source_mapping + prompt_* 的 live + 版本化；judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
 （歸因分類套 active schema、schema 用 metaschema、product_vertical/global_rule/judgment/source_mapping
-各自結構驗），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
+各自結構驗、prompt_* 委派 prompt_source.validate 驗 md 三節 + drift 護欄），不過回 422——DB 永不存
+非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。全端點 JWT 守衛。
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ def _reload_judge_cache() -> None:
     try:
         from app.core import ai_judge, flags, global_rule, source_mapping
         from app.core.db import _shared
-        from app.judge import prejudge
+        from app.judge import prejudge, prompt_source
 
         ai_judge.reload()
         global_rule.reload()
@@ -36,6 +37,7 @@ def _reload_judge_cache() -> None:
         prejudge.reload()  # 初判 prejudge 旋鈕快取
         flags.reload()  # OpenFeature 判決閾值 cache（auto_accept/jury_*）
         source_mapping.reload()  # 上傳表頭校驗 + 欄位映射（/inbound/validate 即時採新版）
+        prompt_source.reload()  # 初判 Prompt md 解析快取（判決引擎即時採新版 prompt）
     except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
         pass
 
@@ -59,6 +61,21 @@ def _validate(code: str, content: dict) -> None:
     product_vertical（商品垂直分類）/ global_rule（整體規則）內容形態皆非 L1/L2/L3 歸因樹，
     故**不套** active 歸因 schema：前者輕量結構驗，後者驗 config/ai_judge/global_rule.schema.json。
     """
+    if code.startswith("prompt_"):
+        # 初判 Prompt（Prompt-as-Source）：content={"_meta":..., "text": md 全文}，非 L1-L3 歸因樹。
+        # 委派 prompt_source.validate：三節可解析 + Schema 合法 + {TEXT}/{POLARITY} + drift 護欄
+        # （域 prompt Schema 的 l2_code enum ⊆ 樹該域 L2 codes）。
+        from app.judge import prompt_source
+
+        text = content.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise HTTPException(status_code=422, detail="prompt content 需含 text（md 全文字串）")
+        prompt_id = prompt_source.prompt_id_for_rule(code)
+        try:
+            prompt_source.validate(text, prompt_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from None
+        return
     if code == "schema":
         try:
             jsonschema.Draft202012Validator.check_schema(content)
