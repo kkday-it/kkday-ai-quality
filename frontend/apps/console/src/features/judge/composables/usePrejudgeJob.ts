@@ -118,11 +118,11 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
           `已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`,
         );
       } else {
-        Message.success(`初判歸因完成：${progress.value.processed} 筆（模型 ${r.model}）`);
+        Message.success(`初判分類完成：${progress.value.processed} 筆（模型 ${r.model}）`);
       }
       await reload(); // 重載當前頁（保持頁碼，就地看到結果）
     } catch (e: any) {
-      Message.error('初判歸因失敗：' + (e?.message || e));
+      Message.error('初判分類失敗：' + (e?.message || e));
     } finally {
       running.value = false;
       jobId.value = '';

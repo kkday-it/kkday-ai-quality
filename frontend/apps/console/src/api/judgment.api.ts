@@ -198,6 +198,34 @@ export const evalPrompt = (prompt: string, n: number): Promise<PromptEvalResult>
     body: JSON.stringify({ prompt, n }),
   });
 
+/** 單條評論 dry-run 分類結果（歸因列表「測試」）：跑 prompts 判這一則 → 結果，不落庫。 */
+export interface ClassifyOneResult {
+  polarity: string;
+  sentiment_score: number;
+  model: string;
+  text: string;
+  attributions: Array<{
+    is_primary: boolean;
+    l1_domain_code: string;
+    l1_label: string;
+    l2_code: string;
+    l2_label: string;
+    confidence: number;
+    confidence_tier: string;
+    judgment_stage: string;
+    evidence_quote: string;
+    summary: Record<string, string>;
+  }>;
+}
+
+/** 單條評論 dry-run 分類：跑 prompts 判這一則 → 結果，**不落庫**（預覽「改 prompt 後怎麼判」）。 */
+export const classifyOne = (source: string, sourceId: string): Promise<ClassifyOneResult> =>
+  j<ClassifyOneResult>(`${BASE}/v1/judgment/classify-one`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, source_id: sourceId }),
+  });
+
 /**
  * 初判歸因進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。
  * @param jobId startPrejudge 回傳的 job_id（capability token，端點免 auth header）

@@ -33,7 +33,7 @@ import { PERM } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
-import { AttributionDetailDrawer, AttributionFilterBar } from '../components';
+import { AttributionDetailDrawer, AttributionFilterBar, RowPromptTestModal } from '../components';
 import {
   POLARITY_LABELS,
   SOURCES,
@@ -178,6 +178,14 @@ const detailOpen = ref(false);
 const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
+};
+// 單條「測試」：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）
+const testRow = ref<ProblemRow | null>(null);
+const testOpen = ref(false);
+/** 開單條測試彈窗。 */
+const openRowTest = (record: ProblemRow) => {
+  testRow.value = record;
+  testOpen.value = true;
 };
 /** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
 const attrPath = (a: Attribution): string =>
@@ -525,7 +533,7 @@ onMounted(init);
         :disabled="!canPrejudge"
         @click="openPrejudge"
       >
-        初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
+        初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
       <!-- 歸因歷史：純檢視（每次批量/選取/單筆重判的 LLM 使用紀錄），緊鄰初判入口 -->
       <a-button size="small" type="text" @click="runsDrawerVisible = true">
@@ -601,7 +609,7 @@ onMounted(init);
       v-model:page="page"
       v-model:page-size="pageSize"
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
-      hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
+      hint="伺服器端分頁；勾選/分頁選取做初判分類或導出"
       :data="rows"
       :columns="COLS"
       :loading="loading"
@@ -1008,14 +1016,14 @@ onMounted(init);
           </div>
         </div>
       </template>
-      <!-- 操作欄：整列級動作全展開（初判歸因 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
+      <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
       <template #actions="{ record }">
         <div class="flex flex-col items-stretch gap-1.5 py-1">
           <!-- 已有歸因時＝覆寫破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次無覆寫，直接執行不製造確認疲勞 -->
           <a-popconfirm
             v-if="record.attributions && record.attributions.length"
             :content="rejudgeConfirmText"
-            ok-text="初判歸因"
+            ok-text="初判分類"
             cancel-text="取消"
             @ok="onRejudge(record._group)"
           >
@@ -1025,7 +1033,7 @@ onMounted(init);
               :loading="isRowBusy(record._group)"
               :disabled="!canPrejudge"
             >
-              初判歸因
+              初判分類
             </a-button>
           </a-popconfirm>
           <a-button
@@ -1036,8 +1044,10 @@ onMounted(init);
             :disabled="!canPrejudge"
             @click="onRejudge(record._group)"
           >
-            初判歸因
+            初判分類
           </a-button>
+          <!-- 單條測試（dry-run 跑 prompts 判這一則,與現有並排,不落庫）→ 調適 prompt 後在真實資料上驗證 -->
+          <a-button size="small" type="outline" @click="openRowTest(record)"> 測試 </a-button>
           <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
           <!-- 判決歷史（評論級時間軸：歷次判決快照/覆核轉移/備註；輕量檢視 → text）-->
@@ -1052,7 +1062,7 @@ onMounted(init);
     <!-- 二次確認彈窗：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
     <a-modal
       v-model:visible="confirmOpen"
-      title="確認初判歸因"
+      title="確認初判分類"
       ok-text="開始判決"
       cancel-text="取消"
       :width="1040"
@@ -1107,7 +1117,7 @@ onMounted(init);
 
         <div class="text-sm text-[var(--color-text-1)]">
           將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
-          筆進行初判歸因（正向不分類；負向與含問題點的中性評論歸 L1→L3）。
+          筆進行初判分類（正向不分類；負向與含問題點的中性評論歸 L1→L2）。
         </div>
 
         <div>
@@ -1207,6 +1217,9 @@ onMounted(init);
 
     <!-- 操作欄：查看判決詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
     <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
+
+    <!-- 單條測試：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）-->
+    <RowPromptTestModal v-model:visible="testOpen" :source="source" :row="testRow" />
 
     <!-- 操作欄：標真值彈窗（級聯選 → LLM 評分把關 → 低信心填理由 → 標註；重判依 finding_id 保留）-->
     <a-modal

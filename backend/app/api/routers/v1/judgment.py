@@ -136,6 +136,40 @@ async def prompt_eval(
     return result
 
 
+class ClassifyOneIn(BaseModel):
+    """單條評論 dry-run 分類（歸因列表「測試」）：來源 + 業務 id。"""
+
+    source: str
+    source_id: str
+    llm_config_id: str | None = None
+
+
+@router.post("/classify-one")
+async def classify_one(
+    body: ClassifyOneIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
+    """單條評論 dry-run 分類:跑 prompts 判這一則 → 結果,**不落庫**（預覽「改 prompt 後怎麼判」）。
+
+    比照 /prompt-eval:effective LLM + guard not stub + asyncio.to_thread（不阻塞單 worker,contextvar
+    隨 copy_context 傳遞）。與列級「初判分類」（重判並覆寫落庫）區隔——本端點只讀不寫。
+    """
+    from app.judge import prompt_eval as pe
+    from app.judge.llm import client
+
+    eff = app_settings.effective_llm_dict(
+        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+    )
+    _guard_not_stub_in_production(eff)
+    app_settings.set_current(eff)
+    client.set_llm_cache_read(False)  # 量測真實行為
+    client.set_usage_context({"job_id": f"classify_one_{body.source_id}"})
+    try:
+        return await asyncio.to_thread(pe.classify_one, body.source, body.source_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
 @router.post("/prejudge/count")
 def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
     """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""

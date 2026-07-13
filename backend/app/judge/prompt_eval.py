@@ -245,6 +245,74 @@ def _run_polarity(pid: str, samples: list[dict]) -> dict:
     return {"prompt": "polarity", **m, "mismatches": mismatches}
 
 
+def classify_one(source: str, source_id: str) -> dict:
+    """單條評論 dry-run 分類（歸因列表「測試」用）：跑 prompts 判一則 → 結果,**不落庫**。
+
+    engine=prompt_pack（live）;`to_findings` 本身非落庫（落庫是 db.replace_source_findings,不呼叫即不寫）
+    → 天然 dry-run,可安全預覽「改 prompt 後這條會怎麼判」而不覆寫現有判決。
+
+    Args:
+        source: 來源 code（如 product_reviews）。
+        source_id: 該來源業務 id（product_reviews→rec_oid）。
+
+    Returns:
+        {polarity, sentiment_score, model, text, attributions:[{is_primary, l1_domain_code, l1_label,
+         l2_code, l2_label, confidence, confidence_tier, judgment_stage, evidence_quote, summary}]}。
+        非問題（無歸因）→ attributions 空、僅 polarity。
+
+    Raises:
+        ValueError: stub 模式（無 token）;或找不到該則評論。
+    """
+    if client.is_stub():
+        raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
+    from app.core import settings as app_settings
+    from app.core import source_mapping as _srcmap
+    from app.judge import prejudge
+
+    items = db.get_items_by_ids([source_id], source)
+    if not items:
+        raise ValueError(f"找不到評論：{source}/{source_id}")
+    # 正規化源欄→canonical content（判決主輸入）——比照 prejudge_batch._work_one,否則 _text_of 讀不到
+    # product_reviews 的 rec_title/rec_desc（在 rec_* 欄,非 content/comment）→ 判空文字。
+    canon = _srcmap.normalize_row(source, items[0]) if source in _srcmap.sources() else {}
+    item = {
+        **items[0],
+        "source": source,
+        "source_id": source_id,
+        "content": canon.get("content") or "",
+        "prod_oid": canon.get("prod_oid") or "",
+        "order_oid": canon.get("order_oid") or "",
+        "raw": items[0],  # 供 _evidence_cap 讀 order_oid
+    }
+    model = app_settings.current().get("model", "")
+    findings = prejudge.to_findings(item, model=model)  # 非落庫
+    polarity = findings[0].polarity if findings else ""
+    sentiment = findings[0].sentiment_score if findings else 0
+    attributions = [
+        {
+            "is_primary": f.is_primary,
+            "l1_domain_code": f.l1_domain_code,
+            "l1_label": f.l1_label,
+            "l2_code": f.l2_code,
+            "l2_label": f.l2_label,
+            "confidence": round(f.confidence, 3),
+            "confidence_tier": f.confidence_tier,
+            "judgment_stage": f.judgment_stage,
+            "evidence_quote": f.evidence_quote,
+            "summary": f.summary,
+        }
+        for f in findings
+        if f.l1_domain_code  # 只列真歸因（非問題 finding 的空域不列）
+    ]
+    return {
+        "polarity": polarity,
+        "sentiment_score": sentiment,
+        "model": model,
+        "text": prejudge._text_of(item),
+        "attributions": attributions,
+    }
+
+
 def run_eval(prompt_arg: str, n: int) -> dict:
     """單支 prompt 評測（production 參照）：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
 
