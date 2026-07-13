@@ -10,7 +10,7 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 | `routers/inbound.py` | 資料錄入（/api/inbound：validate / upload / upload/stream SSE）+ 批次清單（/api/batches）。 |
 | `routers/settings.py` | 設定（/api/settings：get/update/raw/test-llm）+ QC DB 連線測試（/api/datasource/qc-db/test）；含 `load_user_context` 守衛 + `_activate_settings`（contextvar 注入 judge 路徑）。 |
 | `routers/findings.py` | 歸因人工動作（PATCH /api/findings/{id}/status 單筆覆核〔confirmed/dismissed/new＝撤銷·同值冪等〕｜PATCH /api/findings/batch/status 批量覆核〔勾選評論的全部歸因，單交易 diff〕｜/true_label + 真值把關 evaluate + 備註 notes + 級聯樹 taxonomy-cascade，**需登入**·記操作者/時間 audit）+ 評論級判決歷史（GET /api/judgment-history 時間軸〔judgment/status/note 三類事件〕、POST /api/judgment-history/notes 評論級備註、GET /api/judgment-history/models 歷來判決過的模型清單〔篩選/導出下拉〕）。 |
-| `routers/problems.py` | 統一問題列表 / 縱覽聚合（/api/problems*，皆支援 model CSV 多選＝判決模型篩選·當前判決維度）+ 列表導出（POST /api/problems/export → 背景 job；`snapshot_model`＝輸出結果版本：內容替換為該模型的 judgment_history 最新快照，多模型對比輸出）。 |
+| `routers/problems.py` | 統一問題列表 / 縱覽聚合（/api/problems*，皆支援 model CSV 多選＝判決模型篩選·當前判決維度）+ 列表導出（POST /api/problems/export → 背景 job；`snapshot_model`＝輸出結果版本〔內容替換為該模型 judgment_history 最新快照〕；`compare_models`＝並排對比模型多選〔基準右側每模型附一組情緒/L1/L2 欄，值取該模型最新快照〕——兩者語義獨立可並用）。 |
 | `routers/v1/` | `judgment.py`（初判歸因批次：prejudge 啟動/筆數預覽 POST `/prejudge/count`（與啟動同一套標的解析，可 `within_ids` 交集勾選範圍）/SSE 串流/暫停/恢復/停止 + 歸因歷史 GET `/runs`·`/runs/{job_id}`——run 級 LLM 使用紀錄，執行中列 overlay in-mem 即時進度）；`__init__` 聚合於 `/api/v1`。 |
 | `routers/config.py` | config JSON 線上編輯（讀寫 config/ai_judge，寫後 reload loader）。 |
 | `routers/rules.py` | 判決規則版本化 CRUD（/api/judge-rules：list/active/history/save/restore/reset + jsonschema 驗證）；POST `/export` 啟動規則 xlsx 導出背景 job。**寫入端點（save/restore/reset×2）掛 `require_permission(judge-rule.version.manage)`（admin 級·403）**。 |

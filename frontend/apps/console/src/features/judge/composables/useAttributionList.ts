@@ -234,10 +234,16 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
    * 最新快照（真多模型對比輸出）。與 exportFilters.model（篩哪些評論）語義獨立，可並用。
    */
   const exportSnapshotModel = ref('');
+  /**
+   * 導出「並排對比模型」（可複選）：基準（gpt 當前判決或所選輸出版本）右側附各模型一組
+   * 情緒/L1/L2 對比欄。空＝不並排（僅基準）。與 exportSnapshotModel 語義獨立可並用。
+   */
+  const exportCompareModels = ref<string[]>([]);
   /** 開導出彈窗：草稿深拷貝列表當前篩選（有勾選時提示只導勾選列，篩選欄仍顯示以供參考）。 */
   const openExport = () => {
     Object.assign(exportFilters, cloneFilters(filters));
     exportSnapshotModel.value = '';
+    exportCompareModels.value = [];
     exportOpen.value = true;
   };
   /** 確認導出：以草稿篩選啟動背景 job（歸因列表）；有勾選 review 則只導那些（item_ids 優先於篩選）。 */
@@ -255,6 +261,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           status: p.status,
           model: p.model,
           snapshot_model: exportSnapshotModel.value || undefined,
+          compare_models: exportCompareModels.value.length ? exportCompareModels.value : undefined,
           taxonomy: p.taxonomy,
           has_external: p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
           date_from: p.dateFrom,
@@ -348,6 +355,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     exportOpen,
     exportFilters,
     exportSnapshotModel,
+    exportCompareModels,
     openExport,
     doExport,
     exporting: exportJob.exporting,

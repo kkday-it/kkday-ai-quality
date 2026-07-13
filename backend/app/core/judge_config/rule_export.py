@@ -97,7 +97,10 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
     ws.row_dimensions[1].height = 24
 
     # 凍結首列 + 前 freeze_cols 欄（code 欄橫捲時固定）；表頭加篩選箭頭
-    ws.freeze_panes = f"{chr(65 + freeze_cols)}2"
+    # get_column_letter：欄數可能 > 26（多模型並排導出），naive chr(64+i) 會在第 27 欄溢出成 '['
+    from openpyxl.utils import get_column_letter
+
+    ws.freeze_panes = f"{get_column_letter(freeze_cols + 1)}2"
     ws.auto_filter.ref = ws.dimensions
 
     # 欄寬下限＝表頭標題一行所需寬（CJK 以 2 計）＋篩選箭頭佔位，保證標題不換行
@@ -106,7 +109,7 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
     for i, w in enumerate(widths, 1):
         head = str(ws.cell(row=1, column=i).value or "")
         head_w = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in head)
-        ws.column_dimensions[chr(64 + i)].width = max(w, head_w + 3)
+        ws.column_dimensions[get_column_letter(i)].width = max(w, head_w + 3)
 
     for r, row in enumerate(ws.iter_rows(min_row=2), start=2):  # 資料列
         for c in row:

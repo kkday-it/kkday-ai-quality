@@ -144,6 +144,7 @@ const {
   exportOpen,
   exportFilters,
   exportSnapshotModel,
+  exportCompareModels,
   openExport,
   doExport,
   exporting,
@@ -1167,6 +1168,28 @@ onMounted(init);
               <b class="font-medium text-gray-500">注意</b>
               ：下方「導出範圍篩選」一律以<b>當前判決</b>決定哪些評論入選（例：篩「負向」＝當前判決為負向），與此處選的輸出版本無關。
             </div>
+          </div>
+        </div>
+        <!-- 並排對比模型：基準（上方輸出版本，預設 gpt 當前判決）右側附各模型一組情緒/L1/L2 對比欄 -->
+        <div>
+          <div class="mb-1 text-xs text-gray-500">並排對比模型（可複選，附在基準右側逐列對照）</div>
+          <a-row :gutter="[8, 8]" align="center">
+            <a-col flex="420px">
+              <a-select
+                v-model="exportCompareModels"
+                size="small"
+                multiple
+                allow-clear
+                class="w-full"
+                placeholder="不並排（僅基準）；可複選其他模型一起導出對比"
+                :options="modelOptions"
+                :max-tag-count="3"
+              />
+            </a-col>
+          </a-row>
+          <div class="mt-1 text-xs text-gray-400">
+            每個選定模型在基準右側增加「情緒·M / L1·M / L2·M」三欄，值取該模型
+            <b class="font-medium text-gray-500">最新一次判決</b>（judgment_history 快照）；該模型未判／判為無問題的評論該三欄留空。
           </div>
         </div>
         <div>

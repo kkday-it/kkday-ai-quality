@@ -112,6 +112,8 @@ class ExportProblemsIn(BaseModel):
     # 該模型的 judgment_history 最新快照）——兩者語義獨立，可並用。
     model: list[str] | None = None
     snapshot_model: str | None = None
+    # 並排對比模型（可複選）：每模型在基準右側附一組欄「情緒·M/L1·M/L2·M」，值取該模型最新快照。
+    compare_models: list[str] | None = None
     has_external: bool | None = None
     rec_oid: str | None = None
     prod_oid: str | None = None
@@ -148,6 +150,7 @@ def export_problems(
             status=body.status,
             model=body.model,
             snapshot_model=body.snapshot_model,
+            compare_models=body.compare_models,
             has_external=body.has_external,
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,

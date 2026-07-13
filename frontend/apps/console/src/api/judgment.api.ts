@@ -100,6 +100,8 @@ export const startProblemsExport = (p: {
   model?: string[];
   /** 輸出結果版本：省略＝當前判決；指定模型＝內容替換為該模型的 judgment_history 最新快照。 */
   snapshot_model?: string;
+  /** 並排對比模型（可複選）：每模型在基準右側附一組欄「情緒·M/L1·M/L2·M」，值取該模型最新快照。 */
+  compare_models?: string[];
   /** 有無外部評論（'true'/'false'）。 */
   has_external?: boolean;
   /** 精確 id 篩選。 */

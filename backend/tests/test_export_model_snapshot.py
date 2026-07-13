@@ -124,3 +124,44 @@ def test_export_snapshot_selects_that_models_view(temp_db) -> None:
     wb = load_workbook(io.BytesIO(blob))
     a2 = wb["歸因統計"]["A2"].value
     assert "gpt-5-mini" in a2 and "已排除 0 則" in a2
+
+
+def test_export_compare_models_side_by_side(temp_db) -> None:
+    """並排對比模型：基準（gpt 當前判決）右側附各模型情緒/L1 對比欄；未判該模型的評論該欄空白。
+
+    用 2 個 compare model（總欄數 > 26）同時鎖住 _style_header 欄字母溢出修復（chr(64+i) → 'get_column_letter'）。
+    """
+    db.insert_source_batch("product_reviews", [_pr_row("C1"), _pr_row("C2")])
+    # C1：seed 判 supplier/正向、gemini 判 customer/負向，最後 gpt 判 content/負向（當前判決＝gpt）
+    db.replace_source_findings(
+        "product_reviews",
+        "C1",
+        [_finding("C1", "seed-2-0-lite", "supplier", "供應商履約", "positive")],
+    )
+    db.replace_source_findings(
+        "product_reviews",
+        "C1",
+        [_finding("C1", "gemini-flash", "customer", "理解期待", "negative")],
+    )
+    db.replace_source_findings("product_reviews", "C1", [_finding("C1", "gpt-5-mini")])
+    # C2：只有 gpt 判過 → compare 欄該留空
+    db.replace_source_findings("product_reviews", "C2", [_finding("C2", "gpt-5-mini")])
+
+    headers, rows = _cells(
+        db.export_problems_xlsx(
+            source="product_reviews", compare_models=["seed-2-0-lite", "gemini-flash"]
+        )
+    )
+    # 對比欄成組出現（情緒/L1/L2 × 2 模型）
+    for m in ("seed-2-0-lite", "gemini-flash"):
+        assert f"情緒·{m}" in headers and f"L1·{m}" in headers and f"L2·{m}" in headers
+    by_id = {r[_col(headers, "編號")]: r for r in rows}
+    c1 = by_id["C1"]
+    assert c1[_col(headers, "L1 分類")] == "商品內容"  # 基準＝gpt 當前判決
+    assert c1[_col(headers, "L1·seed-2-0-lite")] == "供應商履約"  # seed 最新快照
+    assert c1[_col(headers, "情緒·seed-2-0-lite")] == "4"  # 正向 sentiment
+    assert c1[_col(headers, "L1·gemini-flash")] == "理解期待"
+    assert c1[_col(headers, "情緒·gemini-flash")] == "1"  # 負向 sentiment
+    c2 = by_id["C2"]
+    assert not c2[_col(headers, "L1·seed-2-0-lite")]  # C2 未被 seed 判過 → 空白
+    assert not c2[_col(headers, "L1·gemini-flash")]

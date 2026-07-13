@@ -115,6 +115,45 @@ def _flat_attr(a: dict) -> dict:
     }
 
 
+def _compare_cols(models: list[str]) -> list[tuple[str, str, int]]:
+    """並排對比模型 → 每模型一組 review 級欄（情緒/L1/L2）；欄鍵前綴 `cmp__{model}__*`。
+
+    鍵前綴確保不與 attr 級鍵（_attr_keys）撞名 → fan-out 迴圈自動當 review 級處理（合併儲存格）。
+    """
+    cols: list[tuple[str, str, int]] = []
+    for m in models:
+        cols += [
+            (f"情緒·{m}", f"cmp__{m}__sent", 8),
+            (f"L1·{m}", f"cmp__{m}__l1", 14),
+            (f"L2·{m}", f"cmp__{m}__l2", 14),
+        ]
+    return cols
+
+
+def _compare_values(snap_attrs: list[dict]) -> tuple[str, str, str]:
+    """某模型某評論的快照歸因陣列 → (情緒分, L1 labels、串接, L2 labels、串接)。
+
+    情緒取 primary（或首條）sentiment_score；L1/L2 取 distinct label 保序串接。空陣列（該模型
+    判為 non_issue 或未判）→ 三欄皆空（前端/檔案以空白表達「該模型無歸因」）。
+    """
+    if not snap_attrs:
+        return "", "", ""
+    primary = next((a for a in snap_attrs if a.get("is_primary")), snap_attrs[0])
+    sent = primary.get("sentiment_score")
+    l1 = _join_labels((a.get("l1") or {}).get("label") for a in snap_attrs)
+    l2 = _join_labels((a.get("l2") or {}).get("label") for a in snap_attrs)
+    return (str(sent) if sent else ""), l1, l2
+
+
+def _join_labels(labels) -> str:
+    """label 迭代器 → distinct 保序「、」串接（去空/去重）。"""
+    seen: dict[str, None] = {}
+    for lb in labels:
+        if lb and lb not in seen:
+            seen[lb] = None
+    return "、".join(seen)
+
+
 def _adapt_snapshot(a: dict, model: str) -> dict:
     """judgment_history 快照單筆（snapshot_of 形狀）→ attribution_dto 輸出形狀（快照導出用）。
 
@@ -186,6 +225,7 @@ def export_problems_xlsx(
     status: list[str] | None = None,
     model: list[str] | None = None,
     snapshot_model: str | None = None,
+    compare_models: list[str] | None = None,
     has_external: bool | None = None,
     rec_oid: str | None = None,
     prod_oid: str | None = None,
@@ -204,6 +244,9 @@ def export_problems_xlsx(
         snapshot_model: 輸出結果版本——None/空＝當前判決（現行為）；指定模型＝內容替換為該
             模型的 judgment_history 最新快照（真多模型對比輸出）。篩選仍依**當前判決**圈選
             評論（表級照常、判決級口徑落差以統計表附註揭露）；該模型未判過的評論整列排除。
+        compare_models: 並排對比模型（可複選）；每個模型在基準（gpt 當前判決或 snapshot_model）
+            右側附一組 review 級欄「情緒·M / L1·M / L2·M」，值取該模型 judgment_history 最新快照。
+            與 snapshot_model 語義獨立可並用（基準決定 fan-out 內容，compare 只加對比欄）。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
         ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
             None＝同步直呼（測試 / 腳本）。
@@ -268,10 +311,28 @@ def export_problems_xlsx(
             )
             r["polarity"] = primary.get("polarity") if primary else None
             r["our_sentiment"] = primary.get("sentiment_score") if primary else None
+    # 並排對比模型：每模型一組 review 級欄（情緒/L1/L2）附在基準右側；值取該模型最新快照，
+    # 逐 row 注入 `cmp__{model}__*` 鍵——鍵前綴不撞 _attr_keys，故 fan-out 迴圈自動當 review
+    # 級處理（合併儲存格、參與行高），無須改動渲染主迴圈。
+    cmp_cols: list[tuple[str, str, int]] = []
+    if compare_models:
+        from app.core.db.judgment_history import latest_snapshots
+
+        cmp_cols = _compare_cols(compare_models)
+        snaps_by_model = {m: latest_snapshots(source or "", m) for m in compare_models}
+        for r in rows:
+            for m in compare_models:
+                snap = snaps_by_model[m].get(r["_group"])
+                sent, l1, l2 = _compare_values(snap["attributions"] if snap else [])
+                r[f"cmp__{m}__sent"], r[f"cmp__{m}__l1"], r[f"cmp__{m}__l2"] = sent, l1, l2
+        cmp_note = "並排對比模型（值＝各模型 judgment_history 最新快照）：" + "、".join(
+            compare_models
+        )
+        stats_note = f"{stats_note}；{cmp_note}" if stats_note else cmp_note
     total = len(rows)
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
-    cols = _EXPORT_XLSX_COLS
+    cols = _EXPORT_XLSX_COLS + cmp_cols
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
