@@ -3,23 +3,29 @@
  * 初判 Prompt 快測彈窗（Prompt-as-Source 調適閉環 UI）：抽 N 則現行判決為參照、只跑當前這支 prompt
  * → 指標卡（域：primary/命中/棄權/多報；極性：polarity/sentiment）+ 逐案分歧表（含診斷理由 reason，
  * B0 overlay：命中取首條歸因理由、棄權取 abstain_reason）。消耗 LLM 額度。
- * 大樣本 / golden / mock / A/B 比較走 CLI scripts/tools/eval_prompt_single.py。
+ * 大樣本 / golden / A/B 比較走 CLI scripts/tools/eval_prompt_single.py。
  *
  * 兩種入口：① RuleManager 編某支 prompt 時快測——`promptCode` 固定、`selectable` 關（預設）。
  * ② 歸因列表工具列「測試 Prompt」——`selectable` 開，改用下拉選任一支；`filters` 給定時
  * （B1）樣本＝列表當前篩選子集，非 md5 全表抽樣。
+ *
+ * `source="mock"`（B3）：樣本改讀邊界測試集（忽略樣本數與 filters），供「用此集測某支 prompt」
+ * 入口使用（見 PromptTestcasesModal）。分歧表每案可「存為測試 case」（分歧一鍵入集）。
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   evalPrompt,
   getPromptEvalRun,
+  getTaxonomyCascade,
   listPromptEvalRuns,
+  type CascadeNode,
   type PrejudgeBody,
   type PromptEvalResult,
   type PromptEvalRunSummary,
-} from '@/api/judgment.api';
+} from '@/api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import SaveTestcaseModal, { type TestcasePrefill } from './SaveTestcaseModal.vue';
 import { fmtDt } from '../utils';
 
 const props = withDefaults(
@@ -32,8 +38,10 @@ const props = withDefaults(
     selectable?: boolean;
     /** B1：給定時樣本＝此篩選子集（PrejudgeBody 同形），取代 md5 全表抽樣。 */
     filters?: PrejudgeBody;
+    /** B3：'mock' 時樣本改讀邊界測試集（忽略樣本數/filters），供「用此集測某支 prompt」入口使用。 */
+    source?: 'production' | 'mock';
   }>(),
-  { promptCode: '', selectable: false, filters: undefined },
+  { promptCode: '', selectable: false, filters: undefined, source: 'production' },
 );
 
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
@@ -51,6 +59,7 @@ onMounted(async () => {
     selectedCode.value =
       store.metas.find((m) => m.rule_code.startsWith('prompt_'))?.rule_code || 'prompt_polarity';
   }
+  cascadeOpts.value = await getTaxonomyCascade();
 });
 const promptOptions = computed(() =>
   store.metas
@@ -68,6 +77,15 @@ const promptOptions = computed(() =>
 /** rule_code → 端點 prompt 參數（prompt_C-3 → C-3、prompt_polarity → polarity）。 */
 const promptArg = computed(() => selectedCode.value.replace('prompt_', ''));
 const isPolarity = computed(() => promptArg.value === 'polarity');
+const isMock = computed(() => props.source === 'mock');
+
+// 「存為測試 case」域機器值猜測：以中文 label 對照級聯樹 L1（同一份 SSOT，免另存 C-N→域機器值表）。
+const cascadeOpts = ref<CascadeNode[]>([]);
+const domainMachineForCurrent = computed(() => {
+  if (isPolarity.value) return '';
+  const label = store.labelFor(selectedCode.value);
+  return cascadeOpts.value.find((n) => n.label === label)?.value ?? '';
+});
 
 /** 指標卡定義（依 prompt 別）：{label, value(0~1 或 null)}。 */
 const metrics = computed(() => {
@@ -94,8 +112,9 @@ const mismatchColumns = [
   { title: 'id', dataIndex: 'id', width: 110, ellipsis: true, tooltip: true },
   { title: '參照', slotName: 'ref', width: 150 },
   { title: '本支', slotName: 'pack', width: 150 },
-  { title: '理由', dataIndex: 'reason', width: 220, ellipsis: true, tooltip: true },
+  { title: '理由', dataIndex: 'reason', width: 200, ellipsis: true, tooltip: true },
   { title: '評論', dataIndex: 'text', ellipsis: true, tooltip: true },
+  { title: '', slotName: 'actions', width: 90 },
 ];
 
 /** 陣列/值 → 顯示字串（歸因 code 陣列或極性字串）。 */
@@ -106,13 +125,34 @@ async function run() {
   loading.value = true;
   result.value = null;
   try {
-    result.value = await evalPrompt(promptArg.value, n.value, props.filters);
+    result.value = isMock.value
+      ? await evalPrompt(promptArg.value, n.value, undefined, 'mock')
+      : await evalPrompt(promptArg.value, n.value, props.filters);
     await loadHistory(); // 本次測試已落歷史（後端同步 insert）→ 立即反映在歷史列表最上方
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '測試失敗');
   } finally {
     loading.value = false;
   }
+}
+
+// 「存為測試 case」（B3 分歧一鍵入集）：域 prompt 分歧才可存（testcase schema 要求 gold_l1）。
+const saveOpen = ref(false);
+const savePrefill = ref<TestcasePrefill | null>(null);
+function openSaveTestcase(record: NonNullable<PromptEvalResult['mismatches']>[number]) {
+  const ref_ = record.ref;
+  const pack = record.pack;
+  savePrefill.value = {
+    text: record.text,
+    goldL1: domainMachineForCurrent.value,
+    goldL2:
+      record.ref_primary ||
+      (Array.isArray(ref_) ? ref_[0] : '') ||
+      (Array.isArray(pack) ? pack[0] : '') ||
+      '',
+    note: `分歧案例（${promptArg.value}）：參照=${fmt(ref_)}／本支=${fmt(pack)}`,
+  };
+  saveOpen.value = true;
 }
 
 // ── 測試歷史（B2）：對「當前選中這支 prompt」查歷次測試結果，供改 prompt 前後對比 ──
@@ -173,12 +213,15 @@ watch(promptArg, () => {
       <a-select v-model="selectedCode" size="small" class="w-56" :options="promptOptions" />
     </div>
 
-    <!-- 配置列：樣本數 + 執行 -->
+    <!-- 配置列：樣本數 + 執行（mock 模式：測全部啟用中測試 case，不需設樣本數） -->
     <div class="mb-3 flex items-center gap-3">
-      <span class="text-xs text-[var(--color-text-3)]">樣本數</span>
-      <a-input-number v-model="n" :min="1" :max="30" size="small" class="w-24" />
+      <template v-if="!isMock">
+        <span class="text-xs text-[var(--color-text-3)]">樣本數</span>
+        <a-input-number v-model="n" :min="1" :max="30" size="small" class="w-24" />
+      </template>
       <span class="text-[11px] text-[var(--color-text-3)]">
-        <template v-if="filters">樣本＝當前歸因列表篩選子集（消耗 LLM）</template>
+        <template v-if="isMock">樣本＝邊界測試集全部啟用中 case（消耗 LLM）</template>
+        <template v-else-if="filters">樣本＝當前歸因列表篩選子集（消耗 LLM）</template>
         <template v-else>抽現行判決 N 則為參照，只跑這支 prompt（消耗 LLM）；大樣本用 CLI</template>
       </span>
       <div class="flex-1" />
@@ -218,9 +261,16 @@ watch(promptArg, () => {
       <template #pack="{ record }">
         <span class="font-mono text-xs">{{ fmt(record.pack) }}</span>
       </template>
+      <template #actions="{ record }">
+        <a-button v-if="!isPolarity" type="text" size="mini" @click="openSaveTestcase(record)"
+          >存為 case</a-button
+        >
+      </template>
     </a-table>
     <a-empty v-else-if="result" description="無分歧（本支與現行判決一致）" />
-    <div v-else class="py-8 text-center text-[var(--color-text-3)]">設定樣本數後點「執行測試」</div>
+    <div v-else class="py-8 text-center text-[var(--color-text-3)]">
+      {{ isMock ? '點「執行測試」' : '設定樣本數後點「執行測試」' }}
+    </div>
 
     <!-- 測試歷史（B2）：這支 prompt 的歷次測試結果，供改 prompt 前後對比 -->
     <a-collapse class="mt-3" :bordered="false">
@@ -255,4 +305,7 @@ watch(promptArg, () => {
       </a-collapse-item>
     </a-collapse>
   </a-modal>
+
+  <!-- 存為測試 case（B3 分歧一鍵入集）：帶入分歧筆的文字/猜測 gold，使用者確認/修正後入 prompt_testcases -->
+  <SaveTestcaseModal v-model:visible="saveOpen" :prefill="savePrefill" />
 </template>

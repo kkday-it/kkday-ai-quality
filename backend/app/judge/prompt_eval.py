@@ -13,6 +13,10 @@
 schema/system 上附加 reason/abstain_reason 欄位（不改 md 檔本身、production 判決路徑零影響）。
 `domain_verdicts()` 對六域各自單獨呼叫診斷版 schema，回「六域裁決」：命中的域帶 l2_code+理由，
 棄權的域帶棄權理由——無論匹配與否都有交代，供調適者定位「邊界寫糊」或「例句缺」。
+
+抽樣三源（`run_eval` 的 `source` 參數）：production（現行判決參照，md5 穩定抽樣，預設）/
+filtered（B1，`filter_ids` 給定時＝歸因列表當前篩選子集）/ mock（B3，`sample_domain_mock`/
+`sample_polarity_mock` 讀 `prompt_testcases` 表——人工上傳/新增/分歧一鍵入集的邊界 gold 案例）。
 """
 
 from __future__ import annotations
@@ -275,6 +279,46 @@ def sample_polarity_by_ids(ids: list[str]) -> list[dict]:
     return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
 
 
+# ─────────────────────────── 抽樣（B3：mock 邊界測試集，取代 --mock-file）───────────────────────────
+def sample_domain_mock(dom_machine: str) -> list[dict]:
+    """域參照集（B3：mock 邊界測試集，人工上傳/新增的 gold 標註，取代 md5 全表抽樣）。
+
+    取全部啟用中測試 case（不分域——需要「他域案例＝本域棄權分母」）：gold_l1==本域者為正例
+    （`[""]` 亦為 truthy list，故 gold_l2 留空僅代表「屬此域但不釘特定面向」，仍計入命中分母，
+    不計入 primary 分母）；其餘域者 ref_l2s 為空＝本域應棄權的參照。
+
+    Args:
+        dom_machine: 域機器值（l1_code）。
+    """
+    rows = db.enabled_testcases()
+    out: list[dict] = []
+    for r in rows:
+        if not r["text"].strip():
+            continue
+        is_this_domain = r["gold_l1"] == dom_machine
+        out.append(
+            {
+                "id": r["id"],
+                "text": r["text"],
+                "polarity": r["expected_polarity"] or "negative",
+                "ref_l2s": [r["gold_l2"] or ""] if is_this_domain else [],
+                "ref_primary": (r["gold_l2"] or None) if is_this_domain else None,
+            }
+        )
+    return out
+
+
+def sample_polarity_mock() -> list[dict]:
+    """極性參照集（B3：mock 測試集，僅取有填 expected_polarity 者；無 sentiment 真值時 ref sentiment
+    留 None，`compute_polarity_metrics` 對此已 null-safe，只評 polarity_match_rate）。
+    """
+    rows = [r for r in db.enabled_testcases() if r["expected_polarity"] and r["text"].strip()]
+    return [
+        {"id": r["id"], "text": r["text"], "polarity": r["expected_polarity"], "sentiment": None}
+        for r in rows
+    ]
+
+
 # ─────────────────────────── 指標（純函式，與 I/O 解耦→可單元測）───────────────────────────
 def compute_domain_metrics(records: list[dict]) -> dict:
     """逐筆 {ref_l2s, ref_primary, pack_l2s} → 域指標（純函式，不觸 LLM/DB）。
@@ -323,14 +367,19 @@ def compute_domain_metrics(records: list[dict]) -> dict:
 
 
 def compute_polarity_metrics(records: list[dict]) -> dict:
-    """逐筆 {polarity, sentiment, pack_polarity, pack_sentiment} → 極性指標（純函式）。"""
+    """逐筆 {polarity, sentiment, pack_polarity, pack_sentiment} → 極性指標（純函式）。
+
+    sentiment 為 None 之筆不計入 sentiment_match_rate 分母（B3 mock 測試集只填 expected_polarity、
+    無 sentiment 真值時，該欄自然回 None 而非誤導性的低分）。
+    """
     n = len(records)
     pol_ok = sum(1 for r in records if r["pack_polarity"] == r["polarity"])
-    sent_ok = sum(1 for r in records if r["pack_sentiment"] == r["sentiment"])
+    sent_records = [r for r in records if r.get("sentiment") is not None]
+    sent_ok = sum(1 for r in sent_records if r["pack_sentiment"] == r["sentiment"])
     return {
         "n": n,
         "polarity_match_rate": round(pol_ok / n, 3) if n else None,
-        "sentiment_match_rate": round(sent_ok / n, 3) if n else None,
+        "sentiment_match_rate": round(sent_ok / len(sent_records), 3) if sent_records else None,
     }
 
 
@@ -505,16 +554,24 @@ def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dic
 
 
 def run_eval(
-    prompt_arg: str, n: int, *, diagnostic: bool = True, filter_ids: list[str] | None = None
+    prompt_arg: str,
+    n: int,
+    *,
+    diagnostic: bool = True,
+    filter_ids: list[str] | None = None,
+    source: str = "production",
 ) -> dict:
-    """單支 prompt 評測（production 參照）：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
+    """單支 prompt 評測：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
 
     Args:
         prompt_arg: "polarity" 或 "C-1".."C-6"。
-        n: 樣本數（UI 快測建議 ≤20；抽樣 md5 穩定、跨 run 可比）。
+        n: 樣本數（UI 快測建議 ≤20；抽樣 md5 穩定、跨 run 可比）。source="mock" 時忽略（測全部
+            啟用中測試 case——mock 集本就是人工精選的小集，不需再截）。
         diagnostic: 是否開診斷理由（mismatches 每案附 reason；預設開）。
         filter_ids: 給定時樣本＝此特徵 id 清單截前 n 筆（B1：按目前歸因列表篩選抽樣，取代
-            md5 全表抽樣，忠實反映使用者選的子集）；None＝沿用現行 md5 抽樣（預設行為不變）。
+            md5 全表抽樣，忠實反映使用者選的子集）；僅 source="production" 時生效。
+        source: "production"（現行判決參照，預設）/ "mock"（B3：邊界測試集，見 `sample_domain_mock`/
+            `sample_polarity_mock`）。
 
     Returns:
         {prompt, source, model, n, <指標>, mismatches, filtered}。
@@ -525,6 +582,17 @@ def run_eval(
     if client.is_stub():
         raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
     pid = prompt_id_of(prompt_arg)
+    if source == "mock":
+        if prompt_arg == "polarity":
+            result = _run_polarity(pid, sample_polarity_mock(), diagnostic=diagnostic)
+        else:
+            dom = domain_of(prompt_arg)
+            if not dom:
+                raise ValueError(f"未知域：{prompt_arg}")
+            result = _run_domain(pid, prompt_arg, sample_domain_mock(dom), diagnostic=diagnostic)
+        result["source"] = "mock"
+        result["filtered"] = False
+        return result
     if prompt_arg == "polarity":
         samples = (
             sample_polarity_by_ids(filter_ids[:n]) if filter_ids is not None else sample_polarity(n)

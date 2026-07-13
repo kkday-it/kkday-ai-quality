@@ -3,12 +3,14 @@
  * 歸因列表單條「測試」彈窗（Prompt-as-Source 調適閉環）：對這一則評論即時跑 prompts → 分類結果,
  * 與現有判決並排比對。**不落庫**（dry-run 預覽「改 prompt 後這條會怎麼判」,不覆寫現有判決）。
  * 與列級「初判分類」（重判並覆寫落庫）區隔。下方「六域裁決」為診斷理由 overlay（B0）：無論
- * 該域是否命中都附一句話理由，供調適時定位「邊界寫糊」或「例句缺」。
+ * 該域是否命中都附一句話理由，供調適時定位「邊界寫糊」或「例句缺」；命中域可「存為測試 case」
+ * （B3 分歧一鍵入集，帶入該域判斷＋理由）。
  */
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { classifyOne, type ClassifyOneResult } from '@/api/judgment.api';
+import { classifyOne, type ClassifyOneResult, type DomainVerdict } from '@/api/judgment.api';
 import type { Attribution, ProblemRow } from '../constants/source-schema.constant';
+import SaveTestcaseModal, { type TestcasePrefill } from './SaveTestcaseModal.vue';
 
 const props = defineProps<{
   /** 是否顯示。 */
@@ -55,6 +57,20 @@ watch(
     if (!v) result.value = null;
   },
 );
+
+// 「存為測試 case」（B3 分歧一鍵入集）：命中域帶入 gold_l1/l2/理由，使用者確認/修正後入測試集。
+const saveOpen = ref(false);
+const savePrefill = ref<TestcasePrefill | null>(null);
+function openSaveTestcase(v: DomainVerdict) {
+  savePrefill.value = {
+    text: reviewText.value,
+    goldL1: v.domain,
+    goldL2: v.attributions[0]?.l2_code ?? '',
+    expectedPolarity: result.value?.polarity ?? '',
+    note: v.attributions[0]?.reason ?? '',
+  };
+  saveOpen.value = true;
+}
 </script>
 
 <template>
@@ -173,6 +189,10 @@ watch(
                 <span class="text-[var(--color-text-3)]">›</span>
                 <span>{{ v.attributions[0]?.l2_label }}</span>
               </template>
+              <div class="flex-1" />
+              <a-button v-if="v.matched" type="text" size="mini" @click="openSaveTestcase(v)"
+                >存為 case</a-button
+              >
             </div>
             <div class="mt-1 text-[var(--color-text-2)]">
               {{ v.matched ? v.attributions[0]?.reason : v.abstain_reason }}
@@ -182,4 +202,7 @@ watch(
       </a-collapse-item>
     </a-collapse>
   </a-modal>
+
+  <!-- 存為測試 case（B3 分歧一鍵入集）：帶入該域判斷＋理由，使用者確認/修正後入 prompt_testcases -->
+  <SaveTestcaseModal v-model:visible="saveOpen" :prefill="savePrefill" />
 </template>

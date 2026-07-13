@@ -1,5 +1,5 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
-import { BASE, j } from './http.api';
+import { BASE, JSON_HEADERS, j } from './http.api';
 import type { ProblemRow } from '@/features/judge/constants';
 
 /** 統一問題列表查詢參數（傾向/階段/信心分層/歸因分類/垂直分類/日期區間/精確 id）。 */
@@ -194,16 +194,18 @@ export interface PromptEvalResult {
 
 /** 單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標 + 分歧（消耗 LLM 額度）。
  * @param prompt "polarity" 或 "C-1".."C-6"（呼叫端由 rule_code 去 prompt_ 前綴）。
- * @param filters B1：給定時樣本＝歸因列表當前篩選子集（`PrejudgeBody` 同形，取代 md5 全表抽樣）。 */
+ * @param filters B1：給定時樣本＝歸因列表當前篩選子集（`PrejudgeBody` 同形，取代 md5 全表抽樣）。
+ * @param source B3："mock" 時樣本改讀邊界測試集（忽略 n/filters），預設 "production"。 */
 export const evalPrompt = (
   prompt: string,
   n: number,
   filters?: PrejudgeBody,
+  source: 'production' | 'mock' = 'production',
 ): Promise<PromptEvalResult> =>
   j<PromptEvalResult>(`${BASE}/v1/judgment/prompt-eval`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, n, filters }),
+    body: JSON.stringify({ prompt, n, filters, source }),
   });
 
 /** 測試歷史列表單筆（B2；不含 mismatches，指標摘要走 metrics）。 */
@@ -419,3 +421,90 @@ export const getJudgmentRun = (jobId: string) =>
 /** 歷來實際判決過的模型清單（judgments 當前 ∪ judgment_history 快照 distinct；stub 排最後）。 */
 export const getJudgmentModels = (): Promise<string[]> =>
   j<string[]>(`${BASE}/judgment-history/models`);
+
+// ─────────────────────────── B3：邊界測試集（mock 上傳 → prompt 修正閉環）───────────────────────────
+
+/** 邊界測試 case（CSV 上傳 / 手動新增 / 分歧一鍵入集三來源同表）。 */
+export interface PromptTestcase {
+  id: string;
+  text: string;
+  /** 域機器值（content/quality/supplier/platform/service/customer）。 */
+  gold_l1: string;
+  /** L2 面向 code；空字串＝僅標「屬此域」不釘特定面向。 */
+  gold_l2: string;
+  /** negative/neutral/positive；空字串＝未標。 */
+  expected_polarity: string;
+  note: string;
+  tags: string[];
+  enabled: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+/** 新增單筆測試 case 的請求體（手動新增 / 分歧一鍵入集共用）。 */
+export interface PromptTestcaseInput {
+  text: string;
+  gold_l1: string;
+  gold_l2?: string;
+  expected_polarity?: string;
+  note?: string;
+  tags?: string[];
+}
+
+/** 新增單筆邊界測試 case → {id}。 */
+export const createPromptTestcase = (body: PromptTestcaseInput): Promise<{ id: string }> =>
+  j<{ id: string }>(`${BASE}/v1/judgment/prompt-testcases`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+
+/** CSV 批量上傳邊界測試 case → {inserted, skipped, errors}（errors 含行號與原因，不合法者不入庫）。 */
+export const uploadPromptTestcases = (
+  file: File,
+): Promise<{
+  inserted: number;
+  skipped: number;
+  errors: Array<{ row: number; text: string; error: string }>;
+}> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return j(`${BASE}/v1/judgment/prompt-testcases/upload`, { method: 'POST', body: fd });
+};
+
+/** 邊界測試集列表查詢參數。 */
+export interface ListPromptTestcasesParams {
+  goldL1?: string;
+  tags?: string[];
+  enabled?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+/** 邊界測試集列表（篩 gold_l1/tags/enabled，分頁）。 */
+export const listPromptTestcases = (
+  p: ListPromptTestcasesParams = {},
+): Promise<{ total: number; items: PromptTestcase[] }> => {
+  const q = new URLSearchParams();
+  if (p.goldL1) q.set('gold_l1', p.goldL1);
+  if (p.tags?.length) q.set('tags', p.tags.join(','));
+  if (p.enabled !== undefined) q.set('enabled', String(p.enabled));
+  q.set('limit', String(p.limit ?? 50));
+  q.set('offset', String(p.offset ?? 0));
+  return j(`${BASE}/v1/judgment/prompt-testcases?${q.toString()}`);
+};
+
+/** 局部更新一筆測試 case（enabled 開關 / 修正 gold 值等）。 */
+export const updatePromptTestcase = (
+  id: string,
+  patch: Partial<PromptTestcaseInput> & { enabled?: boolean },
+): Promise<{ updated: true }> =>
+  j(`${BASE}/v1/judgment/prompt-testcases/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  });
+
+/** 刪除一筆測試 case。 */
+export const deletePromptTestcase = (id: string): Promise<{ deleted: true }> =>
+  j(`${BASE}/v1/judgment/prompt-testcases/${encodeURIComponent(id)}`, { method: 'DELETE' });

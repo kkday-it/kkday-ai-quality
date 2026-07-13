@@ -417,6 +417,27 @@ prompt_eval_runs = Table(
     Index("idx_prompt_eval_runs_prompt_created", "prompt_id", "created_at"),
 )
 
+# 邊界測試集（B3：Prompt-as-Source 調適閉環——mock 上傳 CSV / 手動新增 / 分歧一鍵入集三來源同表），
+# 供 `prompt_eval.run_eval(source="mock")` 消費：gold_l1 同域者為正例、他域者為該域棄權分母。
+prompt_testcases = Table(
+    "prompt_testcases",
+    metadata,
+    Column("id", Text, primary_key=True),  # tc_* uuid4 hex
+    Column("text", Text, nullable=False),
+    Column(
+        "gold_l1", Text, nullable=False
+    ),  # 域機器值（對 domains.json 驗，見 app/judge/prompt_testcases.validate_row）
+    Column("gold_l2", Text),  # L2 面向 code（可空＝僅標「屬此域」不釘特定面向；對該域 facets 驗）
+    Column("expected_polarity", Text),  # negative/neutral/positive（可空）
+    Column("note", Text),
+    Column("tags", JSONB),  # 字串陣列
+    Column("enabled", Boolean, nullable=False, server_default=text("true")),
+    Column("created_by", Text),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 依域篩選熱路徑：run_eval(source=mock) 抽樣＋管理列表按 gold_l1 篩選
+    Index("idx_prompt_testcases_gold_l1", "gold_l1"),
+)
+
 
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────
 _engine: Engine | None = None

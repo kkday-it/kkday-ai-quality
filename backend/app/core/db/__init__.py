@@ -56,6 +56,15 @@ from app.core.db.prompt_eval_runs import (
     list_prompt_eval_runs,
     prompt_eval_run_detail,
 )
+from app.core.db.prompt_testcases import (
+    bulk_insert_prompt_testcases,
+    delete_prompt_testcase,
+    enabled_testcases,
+    get_prompt_testcase,
+    insert_prompt_testcase,
+    list_prompt_testcases,
+    update_prompt_testcase,
+)
 from app.core.db.rule_versions import (
     RULE_CODES,
     default_rule_content,
@@ -129,6 +138,13 @@ __all__ = [
     "insert_prompt_eval_run",
     "list_prompt_eval_runs",
     "prompt_eval_run_detail",
+    "bulk_insert_prompt_testcases",
+    "delete_prompt_testcase",
+    "enabled_testcases",
+    "get_prompt_testcase",
+    "insert_prompt_testcase",
+    "list_prompt_testcases",
+    "update_prompt_testcase",
     "update_batch_inserted",
     "update_finding_status",
     "update_finding_true_label",
