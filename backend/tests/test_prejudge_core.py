@@ -33,6 +33,9 @@ def fixed_config(monkeypatch):
     monkeypatch.setattr(prejudge, "_tiers", lambda: dict(_FIXED_TIERS))
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: dict(_FIXED_CFG))
     monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
+    # 本檔基準線鎖 legacy 引擎（cascade/flat/l2 派生鏈）；prompt_pack 六域並行有獨立測試
+    # （test_prejudge_pack.py）。engine 預設已切 prompt_pack，legacy 路徑測試須顯式 pin。
+    monkeypatch.setattr(prejudge, "_engine", lambda: "legacy")
 
 
 # ── 純 helper ──────────────────────────────────────────────────────────
@@ -488,10 +491,12 @@ def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
 
 @pytest.fixture
 def non_stub(monkeypatch):
-    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）+ pin l3 深度。"""
+    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）+ pin l3 深度 + legacy 引擎。"""
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge.global_rule, "cascade", lambda: {"enabled": False})
     monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
+    # engine 預設已切 prompt_pack；本組測 legacy 單次多歸因（_stage2_attribute_multi），須 pin legacy。
+    monkeypatch.setattr(prejudge, "_engine", lambda: "legacy")
 
 
 def test_resolve_attrs_multi_dedup_keeps_highest_and_drops_abstain(non_stub, monkeypatch) -> None:

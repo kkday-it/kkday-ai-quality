@@ -1,13 +1,19 @@
-"""初判歸因單條引擎：一條進線資料 → TicketFinding（極性閘門 → 候選域 canon 聚焦歸因）。
+"""初判歸因單條引擎：一條進線資料 → TicketFinding（極性閘門 → 歸因）。
 
-accuracy/token 最優管線（真實 83k 筆精算，見 plans/toasty-churning-shell.md）：
+**引擎切換**（judgment.json prejudge.engine）：
+- **prompt_pack（Prompt-as-Source，新預設）**：判決 prompt 唯一真相源＝docs/prompts/prompts/*.md
+  （DB active 版可線上熱編，見 prompt_source）。Stage1 極性吃 00_polarity；歸因段六支域 prompt
+  （01_C-1~06_C-6）ThreadPool 並行，各判本域問題→合流過共用閘門。取代下述 legacy 派生鏈。
+- **legacy（驗收期回滾用）**：judge 提示詞/判準自 global_rule + ai_judge 規則樹拼裝，單呼叫 32 面向
+  目錄多歸因（_attr_sys/_domain_boundaries/_l2_catalog/_attrs_l2_multi 等）；驗收通過後刪除。
+
+共用管線（兩引擎皆走）：
 - Stage 0 零 LLM 略過純好評（rating=5 + 評論極短 + 無負向詞）→ $0，不歸因。
-- Stage 1 極性閘門（便宜模型 / stub 啟發式）：進歸因傾向由 global_rule.polarity_gate.attribute_when
-  決定（預設 negative+neutral——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
-- Stage 2 歸因（負向/混合中性；單次呼叫 + 候選域 L3 catalog 聚焦）：選 l3_code + 信心。
-- Stage 2b 自適應複判（僅信心落 jury 帶）：注入該 L2 完整 canon 再判一次，取信心較高者。
+- Stage 1 極性閘門：進歸因傾向由 global_rule.polarity_gate.attribute_when 決定（預設 negative+neutral
+  ——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
+- 歸因合流閘門（_resolve_attrs_multi 尾段）：同域去重（保信心最高）+ 排序 + attr_min/secondary_min。
+- G1 自動確認路由、證據封頂、grounding 壓信心、stub 雙防線等 code-side 機制不屬 prompt，兩引擎共用。
 
-判準來源一律 core/ai_judge（rule_C-*.json 的 canon/allow/forbid/好壞範例），禁在此自寫判準。
 finding 為純歸因（軸A）：polarity + L1/L2/L3 + confidence + recommended_action；verdict（軸B）已自
 schema.TicketFinding 移除，本引擎不產 verdict，recommended_action 由歸因域推導。
 無 token（client.is_stub）→ 全程啟發式，model_used="stub"，讓零 key 也跑通閉環。
@@ -603,7 +609,13 @@ def _clamp_sentiment(raw: Any, polarity: str) -> int:
 
 
 def _stage1_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
-    """Stage1 極性閘門：回 (polarity, sentiment 1-5)。LLM 同段輸出細分情緒分，夾進 polarity 區間。"""
+    """Stage1 極性閘門：回 (polarity, sentiment 1-5)。LLM 同段輸出細分情緒分，夾進 polarity 區間。
+
+    engine="prompt_pack" 時改吃 00_polarity 的 System/User/Schema（Prompt-as-Source 唯一真相源）；
+    legacy 走 global_rule.polarity_guidance 拼 system。
+    """
+    if _engine() == "prompt_pack":
+        return _pack_polarity(item, text, main_model)
     if client.is_stub():
         return _stub_polarity(item, text)
     out = _call(
@@ -926,7 +938,11 @@ def _resolve_attrs_multi(
         return []
     casc = global_rule.cascade()
     amin = _as_float(global_rule.evidence_policy().get("attr_min_confidence"), 0.0)
-    if global_rule.prejudge_depth() == "l2":
+    if _engine() == "prompt_pack":
+        # Prompt-as-Source：六域並行歸因（各支 prompt 唯一真相源）。pack 停用低信心負反饋重問
+        # （六域全掃描已冗餘）；合流後同域去重/排序/閘門走本函式尾段（與 legacy 同語義）。
+        attrs = _attrs_pack(item, text, model, max_n, polarity)
+    elif global_rule.prejudge_depth() == "l2":
         # L2 深度：初判只依評論文字，L3 缺商品/訂單佐證不可靠 → 單呼叫 32 面向目錄判到 L1+L2
         # 即收手（省掉整段 Stage B 選葉）；L3 留待接上外部佐證的深判階段。低信心負反饋在函式內。
         attrs = _attrs_l2_multi(item, text, model, max_n, polarity)
@@ -1105,9 +1121,11 @@ def to_findings(
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
     attrs = _resolve_attrs_multi(item, text, model, _max_attributions(), polarity)
-    # confidence-gated ensemble：voter_cfgs 提供且主判決有低信心 attr 時才跨廠複判（高信心直接採信·省 token）
+    # confidence-gated ensemble：voter_cfgs 提供且主判決有低信心 attr 時才跨廠複判（高信心直接採信·省 token）。
+    # engine="prompt_pack" 本期停用 ensemble——voter 複判會對每廠再跑六域 prompt（成本爆炸）且 voter 未必
+    # 有 prompt 存取；本期退場、roadmap 重接（見計畫 P2 凍結件）。
     model_votes: list[dict] = []
-    if voter_cfgs and attrs:
+    if voter_cfgs and attrs and _engine() != "prompt_pack":
         attrs, model_votes = _ensemble_attrs(
             item, text, attrs, model, voter_cfgs, ensemble_sample_rate, polarity
         )
@@ -1513,4 +1531,100 @@ def _attrs_l2_multi(
                     for a in (out2.get("attributions") or [])[:max_n]
                     if isinstance(a, dict) and str(a.get("l2_code", "")) not in exclude
                 ]
+    return attrs
+
+
+# ── Prompt-as-Source 引擎（engine="prompt_pack"）：極性 + 六域並行歸因 ─────────────
+# 判決 prompt 唯一真相源＝docs/prompts/prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
+# 取代 legacy 的「global_rule 拼 system + 單呼叫 32 面向目錄」路徑（_attr_sys/_domain_boundaries/
+# _l2_catalog/_attrs_l2_multi 等）；舊路徑於驗收通過前保留（engine="legacy" 可回滾，見 P5 清理）。
+def _engine() -> str:
+    """判決引擎（judgment.json prejudge.engine）：'prompt_pack'（Prompt-as-Source，新預設·六域並行）
+    或 'legacy'（舊單呼叫 32 面向路徑，驗收期回滾用）；缺設回 'prompt_pack'（使用者已定方向）。"""
+    return str(_prejudge_cfg().get("engine") or "prompt_pack")
+
+
+def _render_pack_user(template: str, text: str, polarity: str) -> str:
+    """填 prompt user 模板槽位（{TEXT}/{POLARITY}）。
+
+    用 replace 而非 str.format——md 未來若在 user 節放 JSON 範例，裸大括號會令 format() 拋錯；
+    replace 只換明確槽位、對其他字元零副作用。
+    """
+    return template.replace("{TEXT}", text).replace("{POLARITY}", polarity)
+
+
+def _pack_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
+    """Stage1 極性（prompt_pack）：吃 00_polarity 的 System/User/Schema（唯一真相源）。
+
+    stub 走啟發式；_clamp_sentiment 保留為 code-side 保險（與 legacy 同——保證 sentiment 與 polarity
+    區間一致，即使 prompt schema 未強約束）。
+    """
+    if client.is_stub():
+        return _stub_polarity(item, text)
+    from app.judge import prompt_source
+
+    p = prompt_source.load(prompt_source.POLARITY_ID)
+    out = _call(
+        p["system"],
+        _render_pack_user(p["user_template"], text, ""),  # polarity 無 {POLARITY} 槽
+        "polarity",
+        _stage1_model(main_model),
+        schema=p["schema"],
+        effort=_polarity_effort(),
+    )
+    pol = str(out.get("polarity", "")).strip().lower()
+    pol = pol if pol in ("positive", "negative", "neutral") else "neutral"
+    return pol, _clamp_sentiment(out.get("sentiment"), pol)
+
+
+def _attrs_pack(
+    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
+) -> list[dict]:
+    """六域並行歸因（prompt_pack）：各域 prompt 獨立判本域問題 → 合流淨化 attr dict 清單。
+
+    六支域 prompt（01_C-1~06_C-6）ThreadPool 並行，各 chat_json(System, User.填槽, schema=檔內 schema)；
+    每域回 {"attributions":[{l2_code,confidence,summary,evidence_quote}...]}，逐條過 _finalize_attr_l2
+    （grounding 壓信心 / 證據封頂 / 白名單校驗，與 legacy L2 路徑同政策）。l2→l1 由 _sanitize_l2 樹映射——
+    drift 護欄（域 prompt enum ⊆ 樹該域 L2 codes）保證回的 l2_code 必落該 prompt 對應域，故等同「由回覆
+    prompt 歸屬直接給」。合流後的同域去重 / 排序 / attr_min / secondary_min 閘門由 _resolve_attrs_multi
+    尾段共用（與 legacy 完全同語義）。
+
+    並行安全：contextvar _current（effective LLM 設定）於呼叫端 copy_context() 快照後 ctx.run——比照
+    prejudge_batch 配方（同一 Context 不可並發 run，故每域一份獨立快照）。
+    """
+    if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → to_findings 產 pending_data）
+        return []
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+
+    from app.judge import prompt_source
+
+    valid = _l2_label_map()
+    effort = _attr_effort()
+    pids = prompt_source.DOMAIN_PROMPT_IDS
+
+    def _one(pid: str) -> list[dict]:
+        p = prompt_source.load(pid)
+        out = _call(
+            p["system"],
+            _render_pack_user(p["user_template"], text, polarity),
+            "attribute",
+            model,
+            schema=p["schema"],
+            effort=effort,
+        )
+        return [
+            _finalize_attr_l2(item, text, a, valid)
+            for a in (out.get("attributions") or [])[:max_n]
+            if isinstance(a, dict)
+        ]
+
+    # 呼叫端快照 context（帶 effective 設定）；每域一份（Context 不可並發 run）。fail-loud：單域呼叫
+    # 拋錯即整條 item 失敗（比照 legacy 單呼叫），交批次層 item-level 重試，不靜默吞掉漏一個域。
+    ctxs = [copy_context() for _ in pids]
+    attrs: list[dict] = []
+    with ThreadPoolExecutor(max_workers=len(pids)) as ex:
+        futures = [ex.submit(ctx.run, _one, pid) for ctx, pid in zip(ctxs, pids, strict=True)]
+        for fut in futures:
+            attrs.extend(fut.result())
     return attrs

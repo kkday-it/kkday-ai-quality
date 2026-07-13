@@ -12,7 +12,9 @@ _VALID = {
 
 
 def _patch_l2_env(monkeypatch, *, reroute: bool = False, amin: float = 0.2):
-    """L2 深度測試共用環境：depth=l2 + 面向白名單 + 政策 + 非 stub。"""
+    """L2 深度測試共用環境：depth=l2 + 面向白名單 + 政策 + 非 stub（legacy 引擎路徑）。"""
+    # engine 預設已切 prompt_pack；本檔測 legacy 的 l2 深度單呼叫路徑，須顯式 pin legacy。
+    monkeypatch.setattr(prejudge, "_engine", lambda: "legacy")
     monkeypatch.setattr(global_rule, "prejudge_depth", lambda: "l2")
     monkeypatch.setattr(prejudge, "_l2_label_map", lambda: dict(_VALID))
     monkeypatch.setattr(global_rule, "cascade", lambda: {"reroute_on_low_conf": reroute})
