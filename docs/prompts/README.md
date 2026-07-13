@@ -1,53 +1,81 @@
-# 評測交付 Prompt 包 v3（情緒 ×1 + C-1~C-6 域 ×6）
+# docs/prompts/ — 判決引擎契約 + 調適閉環操作手冊
 
-生成：2026-07-13T08:37:43Z · git dd7f024
-判準來源：**DB judge_rule_versions active 版**（非 config/ai_judge seed 檔）；規則異動後本包過期，需重新生成比對 manifest.json 版本號。
+`prompts/*.md`（7 支：`00_polarity` + `01_C-1`~`06_C-6`）是判決引擎的**唯一真相源**
+（Prompt-as-Source 架構）——判準文字、六域分類結構、L2 面向目錄皆由此派生，禁止另存平行副本。
+本檔說明：① 引擎如何讀取這 7 支檔 ② 調適（改判準）時的標準操作流程。
 
-- C-1：v44（2026-07-13）
-- C-2：v40（2026-07-13）
-- C-3：v42（2026-07-13）
-- C-4：v39（2026-07-13）
-- C-5：v39（2026-07-13）
-- C-6：v46（2026-07-13）
-- global_rule：v36（2026-07-13）
+> 2026-07-13：舊「評測交付 Prompt 包 v3」靜態快照機制（`gen_eval_prompt_pack.py` 生成
+> `bundle.json`/`manifest.json`）已隨 Prompt-as-Source 全面重構退役並移除——引擎改為**即時讀取**
+> （`prompt_source.load()`：DB 熱編 active 版優先→本檔案 fallback），不需要、也不應該再產生靜態快照
+> 比對。本檔取代原本描述該快照機制的舊版說明。
 
-## 跑法順序（每則評論）
+## 引擎契約（判決程式碼如何讀這 7 支檔）
 
-1. **Step 1 極性**：跑 `prompts/00_polarity.md`（user 模板 `{TEXT}`＝評論原文）→ 得 `polarity` + `sentiment`。
-2. **閘門**：`polarity == "positive"` → 該評論判 non_issue，**不跑任何域 prompt**（對齊 production `attribute_when=['negative', 'neutral']`）。
-3. **Step 2 歸因**：`negative`/`neutral` → **六支域 prompt 各獨立跑一次**（同一份評論餵六次；user 模板帶 `{POLARITY}` + `{TEXT}`）。單域判官判「評論是否含本域問題」，不屬本域回空 `attributions`。
+- **格式**：每支檔固定三節——`## System`（judge 人設 + `<domain_map>`/`<domain_boundary>`/
+  `<facet_catalog>` 等 XML 標籤區塊）、`## User`（模板，含 `{TEXT}`；域 prompt 另需 `{POLARITY}`）、
+  `## Schema`（該支輸出 JSON Schema；域 prompt 的 `attributions[].l2_code` enum）。
+- **載入層**：`backend/app/judge/prompt_source.py` 的 `load(prompt_id)`——DB（`judge_rule_versions`
+  的 `prompt_polarity`/`prompt_C-1~6`，RuleManager「初判 Prompt」熱編）優先，缺 active 版時 fallback
+  讀本目錄檔案；模組級快取，存檔後 `reload()` 清空。
+- **結構派生**：`structure()` 從六域 prompt 派生分類結構——域機器值＝檔名尾綴（`01_C-1_content`→
+  `content`）、L2 面向＝各域 `<facet_catalog>`「■ CODE LABEL：定義」解析、域中文名/建議動作/負責
+  單位＝`config/ai_judge/domains.json`（唯一無法從 prompt 推導的域層業務 metadata）。
+  `app/core/judge_config/ai_judge.py` 讀 `structure()` 建索引，供 15 個消費端使用，不再讀 DB 樹。
+- **自洽護欄**：`validate(text, prompt_id)`（存檔前置閘門）驗三節可解析 + Schema 合法 + User 含
+  `{TEXT}` + 域 prompt 的 `facet_catalog` codes **==** Schema `l2_code` enum（判準與結構同源，
+  任一漂移即拒存）。
+- **判決引擎**：`prejudge.py` 的 `_attrs_pack`——Stage1 極性閘門（`00_polarity`）→ Stage2 六域
+  prompt **並行**各自判斷是否命中該域 → 合流去重排序 + 信心閘門（`prejudge._gate_attrs`）。
 
-## 合併規則（六域結果 → 最終判決；鏡射 production 語義）
+## 調適閉環操作手冊（編 → 測 → 歷史 → 修 → 存版）
 
-1. **證據落地**：`evidence_quote` 須為評論原文逐字子字串（去空白比對）；不落地者視為低信心（production 壓入人審帶）。
-2. **信心閘門**：`confidence < 0.2` 整條丟棄（殭屍歸因）。
-3. **同域去重**：同一域多條時保留信心最高一條（單域 prompt maxItems=2，正常不觸發）。
-4. **跨域排序**：全部存活條目按 confidence 降冪；第 1 條＝primary（`is_primary=true`）不受次要閘門限制；第 2 條起 `confidence < 0.6` 丟棄。
-5. **上限**：合併後取前 2 條（`max_attributions`）。
+```
+RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）──▶ 新版本（append-only）
+        │                                                              │
+        ▼                                                              │
+   三種測試入口（皆走診斷理由 overlay：命中附 reason，棄權附 abstain_reason）
+   ① 歸因列表逐列「測試」→ RowPromptTestModal：對這一則跑七支 prompt，六域裁決逐域交代
+   ② RuleManager／歸因列表工具列「測試 Prompt」→ PromptEvalModal：抽 N 則現行判決 or
+      當前篩選子集（B1 filters）快測單支 → 指標卡 + 分歧表
+   ③ 「測試集」→ PromptTestcasesDrawer：對邊界測試集（B3 `prompt_testcases`）測單支 →
+      同一套指標卡 + 分歧表（source=mock，忽略樣本數，測全部啟用中 case）
+        │
+        ▼
+   測試歷史（B2 `prompt_eval_runs`，PromptEvalModal「測試歷史」摺疊區）
+   ——同 prompt_id 依時間查歷次結果，改 prompt 前後指標可比；CLI `eval_prompt_single.py --compare`
+     做逐案 improvements/regressions diff
+        │
+        ▼
+   依分歧理由定位問題：邊界寫糊（改 `<domain_boundary>`）／例句缺（補 `<facet_catalog>` 正反例）／
+   facet 錯位（調整 code 對應）→ 回頭改 prompt md → 重測 → 達標後存版
+```
 
-## 與 production 判決可比性
+### 三個測試入口如何選
 
-- 輸出對齊 `judgment_history` 快照形狀：`polarity` / `sentiment_score`（=sentiment）/ `l1`（由 `l2_code` 反查 `manifest.json` 的 `l2_to_l1`）/ `l2` / `l3` **恆空**（本包判到 L2 深度，對齊 production `prejudge_depth="l2"`）/ `confidence` / `evidence_quote` / `summary` / `is_primary`。
-- 比對真值建議用 `judgments` 表現行判決或 free_tag 外部標籤，勿自我參照。
+| 情境 | 用哪個 |
+|---|---|
+| 手邊這一則判得怪怪的，想知道為什麼 | ① 歸因列表「測試」（單條，六域逐一交代） |
+| 改完某支 prompt，想知道對現行資料的整體影響 | ② PromptEvalModal（可選「僅測當前篩選子集」） |
+| 手上有一批已知邊界案例（CSV / 手動輸入 / 之前分歧存的），想驗證修完是否達標 | ③ 測試集（mock），且可持續累積、回歸重測 |
 
-## 各 prompt 字元數
+### 分歧一鍵入集（邊界集自然生長）
 
-- 00_polarity：934 字
-- 01_C-1_content：5,024 字
-- 02_C-2_quality：5,492 字
-- 03_C-3_supplier：7,005 字
-- 04_C-4_platform：4,686 字
-- 05_C-5_service：3,934 字
-- 06_C-6_customer：7,211 字
+②③ 的分歧表、① 的六域裁決命中列，皆有「存為 case」按鈕——帶入文字 + 猜測的 gold（域/面向/
+理由），人工確認/修正後存進 `prompt_testcases`，供③ 反覆回歸測試，不必手工造 CSV。
 
-## 與 production 管線的差異（編排層機制，不在 prompt 內）
+## 相關檔案
 
-- **低信心負反饋重問**（reroute_on_low_conf：首輪低信心面向排除後重問一次）——六域獨立跑已是全域掃描，本包不重放此環。
-- **evidence grounding 壓信心**：production 由 code 端驗逐字落地並壓信心；本包由合併規則第 1 步等義承接。
-- **confidence-gated ensemble**（跨廠投票）與 **G1 自動確認路由**：判決後編排，非 prompt 職責。
+| 檔案 | 用途 |
+|---|---|
+| `prompts/*.md`（7 支） | 唯一真相源，見上方引擎契約 |
+| `BASELINE.md` | 7 支 prompt 的基線指標快照（`eval_prompt_single.py` 量測）：調任一支後重跑 `--n 20` 對比，±0.05~0.10 屬 run-to-run 噪音帶 |
+| `../../scripts/tools/eval_prompt_single.py` | CLI 單支評測 harness（production/golden/mock 三種參照集，`--compare` A/B、`--repeats` 穩定度） |
+| `../../scripts/tools/gen_taxonomy_doc.py` | 從本目錄 7 支 md 生成人讀版 `../類別定義_V0.1.md`（單向：prompts→文檔） |
 
 ## 侷限
 
-- 靜態文字快照：DB 規則異動不會自動反映，重跑產生器即可更新。
-- 僅供離線評測比較，不回寫 production 任何資料。
-- 六域獨立跑天然傾向多報（合併前最多 6×2 條候選）——合併規則的雙信心閘門為必要步驟，勿省略。
+- 診斷理由（reason/abstain_reason）為**測試專用 overlay**（`app/judge/prompt_eval.py` 評測期動態
+  附加 schema 欄位），不寫入本目錄 md、production 判決路徑零影響；若日後驗證 reason 對判準本身
+  有幫助，可考慮正式寫進 md（v2 觀察項）。
+- md 是**判準文字**唯一源；`config/ai_judge/domains.json`（域層業務 metadata）仍是獨立小檔，因其
+  內容無法從 prompt 自然推導，不算「另存判準副本」。
