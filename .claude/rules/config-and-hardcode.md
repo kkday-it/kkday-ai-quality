@@ -4,6 +4,8 @@ paths:
   - "backend/app/**/*.py"
   - "**/*.constant.ts"
   - "**/constants/**"
+  - "start.sh"
+  - "docker-compose*.yml"
 ---
 
 # 配置化規範（禁硬編碼 · 編輯 config / 後端 / constants 時載入）
@@ -27,6 +29,20 @@ paths:
 > - 兩者皆前後端同讀同一份 JSON：前端 `@config` / `@constants` alias，後端 `paths.CONFIG_DIR` / `paths.CONSTANTS_DIR`。
 
 > **SSOT 鐵律**：同一語義的值（如 verdict 中文 label、來源清單、模型名、代碼字典）**只准有一份真相源**。前端顯示 verdict label → 讀 `config/ai_judge/verdicts.json`；顯示 traveller_type 文案 → 讀 `constants/labels/*.json`，**禁止**在前端另寫一份翻譯。前後端都用到 → 進 `config/` 或 `constants/`，禁各寫一份。
+
+## 一鍵啟動引導鐵律（start.sh 零配置）
+
+**專案統一配置（token / 機密 / 必要 env var）必須能被 `./start.sh`（dev）與 `./start.sh prod` 一鍵配置到位**——任何模式的啟動都不得要求使用者先手動 export / 編輯檔案才能起服務。新增配置時按性質接入：
+
+| 新增的配置性質 | 接入義務 |
+|---|---|
+| **可自動生成的機密**（隨機值即可：簽名 secret / 加密 key / DB 密碼）| `start.sh` prod 段補一行 `_ensure_secret <KEY> <bytes>`（hex 生成·冪等），並在 `.env` 模板 heredoc 加註解 |
+| **外部核發 token**（如 `OPENAI_API_KEY`，無法自動生成）| 必須設計為**可空啟動**的選填 fallback（compose 用 `${VAR:-}`）；主路徑走前端「設定」面板加密落庫，`.env` 模板加選填註解 |
+| **跨環境非機密**（port / timeout / URL）| `config.py` 給 dev default（dev 零配置天然成立）；prod 需覆蓋者在 compose `environment` 給 `${VAR:-預設}` |
+
+- compose 的 `:?` 必填變數 ↔ `start.sh` 的 `_ensure_secret` **必須一一對應**：新增 `:?` 變數而未接 start.sh 引導＝破壞一鍵啟動，禁止
+- 引導**冪等鐵律**：已有非空值的 key 永不重新生成（重生 `AIQ_SECRET_KEY`＝庫內密文永久解不開、重生 `POSTGRES_PASSWORD`＝連不上既有 pgdata）
+- 文件（README / docker/README）**禁止**出現「啟動前請先手動設定 X」的必要前置步驟；選填功能（如 LLM fallback token）除外
 
 ## 允許保留代碼內的例外（過度工程防禦）
 

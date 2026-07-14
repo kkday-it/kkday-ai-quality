@@ -15,7 +15,7 @@ from app.core.db._shared import (
     _vertical_scoped_spec,
 )
 
-# 概覽頁「內容類占比」KPI 的分子域機器值（＝domains.json 的 content 域）。具名常數＋此註解，
+# 概覽頁「內容類占比」KPI 的分子域機器值（＝content 域，見其 prompt `## Taxonomy` root）。具名常數＋此註解，
 # 取代散落 SQL 的字面量 "content"——域機器值曾改名（product_quality→quality 等），寫死易漏改而靜默失準。
 _HEADLINE_DOMAIN = "content"
 

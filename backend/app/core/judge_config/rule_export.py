@@ -1,41 +1,24 @@
-"""判決規則 → Excel 匯出（規則配置頁「導出 Excel」）。
+"""判決規則導出：初判 Prompt 包（zip）＋ 共用 Excel 導出樣式 helper。
 
-讀 6 支域 prompt 的分類結構（prompt_source.structure()，每域一分頁，L2 面向代碼/名稱逐列——完整判準
-文字〔界線、正反例〕已改為自由文本存在各域 prompt 的 System 區塊，本表僅列結構性面向清單，供 QC/PM
-快速核對域/面向涵蓋範圍；完整判準請至規則配置頁「初判 Prompt」查看對應域 md）＋ judgment 判決配置
-（額外一分頁，區塊/項目/內容 扁平呈現；含極性閘門/證據政策/信心閾值/prejudge 旋鈕）。openpyxl 為
-重庫，於函式內 lazy import。
+Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md，故規則配置頁「導出」改為直接
+打包該目錄（`build_prompts_zip_bytes`），不再派生 xlsx 結構表。`_style_header` 為各 Excel 導出（問題
+列表 db/export、未來其他）共用的視覺美化 helper，續留本模組供 `db/export` 複用；openpyxl 為重庫，於
+`_style_header` 內 lazy import。
 """
 
 from __future__ import annotations
 
 import io
-import json
+import zipfile
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.core.export_jobs import ExportCtx
 
-# 域分頁欄位（結構源＝prompt_source.structure()，非 L1-L3 判準樹——canon/allow/forbid 已內嵌各域
-# prompt System 自由文本，不再結構化，故僅列面向代碼/名稱）。
-_DOMAIN_HEADERS = ["L2 面向代碼", "L2 面向名稱"]
-_DOMAIN_WIDTHS = [16, 36]
-
-# global 判決總規範分頁欄位（結構非 L1/L2/L3 樹，改以區塊/項目/內容 扁平呈現）。
-_GLOBAL_HEADERS = ["區塊", "項目", "內容"]
-_GLOBAL_WIDTHS = [22, 24, 80]
-
-
-def _fmt(v: object) -> str:
-    """global 內容格式化：dict/list 以縮排 JSON 呈現（保留結構可讀），純量轉字串。"""
-    if isinstance(v, (dict, list)):
-        return json.dumps(v, ensure_ascii=False, indent=2)
-    return "" if v is None else str(v)
-
 
 def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
     """統一導出美化樣式：表頭品牌綠底白字 ＋ 凍結首列(+前 freeze_cols code 欄) ＋ 篩選箭頭
-    ＋ 全表細邊框 ＋ 資料列斑馬紋 ＋ 欄寬 ＋ 內容自動換行頂對齊。所有導出共用此 helper 確保視覺一致。"""
+    ＋ 全表細邊框 ＋ 資料列斑馬紋 ＋ 欄寬 ＋ 內容自動換行頂對齊。所有 Excel 導出共用此 helper 確保視覺一致。"""
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     thin = Side(style="thin", color="E5E6EB")
@@ -73,75 +56,37 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
                 c.fill = zebra
 
 
-def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
-    """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ judgment 判決配置分頁。
+def build_prompts_zip_bytes(ctx: ExportCtx | None = None) -> bytes:
+    """打包 prompts 判決 prompt 目錄為 zip（bytes）：7 支 prompt md ＋ README ＋ BASELINE。
 
-    資料源＝6 域 prompt 分類結構（規則配置頁「初判 Prompt」的當前生效內容）＋ judgment.json
-    （靜態設定檔，改值需重啟後端，見 db/_shared.read_judgment_config）。product_vertical 選項池
-    非人閱法典，故不含。
+    Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md（見 `judge.prompt_source`），本
+    導出直接打包該目錄的 .md 檔（含引擎契約 README、基線指標 BASELINE），供離線交付 / 版本留存 / 手動
+    diff。以**磁碟現行檔**為準（DB 熱編 active 版另存 judge_rule_versions；若已在 RuleManager 熱編而未
+    回寫檔，兩者可能不同步——需回寫請先「恢復默認」反向操作，或改由檔案編輯流程）。
 
     Args:
-        ctx: 背景 job 進度把手（可選）；給定時每完成一分頁回報進度並輪詢取消，None＝同步直呼。
+        ctx: 背景 job 進度把手（可選）；給定時每打包一檔回報進度並輪詢取消，None＝同步直呼。
 
     Returns:
-        xlsx 檔的位元組內容（供 API 以 attachment 回傳）。
+        zip 檔的位元組內容（供 API 以 attachment 回傳）。
 
     Raises:
         Cancelled: ctx 對應 job 被取消時由 ctx.check() 拋出。
     """
-    from openpyxl import Workbook
+    from app.core.paths import PROMPTS_DIR
 
-    from app.core.db import _shared
-    from app.judge import prompt_source
-
-    wb = Workbook()
-    wb.remove(wb.active)  # 移除預設空表
-
-    domains = prompt_source.structure()["domains"]
-    total = len(domains) + 1  # 6 域各一分頁 + global 一分頁
-    done = 0
+    # 只收 .md（7 支 prompt + README + BASELINE）；.DS_Store 等非 md 與既有 zip 自然排除。保序打包利穩定 diff。
+    files = sorted(PROMPTS_DIR.glob("*.md"))
+    total = len(files)
     if ctx is not None:
         ctx.report(0, total)
 
-    # 6 域面向清單（依 prompt_source.structure() 顯示序，即 C-1~C-6）；分頁名＝「rule_code label」。
-    for i, d in enumerate(domains, start=1):
-        if ctx is not None:
-            ctx.check()
-        code = f"C-{i}"
-        title = f"{code} {d.get('domain_label', '')}".strip()[:31]  # 分頁名上限 31 字
-        ws = wb.create_sheet(title)
-        ws.append(_DOMAIN_HEADERS)
-        for f in d.get("facets") or []:
-            ws.append([f.get("code", ""), f.get("label", "")])
-        _style_header(ws, _DOMAIN_WIDTHS, freeze_cols=1)  # 凍結面向代碼欄
-        done += 1
-        if ctx is not None:
-            ctx.report(done, total)
-
-    # judgment 判決配置（區塊/項目/內容 扁平化；跳過 _comment 中繼欄）
-    if ctx is not None:
-        ctx.check()
-    gcontent = _shared.read_judgment_config()
-    if gcontent:
-        grows: list[list[str]] = []
-        for k, v in gcontent.items():
-            if k == "_comment":
-                continue
-            if isinstance(v, dict):
-                for sk, sv in v.items():
-                    if sk == "_comment":
-                        continue
-                    grows.append([k, sk, _fmt(sv)])
-            else:
-                grows.append([k, "", _fmt(v)])
-        gws = wb.create_sheet("judgment 判決配置")
-        gws.append(_GLOBAL_HEADERS)
-        for r in grows:
-            gws.append(r)
-        _style_header(gws, _GLOBAL_WIDTHS, freeze_cols=1)  # 凍結「區塊」欄
-
-    if ctx is not None:
-        ctx.report(total, total)  # 全部分頁完成（save 為單次序列化，無法再細分）
     buf = io.BytesIO()
-    wb.save(buf)
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, path in enumerate(files, start=1):
+            if ctx is not None:
+                ctx.check()
+            zf.write(path, arcname=path.name)  # 扁平置於 zip 根，檔名對齊 prompts 佈局
+            if ctx is not None:
+                ctx.report(i, total)
     return buf.getvalue()

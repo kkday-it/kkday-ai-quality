@@ -247,7 +247,7 @@ user_settings = Table(
 # ── 判決規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
 # 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
-# docs/prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
 # 版本化 rule_code：product_vertical / source_mapping / prompt_polarity / prompt_C-1~6。
 judge_rule_versions = Table(
     "judge_rule_versions",

@@ -36,11 +36,20 @@ def _pack_env(monkeypatch, *, amin: float = 0.2):
 
     def _fake_load(pid: str) -> dict:
         # user_template 帶兩槽；system 內嵌 pid 供 _fake_call 分辨是哪支域 prompt。
+        # taxonomy 為 dict（供 structure()/evidence_gated 派生；supplier 標 evidence_gated）。
+        dom = prompt_source._domain_of(pid) or "content"
         return {
             "title": pid,
             "system": f"SYS::{pid}",
             "user_template": "傾向：{POLARITY}\n{TEXT}",
             "schema": {"type": "object"},
+            "taxonomy": {
+                "code": dom,
+                "label": dom,
+                "action": "x",
+                "evidence_gated": dom == "supplier",
+                "children": [{"code": "C-9-1", "label": "f"}],
+            },
         }
 
     monkeypatch.setattr(prompt_source, "load", _fake_load)
@@ -68,7 +77,7 @@ def test_attrs_pack_merges_six_domains_and_dedups(monkeypatch):
 
     def _fake_call(system, user, stage, model, *, schema=None, effort=None):
         # 僅供應商域 prompt 回一條；其餘五域回空陣列
-        if system == "SYS::03_C-3_supplier":
+        if "SYS::03_C-3_supplier" in system:
             return {
                 "attributions": [
                     {
@@ -96,7 +105,7 @@ def test_attrs_pack_ranks_and_caps(monkeypatch):
     text = "導遊態度差而且行程表寫得不清楚"
 
     def _fake_call(system, user, stage, model, *, schema=None, effort=None):
-        if system == "SYS::03_C-3_supplier":
+        if "SYS::03_C-3_supplier" in system:
             return {
                 "attributions": [
                     {
@@ -107,7 +116,7 @@ def test_attrs_pack_ranks_and_caps(monkeypatch):
                     }
                 ]
             }
-        if system == "SYS::01_C-1_content":
+        if "SYS::01_C-1_content" in system:
             return {
                 "attributions": [
                     {

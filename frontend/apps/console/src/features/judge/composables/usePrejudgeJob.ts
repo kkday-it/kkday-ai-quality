@@ -20,6 +20,7 @@ import {
   resumePrejudge,
   startPrejudge,
   type PrejudgeBody,
+  type PrejudgeFailedItem,
 } from '@/api';
 import { emptyFilters, filtersToParams, STAGE_LABELS } from '../constants';
 
@@ -69,6 +70,10 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 當前 job 狀態（running/paused/cancelling/cancelled/done/error；由 SSE 權威更新，動作先樂觀設）。 */
   const jobStatus = ref('');
   const progress = ref({ processed: 0, total: 0, totalTokens: 0, costUsd: 0 });
+  /** 本批失敗筆明細（SSE snapshot.failed_items；供顯示原因 + 「重判本批失敗筆」收 item_id）。 */
+  const failedItems = ref<PrejudgeFailedItem[]>([]);
+  /** 失敗筆超過後端上限、清單已截斷（只計數；重判仍以清單內可見者為準）。 */
+  const failedTruncated = ref(false);
   const progressPct = computed(() =>
     progress.value.total ? Math.round((progress.value.processed / progress.value.total) * 100) : 0,
   );
@@ -95,6 +100,8 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
           totalTokens: st.total_tokens || 0,
           costUsd: st.cost_usd || 0,
         };
+        if (Array.isArray(st.failed_items)) failedItems.value = st.failed_items;
+        failedTruncated.value = !!st.failed_items_truncated;
         if (st.status === 'done' || st.status === 'error' || st.status === 'cancelled') finish();
       };
       es.onerror = finish;
@@ -104,6 +111,8 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     running.value = true;
     jobStatus.value = 'running';
     progress.value = { processed: 0, total: 0, totalTokens: 0, costUsd: 0 };
+    failedItems.value = []; // 新批次重置（保留上一批失敗清單至下次開跑，供期間點「重判失敗筆」）
+    failedTruncated.value = false;
     try {
       const r = await startPrejudge({ ...body, llm_config_id: llmConfigId.value || undefined });
       jobId.value = r.job_id;
@@ -273,8 +282,9 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /**
    * 單列（重）判：對該列跑初判歸因（複用 startPrejudge，item_ids 僅此列），等 SSE done 就地重載。
    * 走該列按鈕 inline loading，不觸發頁頂大進度條（不設 running，_poll 僅更新無人顯示的 progress）。
+   * @param onJob 取得 job_id 即回呼（判決仍在跑）——供頁面即時打開執行日誌抽屜（SSE 串流檢視）。
    */
-  const rejudgeRow = async (id: string) => {
+  const rejudgeRow = async (id: string, onJob?: (jobId: string) => void) => {
     if (rowBusy.value.has(id)) return;
     if (running.value) {
       // 批次判決進行中，避免與批次 job 並發對同一 finding 送出重複判決（重複花費 / 結果互相覆蓋）
@@ -288,6 +298,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
         source: toValue(source),
         llm_config_id: llmConfigId.value || undefined,
       });
+      onJob?.(r.job_id);
       await _poll(r.job_id);
       await reload();
       Message.success(`已完成歸因（模型 ${r.model}）`);
@@ -298,12 +309,29 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     }
   };
 
+  /** 重判本批失敗筆：收 failed_items 的 item_id 走既有 item_ids 顯式重判路徑（失敗筆未落快取，天然不吃 cache）。 */
+  const retryFailed = () => {
+    if (running.value) {
+      Message.warning('批次判決進行中，請稍後再試');
+      return;
+    }
+    const ids = failedItems.value.map((f) => f.item_id).filter(Boolean);
+    if (!ids.length) {
+      Message.info('沒有失敗筆可重判');
+      return;
+    }
+    _run({ item_ids: ids, source: toValue(source) });
+  };
+
   return {
     running,
     jobStatus,
     progress,
     progressPct,
     costText,
+    failedItems,
+    failedTruncated,
+    retryFailed,
     confirmOpen,
     targetMode,
     targetStages,

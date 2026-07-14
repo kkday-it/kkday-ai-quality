@@ -17,7 +17,7 @@ from app.core import auth, db
 from app.core import settings as app_settings
 from app.core.config import env, is_production
 from app.core.permissions import permission_keys, require_permission
-from app.judge import prejudge_batch
+from app.judge import prejudge_batch, run_log
 
 router = APIRouter(prefix="/judgment", tags=["judgment"])
 
@@ -383,6 +383,45 @@ async def prejudge_stream(job_id: str) -> StreamingResponse:
             if snap["status"] in ("done", "error", "cancelled"):
                 return
             await asyncio.sleep(0.8)
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/prejudge/log-stream")
+async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse:
+    """SSE 推送單次初判 job 的執行日誌（各階段 + LLM 輸入參數/prompt/輸出）——供前端抽屜即時檢視。
+
+    僅小批量 job 收集日誌（run_log.LOG_JOB_MAX_ITEMS）；每筆 entry 一個 event 增量推送
+    （offset 支援續讀），日誌收集結束且讀盡即推 done 關閉。不加 auth Depends：同 /prejudge/stream
+    （原生 EventSource 帶不了 Authorization header，job_id 為不可猜的 capability token）。
+    """
+
+    async def _events():
+        """增量 entry → SSE event 產生器；job 無日誌推 error、done 且讀盡推 done 後結束。"""
+        idx = max(0, offset)
+        while True:
+            batch, done, exists = run_log.read(job_id, idx)
+            if not exists:
+                msg = json.dumps(
+                    {"detail": "此任務無執行日誌（僅小批量任務收集）"}, ensure_ascii=False
+                )
+                yield f"event: error\ndata: {msg}\n\n"
+                return
+            for e in batch:
+                yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
+            idx += len(batch)
+            if done and not batch:
+                yield "event: done\ndata: {}\n\n"
+                return
+            await asyncio.sleep(0.4)
 
     return StreamingResponse(
         _events(),

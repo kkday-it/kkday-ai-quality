@@ -24,8 +24,8 @@ import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
 import type { PrejudgeBody } from '@/api/judgment.api';
-import { AttributionDetailDrawer, AttributionFilterBar, RowPromptTestModal } from '../components';
-import PromptEvalModal from '../components/PromptEvalModal.vue';
+import { AttributionDetailDrawer, AttributionFilterBar, RowPromptTestDrawer } from '../components';
+import PromptEvalDrawer from '../components/PromptEvalDrawer.vue';
 import {
   POLARITY_LABELS,
   SOURCES,
@@ -69,9 +69,16 @@ const JudgmentRunsDrawer = defineAsyncComponent(
 );
 const runsDrawerVisible = ref(false);
 
-// 判決歷史彈窗（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
-const JudgmentHistoryModal = defineAsyncComponent(
-  () => import('../components/JudgmentHistoryModal.vue'),
+// 初判執行日誌抽屜（點「初判分類」即開；SSE 流式顯示各階段與 LLM 輸入參數/prompt/輸出；點開才載）
+const PrejudgeLogDrawer = defineAsyncComponent(
+  () => import('../components/PrejudgeLogDrawer.vue'),
+);
+const logDrawerVisible = ref(false);
+const logDrawerJobId = ref('');
+
+// 判決歷史抽屜（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
+const JudgmentHistoryDrawer = defineAsyncComponent(
+  () => import('../components/JudgmentHistoryDrawer.vue'),
 );
 const historyOpen = ref(false);
 const historyRow = ref<ProblemRow | null>(null);
@@ -118,6 +125,9 @@ const {
   progress,
   progressPct,
   costText,
+  failedItems,
+  failedTruncated,
+  retryFailed,
   confirmOpen,
   openPrejudge,
   targetMode,
@@ -153,7 +163,12 @@ const {
 // ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
 const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
 const onRejudge = async (id: string) => {
-  await rejudgeRow(id); // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）
+  // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；
+  // 取得 job_id 即開執行日誌抽屜（判決仍在跑，SSE 流式顯示各階段與 LLM 輸入/輸出）
+  await rejudgeRow(id, (jid) => {
+    logDrawerJobId.value = jid;
+    logDrawerVisible.value = true;
+  });
   await nextTick();
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
@@ -161,10 +176,10 @@ const onRejudge = async (id: string) => {
   (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'auto' }); // 即時定位，無滾動動畫
 };
 
-// ── 操作：查看判決詳情彈窗（純前端，資料取自該列 attributions）──
+// ── 操作：查看判決詳情抽屜（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
 const detailOpen = ref(false);
-/** 開查看詳情彈窗。 */
+/** 開查看詳情抽屜。 */
 const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
@@ -172,14 +187,14 @@ const viewDetail = (record: ProblemRow) => {
 // 單條「測試」：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）
 const testRow = ref<ProblemRow | null>(null);
 const testOpen = ref(false);
-/** 開單條測試彈窗。 */
+/** 開單條測試抽屜。 */
 const openRowTest = (record: ProblemRow) => {
   testRow.value = record;
   testOpen.value = true;
 };
 
 // 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
-// 樣本＝篩選子集（見 PromptEvalModal + 後端 run_eval filter_ids）。
+// 樣本＝篩選子集（見 PromptEvalDrawer + 後端 run_eval filter_ids）。
 const promptTestOpen = ref(false);
 const promptEvalFilters = computed<PrejudgeBody>(() => ({
   source: source.value,
@@ -236,7 +251,7 @@ const noteDraft = ref('');
 const noteLoading = ref(false);
 const noteSaving = ref(false);
 
-/** 開某條歸因的備註彈窗並載入歷史。 */
+/** 開某條歸因的備註抽屜並載入歷史。 */
 const openNotes = async (findingId: string) => {
   noteFindingId.value = findingId;
   noteDraft.value = '';
@@ -394,7 +409,7 @@ onMounted(init);
         placeholder="無 LLM 配置（去設定新增）"
         @change="onSwitchLlm"
       />
-      <!-- 統一操作區：主行為 primary、次要 outline（見 rules/frontend-vue.md 按鈕規範）-->
+      <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）-->
       <a-button
         type="primary"
         size="small"
@@ -420,20 +435,40 @@ onMounted(init);
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
       <!-- 測試 Prompt（B1）：帶當前列表篩選，選一支 prompt 對篩選子集測試（不落庫）-->
-      <a-button size="small" type="outline" @click="promptTestOpen = true"> 測試 Prompt </a-button>
+      <a-button size="small" type="dashed" @click="promptTestOpen = true"> 測試 Prompt </a-button>
     </div>
   </Teleport>
 
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
-  <!-- 測試 Prompt 彈窗（B1：filters=帶當前列表篩選，對篩選子集測試） -->
-  <PromptEvalModal v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
+  <!-- 測試 Prompt 抽屜（B1：filters=帶當前列表篩選，對篩選子集測試） -->
+  <PromptEvalDrawer v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
 
-  <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
-  <JudgmentHistoryModal v-model:visible="historyOpen" :source="source" :row="historyRow" />
+  <!-- 判決歷史抽屜（評論級時間軸；懶載）-->
+  <JudgmentHistoryDrawer v-model:visible="historyOpen" :source="source" :row="historyRow" />
 
   <div class="flex h-full flex-col gap-4">
+    <!-- 本批失敗筆：判決完成後（非執行中）有失敗才顯示——可查原因 + 一鍵重判（走 item_ids 顯式路徑）-->
+    <a-alert v-if="!running && failedItems.length" type="warning" class="flex-none">
+      <template #title>
+        本批 {{ failedItems.length }}{{ failedTruncated ? '+' : '' }} 筆判決失敗（未落庫、等同未判）
+      </template>
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-xs text-[#86909c]">失敗筆可重判補上；系統性失敗連續多次後會停止隱式重撈，需在此手動重判。</span>
+        <a-popover position="bl">
+          <a-button size="mini" type="text">查看原因</a-button>
+          <template #content>
+            <div class="max-h-64 w-96 overflow-auto text-xs">
+              <div v-for="f in failedItems" :key="f.item_id" class="mb-1 break-all">
+                <span class="text-[#86909c]">{{ f.source_id || f.item_id }}</span>：{{ f.error }}
+              </div>
+            </div>
+          </template>
+        </a-popover>
+        <a-button size="mini" type="primary" status="warning" @click="retryFailed">重判本批失敗筆</a-button>
+      </div>
+    </a-alert>
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
     <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
       <div class="flex items-center gap-3">
@@ -523,7 +558,7 @@ onMounted(init);
             />
           </a-col>
           <a-col flex="none">
-            <a-button size="small" @click="selectPages">選取分頁</a-button>
+            <a-button size="small" type="outline" @click="selectPages">選取分頁</a-button>
           </a-col>
           <a-col flex="none">
             <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
@@ -909,7 +944,7 @@ onMounted(init);
             初判分類
           </a-button>
           <!-- 單條測試（dry-run 跑 prompts 判這一則,與現有並排,不落庫）→ 調適 prompt 後在真實資料上驗證 -->
-          <a-button size="small" type="outline" @click="openRowTest(record)"> 測試 </a-button>
+          <a-button size="small" type="dashed" @click="openRowTest(record)"> 測試 </a-button>
           <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
           <!-- 判決歷史（評論級時間軸：歷次判決快照/覆核轉移/備註；輕量檢視 → text）-->
@@ -921,8 +956,8 @@ onMounted(init);
       </template>
     </TableLayout>
 
-    <!-- 二次確認彈窗：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
-    <a-modal
+    <!-- 初判分類確認抽屜：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
+    <a-drawer
       v-model:visible="confirmOpen"
       title="確認初判分類"
       ok-text="開始判決"
@@ -996,10 +1031,10 @@ onMounted(init);
         </div>
         <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
       </div>
-    </a-modal>
+    </a-drawer>
 
-    <!-- 導出確認彈窗：草稿帶入列表當前篩選、可重選（共用 AttributionFilterBar）；有勾選則只導勾選列 -->
-    <a-modal
+    <!-- 導出設定抽屜：草稿帶入列表當前篩選、可重選（共用 AttributionFilterBar）；有勾選則只導勾選列 -->
+    <a-drawer
       v-model:visible="exportOpen"
       title="導出列表"
       ok-text="開始導出"
@@ -1076,29 +1111,33 @@ onMounted(init);
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
       </div>
-    </a-modal>
+    </a-drawer>
 
     <!-- 操作欄：查看判決詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
     <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
 
-    <!-- 單條測試：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）-->
-    <RowPromptTestModal v-model:visible="testOpen" :source="source" :row="testRow" />
+    <!-- 初判執行日誌抽屜：SSE 即時顯示該次判決各階段 + LLM 輸入參數/prompt/輸出（流式）-->
+    <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
-    <!-- 歸因備註彈窗：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史彈窗同比例）-->
-    <a-modal
+    <!-- 單條測試：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）-->
+    <RowPromptTestDrawer v-model:visible="testOpen" :source="source" :row="testRow" />
+
+    <!-- 歸因備註抽屜：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史抽屜同比例）-->
+    <a-drawer
       v-model:visible="noteOpen"
       title="歸因備註"
       :footer="false"
       :width="680"
       unmount-on-close
+      :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
     >
-      <div class="flex gap-5">
+      <div class="flex min-h-0 flex-1 gap-5">
         <!-- 左：append-only 歷史時間軸（新到舊；佔 7/10）-->
-        <div class="min-w-0 flex-[7]">
+        <div class="flex min-w-0 flex-[7] flex-col">
           <StateGuard :loading="noteLoading" error="">
-            <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryModal）：timeline 是 flex column、
+            <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryDrawer）：timeline 是 flex column、
                  item min-height 78px，max-h+overflow 直掛 timeline 會被 flex-shrink 壓縮致內容堆疊。 -->
-            <div v-if="noteList.length" class="max-h-[360px] overflow-auto">
+            <div v-if="noteList.length" class="min-h-0 flex-1 overflow-auto">
               <a-timeline class="pl-1">
                 <a-timeline-item v-for="n in noteList" :key="n.id">
                   <div
@@ -1142,7 +1181,7 @@ onMounted(init);
           </div>
         </div>
       </div>
-    </a-modal>
+    </a-drawer>
   </div>
 </template>
 

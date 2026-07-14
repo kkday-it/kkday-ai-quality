@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from sqlalchemy import Connection, and_, select
 from sqlalchemy import insert as sa_insert
 
 from app.core.db import tables as T
+
+_log = logging.getLogger(__name__)
 
 
 def snapshot_of(values: dict) -> dict:
@@ -143,6 +146,39 @@ def insert_status_event(
             author=author or "",
         )
     )
+
+
+def insert_failure_event(
+    source: str,
+    source_id: str,
+    *,
+    error: str,
+    job_id: str | None = None,
+    triggered_by: str | None = None,
+) -> None:
+    """寫入一筆 kind='failure' 事件（判決失敗留痕；獨立交易、best-effort、絕不阻斷批次）。
+
+    失敗筆不落 judgments（to_findings 拋錯前 replace_source_findings 未被呼叫），本表補其唯一持久痕跡：
+    ① 供前端查「為何失敗」；② 供 prejudge_targets 依「最新成功後連續失敗數」設隱式重撈上限，防系統性
+    失敗（壞 prompt / 失效 key）在 scope=all+unjudged 批次無限重撈。kind 是 Text 欄、新增邏輯值免 migration。
+    寫入失敗僅 debug log 不拋（比照 llm_usage 落庫「輔助不阻斷判決」慣例）。
+    """
+    try:
+        with T.get_engine().begin() as c:
+            c.execute(
+                sa_insert(T.judgment_history).values(
+                    source=source,
+                    source_id=source_id,
+                    kind="failure",
+                    params={"error": error},
+                    job_id=job_id or "",
+                    triggered_by=triggered_by or "",
+                )
+            )
+    except Exception:  # noqa: BLE001  失敗留痕是輔助，寫不進去也不能拖垮判決批次
+        _log.debug(
+            "insert_failure_event 落庫失敗 source=%s id=%s", source, source_id, exc_info=True
+        )
 
 
 def _history_row(r: dict) -> dict:

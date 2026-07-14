@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 單一圖表放大查看（Feature 1）：大尺寸 ECharts + 底部原始資料表 + 來源連結 + PDF 匯出（複用 reportPdf）。
+ * 單一圖表放大查看抽屜（Feature 1）：大尺寸 ECharts + 底部原始資料表 + 來源連結 + PDF 匯出（複用 reportPdf）。
  */
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
@@ -86,7 +86,7 @@ const onExport = async () => {
 </script>
 
 <template>
-  <a-modal v-model:visible="visible" :width="880" :footer="false" unmount-on-close>
+  <a-drawer v-model:visible="visible" :width="880" :footer="false" unmount-on-close>
     <template #title>{{ spec?.title ?? '圖表' }}</template>
     <div v-if="spec" ref="blockRef" data-report-block class="bg-white">
       <p v-if="spec.hint" class="mb-2 mt-0 text-sm text-[#86909c]">{{ spec.hint }}</p>
@@ -106,5 +106,5 @@ const onExport = async () => {
         <a-button type="outline">開啟來源儀表板 ↗</a-button>
       </a>
     </div>
-  </a-modal>
+  </a-drawer>
 </template>

@@ -28,6 +28,18 @@ const elRef = ref<HTMLDivElement>();
 const term = shallowRef<Terminal>();
 const fit = shallowRef<FitAddon>();
 
+// xterm 為掛載期動態載入，term 就緒前呼叫端的 write/writeln/clear 會撲空——
+// 先入佇列（含 clear，維持操作順序），onMounted 完成後依序 flush，呼叫端無須感知就緒時機。
+type PendingOp = { op: 'write' | 'writeln' | 'clear'; data?: string };
+const pending: PendingOp[] = [];
+const flushPending = (t: Terminal) => {
+  for (const { op, data } of pending) {
+    if (op === 'clear') t.clear();
+    else t[op](data ?? '');
+  }
+  pending.length = 0;
+};
+
 // 動態載入 xterm 實作 + CSS + fit addon（並行）；掛載期才拉，縮小首屏 bundle。
 onMounted(async () => {
   if (!elRef.value) return;
@@ -52,6 +64,7 @@ onMounted(async () => {
   f.fit();
   term.value = t;
   fit.value = f;
+  flushPending(t);
 });
 
 // 容器尺寸變動 → 重新 fit（自動於 unmount 清理）
@@ -64,12 +77,21 @@ onBeforeUnmount(() => {
 });
 
 defineExpose({
-  /** 寫入原始資料（不附行尾）。支援 ANSI escape（如 `\x1b[32m...\x1b[0m`）。 */
-  write: (data: string): void => term.value?.write(data),
-  /** 寫入一行（自動附 `\r\n`）。 */
-  writeln: (data: string): void => term.value?.writeln(data),
-  /** 清空畫面。 */
-  clear: (): void => term.value?.clear(),
+  /** 寫入原始資料（不附行尾）。支援 ANSI escape（如 `\x1b[32m...\x1b[0m`）。term 未就緒時排隊補寫。 */
+  write: (data: string): void => {
+    if (term.value) term.value.write(data);
+    else pending.push({ op: 'write', data });
+  },
+  /** 寫入一行（自動附 `\r\n`）。term 未就緒時排隊補寫。 */
+  writeln: (data: string): void => {
+    if (term.value) term.value.writeln(data);
+    else pending.push({ op: 'writeln', data });
+  },
+  /** 清空畫面。term 未就緒時入佇列以維持與 write 的相對順序。 */
+  clear: (): void => {
+    if (term.value) term.value.clear();
+    else pending.push({ op: 'clear' });
+  },
   /** 手動觸發重新 fit（容器外部尺寸驟變時用）。 */
   fit: (): void => fit.value?.fit(),
 });

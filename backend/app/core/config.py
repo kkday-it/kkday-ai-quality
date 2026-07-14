@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     aiq_allow_self_register: bool | None = None
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
-    llm_timeout: int = 60  # 單次 LLM 呼叫 timeout 秒（漏斗每筆 2 call，逾時即失敗交人審）
+    llm_timeout: int = (
+        300  # 單次 LLM 呼叫 timeout 秒（5 分鐘；容納 high/xhigh 推理較慢；env LLM_TIMEOUT 可覆蓋）
+    )
     llm_timeout_flex: int = (
         900  # flex tier 單次呼叫 timeout 秒（官方建議 15 分鐘：flex 延遲變動大易逾時）
     )

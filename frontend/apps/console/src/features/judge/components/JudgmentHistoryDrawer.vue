@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 判決歷史彈窗（評論級時間軸）：某則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註
+ * 判決歷史抽屜（評論級時間軸）：某則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註
  * 三類事件混排（新到舊，Arco a-timeline）。判決事件附「與前一次判決的變更」徽章
  * （模型/歸因數/分類/內容——client-side 對比，無需後端 diff 端點）；右側可新增評論級備註
  * （與 finding 級「歸因備註」並存，兩個入口不同層級）。
@@ -157,15 +157,22 @@ const statusText = (e: JudgmentHistoryEntry): string => {
 </script>
 
 <template>
-  <a-modal v-model:visible="open" title="判決歷史" :footer="false" :width="860" unmount-on-close>
-    <div class="flex gap-5">
+  <a-drawer
+    v-model:visible="open"
+    title="判決歷史"
+    :footer="false"
+    :width="860"
+    unmount-on-close
+    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
+  >
+    <div class="flex min-h-0 flex-1 gap-5">
       <!-- 左：評論級事件時間軸（判決快照 / 覆核轉移 / 備註，新到舊）；佈局 7:3 -->
-      <div class="min-w-0 flex-[7]">
+      <div class="flex min-w-0 flex-[7] flex-col">
         <StateGuard :loading="loading" error="">
           <!-- 滾動容器包在 a-timeline 外層：.arco-timeline 是 flex column、item 有 min-height 78px，
                若把 max-h+overflow 直接掛在 timeline 上，超高時 flex-shrink 會把各 item 壓到下限
                → 高內容溢出蓋到下一項（時間軸堆疊 bug）。外包一層讓 timeline 自然撐高、由外層滾動。 -->
-          <div v-if="list.length" class="max-h-[440px] overflow-auto">
+          <div v-if="list.length" class="min-h-0 flex-1 overflow-auto">
             <a-timeline class="pl-1 pr-2">
               <a-timeline-item v-for="e in list" :key="e.id" :dot-color="DOT_COLOR[e.kind]">
                 <!-- 首行：時間 + 事件身分 -->
@@ -263,5 +270,5 @@ const statusText = (e: JudgmentHistoryEntry): string => {
         </div>
       </div>
     </div>
-  </a-modal>
+  </a-drawer>
 </template>

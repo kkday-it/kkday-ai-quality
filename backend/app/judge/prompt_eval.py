@@ -100,8 +100,9 @@ def domain_verdicts(
         system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE
         user = prejudge._render_pack_user(p["user_template"], text_, polarity)
         out = prejudge._call(system, user, "attribute", model, schema=schema, effort=effort)
+        from app.core import ai_judge  # lazy：域中文名自 `## Taxonomy` 派生（ai_judge 快取）
+
         domain = prompt_source._domain_of(pid)
-        dm = prompt_source._domain_meta(domain)
         raw_attrs = [a for a in (out.get("attributions") or []) if isinstance(a, dict)]
         finalized: list[dict] = []
         for raw in raw_attrs[:3]:
@@ -110,7 +111,7 @@ def domain_verdicts(
             finalized.append(f)
         return {
             "domain": domain,
-            "domain_label": dm.get("label", domain),
+            "domain_label": ai_judge.domain_label(domain),
             "matched": bool(finalized),
             "attributions": finalized,
             "abstain_reason": "" if finalized else str(out.get("abstain_reason", ""))[:300],

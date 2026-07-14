@@ -6,7 +6,7 @@
 
 | loader | 讀取 | 提供 |
 |---|---|---|
-| `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source，取代已退役的 DB rule_C-* 樹） | 分類結構索引（l3_nodes_for_domains / l3_by_code / domain_label / domain_action / domain_owner / cascade_tree…）；判準文字本體在 `docs/prompts/*.md`，非本模組職責。2026-07-14 退役：`selectable_domains`/`domain_l2_labels`（漏斗時代零消費）+ `path_label`（隨標真值評分退役） |
+| `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source，取代已退役的 DB rule_C-* 樹） | 分類結構索引（l3_nodes_for_domains / l3_by_code / domain_label / domain_action / domain_owner / cascade_tree…）；判準文字本體在 `prompts/*.md`，非本模組職責。2026-07-14 退役：`selectable_domains`/`domain_l2_labels`（漏斗時代零消費）+ `path_label`（隨標真值評分退役） |
 | `product_vertical.py` | product_vertical 規則（DB active）| 商品垂直分類分組 → CATEGORY 代碼（codes_for_group）|
 | `source_mapping.py` | DB active 版 source_mapping + config/ai_judge fallback | 5 來源欄位映射（源欄→canonical，normalize_row）+ 上傳指紋辨識／必備表頭校驗（RuleManager 線上編輯，存檔熱重載）|
 | `sources.py` | config/global/sources.json | 來源目錄（label_for / natural_key）|
@@ -15,7 +15,7 @@
 
 > 2026-07-13：`ai_judge.py`/`rule_export.py` 隨 Prompt-as-Source 全面重構改讀 prompt 結構，不再讀 DB
 > 規則樹（`rule_C-1`~`rule_C-6` + `schema`，含 canon/allow/forbid/正反例四欄判準面板）——判準已 100%
-> 移入 `docs/prompts/*.md`，歷史 DB 版本保留（不刪表）僅無新寫入路徑。同批退役：
+> 移入 `prompts/*.md`，歷史 DB 版本保留（不刪表）僅無新寫入路徑。同批退役：
 > `rule_export.py` 的樹分頁邏輯（改面向清單）、`rule_refeed.py`（反哺飛輪，寫回對象已消失）。
 > 同日（第二輪）：`global_rule.py`（極性閘門 polarity_gate + 證據政策 evidence_policy；先前已刪
 > `attribution_guidance`/`polarity_guidance`/`abstain_policy`/`cascade`/`prejudge_depth`）整支併入

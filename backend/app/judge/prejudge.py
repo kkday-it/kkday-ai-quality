@@ -1,6 +1,6 @@
 """初判歸因單條引擎：一條進線資料 → TicketFinding（極性閘門 → 歸因）。
 
-**Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝docs/prompts/*.md（DB active 版可
+**Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝prompts/*.md（DB active 版可
 線上熱編，見 prompt_source）。Stage1 極性吃 00_polarity（`_pack_polarity`）；歸因段六支域 prompt
 （01_C-1~06_C-6）ThreadPool 並行，各判本域問題（`_attrs_pack`）→合流過共用閘門
 （`_resolve_attrs_multi` 尾段）。判準與結構皆源自 prompt 本身（見 ai_judge.py）。
@@ -129,8 +129,7 @@ def _route(findings: list[TicketFinding]) -> list[TicketFinding]:
     return findings
 
 
-# 歸因域 → 建議行動 SSOT＝config/ai_judge/domains.json 的 action（ai_judge.domain_action 讀）；
-# 不再於此硬編碼（舊 dict 用已廢域名 order/platform/cs，現行 quality/platform/service 查無而失準）。
+# 歸因域 → 建議行動 SSOT＝各域 `## Taxonomy` root 的 action（ai_judge.domain_action 讀）；不再於此硬編碼。
 _VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendedAction))
 
 
@@ -183,14 +182,12 @@ def _tier_for(conf: float) -> str:
 
 
 def _evidence_gated_domains() -> frozenset[str]:
-    """需外部訂單佐證才可高信心的域清單（judgment.json evidence_policy.evidence_gated_domains）。
+    """需外部訂單佐證才可高信心的域清單——自各域 `## Taxonomy` root 的 `evidence_gated`（ai_judge 派生）。
 
-    取代舊硬編碼 `l1_domain == "supplier"`——域機器值曾改名（product_quality→quality 等），
-    寫死違反 config-and-hardcode；改讀 config，未來要納入他域只改 judgment.json。缺鍵回退 {supplier}。
+    「這域要不要外部佐證」＝該域自己的語義，寫在自己 prompt 的 taxonomy root（取代 judgment.json
+    硬編碼 evidence_gated_domains）；要納入他域只改該域 prompt。
     """
-    raw = _evidence_policy().get("evidence_gated_domains")
-    vals = [str(x).strip() for x in raw] if isinstance(raw, list) else []
-    return frozenset(v for v in vals if v) or frozenset({"supplier"})
+    return ai_judge.evidence_gated_domains()
 
 
 def _evidence_capped(l1_domain: str, item: dict) -> bool:
@@ -599,6 +596,51 @@ def batch_service_tier(n_items: int) -> str | None:
     return str(tier)
 
 
+def max_workers_for(model: str) -> int:
+    """該 model 的批次併發上限（judgment.json prejudge.max_workers_by_model；缺則 max_workers_default）。
+
+    切旗艦模型（帳號 TPM/RPM tier 通常較低）時自動降併發，避免撞 OpenAI rate limit。此為軟上限，呼叫端
+    （prejudge_batch）再與製程級硬天花板 env.prejudge_max_workers 取 min，只能往下收斂、不會超過全域
+    Semaphore 容量。手動維護表（不自動查帳號 tier）：切模型前於 judgment.json 更新對應值；缺表或缺該
+    model 時回 max_workers_default。
+
+    Args:
+        model: 生效模型機器值（如 "gpt-5-mini" / "gpt-5.5"）。
+
+    Returns:
+        該 model 的批次併發上限（正整數）。
+    """
+    cfg = _prejudge_cfg()
+    by_model = cfg.get("max_workers_by_model") or {}
+    default = int(cfg.get("max_workers_default", 32) or 32)
+    return int(by_model.get(model, default) or default)
+
+
+def _domain_retry() -> int:
+    """單域 LLM 呼叫失敗的有界重試次數（judgment.json prejudge.domain_retry，預設 1；0＝關閉）。
+
+    P1 後單域一次呼叫已含 SDK max_retries 指數退避、耗盡才真失敗；此為「其餘域都成功、僅該域瞬時失利」
+    情境的止血——省下整筆 6 域重打的浪費。耗盡仍讓整筆 fail-loud（見 _attrs_pack；不改完整性保證）。
+    """
+    return max(0, int(_prejudge_cfg().get("domain_retry", 1) or 0))
+
+
+def adaptive_concurrency() -> dict:
+    """自適應併發（AIMD）參數（judgment.json prejudge.adaptive_concurrency）；enabled 預設 True。
+
+    ceiling＝`max_workers_for`（呼叫端再 min env 硬天花板）；item 因 429 失敗 → limit*=`backoff`（乘性
+    收縮），清空 `probe_interval_s` 秒無 429 → limit+=1（加性回升），不低於 `floor`。關閉即回退固定
+    `max_workers`。保證有能力時爬回 ceiling、過載時才降，免手動預測 model×effort×帳號 tier 的最佳併發。
+    """
+    cfg = _prejudge_cfg().get("adaptive_concurrency") or {}
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "backoff": float(cfg.get("backoff", 0.5) or 0.5),
+        "probe_interval_s": float(cfg.get("probe_interval_s", 3.0) or 3.0),
+        "floor": int(cfg.get("floor", 2) or 2),
+    }
+
+
 # ── L2 面向淨化（`_attrs_pack` 六域並行歸因共用）────────────────────────────
 # 初判只依評論文字判到 L1+L2 即收手（L3 細項常缺商品/訂單佐證而不可靠，本期不判）。
 def _l2_label_map() -> dict[str, tuple[str, str, str]]:
@@ -655,7 +697,7 @@ def _finalize_attr_l2(
 
 
 # ── Prompt-as-Source 引擎：極性 + 六域並行歸因 ────────────────────────────
-# 判決 prompt 唯一真相源＝docs/prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
+# 判決 prompt 唯一真相源＝prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
 def _render_pack_user(template: str, text: str, polarity: str) -> str:
     """填 prompt user 模板槽位（{TEXT}/{POLARITY}）。
 
@@ -697,7 +739,7 @@ def _attrs_pack(
     六支域 prompt（01_C-1~06_C-6）ThreadPool 並行，各 chat_json(System, User.填槽, schema=檔內 schema)；
     每域回 {"attributions":[{l2_code,confidence,summary,evidence_quote}...]}，逐條過 _finalize_attr_l2
     （grounding 壓信心 / 證據封頂 / 白名單校驗）。l2→l1 由 _sanitize_l2 映射——自洽 drift 護欄
-    （prompt_source.validate：facet_catalog codes == Schema l2_code enum）保證回的 l2_code 必落該
+    （Schema l2_code enum 由 `## Taxonomy` 派生）保證回的 l2_code 必落該
     prompt 對應域，故等同「由回覆 prompt 歸屬直接給」。合流後的同(域,面向)去重 / 排序 / attr_min /
     secondary_min 閘門由 _resolve_attrs_multi 尾段共用。
 
@@ -706,6 +748,7 @@ def _attrs_pack(
     """
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → to_findings 產 pending_data）
         return []
+    import time
     from concurrent.futures import ThreadPoolExecutor
     from contextvars import copy_context
 
@@ -714,22 +757,36 @@ def _attrs_pack(
     valid = _l2_label_map()
     effort = _attr_effort()
     pids = prompt_source.DOMAIN_PROMPT_IDS
+    dom_retry = _domain_retry()
+    retry_delay = (
+        0.5  # 秒；單域重試前的短暫緩衝（SDK 內建退避已在單次呼叫內耗盡，此為再打一次前的間隔）
+    )
 
     def _one(pid: str) -> list[dict]:
         p = prompt_source.load(pid)
-        out = _call(
-            p["system"],
-            _render_pack_user(p["user_template"], text, polarity),
-            "attribute",
-            model,
-            schema=p["schema"],
-            effort=effort,
-        )
-        return [
-            _finalize_attr_l2(item, text, a, valid)
-            for a in (out.get("attributions") or [])[:max_n]
-            if isinstance(a, dict)
-        ]
+        last_exc: Exception | None = None
+        for attempt in range(
+            dom_retry + 1
+        ):  # 有界重試：僅該域，其餘域不受影響；耗盡仍拋出（fail-loud）
+            try:
+                out = _call(
+                    p["system"],
+                    _render_pack_user(p["user_template"], text, polarity),
+                    "attribute",
+                    model,
+                    schema=p["schema"],
+                    effort=effort,
+                )
+                return [
+                    _finalize_attr_l2(item, text, a, valid)
+                    for a in (out.get("attributions") or [])[:max_n]
+                    if isinstance(a, dict)
+                ]
+            except Exception as e:  # noqa: BLE001  單域瞬時失利給有界重試（止血）；耗盡仍拋出維持整筆 fail-loud
+                last_exc = e
+                if attempt < dom_retry:
+                    time.sleep(retry_delay)
+        raise last_exc  # type: ignore[misc]  迴圈至少一輪，last_exc 必非 None
 
     # 呼叫端快照 context（帶 effective 設定）；每域一份（Context 不可並發 run）。fail-loud：單域呼叫
     # 拋錯即整條 item 失敗（比照 legacy 單呼叫），交批次層 item-level 重試，不靜默吞掉漏一個域。

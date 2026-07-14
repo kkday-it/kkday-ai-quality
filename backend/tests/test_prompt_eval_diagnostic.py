@@ -16,7 +16,7 @@ import copy
 from app.judge import prejudge, prompt_source
 from app.judge import prompt_eval as pe
 
-# 域 prompt 代表性 schema 骨架（對齊 docs/prompts/0N_C-N_*.md 的 Schema 節形狀）。
+# 域 prompt 代表性 schema 骨架（對齊 prompts/0N_C-N_*.md 的 Schema 節形狀）。
 _DOMAIN_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -97,11 +97,19 @@ def _diag_env(monkeypatch, *, amin: float = 0.0):
     monkeypatch.setattr(prejudge, "_max_attributions", lambda: 2)
 
     def _fake_load(pid: str) -> dict:
+        dom = prompt_source._domain_of(pid) or "content"
         return {
             "title": pid,
             "system": f"SYS::{pid}",
             "user_template": "傾向：{POLARITY}\n{TEXT}",
             "schema": copy.deepcopy(_DOMAIN_SCHEMA),
+            "taxonomy": {
+                "code": dom,
+                "label": dom,
+                "action": "x",
+                "evidence_gated": dom == "supplier",
+                "children": [{"code": "C-9-1", "label": "f"}],
+            },
         }
 
     monkeypatch.setattr(prompt_source, "load", _fake_load)

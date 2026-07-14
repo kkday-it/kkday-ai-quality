@@ -12,11 +12,13 @@ import hashlib
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from contextvars import ContextVar
 
 from app.core import settings as _settings
 from app.core.config import env
+from app.judge import run_log
 
 _log = logging.getLogger(__name__)
 
@@ -214,6 +216,85 @@ def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
     return client.chat.completions.create(**k)
 
 
+# reasoning_effort 值域隨 provider／model 浮動（實測 2026-07：gpt-5-mini 不吃 none/xhigh、
+# gpt-5.4-mini/gpt-5.5 全吃、Gemini 不吃 xhigh、ByteDance seed 不吃 none/xhigh；Google 官方文件
+# 亦承認合法值集合會隨版本變動）——故不做靜態白名單，改「錯誤驅動降級」：400 點名 reasoning_effort
+# 時就地降級重試（none→minimal、xhigh→high），仍不行則整個拿掉（回 provider 預設）。
+_EFFORT_DEGRADE = {"none": "minimal", "xhigh": "high"}
+
+
+def _degrade_reasoning_effort(kwargs: dict, emsg: str) -> bool:
+    """400 錯誤點名 reasoning_effort 時就地降級 kwargs；回傳是否有調整（False＝與此參數無關）。
+
+    三家 provider 的該類 400 訊息皆含字面 "reasoning_effort"（OpenAI "Unsupported value: 'reasoning_effort'…"、
+    Gemini "Invalid reasoning_effort: …"、ByteDance "Invalid reasoning_effort: …"），以此為觸發依據。
+    """
+    if "reasoning_effort" not in emsg or "reasoning_effort" not in kwargs:
+        return False
+    mapped = _EFFORT_DEGRADE.get(str(kwargs["reasoning_effort"]))
+    if mapped:
+        kwargs["reasoning_effort"] = mapped
+    else:
+        kwargs.pop("reasoning_effort", None)  # 已無更低檔可映射 → 拿掉參數走 API 預設
+    return True
+
+
+def _complete_effort_safe(cfg: dict, kwargs: dict, cache_key: str | None, stage: str = ""):
+    """_complete 外掛 reasoning_effort 自動降級：至多降兩級（映射一次 + 移除一次），其餘 400 原樣拋。
+
+    kwargs 就地改寫——呼叫端可事後比對 reasoning_effort 是否被降級（ping 據此回報 note）。
+    """
+    from openai import BadRequestError
+
+    for _ in range(2):
+        try:
+            return _complete(cfg, kwargs, cache_key)
+        except BadRequestError as e:
+            emsg = str(e)
+            if not _degrade_reasoning_effort(kwargs, emsg):
+                raise
+            _log.warning(
+                "reasoning_effort 不被接受(stage=%s model=%s)，降級重試：%s",
+                stage,
+                kwargs.get("model", ""),
+                emsg.splitlines()[0][:160],
+            )
+            run_log.emit(
+                "llm_note",
+                stage,
+                f"reasoning_effort 不被接受，降級為 {kwargs.get('reasoning_effort') or 'API 預設'} 重試",
+                {"error": emsg.splitlines()[0][:200]},
+            )
+    return _complete(cfg, kwargs, cache_key)
+
+
+def _reasoning_kwargs(cfg: dict) -> dict:
+    """依 provider 組出 thinking / reasoning_effort 的實際請求參數（單一出口，chat_json 與 ping 共用）。
+
+    - bytedance（Ark）：原生 `thinking:{type}` 開關走 extra_body（OpenAI SDK 非原生欄位）；實測
+      disabled 不可併送 reasoning_effort（400 Invalid combination），故 off 只送開關。
+    - openai / gemini：無獨立 thinking 參數，off ≙ reasoning_effort="none"（不支援 none 的 model
+      由 _complete_effort_safe 降級為 minimal＝該 model 最低推理檔）。
+    - thinking="default"（或缺省）：不干涉，僅依 reasoning_effort 傳遞（既有行為）。
+    """
+    thinking = cfg.get("thinking")
+    eff = cfg.get("reasoning_effort")
+    eff = eff if (eff and eff != "default") else None
+    provider = _settings.provider_id_for(cfg.get("base_url") or "")
+    if provider == "bytedance":
+        if thinking == "off":
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        out: dict = {}
+        if thinking == "on":
+            out["extra_body"] = {"thinking": {"type": "enabled"}}
+        if eff:
+            out["reasoning_effort"] = eff
+        return out
+    if thinking == "off":
+        return {"reasoning_effort": "none"}
+    return {"reasoning_effort": eff} if eff else {}
+
+
 def _resolve() -> dict:
     """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。
 
@@ -229,6 +310,7 @@ def _resolve() -> dict:
         "base_url": base_url,
         "model": model,
         "temperature": cfg.get("temperature"),
+        "thinking": cfg.get("thinking", "default"),
         "reasoning_effort": cfg.get("reasoning_effort", "default"),
         # serving tier（"flex"＝-50% 變延遲；批次判決由 prejudge_batch 注入 eff，interactive 呼叫不帶）
         "service_tier": cfg.get("service_tier"),
@@ -281,9 +363,7 @@ def chat_json(
     # gpt-5 系列 temperature 鎖定：僅非 None 時送（見 gpt5-temperature-locked）
     if cfg["temperature"] is not None:
         kwargs["temperature"] = float(cfg["temperature"])
-    eff = cfg["reasoning_effort"]
-    if eff and eff != "default":
-        kwargs["reasoning_effort"] = eff
+    kwargs.update(_reasoning_kwargs(cfg))  # thinking + reasoning_effort per-provider 組參數
     is_openai = _settings.provider_id_for(cfg["base_url"]) == "openai"
     # serving tier：僅 OpenAI 支援 service_tier；"flex"＝-50% 計價換變動延遲（批次判決由
     # prejudge_batch 注入 eff，interactive 呼叫不帶）。非 OpenAI provider 不送（避免 400）。
@@ -292,6 +372,22 @@ def chat_json(
         kwargs["service_tier"] = tier
     # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
     ck = cache_key if (cache_key and is_openai) else None
+    # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄
+    run_log.emit(
+        "llm_request",
+        stage,
+        f"LLM 請求 {cfg['model']}",
+        {
+            "model": cfg["model"],
+            "base_url": cfg["base_url"] or "https://api.openai.com/v1",
+            "temperature": kwargs.get("temperature"),
+            "reasoning_effort": kwargs.get("reasoning_effort"),
+            "thinking": (kwargs.get("extra_body") or {}).get("thinking"),
+            "response_format": (kwargs.get("response_format") or {}).get("type"),
+            "service_tier": kwargs.get("service_tier"),
+        },
+    )
+    run_log.emit("llm_prompt", stage, "Prompt 全文", {"system": system, "user": user})
     # exact-match 結果快取：讀取閘開啟才查（單筆顯式重判關讀取）；命中＝重用先前判決，
     # 零 API 呼叫、零 token、不落 llm_usage（無花費即無紀錄）。
     use_cache = env.llm_exact_cache
@@ -303,21 +399,52 @@ def chat_json(
             hit = None
         if hit is not None:
             _log.debug("LLM exact-cache 命中 stage=%s", stage)
+            run_log.emit(
+                "llm_response",
+                stage,
+                "exact-cache 命中（重用先前判決，零 API 呼叫）",
+                {"parsed": hit},
+            )
             return hit
+    # typed exceptions 精準分流 SDK 錯誤（取代脆弱的 str(e) 比對）：只有真正的 schema/response_format
+    # 400 才做結構降級，timeout/429/5xx（SDK max_retries 已耗盡）一律如實快速失敗——修掉「timeout 被
+    # 誤判為 json_schema 不受支援、多做一輪無用 json_object 重試導致逾時翻倍」的 bug。
+    from openai import (
+        APIConnectionError,
+        APITimeoutError,
+        BadRequestError,
+        InternalServerError,
+        RateLimitError,
+    )
+
+    t0 = time.monotonic()
     try:
-        resp = _complete(cfg, kwargs, ck)  # OpenAI SDK 呼叫
-    except Exception as e:  # noqa: BLE001  flex 缺容量→回退標準 tier；response_format 不支援→去除；json_schema→回退 json_object
-        emsg = str(e)
-        if kwargs.get("service_tier") == "flex" and "resource_unavailable" in emsg.lower():
-            # flex 容量不足（429 resource_unavailable，該次不計費）→ 回退標準 tier 重打一次
-            # （官方建議策略；批次不因 flex 缺容量失敗，僅該筆回原價。cfg 同步改寫使計價按實際 tier）
+        # OpenAI SDK 呼叫（內建 max_retries 指數退避）；reasoning_effort 值不被該 model 接受時自動降級
+        resp = _complete_effort_safe(cfg, kwargs, ck, stage)
+    except RateLimitError as e:
+        # flex 容量不足（429 resource_unavailable，該次不計費）＝唯一該重試的 429：回退標準 tier 重打一次
+        # （官方建議策略；批次不因 flex 缺容量失敗，僅該筆回原價。cfg 同步改寫使計價按實際 tier）。
+        if (
+            kwargs.get("service_tier") == "flex"
+            and getattr(e, "code", None) == "resource_unavailable"
+        ):
             _log.warning("flex 容量不足(stage=%s)，回退標準 tier 重試", stage)
             kwargs.pop("service_tier", None)
             cfg = {**cfg, "service_tier": None}
             resp = _complete(cfg, kwargs, ck)
-        elif "response_format" in emsg and kwargs.get("response_format"):
-            # provider 全不支援 response_format（如 ByteDance seed-2-0-lite：json_object / json_schema
-            # 皆回 400）→ 去除該參數重試，靠 system prompt 的 JSON 指示 + 下方 fence-tolerant 解析兜底。
+        else:
+            raise  # 一般 429：SDK 已依 max_retries 指數退避耗盡→如實拋，不做無用降級重試
+    except (APITimeoutError, APIConnectionError):
+        raise  # 逾時/連線失敗：與 schema 支援與否無關、SDK 已重試耗盡→如實拋（絕不誤判為 json_schema 問題）
+    except InternalServerError:
+        raise  # 5xx：SDK 已重試耗盡→如實拋
+    except BadRequestError as e:
+        # 400 是唯一可能「參數/schema 真不支援」的狀態碼；且降級猜測**只對非 OpenAI 相容端點**做——
+        # OpenAI（含 gpt-5）的 400 一律如實拋（多為 prompt 過長/參數非法，降級無濟於事且會掩蓋問題）。
+        emsg = str(e)
+        if not is_openai and "response_format" in emsg and kwargs.get("response_format"):
+            # provider 全不支援 response_format（如 ByteDance seed：json_object / json_schema 皆 400）→
+            # 去除該參數重試，靠 system prompt 的 JSON 指示 + 下方 fence-tolerant 解析兜底。
             _log.warning(
                 "response_format 不受支援(stage=%s)，改無 response_format 重試：%s",
                 stage,
@@ -325,9 +452,16 @@ def chat_json(
             )
             kwargs.pop("response_format", None)
             resp = _complete(cfg, kwargs, ck)
-        elif schema is None:
-            raise
-        else:
+        elif (
+            not is_openai
+            and schema is not None
+            and (
+                getattr(e, "param", None) == "response_format"
+                or "json_schema" in emsg
+                or "schema" in emsg
+            )
+        ):
+            # 相容端點不支援 json_schema Structured Outputs → 回退 json_object（事後由白名單校驗）。
             _log.warning(
                 "json_schema 不受支援(stage=%s)，回退 json_object：%s",
                 stage,
@@ -335,6 +469,8 @@ def chat_json(
             )
             kwargs["response_format"] = {"type": "json_object"}
             resp = _complete(cfg, kwargs, ck)
+        else:
+            raise  # OpenAI 的 400、或與 schema/response_format 無關的 400 → 如實拋，不猜測性重試
     # token 用量回報（供批量累計花費；失敗不影響判決）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)
@@ -359,11 +495,27 @@ def chat_json(
         except Exception:  # noqa: BLE001
             _log.debug("usage 落庫失敗 stage=%s", stage)
     raw = (resp.choices[0].message.content or "{}") if resp.choices else "{}"
+    dt_ms = int((time.monotonic() - t0) * 1000)
+    comp_d = getattr(usage, "completion_tokens_details", None) if usage else None
+    run_log.emit(
+        "llm_response",
+        stage,
+        f"LLM 回應（{dt_ms}ms）",
+        {
+            "raw": raw,
+            "latency_ms": dt_ms,
+            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0) if usage else None,
+            "reasoning_tokens": (
+                int(getattr(comp_d, "reasoning_tokens", 0) or 0) if comp_d else None
+            ),
+        },
+    )
     parsed = _loads_lenient(raw)
     if parsed is None:
         # LLM 回非 JSON（空字串 / prompt 漂移）→ 記錄並降級為空 dict，由上層 _sanitize 補位
         # （不靜默吞：留 log 供 monitoring 偵測模型輸出退化）。
         _log.warning("LLM JSON parse 失敗 stage=%s model=%s raw=%r", stage, cfg["model"], raw[:200])
+        run_log.emit("error", stage, "LLM 回非 JSON，降級空 dict 由上層補位", {"raw": raw[:500]})
         return {}
     if use_cache and parsed:  # 寫入恆開（顯式重判的新結果也回填供後續批次重用）；空 dict 不快取
         try:
@@ -376,8 +528,8 @@ def chat_json(
 def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
     """測試連線：送一個極短 prompt，回傳終端機顯示用的 I/O。
 
-    cfg=None → 用當前生效（已儲存）設定；傳入 cfg（token/base_url/model/temperature/reasoning_effort）
-    → 即時測「當前表單值」不經儲存。不丟例外（錯誤收進 error）。
+    cfg=None → 用當前生效（已儲存）設定；傳入 cfg（token/base_url/model/temperature/thinking/
+    reasoning_effort）→ 即時測「當前表單值」不經儲存。不丟例外（錯誤收進 error）。
     回 {ok, model, base_url, sent, reply, latency_ms, tokens, error}；無 token → ok=False。
     """
     import time
@@ -402,16 +554,16 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
     }
     if cfg["temperature"] is not None:
         kwargs["temperature"] = float(cfg["temperature"])
-    eff = cfg["reasoning_effort"]
-    if eff and eff != "default":
-        kwargs["reasoning_effort"] = eff
+    kwargs.update(_reasoning_kwargs(cfg))  # thinking + reasoning_effort 組參數（同 chat_json）
 
     t0 = time.monotonic()
+    requested_eff = kwargs.get("reasoning_effort")
     try:
-        resp = _complete(cfg, kwargs, None)  # gateway 分派（同 chat_json）
+        # 同 chat_json：reasoning_effort 值不被該 model 接受時自動降級
+        resp = _complete_effort_safe(cfg, kwargs, None, "ping")
         dt = int((time.monotonic() - t0) * 1000)
         usage = getattr(resp, "usage", None)
-        return {
+        out = {
             "ok": True,
             "model": cfg["model"],
             "base_url": base,
@@ -420,6 +572,13 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
             "latency_ms": dt,
             "tokens": getattr(usage, "total_tokens", None) if usage else None,
         }
+        final_eff = kwargs.get("reasoning_effort")
+        if requested_eff and final_eff != requested_eff:  # 降級過 → 誠實回報實際生效值
+            out["note"] = (
+                f"reasoning_effort={requested_eff} 不被此 model 接受，"
+                f"已自動降級為 {final_eff or 'API 預設'}（判決路徑亦同此行為）"
+            )
+        return out
     except Exception as e:  # 只回錯誤首行（避免洩漏 key / 堆疊）
         dt = int((time.monotonic() - t0) * 1000)
         return {

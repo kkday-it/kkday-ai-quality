@@ -28,7 +28,7 @@ _DIRS: tuple[Path, ...] = (_CONFIG / "ai_judge",)
 _BACKUP_DIR: Path = _CONFIG / ".backups"
 
 # config/ai_judge 下由 /api/judge-rules 版本化管理的檔（schema.json 等），不納入本 raw 編輯端點
-# （避免與 DB 版本化雙寫衝突）。判準走 docs/prompts/*.md（由 /api/judge-rules 的 prompt_* 版本化管理）。
+# （避免與 DB 版本化雙寫衝突）。判準走 prompts/*.md（由 /api/judge-rules 的 prompt_* 版本化管理）。
 _VERSIONED_NAMES = {"schema.json"}
 
 

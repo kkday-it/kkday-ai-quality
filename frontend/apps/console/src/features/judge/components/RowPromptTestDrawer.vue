@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 歸因列表單條「測試」彈窗（Prompt-as-Source 調適閉環）：對這一則評論即時跑 prompts → 分類結果,
+ * 歸因列表單條「測試」抽屜（Prompt-as-Source 調適閉環）：對這一則評論即時跑 prompts → 分類結果,
  * 與現有判決並排比對。**不落庫**（dry-run 預覽「改 prompt 後這條會怎麼判」,不覆寫現有判決）。
  * 與列級「初判分類」（重判並覆寫落庫）區隔。下方「六域裁決」為診斷理由 overlay（B0）：無論
  * 該域是否命中都附一句話理由，供調適時定位「邊界寫糊」或「例句缺」。
@@ -58,7 +58,7 @@ watch(
 </script>
 
 <template>
-  <a-modal
+  <a-drawer
     :visible="visible"
     title="測試分類（對這一則跑 prompts · 不落庫）"
     :width="820"
@@ -181,5 +181,5 @@ watch(
         </div>
       </a-collapse-item>
     </a-collapse>
-  </a-modal>
+  </a-drawer>
 </template>

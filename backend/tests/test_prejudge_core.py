@@ -22,6 +22,14 @@ _FIXED_CFG = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _decouple_taxonomy(monkeypatch):
+    """evidence_gated / 域 action 固定（與 `## Taxonomy`/ai_judge/DB 解耦；派生正確性見
+    test_prompt_source.test_structure_from_taxonomy）——避免單元測經 ai_judge 轉載全部 prompt。"""
+    monkeypatch.setattr(prejudge, "_evidence_gated_domains", lambda: frozenset({"supplier"}))
+    monkeypatch.setattr(prejudge, "_action_for", lambda dom: "escalate_ux")
+
+
 @pytest.fixture
 def fixed_config(monkeypatch):
     """固定閾值 + prejudge 旋鈕（與 config 漂移解耦）。"""

@@ -1,11 +1,11 @@
 """AI 法官「問題分類結構」載入器：prompt_source.structure()（7 支 prompt md 派生）→ 扁平索引。
 
-**結構 SSOT＝docs/prompts/*.md**（Prompt-as-Source 架構）：域機器值來自 prompt 檔名尾綴
-（content/quality/supplier/platform/service/customer）、L2 面向（facets）來自各域 prompt 的
-`<facet_catalog>`「■ CODE LABEL」行解析、域中文名／action／owner 來自 `config/ai_judge/domains.json`
-（唯一不可從 prompt 推導的域層業務 metadata）。判準文字（canon/allow/forbid/正反例）為 prompt 本身
-內容，供 LLM 直接讀，本模組不攜帶；僅建「分類結構」索引（域/面向 code↔label、級聯樹），供歸因
-列表級聯篩選、judgments 顯示、`_l2_label_map` 等消費端查詢。
+**結構 SSOT＝prompts/*.md 的 `## Taxonomy`**（Prompt-as-Source）：域機器值來自 prompt 檔名尾綴
+（content/quality/supplier/platform/service/customer）、分類樹（facets/層級）＋域中文名／action／owner
+／evidence_gated 全來自各域 prompt 的 `## Taxonomy` root（`config/ai_judge/domains.json` 已退場）。判準
+例句（✅❌/正反例）為 prompt `<domain_boundary>` prose，供 LLM 直接讀，本模組不攜帶；僅建「分類結構」
+索引（域/面向 code↔label、級聯樹、evidence_gated），供歸因列表篩選、judgments 顯示、`_l2_label_map`
+等消費端查詢。
 
 深度：僅 L1（域）→ L2（面向）二層（判決引擎 prompt_pack 只判到 L2）。
 
@@ -20,9 +20,14 @@ from typing import Any
 # ── 模組級快取（lazy；reload() 清空重建）──
 _l2_by_code: dict[str, dict[str, Any]] = {}
 _l2_by_domain: dict[str, list[dict[str, Any]]] = {}
-_domain_label: dict[str, str] = {}  # domain 機器值 → 中文域名（自 domains.json label）
-_domain_action: dict[str, str] = {}  # domain → recommended_action（自 domains.json action）
-_domain_owner: dict[str, str] = {}  # domain → 負責單位（自 domains.json owner；空則前端不顯示）
+_domain_label: dict[str, str] = {}  # domain 機器值 → 中文域名（自 `## Taxonomy` root label）
+_domain_action: dict[str, str] = {}  # domain → recommended_action（自 `## Taxonomy` root action）
+_domain_owner: dict[
+    str, str
+] = {}  # domain → 負責單位（自 `## Taxonomy` root owner；空則前端不顯示）
+_domain_evidence_gated: set[str] = (
+    set()
+)  # 需外部訂單佐證才可高信心的域（自 `## Taxonomy` root evidence_gated）
 _cascade: list[
     dict[str, Any]
 ] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域機器值，L2 value=面向 code）
@@ -67,11 +72,15 @@ def _ensure_loaded() -> None:
         label = d.get("domain_label") or domain
         _domain_label[domain] = label
         action = d.get("action")
-        if action:  # 域→建議行動（SSOT＝domains.json，取代 prejudge 舊硬編碼 dict）
+        if action:  # 域→建議行動（SSOT＝`## Taxonomy` root action，取代 prejudge 舊硬編碼 dict）
             _domain_action[domain] = action
         owner = d.get("owner")
-        if owner:  # 域→負責單位（SSOT＝domains.json；值待業務填，填後即流通）
+        if owner:  # 域→負責單位（SSOT＝`## Taxonomy` root；值待業務填，填後即流通）
             _domain_owner[domain] = owner
+        if d.get(
+            "evidence_gated"
+        ):  # 域→需外部訂單佐證（自 `## Taxonomy` root，取代 judgment.json evidence_gated_domains）
+            _domain_evidence_gated.add(domain)
         facets = d.get("facets") or []
         for f in facets:
             leaf = _leaf_record(
@@ -125,6 +134,7 @@ def reload() -> None:
     _domain_label.clear()
     _domain_action.clear()
     _domain_owner.clear()
+    _domain_evidence_gated.clear()
     _cascade.clear()
     _loaded = False
     from app.judge import prompt_source
@@ -146,8 +156,17 @@ def domain_label(code: str) -> str:
     return _domain_label.get(code, code)
 
 
+def evidence_gated_domains() -> frozenset[str]:
+    """需外部訂單佐證才可高信心的域機器值集合（自各域 `## Taxonomy` root 的 evidence_gated）。
+
+    取代 judgment.json 硬編碼 evidence_gated_domains——該域是否需佐證＝該域自己的語義，寫在自己 prompt。
+    """
+    _ensure_loaded()
+    return frozenset(_domain_evidence_gated)
+
+
 def domain_action(code: str) -> str:
-    """域 code → recommended_action（自 config/ai_judge/domains.json）；未設回 escalate_ux。
+    """域 code → recommended_action（自各域 `## Taxonomy` root action）；未設回 escalate_ux。
 
     取代 prejudge 舊 _DOMAIN_ACTION 硬編碼（曾用已廢域名 order/platform/cs，導致現行域靜默失準）。
     """
@@ -156,9 +175,9 @@ def domain_action(code: str) -> str:
 
 
 def domain_owner(code: str) -> str:
-    """域 code → 負責單位（自 config/ai_judge/domains.json owner，如 AM / 客服）；未設回空字串（前端空則不顯示）。
+    """域 code → 負責單位（自各域 `## Taxonomy` root owner，如 AM / 客服）；未設回空字串（前端空則不顯示）。
 
-    值為業務配置（禁自創）：於 domains.json 該域條目填入 owner，reload 後即流通到判決 judges；
+    值為業務配置（禁自創）：於該域 prompt `## Taxonomy` root 填入 owner，reload 後即流通到判決 judges；
     未填時 owner 恆空，前端不顯示負責單位標籤。
     """
     _ensure_loaded()

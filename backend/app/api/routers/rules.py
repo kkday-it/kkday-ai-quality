@@ -64,7 +64,7 @@ def _validate(code: str, content: dict) -> None:
     if code.startswith("prompt_"):
         # 初判 Prompt（Prompt-as-Source）：content={"_meta":..., "text": md 全文}，非 L1-L3 歸因樹。
         # 委派 prompt_source.validate：三節可解析 + Schema 合法 + {TEXT}/{POLARITY} + 自洽 drift 護欄
-        # （facet_catalog 解析出的面向 codes == Schema l2_code enum，且域須在 domains.json 註冊）。
+        # （域 prompt 的 `## Taxonomy` 可解析、至少一 facet；enum 由 taxonomy 派生）。
         from app.judge import prompt_source
 
         text = content.get("text")
@@ -166,18 +166,18 @@ def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -
 
 # 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。
 @router.post("/export")
-def export_rules_xlsx(user: dict = Depends(auth.get_current_user)) -> dict:
-    """啟動判決規則導出背景 job → {job_id, filename}（立即回，背景組檔）。
+def export_prompts_zip(user: dict = Depends(auth.get_current_user)) -> dict:
+    """啟動判決 prompt 包導出背景 job → {job_id, filename}（立即回，背景組檔）。
 
-    導出 6 支域 prompt 的面向結構（prompt_source.structure()，每域一分頁，L2 面向代碼/名稱）＋
-    global 判決總規範（DB active 版本）；供品控 / PM 離線核對域/面向涵蓋範圍（完整判準文字在各域
-    prompt System，請至規則配置頁「初判 Prompt」查看）。改背景 job：與問題列表導出共用 /api/exports
-    進度串流 / 停止 / 取檔。
+    Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md，本導出直接打包該目錄
+    （7 支 prompt md ＋ 引擎契約 README ＋ 基線 BASELINE）為 zip，供離線交付 / 版本留存 / 手動 diff。
+    以磁碟現行檔為準（見 rule_export.build_prompts_zip_bytes）。改背景 job：與問題列表導出共用
+    /api/exports 進度串流 / 停止 / 取檔。
     """
     from app.core import export_jobs, rule_export
 
-    filename = "judge_rules.xlsx"
-    job_id = export_jobs.start_export(rule_export.build_rules_workbook_bytes, filename)
+    filename = "judge_prompts.zip"
+    job_id = export_jobs.start_export(rule_export.build_prompts_zip_bytes, filename)
     return {"job_id": job_id, "filename": filename}
 
 

@@ -87,8 +87,8 @@ export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipp
   });
 
 /**
- * 啟動判決規則導出背景 job（DB active 版本）→ {job_id, filename}（立即回）。
- * 6 支域 prompt 的面向結構各一分頁（L2 面向代碼/名稱）＋ judgment 判決配置。
+ * 啟動判決 Prompt 包導出背景 job → {job_id, filename}（立即回）。
+ * 打包 prompts 目錄（Prompt-as-Source 唯一真相源：7 支 prompt md ＋ 引擎契約 README ＋ 基線 BASELINE）為 zip。
  * 進度走 /api/exports SSE（見 exports.api），完成後 downloadExport(job_id) 取檔。
  */
 export const startRulesExport = (): Promise<{ job_id: string; filename: string }> =>

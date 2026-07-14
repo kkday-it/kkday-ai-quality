@@ -291,6 +291,13 @@ export const classifyOne = (source: string, sourceId: string): Promise<ClassifyO
 export const prejudgeStreamUrl = (jobId: string): string =>
   `${BASE}/v1/judgment/prejudge/stream?job_id=${encodeURIComponent(jobId)}`;
 
+/**
+ * 初判執行日誌 SSE 串流 URL（抽屜即時檢視：各階段 + LLM 輸入參數/prompt/輸出；僅小批量 job 有日誌）。
+ * @param jobId startPrejudge 回傳的 job_id（capability token，端點免 auth header）
+ */
+export const prejudgeLogStreamUrl = (jobId: string): string =>
+  `${BASE}/v1/judgment/prejudge/log-stream?job_id=${encodeURIComponent(jobId)}`;
+
 /** 暫停初判歸因任務（提交迴圈阻塞，已在跑的收斂後 processed 停增）→ 更新後快照。 */
 export const pausePrejudge = (jobId: string) =>
   j(`${BASE}/v1/judgment/prejudge/pause?job_id=${encodeURIComponent(jobId)}`, { method: 'POST' });
@@ -366,6 +373,13 @@ export const getProductVerticalResolved = (): Promise<ProductVerticalResolved> =
   j<ProductVerticalResolved>(`${BASE}/judge-rules/product-vertical/resolved`);
 
 /** 歸因歷史單列（run 級：一次批量/選取/單筆重判＝一列；與 llm_usage 以 job_id 關聯）。 */
+/** 批次判決中失敗的單筆（後端 snapshot.failed_items；error＝例外首行截斷）。 */
+export interface PrejudgeFailedItem {
+  item_id: string;
+  source_id: string;
+  error: string;
+}
+
 export interface JudgmentRun {
   job_id: string;
   /** 觸發型態：batch（目標選取）/ selected（顯式多筆）/ single（單筆）。 */
@@ -382,6 +396,10 @@ export interface JudgmentRun {
   processed: number | null;
   ok: number | null;
   failed: number | null;
+  /** 失敗筆明細（後端上限 200）：供「重判本批失敗筆」收 item_id 與顯示失敗原因。 */
+  failed_items?: PrejudgeFailedItem[];
+  /** 失敗筆超過後端上限、清單已截斷（只計數、不再細列）。 */
+  failed_items_truncated?: boolean;
   total_tokens: number | null;
   cost_usd: number | null;
   triggered_by: string;

@@ -20,7 +20,7 @@
   → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 判決階段）
   → judgments（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
   → 歸因列表 / 歸因概覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出
-判準來源＝docs/prompts/*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，DB append-only 版本化 + 檔案 fallback）
+判準來源＝prompts/*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，DB append-only 版本化 + 檔案 fallback）
 ```
 
 ## Monorepo 結構
@@ -80,8 +80,10 @@ docker compose -f docker-compose.dev.yml down -v              # ⚠️ 毀滅性
 
 **生產部署**（後端單 worker + nginx 靜態；前端 http://localhost:8080）：
 ```bash
-# 兩者皆必填且 ≥32 bytes（缺/弱即拒啟動）；生成：python -c "import secrets;print(secrets.token_urlsafe(32))"
-AIQ_JWT_SECRET=<jwt-secret> AIQ_SECRET_KEY=<enc-key> docker compose up -d --build   # 走 docker-compose.yml（生產）
+./start.sh prod   # 零配置一鍵：首次自動生成必要機密（POSTGRES_PASSWORD / AIQ_JWT_SECRET / AIQ_SECRET_KEY）
+                  # 寫入 repo 根 .env（chmod 600·gitignore·冪等），之後 up -d --build；⚠️ 生成後請異地備份 .env
+# 或手動注入（CI / secret manager）：三者皆必填（缺/弱即拒啟動），生成：python -c "import secrets;print(secrets.token_urlsafe(32))"
+POSTGRES_PASSWORD=<pg-pass> AIQ_JWT_SECRET=<jwt-secret> AIQ_SECRET_KEY=<enc-key> docker compose up -d --build
 ```
 > 後端目前單 worker：4 套背景 job registry（導出/導入/初判/上傳）為 in-mem，多 worker 會使 job/SSE/下載落到不同 process；job 狀態遷共享儲存（Redis/PG）後恢復多 worker。容器啟動時自動對齊 schema：**空庫** create_all + stamp head、**既有庫** `alembic upgrade head`（migration 鏈不從零跑，見 `backend/docker-entrypoint.sh`）。
 
@@ -127,7 +129,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## 架構要點
 - **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），judgments 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
-- **判準 SSOT**＝`docs/prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，判決引擎六域並行判斷（`prompt_pack`）。
+- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，判決引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（pilot：auth login + AUTH.* error code），詳見 `frontend/apps/console/src/i18n/README.md`。

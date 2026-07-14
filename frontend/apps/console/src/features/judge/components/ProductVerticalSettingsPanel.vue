@@ -9,11 +9,12 @@
  */
 import { ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
+import { IconHistory } from '@arco-design/web-vue/es/icon';
 import StateGuard from '@/components/StateGuard.vue';
 import { useVerticalFilterStore } from '@/stores/verticalFilter.store';
 import { useProductVerticalRule } from '../composables';
 import ProductVerticalPanel from './ProductVerticalPanel.vue';
-import RuleHistoryModal from './RuleHistoryModal.vue';
+import RuleHistoryDrawer from './RuleHistoryDrawer.vue';
 import { versionLabel } from '../utils';
 
 /** active：所屬 tab 是否為當前選中——僅在啟用時才載入（延後到真正要用）。 */
@@ -108,8 +109,11 @@ async function onRestored() {
         <span v-if="dirty" class="ml-1 text-[rgb(var(--warning-6))]">● 未存</span>
       </span>
       <div class="flex-1" />
-      <a-button size="small" @click="historyOpen = true">歷史</a-button>
-      <a-button size="small" @click="doReset">恢復默認</a-button>
+      <a-button size="small" type="text" @click="historyOpen = true">
+        <template #icon><IconHistory /></template>
+        歷史
+      </a-button>
+      <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
       <a-button type="primary" size="small" :disabled="!dirty" @click="saveOpen = true">
         儲存
       </a-button>
@@ -142,7 +146,7 @@ async function onRestored() {
     </a-modal>
 
     <!-- 歷史對比恢復（code 驅動·恢復後 onRestored 重載）-->
-    <RuleHistoryModal
+    <RuleHistoryDrawer
       v-model:visible="historyOpen"
       :code="code"
       :label="LABEL"

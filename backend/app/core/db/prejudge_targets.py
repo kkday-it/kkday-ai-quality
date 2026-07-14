@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app.core.db import source_registry
 from app.core.db import tables as T
-from app.core.db._shared import _jg_join_cond, apply_table_filters
+from app.core.db._shared import _jg_join_cond, apply_table_filters, read_judgment_config
 
 
 def prejudge_target_ids(
@@ -92,7 +92,10 @@ def prejudge_target_ids(
     with T.get_engine().connect() as c:
         if want_unjudged:
             s = _scope(select(nk).select_from(j).where(jg.c.finding_id.is_(None)))
-            ids.update(r[0] for r in c.execute(s))
+            # 排除「最新成功後連續失敗 ≥ max_implicit_retries」的 source_id（防系統性失敗隱式無限重撈；
+            # 顯式 item_ids 重判不經本函式、不受此限）。scope/within_ids 收斂後才過濾，capped 集合通常很小。
+            capped = _capped_source_ids(c, source, _max_implicit_retries())
+            ids.update(r[0] for r in c.execute(s) if r[0] not in capped)
         if judged_stages:
             s = select(nk).select_from(j).where(jg.c.finding_id.isnot(None))
             s = s.where(jg.c.stage.in_(judged_stages))
@@ -112,3 +115,43 @@ def prejudge_target_ids(
                 )
             ids.update(r[0] for r in c.execute(_scope(s)))
     return [str(x) for x in ids if x is not None]
+
+
+def _max_implicit_retries() -> int:
+    """隱式（scope=all+unjudged）重撈的連續失敗上限（judgment.json prejudge.max_implicit_retries，預設 3）。"""
+    try:
+        return int(read_judgment_config().get("prejudge", {}).get("max_implicit_retries", 3) or 3)
+    except Exception:  # noqa: BLE001  config 讀取異常不應擋住目標選取
+        return 3
+
+
+def _capped_source_ids(c, source: str, max_retries: int) -> set[str]:
+    """「最新一次成功判決後、連續失敗事件數 ≥ max_retries」的 source_id 集合（隱式重撈上限）。
+
+    失敗筆不落 judgments（仍 finding_id IS NULL），會被 unjudged 分支反覆撈到；本集合把系統性失敗
+    （壞 prompt / 失效 key）排除於隱式批次外——只能靠顯式 item_ids 重判（使用者明確意圖）。成功事件
+    天然歸零計數（只算 last 'judgment' 之後的 'failure'；從未成功者算全部 failure）。max_retries<1＝停用。
+    """
+    if max_retries < 1:
+        return set()
+    h = T.judgment_history
+    last_ok = (
+        select(h.c.source_id, func.max(h.c.created_at).label("ok_at"))
+        .where(and_(h.c.source == source, h.c.kind == "judgment"))
+        .group_by(h.c.source_id)
+        .subquery()
+    )
+    stmt = (
+        select(h.c.source_id)
+        .select_from(h.outerjoin(last_ok, last_ok.c.source_id == h.c.source_id))
+        .where(
+            and_(
+                h.c.source == source,
+                h.c.kind == "failure",
+                or_(last_ok.c.ok_at.is_(None), h.c.created_at > last_ok.c.ok_at),
+            )
+        )
+        .group_by(h.c.source_id)
+        .having(func.count() >= max_retries)
+    )
+    return {r[0] for r in c.execute(stmt)}

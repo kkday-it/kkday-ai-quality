@@ -27,15 +27,30 @@
 
 > Arco 查 API、找範例一律以 **Vue 文件**（arco.design/vue）為準，禁照搬 `arco.design/react/*` 寫法。
 
+## 環境鐵律（全容器化，強制）
+
+**所有執行期依賴一律放進 Docker，禁止裝在本機。** 本機唯二前提：Homebrew + 容器引擎（start.sh 自動裝）。
+
+| 新增什麼 | 放哪 |
+|---|---|
+| Python 套件 | `backend/requirements*.txt` + `backend/Dockerfile`（rebuild 生效）|
+| npm 套件 | `frontend/package.json` + lockfile → `frontend/Dockerfile.dev`（node_modules 走容器內匿名 volume，**不用 host 的**）|
+| 系統工具 / CLI（如 pg_dump、ffmpeg）| 對應 Dockerfile 的 apt/apk 層 |
+| 新服務（cache / queue / 搜尋引擎…）| `docker-compose.dev.yml` 加 service（prod 版同步）|
+
+- 禁止在腳本 / 文件 / 排錯指引中要求 host 安裝（`brew install X`、host 跑 `pip install` / `pnpm add` 後直接起服務）；套件管理命令只為更新 manifest / lockfile，執行環境一律容器
+- 改依賴後 `docker compose -f docker-compose.dev.yml up -d --build`；前端依賴變更容器內會自動重建 node_modules（`CI=true` 已配）
+- 驗證 / 排錯優先進容器（`compose exec`）或看容器 log，勿以 host 環境行為下結論
+
 ## 配置化 SSOT（核心 · 完整規範見 rule）
 
-業務會調的值、跨環境會變的值、前後端共用的值，**一律不准寫死代碼**；同一語義只准一份真相源。速查去處：機密 → `backend/.env`；前後端共用非機密 → `config/global/*.json`；判決領域 → `config/ai_judge/*.json`；純前端 UI → feature `constants/`。完整決策樹 + 例外 + 自問清單見 `.claude/rules/config-and-hardcode.md`（編輯 config / 後端 / constants 時自動載入）。
+業務會調的值、跨環境會變的值、前後端共用的值，**一律不准寫死代碼**；同一語義只准一份真相源。速查去處：機密 → `backend/.env`；前後端共用非機密 → `config/global/*.json`；判決領域 → `config/ai_judge/*.json`；純前端 UI → feature `constants/`。**必要機密 / token / env var 一律接入 `./start.sh`（dev / prod）一鍵配置到位**：可自動生成者由 start.sh 冪等引導（`_ensure_secret`），外部核發者設計為可空啟動的選填 fallback——啟動不得要求手動預配置。完整決策樹 + 例外 + 自問清單見 `.claude/rules/config-and-hardcode.md`（編輯 config / 後端 / constants / start.sh / compose 時自動載入）。
 
 ## 專案結構
 
 - monorepo：`frontend/apps/console`（主控台）、`frontend/packages/*`（共用 types）
 - 路由入口：`frontend/apps/console/src/router/index.ts`｜全域殼層（header / tabs / 設定抽屜）：`frontend/apps/console/src/App.vue`
-- 一鍵啟動：`./start.sh`（純 Docker：偵測+啟動 Docker → `docker compose -f docker-compose.dev.yml up`，容器內起 PG + 後端:8100 + 前端:5273，hot reload）
+- 一鍵啟動：`./start.sh`（dev·純 Docker：偵測+啟動 Docker → `docker compose -f docker-compose.dev.yml up`，容器內起 PG + 後端:8100 + 前端:5273，hot reload）｜`./start.sh prod`（生產零配置：首次自動生成機密寫入 repo 根 `.env`（冪等）→ `up -d --build`，前端 :8080）；停止 `./stop.sh` / `./stop.sh prod`
 
 ## 條件載入規則（`.claude/rules/`，編輯對應檔案時自動注入）
 
@@ -44,7 +59,7 @@
 | `frontend-vue.md` | `**/*.vue` `**/*.css` `**/*.scss` | 樣式鐵律（Tailwind 優先級）+ Arco 元件復用 + 表格全局公共元件（TableLayout/TABLE_DEFAULTS/分頁）+ 懶加載/code-splitting |
 | `typescript.md` | `**/*.ts` `**/*.tsx` `**/*.vue` | JSDoc 註釋 + 工具函式優先序 + barrel |
 | `python.md` | `**/*.py` | Google-style docstring + 註釋密度 + 重庫 lazy import |
-| `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` | 禁硬編碼配置化完整規範 |
+| `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` `start.sh` `docker-compose*.yml` | 禁硬編碼配置化完整規範 + start.sh 一鍵啟動引導鐵律 |
 | `docs-sync.md` | `**/*.py` `**/*.ts` `**/*.vue` `config/**` `constants/**` | 改邏輯/結構/契約 → 同步更新所有相關文檔（寫前先核實 code）|
 | `feature-retirement.md` | `**/alembic/versions/**` `**/tables.py` `**/migrations/**` | 功能退場機制：盤點消費點 → 全棧清退（代碼/DB/前端/config/文件/註釋/測試零殘留）→ 驗證清單（呼應核心原則 4）|
 

@@ -4,7 +4,7 @@
  * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
  * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
  * 測試 Prompt（真實/mock 列表切換 + 測試集管理）已移至歸因列表工具列「測試 Prompt」入口
- * （PromptEvalModal），本頁不重複提供。
+ * （PromptEvalDrawer），本頁不重複提供。
  * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
  * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
  * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
@@ -121,9 +121,9 @@ function doReset() {
   });
 }
 
-/** 導出 6 支域 prompt 的面向結構（每域一分頁）＋ judgment 判決配置為 Excel（DB active 版本）→ 背景 job + 實時進度下載。 */
+/** 打包 prompts 判決 prompt 目錄（7 支 md ＋ README ＋ BASELINE）為 zip → 背景 job + 實時進度下載。 */
 function doExport() {
-  return runExport(startRulesExport, exportName('判決規則', 'xlsx'));
+  return runExport(startRulesExport, exportName('判決 Prompt 包', 'zip'), '已導出 Prompt 包');
 }
 
 /** 恢復整體配置（source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
@@ -154,8 +154,10 @@ function doResetAll() {
       403 兜底）。
     </a-alert>
     <div class="flex min-h-0 flex-1 gap-4">
-      <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示，不截字）-->
-      <div class="flex h-full w-52 shrink-0 flex-col gap-3">
+      <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示，不截字）
+           高度不用 h-full（父列由 flex-1 撐出、對百分比屬不確定高度，height:100% 會退回 auto 而收邊）；
+           改交給父列 align-items:stretch 自動拉滿（同右欄），min-h-0 讓內部選單可正確壓縮/滾動 -->
+      <div class="flex min-h-0 w-52 shrink-0 flex-col gap-3">
         <!-- 兩組：整體配置（source_mapping 純 JSON）+ 初判 Prompt（polarity + C-1~6 md） -->
         <a-menu
           :selected-keys="[store.activeCode]"
@@ -226,7 +228,7 @@ function doResetAll() {
           >
           <a-button size="small" type="outline" :loading="exporting" @click="doExport">
             <template #icon><icon-download /></template>
-            導出規則
+            導出 Prompt 包
           </a-button>
         </div>
 
@@ -234,7 +236,7 @@ function doResetAll() {
         <ExportProgressBar
           v-if="exporting"
           class="mb-3 flex-none"
-          label="導出規則"
+          label="導出 Prompt 包"
           :status="exportStatus"
           :processed="exportProgress.processed"
           :total="exportProgress.total"
@@ -322,3 +324,27 @@ function doResetAll() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/**
+ * 左選單長 label 換行不截字（如「polarity 情緒傾向（Step 1）」在 w-52 內超寬）。
+ * Arco 在「item 本身（.arco-menu-item:not(.has-icon)）」與「內層 .arco-menu-item-inner」
+ * 兩處都設 nowrap + text-overflow:ellipsis（皆 specificity 0,3,0），故須：
+ *   1. 同時覆寫兩層（只改 item 外層無效，文字在 inner 內仍被 nowrap 截）
+ *   2. 疊 .arco-menu.arco-menu-vertical 拉高 specificity 蓋過 Arco，免用 !important
+ * 無對應 prop / utility 可觸及此第三方內部 DOM，故 :deep（frontend-vue 樣式鐵律 #3）。
+ * 改為自動換行 + 行高 1.5 + 高度自適應；短項（C-1~C-6）單行不受影響。
+ */
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item),
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item .arco-menu-item-inner) {
+  height: auto;
+  line-height: 1.5;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+</style>

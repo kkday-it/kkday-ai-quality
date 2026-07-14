@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 測試 Prompt 彈窗（Prompt-as-Source 調適閉環 UI，歸因列表工具列「測試 Prompt」唯一入口）：
+ * 測試 Prompt 抽屜（Prompt-as-Source 調適閉環 UI，歸因列表工具列「測試 Prompt」唯一入口）：
  * 選一支 prompt、對「真實列表」（現行判決，`filters` 給定時＝當前歸因列表篩選子集，B1）抽 N 則
  * 為參照 → 指標卡（域：primary/命中/棄權/多報；極性：polarity/sentiment）+ 逐案分歧表（含診斷
  * 理由 reason，B0 overlay：命中取首條歸因理由、棄權取 abstain_reason）。消耗 LLM 額度。大樣本 /
@@ -149,7 +149,7 @@ watch(promptArg, () => {
 </script>
 
 <template>
-  <a-modal
+  <a-drawer
     :visible="visible"
     title="測試 Prompt"
     :width="720"
@@ -246,5 +246,5 @@ watch(promptArg, () => {
         <a-empty v-else description="尚無測試紀錄" :image-size="32" />
       </a-collapse-item>
     </a-collapse>
-  </a-modal>
+  </a-drawer>
 </template>

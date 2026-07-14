@@ -116,6 +116,8 @@ class TestLlmIn(BaseModel):
     base_url: str | None = None
     model: str | None = None
     temperature: float | None = None
+    # default | on | off（per-provider 傳遞邏輯見 client._reasoning_kwargs）
+    thinking: str | None = None
     reasoning_effort: str | None = None
     provider_tokens: dict | None = None  # { provider_id: token }
 
@@ -140,6 +142,7 @@ def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
         "base_url": base_url,
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
+        "thinking": body.thinking or "default",
         "reasoning_effort": body.reasoning_effort or "default",
     }
     return llm_client.ping(cfg=cfg)
