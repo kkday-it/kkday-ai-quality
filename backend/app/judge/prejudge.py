@@ -183,13 +183,24 @@ def _tier_for(conf: float) -> str:
     return "jury"
 
 
+def _evidence_gated_domains() -> frozenset[str]:
+    """需外部訂單佐證才可高信心的域清單（judgment.json evidence_policy.evidence_gated_domains）。
+
+    取代舊硬編碼 `l1_domain == "supplier"`——域機器值曾改名（product_quality→quality 等），
+    寫死違反 config-and-hardcode；改讀 config，未來要納入他域只改 judgment.json。缺鍵回退 {supplier}。
+    """
+    raw = _evidence_policy().get("evidence_gated_domains")
+    vals = [str(x).strip() for x in raw] if isinstance(raw, list) else []
+    return frozenset(v for v in vals if v) or frozenset({"supplier"})
+
+
 def _evidence_capped(l1_domain: str, item: dict) -> bool:
-    """是否因缺外部佐證觸發證據封頂（現行：供應商域缺 order_oid）。
+    """是否因缺外部佐證觸發證據封頂（evidence_gated_domains 內的域缺 order_oid）。
 
     判決階段派生用此旗標把「需外部資料才能定論」的案子導向 pending_data（待數據補充）。
     """
     has_order = bool(item.get("order_oid") or (item.get("raw") or {}).get("order_oid"))
-    return l1_domain == "supplier" and not has_order
+    return l1_domain in _evidence_gated_domains() and not has_order
 
 
 def _evidence_cap(l1_domain: str, item: dict, raw_conf: float) -> float:

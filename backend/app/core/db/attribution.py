@@ -15,6 +15,10 @@ from app.core.db._shared import (
     _vertical_scoped_spec,
 )
 
+# 概覽頁「內容類占比」KPI 的分子域機器值（＝domains.json 的 content 域）。具名常數＋此註解，
+# 取代散落 SQL 的字面量 "content"——域機器值曾改名（product_quality→quality 等），寫死易漏改而靜默失準。
+_HEADLINE_DOMAIN = "content"
+
 
 def attribution_overview(
     source: str | None = None,
@@ -380,7 +384,9 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
                 select(
                     ym,
                     func.count(distinct(item)).label("judged"),
-                    func.count(distinct(item)).filter(jg.c.l1_code == "content").label("content"),
+                    func.count(distinct(item))
+                    .filter(jg.c.l1_code == _HEADLINE_DOMAIN)
+                    .label("content"),
                 )
                 .where(jg.c.judged_at.isnot(None), jg.c.judged_at != "")
                 .group_by(ym)
@@ -399,7 +405,9 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
             or 0
         )
         content_items = (
-            c.execute(select(func.count(distinct(item))).where(jg.c.l1_code == "content")).scalar()
+            c.execute(
+                select(func.count(distinct(item))).where(jg.c.l1_code == _HEADLINE_DOMAIN)
+            ).scalar()
             or 0
         )
     monthly = [

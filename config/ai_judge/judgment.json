@@ -8,10 +8,13 @@
   ]
  },
  "evidence_policy": {
-  "_comment": "evidence_quote 須為進線原文逐字片段才採信（require_quote_grounded）。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage 湊數列 conf 常 <0.15，如殭屍歸因；0＝關閉）。secondary_min_confidence：多歸因時非 primary 條目最低信心，低於即丟棄只留主因（0＝關閉）。2026-07-14 改採「同(域,面向)並列」歸因粒度後 0.6→0.35，放行同域多面向與次要域的真實歸因（提召回；升召回換略降精確，回調＝提高本值）。",
+  "_comment": "evidence_quote 須為進線原文逐字片段才採信（require_quote_grounded）。attr_min_confidence：整條歸因最低信心，低於即丟棄（Stage 湊數列 conf 常 <0.15，如殭屍歸因；0＝關閉）。secondary_min_confidence：多歸因時非 primary 條目最低信心，低於即丟棄只留主因（0＝關閉）。2026-07-14 改採「同(域,面向)並列」歸因粒度後 0.6→0.35，放行同域多面向與次要域的真實歸因（提召回；升召回換略降精確，回調＝提高本值）。evidence_gated_domains：需外部訂單佐證才可高信心的域機器值清單（缺 order_oid 時封頂至 jury_high 以下逼入人審）——取代舊硬編碼 supplier，要納入他域只改此清單。",
   "attr_min_confidence": 0.2,
   "require_quote_grounded": true,
-  "secondary_min_confidence": 0.35
+  "secondary_min_confidence": 0.35,
+  "evidence_gated_domains": [
+   "supplier"
+  ]
  },
  "prejudge": {
   "_comment": "初判歸因管線旋鈕。判決引擎恆為 prompt_pack（Prompt-as-Source，判決 prompt 唯一真相源＝docs/prompts/*.md，極性 00_polarity + 六域 01_C-1~06_C-6 並行歸因；舊 legacy 單呼叫 32 面向目錄引擎已於 2026-07-13 全數退役刪除）。stage1_model：極性閘門 fallback 模型（同 provider token）；stage0：零 LLM 略過純好評（enable_stage0_skip；rating 高且無負向詞）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 8；2026-07-14 改採「同(域,面向)並列」粒度後 2→6，容納跨域＋同 L1 多 L2 面向並列，如「服務」域同時命中導遊素質＋注意事項宣導不足）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；attribute 降檔須先更大樣本 A/B 驗準）。",

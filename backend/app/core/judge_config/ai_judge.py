@@ -5,8 +5,8 @@
 `<facet_catalog>`「■ CODE LABEL」行解析、域中文名／action／owner 來自 `config/ai_judge/domains.json`
 （唯一不可從 prompt 推導的域層業務 metadata）。原 JSON 規則樹（judge_rule_versions 的 C-1~C-6）已退役
 ——判準文字（canon/allow/forbid/正反例）現為 prompt 本身內容，供 LLM 直接讀，本模組不再攜帶這些欄位；
-僅建「分類結構」索引（域/面向 code↔label、級聯樹、顯示序），供歸因列表級聯篩選、judgments 顯示、
-標真值 cascader、`_l2_label_map` 等消費端查詢。
+僅建「分類結構」索引（域/面向 code↔label、級聯樹），供歸因列表級聯篩選、judgments 顯示、
+B3 存為測試 case cascader、`_l2_label_map` 等消費端查詢。
 
 深度：僅 L1（域）→ L2（面向）二層（L3 隨 legacy 判決引擎於 2026-07-13 一併退役，判決引擎 prompt_pack
 本就只判到 L2）。
@@ -23,10 +23,6 @@ from typing import Any
 _l3_by_code: dict[str, dict[str, Any]] = {}
 _l3_by_domain: dict[str, list[dict[str, Any]]] = {}
 _domain_label: dict[str, str] = {}  # domain 機器值 → 中文域名（自 domains.json label）
-_domain_order: list[str] = []  # 域顯示順序（依 prompt_source.structure() 序，即 prompt 檔名序）
-_domain_excluded: set[str] = (
-    set()
-)  # domains.json intake_excluded=true 的域（不進預判候選；目前皆未設）
 _domain_action: dict[str, str] = {}  # domain → recommended_action（自 domains.json action）
 _domain_owner: dict[str, str] = {}  # domain → 負責單位（自 domains.json owner；空則前端不顯示）
 _cascade: list[
@@ -77,10 +73,6 @@ def _ensure_loaded() -> None:
             continue
         label = d.get("domain_label") or domain
         _domain_label[domain] = label
-        if domain not in _domain_order:
-            _domain_order.append(domain)
-        if d.get("intake_excluded"):  # domains.json 選填 knob（目前皆未設，六域全進預判候選）
-            _domain_excluded.add(domain)
         action = d.get("action")
         if action:  # 域→建議行動（SSOT＝domains.json，取代 prejudge 舊硬編碼 dict）
             _domain_action[domain] = action
@@ -139,8 +131,6 @@ def reload() -> None:
     _l3_by_code.clear()
     _l3_by_domain.clear()
     _domain_label.clear()
-    _domain_order.clear()
-    _domain_excluded.clear()
     _domain_action.clear()
     _domain_owner.clear()
     _cascade.clear()
@@ -152,7 +142,8 @@ def reload() -> None:
 
 
 def cascade_tree() -> list[dict[str, Any]]:
-    """完整歸因分類級聯樹（巢狀 {value,label,children}）——供前端標真值級聯選 L1→L2 葉。"""
+    """完整歸因分類級聯樹（巢狀 {value,label,children}）——供前端 L1→L2 級聯選
+    （歸因列表篩選 / B3 存為測試 case 選域與面向）。"""
     _ensure_loaded()
     return _cascade
 
@@ -206,40 +197,4 @@ def l3_nodes_for_domains(domain_codes: list[str]) -> list[dict[str, Any]]:
             if n["code"] not in seen:
                 seen.add(n["code"])
                 out.append(n)
-    return out
-
-
-def domain_l2_labels(code: str) -> list[str]:
-    """域 code → 其下 L2 面向中文 label 清單（保序去重）；供漏斗 Stage1 提示域涵蓋範圍。"""
-    _ensure_loaded()
-    out: list[str] = []
-    seen: set[str] = set()
-    for n in _l3_by_domain.get(code, []):
-        lbl = n.get("l2_label", "")
-        if lbl and lbl not in seen:
-            seen.add(lbl)
-            out.append(lbl)
-    return out
-
-
-def selectable_domains() -> list[dict[str, Any]]:
-    """漏斗 Stage1 可選 L1 域清單（排除 domains.json intake_excluded 的域；目前六域皆未設）。
-
-    每域附中文名 + L2 面向涵蓋，讓 LLM 先在域層聚焦選擇（對抗一次攤平數十條面向的注意力稀釋）。
-
-    Returns:
-        [{code, label, l2_labels}]，依 prompt 檔名序；不含 intake_excluded 域。
-    """
-    _ensure_loaded()
-    out: list[dict[str, Any]] = []
-    for code in _domain_order:
-        if code in _domain_excluded:
-            continue
-        out.append(
-            {
-                "code": code,
-                "label": _domain_label.get(code, code),
-                "l2_labels": domain_l2_labels(code),
-            }
-        )
     return out

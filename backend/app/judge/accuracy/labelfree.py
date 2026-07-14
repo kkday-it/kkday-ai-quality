@@ -21,10 +21,10 @@ _EPSILON = 1e-6
 
 
 def _load_attributed() -> list[dict[str, Any]] | None:
-    """從 judgments.data 撈負向 attributed finding（有 l3_code + raw_confidence）。
+    """從 judgments.data 撈負向 attributed finding（有 l2_code + raw_confidence）。
 
     Returns:
-        [{finding_id, ticket_id, l3_code, raw_confidence, candidates:{code:score}, l1_domain}]；
+        [{finding_id, ticket_id, l2_code, raw_confidence, candidates:{code:score}, l1_domain}]；
         DB 不可達 → None（報表標 skipped）。
     """
     try:
@@ -37,10 +37,10 @@ def _load_attributed() -> list[dict[str, Any]] | None:
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:
             jg = T.judgments
-            # 攤平後判決欄皆 typed 欄，直接 select（l3_code / conf_raw / 關聯鍵）
+            # 攤平後判決欄皆 typed 欄，直接 select（l2_code / conf_raw / 關聯鍵）
             rows = c.execute(
-                select(jg.c.finding_id, jg.c.source_id, jg.c.l3_code, jg.c.conf_raw).where(
-                    jg.c.l3_code.isnot(None), jg.c.l3_code != "", jg.c.conf_raw.isnot(None)
+                select(jg.c.finding_id, jg.c.source_id, jg.c.l2_code, jg.c.conf_raw).where(
+                    jg.c.l2_code.isnot(None), jg.c.l2_code != "", jg.c.conf_raw.isnot(None)
                 )
             )
             for fid, sid, code, raw_conf in rows:
@@ -50,7 +50,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
                     {
                         "finding_id": fid or "",
                         "ticket_id": sid or "",
-                        "l3_code": code,
+                        "l2_code": code,
                         "raw_confidence": float(raw_conf),
                         "candidates": {},
                         "l1_domain": node.get("l1_domain", "") or "—",
@@ -63,7 +63,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
 
 
 def _build_matrix(findings: list[dict[str, Any]]):
-    """findings → (labels, pred_probs, observed_codes)；類別空間＝實際被預測到的 l3_code 集合。
+    """findings → (labels, pred_probs, observed_codes)；類別空間＝實際被預測到的 l2_code 集合。
 
     每列 pred_probs：pred code 放 raw_confidence、候選 code 放其 score（取 max），未提及類別填
     _EPSILON，最後 normalize 成機率分佈。pseudo-label＝pred code（noisy label 交 Cleanlab 檢驗）。
@@ -75,7 +75,7 @@ def _build_matrix(findings: list[dict[str, Any]]):
     """
     import numpy as np  # noqa: PLC0415  lazy：未裝 numpy/cleanlab 時上層降級
 
-    observed_codes = sorted({f["l3_code"] for f in findings})
+    observed_codes = sorted({f["l2_code"] for f in findings})
     if len(observed_codes) < _MIN_CLASSES or len(findings) < _MIN_SAMPLES:
         return None
     idx = {code: i for i, code in enumerate(observed_codes)}
@@ -84,7 +84,7 @@ def _build_matrix(findings: list[dict[str, Any]]):
     labels = np.empty(len(findings), dtype=int)
     pred_probs = np.full((len(findings), k), _EPSILON, dtype=float)
     for row, f in enumerate(findings):
-        pi = idx[f["l3_code"]]
+        pi = idx[f["l2_code"]]
         labels[row] = pi
         pred_probs[row, pi] = max(f["raw_confidence"], _EPSILON)
         for cc, cs in f["candidates"].items():
@@ -144,15 +144,15 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
     # L3 級：品質分均值最低的 20 類（判準最可能誤歸的細項）
-    l3_agg: dict[str, dict[str, Any]] = {}
+    l2_agg: dict[str, dict[str, Any]] = {}
     for i, f in enumerate(findings[:n]):
-        a = l3_agg.setdefault(f["l3_code"], {"n": 0, "q_sum": 0.0})
+        a = l2_agg.setdefault(f["l2_code"], {"n": 0, "q_sum": 0.0})
         a["n"] += 1
         a["q_sum"] += float(quality[i])
     worst_l3 = sorted(
         (
-            {"l3_code": c, "n": a["n"], "avg_quality": round(a["q_sum"] / a["n"], 3)}
-            for c, a in l3_agg.items()
+            {"l2_code": c, "n": a["n"], "avg_quality": round(a["q_sum"] / a["n"], 3)}
+            for c, a in l2_agg.items()
         ),
         key=lambda r: r["avg_quality"],
     )[:20]
@@ -163,7 +163,7 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
         {
             "finding_id": findings[i]["finding_id"],
             "ticket_id": findings[i]["ticket_id"],
-            "l3_code": findings[i]["l3_code"],
+            "l2_code": findings[i]["l2_code"],
             "raw_confidence": round(findings[i]["raw_confidence"], 3),
             "quality": round(float(quality[i]), 3),
             "is_issue": bool(issue_mask[i]),
@@ -226,7 +226,7 @@ def _write_md(rep: dict[str, Any]) -> str:
         "|---|---|---|",
     ]
     for r in rep["worst_l3"]:
-        lines.append(f"| {r['l3_code']} | {r['n']} | {r['avg_quality']} |")
+        lines.append(f"| {r['l2_code']} | {r['n']} | {r['avg_quality']} |")
     lines += [
         "",
         "## 低品質樣本人審清單（品質分最低 50 筆）",
@@ -237,7 +237,7 @@ def _write_md(rep: dict[str, Any]) -> str:
     for r in rep["low_quality_samples"]:
         flag = "⚠️" if r["is_issue"] else ""
         lines.append(
-            f"| {r['finding_id']} | {r['l3_code']} | {r['raw_confidence']} | {r['quality']} | {flag} |"
+            f"| {r['finding_id']} | {r['l2_code']} | {r['raw_confidence']} | {r['quality']} | {flag} |"
         )
     lines.append("")
     return "\n".join(lines)
