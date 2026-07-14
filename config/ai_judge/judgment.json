@@ -84,9 +84,5 @@
   "jury_low": 0.5,
   "jury_high": 0.7,
   "auto_accept": 0.8
- },
- "ui_confidence_bands": {
-  "mid": 0.7,
-  "high": 0.85
  }
 }
