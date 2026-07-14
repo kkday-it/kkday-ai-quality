@@ -1226,7 +1226,8 @@ onMounted(init);
           </a-row>
           <div class="mt-1 text-xs text-gray-400">
             每個選定模型在基準右側增加「情緒·M / L1·M / L2·M」三欄，值取該模型
-            <b class="font-medium text-gray-500">最新一次判決</b>（judgment_history 快照）；該模型未判／判為無問題的評論該三欄留空。
+            <b class="font-medium text-gray-500">最新一次判決</b>（judgment_history
+            快照）；該模型未判／判為無問題的評論該三欄留空。
           </div>
         </div>
         <div>
