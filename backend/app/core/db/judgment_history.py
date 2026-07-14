@@ -25,7 +25,7 @@ from app.core.db import tables as T
 def snapshot_of(values: dict) -> dict:
     """judgments 落庫欄位 dict（_finding_values 產出）→ 歷史快照單筆（與回填 migration 同形）。
 
-    只取判決本體欄；人工覆核軸（status/true_label）不入快照——重判會保留人工覆核結果，
+    只取判決本體欄；人工覆核軸（status）不入快照——重判會保留人工覆核結果，
     若入快照，「判決相同但先前已被人工確認」會被誤判為結果變化；覆核轉移由 kind='status'
     事件獨立留痕。summary 存原始 JSONB 語系 map（zh-tw 顯示由前端取用）。
     """

@@ -15,20 +15,10 @@ import {
   IconCheck,
   IconClose,
   IconDownload,
-  IconEdit,
   IconHistory,
   IconMessage,
 } from '@arco-design/web-vue/es/icon';
-import {
-  addFindingNote,
-  evaluateTrueLabel,
-  getFindingNotes,
-  getTaxonomyCascade,
-  updateTrueLabel,
-  type CascadeNode,
-  type FindingNote,
-  type TrueLabelEval,
-} from '@/api';
+import { addFindingNote, getFindingNotes, type FindingNote } from '@/api';
 import { PERM } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { usePermission } from '@/composables/usePermission';
@@ -44,7 +34,6 @@ import {
   STATUS_LABEL,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
-  type Attribution,
   type FilterField,
   type ProblemRow,
 } from '../constants';
@@ -72,7 +61,6 @@ const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 const { can } = usePermission();
 const canPrejudge = computed(() => can(PERM.judgmentPrejudgeRun));
 const canReview = computed(() => can(PERM.findingReviewUpdate));
-const canTrueLabel = computed(() => can(PERM.findingTrueLabelUpdate));
 const canExport = computed(() => can(PERM.problemListExport));
 
 // 歸因歷史抽屜（點開才載；每次批量/選取/單筆重判的 LLM 使用紀錄）
@@ -209,10 +197,6 @@ const promptEvalFilters = computed<PrejudgeBody>(() => ({
   order_oid: filters.orderOid.trim() || undefined,
   has_external: filters.hasExternal === '' ? undefined : filters.hasExternal === 'true',
 }));
-/** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
-const attrPath = (a: Attribution): string =>
-  [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
-
 /**
  * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
  * auto_accept(≥0.8) 綠＝可採信 / jury(0.5–0.8) 琥珀＝需覆核 / needs_review(<0.5) 紅＝必人工。
@@ -242,143 +226,6 @@ const extTagColor = (v?: string | number | null): string => {
   if (n <= 2) return 'red';
   if (n < 4) return 'orange';
   return 'green';
-};
-
-// ── 操作欄：標真值彈窗（級聯選 L1→L2→L3 → LLM 評分把關 → 低信心填理由 → 標註）──
-const truelabelOpen = ref(false);
-const truelabelRow = ref<ProblemRow | null>(null);
-const truelabelSaving = ref(false);
-/** 兩階段：select＝選級聯；review＝看 LLM 前後信心對比 + 低信心填理由。 */
-const truelabelPhase = ref<'select' | 'review'>('select');
-/** 級聯樹選項（懶載一次；全 finding 共用）。 */
-const cascadeOpts = ref<CascadeNode[]>([]);
-const cascadeLoading = ref(false);
-/** finding_id → 選定的真值 code（級聯葉；空＝清除標註）。 */
-const truelabelDraft = ref<Record<string, string>>({});
-/** finding_id → LLM 評分結果（review 階段顯示前後信心對比）。 */
-const truelabelEvals = ref<Record<string, TrueLabelEval>>({});
-/** finding_id → 修改理由（低信心 reason_required 時必填）。 */
-const truelabelReasons = ref<Record<string, string>>({});
-
-/** 懶載級聯樹（首次開彈窗才拉，之後快取）。 */
-const ensureCascade = async () => {
-  if (cascadeOpts.value.length || cascadeLoading.value) return;
-  cascadeLoading.value = true;
-  try {
-    cascadeOpts.value = await getTaxonomyCascade();
-  } catch (e: any) {
-    Message.error('載入分類樹失敗：' + (e?.message || e));
-  } finally {
-    cascadeLoading.value = false;
-  }
-};
-
-/** 開標真值彈窗：以各歸因現有 true_label 為初值，回到 select 階段。 */
-const openTrueLabel = (record: ProblemRow) => {
-  if (!record.attributions || !record.attributions.length) {
-    Message.warning('此列尚無歸因可標註，請先歸因');
-    return;
-  }
-  truelabelRow.value = record;
-  truelabelPhase.value = 'select';
-  truelabelDraft.value = {};
-  truelabelEvals.value = {};
-  truelabelReasons.value = {};
-  record.attributions.forEach((a) => {
-    if (a.finding_id) truelabelDraft.value[a.finding_id] = a.true_label || '';
-  });
-  truelabelOpen.value = true;
-  void ensureCascade();
-};
-
-/** 本次有選定真值（非清除）的歸因清單。 */
-const labeledAttrs = computed(() =>
-  (truelabelRow.value?.attributions || []).filter(
-    (a) => a.finding_id && (truelabelDraft.value[a.finding_id] || '').trim(),
-  ),
-);
-/** review 階段：仍有 reason_required 但未填理由者 → 阻擋確認。 */
-const reasonBlocked = computed(() =>
-  labeledAttrs.value.some((a) => {
-    const fid = a.finding_id as string;
-    return (
-      truelabelEvals.value[fid]?.reason_required && !(truelabelReasons.value[fid] || '').trim()
-    );
-  }),
-);
-
-/** 評估並標註（select→review）：對有選定真值的歸因逐一 LLM 評分，收齊後進 review 顯示前後信心對比。 */
-const evaluateTrueLabels = async () => {
-  const attrs = labeledAttrs.value;
-  if (!attrs.length) {
-    // 全為清除 → 無需評分，直接標註（清除）
-    await confirmTrueLabels();
-    return;
-  }
-  truelabelSaving.value = true;
-  try {
-    const results = await Promise.all(
-      attrs.map((a) =>
-        evaluateTrueLabel(a.finding_id as string, truelabelDraft.value[a.finding_id as string]),
-      ),
-    );
-    const evals: Record<string, TrueLabelEval> = {};
-    attrs.forEach((a, i) => (evals[a.finding_id as string] = results[i]));
-    truelabelEvals.value = evals;
-    truelabelPhase.value = 'review';
-  } catch (e: any) {
-    Message.error('評分失敗：' + (e?.message || e));
-  } finally {
-    truelabelSaving.value = false;
-  }
-};
-
-/** review 階段信心對比顯示：回 {text, cls}（升綠降紅）。 */
-const evalDelta = (ev: TrueLabelEval): { text: string; cls: string } => {
-  const llm = ev.llm_confidence.toFixed(2);
-  if (ev.delta == null || ev.original_confidence == null) {
-    return { text: `LLM 對此真值信心 ${llm}`, cls: 'text-[var(--color-text-2)]' };
-  }
-  const up = ev.delta >= 0;
-  return {
-    text: `LLM 對此真值信心 ${llm}（原判 ${ev.original_confidence.toFixed(2)}，${up ? '↑' : '↓'}${Math.abs(ev.delta).toFixed(2)}）`,
-    cls: up ? 'text-[rgb(var(--green-6))]' : 'text-[rgb(var(--red-6))]',
-  };
-};
-
-/** 確認標註（review→存）：逐歸因 PATCH（帶理由 + LLM 信心）；清除者送 null。optimistic 回寫。 */
-const confirmTrueLabels = async () => {
-  const row = truelabelRow.value;
-  if (!row) return;
-  if (reasonBlocked.value) {
-    Message.warning('部分真值信心明顯偏低，請填寫修改理由');
-    return;
-  }
-  const attrs = (row.attributions || []).filter((a) => a.finding_id);
-  truelabelSaving.value = true;
-  try {
-    await Promise.all(
-      attrs.map((a) => {
-        const fid = a.finding_id as string;
-        const val = (truelabelDraft.value[fid] || '').trim() || null;
-        const ev = truelabelEvals.value[fid];
-        return updateTrueLabel(fid, val, {
-          reason: truelabelReasons.value[fid] || undefined,
-          llmConf: ev?.llm_confidence,
-        });
-      }),
-    );
-    attrs.forEach(
-      (a) =>
-        (a.true_label = (truelabelDraft.value[a.finding_id as string] || '').trim() || undefined),
-    );
-    Message.success('已標註真值');
-    truelabelOpen.value = false;
-  } catch (e: any) {
-    Message.error('標註失敗：' + (e?.message || e));
-  } finally {
-    truelabelSaving.value = false;
-  }
 };
 
 // ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）──
@@ -841,7 +688,7 @@ onMounted(init);
                 {{ a.content.summary }}
               </div>
             </div>
-            <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
+            <!-- 歸因（L1→L2 麵包屑）-->
             <div class="flex gap-1.5">
               <span
                 class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
@@ -866,9 +713,6 @@ onMounted(init);
                   </template>
                 </template>
                 <span v-else class="text-[var(--color-text-3)]">未歸因</span>
-                <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
-                  <span class="ml-1.5 text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
-                </a-tooltip>
               </div>
             </div>
             <!-- 信心（值 + 分層 + 判決模型；stage 僅異常態顯示——三軸標籤收斂：status 移操作列）-->
@@ -903,7 +747,7 @@ onMounted(init);
                 </a-tag>
               </div>
             </div>
-            <!-- 操作（覆核徽章 + 確認採信(綠)/忽略駁回(紅)/標真值/備註；再點選中態＝撤銷覆核）-->
+            <!-- 操作（覆核徽章 + 確認採信(綠)/忽略駁回(紅)/備註；再點選中態＝撤銷覆核）-->
             <div class="flex gap-1.5">
               <span
                 class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
@@ -952,15 +796,6 @@ onMounted(init);
                     忽略
                   </a-button>
                 </a-tooltip>
-                <a-button
-                  size="mini"
-                  type="text"
-                  :disabled="!canTrueLabel"
-                  @click="openTrueLabel(record)"
-                >
-                  <template #icon><IconEdit /></template>
-                  標真值
-                </a-button>
                 <a-badge v-if="a.finding_id" :count="a.notes_count || 0" :max-count="99">
                   <a-button size="mini" type="text" @click="openNotes(a.finding_id)">
                     <template #icon><IconMessage /></template>
@@ -1249,93 +1084,6 @@ onMounted(init);
 
     <!-- 單條測試：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）-->
     <RowPromptTestModal v-model:visible="testOpen" :source="source" :row="testRow" />
-
-    <!-- 操作欄：標真值彈窗（級聯選 → LLM 評分把關 → 低信心填理由 → 標註；重判依 finding_id 保留）-->
-    <a-modal
-      v-model:visible="truelabelOpen"
-      title="標註真值分類"
-      :footer="false"
-      :width="560"
-      unmount-on-close
-    >
-      <div v-if="truelabelRow" class="flex flex-col gap-3">
-        <div class="text-xs text-[var(--color-text-3)]">
-          為每條歸因用級聯選正確分類（留空＝清除）。確認時 LLM 會對「該真值 vs
-          反饋原文」評分並對比原判信心， 信心明顯下降需填修改理由。此標註供準確率評估，不改變 AI
-          判決。
-        </div>
-
-        <div
-          v-for="(a, ai) in truelabelRow.attributions || []"
-          :key="ai"
-          class="flex flex-col gap-1.5 rounded-md border border-[var(--color-neutral-3)] p-2.5"
-        >
-          <div class="text-xs text-[var(--color-text-2)]">AI 歸因：{{ attrPath(a) }}</div>
-          <a-cascader
-            v-if="a.finding_id"
-            v-model="truelabelDraft[a.finding_id]"
-            :options="cascadeOpts"
-            :loading="cascadeLoading"
-            :disabled="truelabelPhase === 'review'"
-            size="small"
-            allow-clear
-            allow-search
-            expand-trigger="hover"
-            placeholder="級聯選正確分類（留空＝清除）"
-          />
-
-          <!-- review：LLM 前後信心對比 + 低信心必填理由 -->
-          <template
-            v-if="truelabelPhase === 'review' && a.finding_id && truelabelEvals[a.finding_id]"
-          >
-            <div class="text-xs" :class="evalDelta(truelabelEvals[a.finding_id]).cls">
-              {{ evalDelta(truelabelEvals[a.finding_id]).text }}
-            </div>
-            <div
-              v-if="truelabelEvals[a.finding_id].reason_llm"
-              class="text-[11px] leading-snug text-[var(--color-text-3)]"
-            >
-              LLM 判讀：{{ truelabelEvals[a.finding_id].reason_llm }}
-            </div>
-            <a-textarea
-              v-if="truelabelEvals[a.finding_id].reason_required"
-              v-model="truelabelReasons[a.finding_id]"
-              size="small"
-              :auto-size="{ minRows: 2 }"
-              placeholder="此真值 LLM 信心明顯偏低，請填寫修改理由（必填）"
-              class="mt-0.5"
-            />
-          </template>
-        </div>
-
-        <!-- 兩階段 footer -->
-        <div class="flex justify-end gap-2 pt-1">
-          <template v-if="truelabelPhase === 'select'">
-            <a-button size="small" @click="truelabelOpen = false">取消</a-button>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="truelabelSaving"
-              @click="evaluateTrueLabels"
-            >
-              評估並標註
-            </a-button>
-          </template>
-          <template v-else>
-            <a-button size="small" @click="truelabelPhase = 'select'">返回修改</a-button>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="truelabelSaving"
-              :disabled="reasonBlocked"
-              @click="confirmTrueLabels"
-            >
-              確認標註
-            </a-button>
-          </template>
-        </div>
-      </div>
-    </a-modal>
 
     <!-- 歸因備註彈窗：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史彈窗同比例）-->
     <a-modal

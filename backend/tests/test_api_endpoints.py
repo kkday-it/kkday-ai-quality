@@ -1,7 +1,7 @@
 """API 端點契約測試（FastAPI TestClient + 隔離 PostgreSQL 測試庫）。
 
 建立目前缺失的端點層安全網：auth（註冊/登入/守衛）、settings（遮罩 + stub_mode）、findings
-（狀態 / 真值標註，含 404 與成功回填）、problems（列表契約）。此網亦為未來 main.py 拆 router
+（狀態覆核，含 404 與成功回填）、problems（列表契約）。此網亦為未來 main.py 拆 router
 （Phase 5）的回歸保障——拆分前後端點行為須一致。
 """
 
@@ -137,9 +137,9 @@ def test_settings_masked_with_stub_mode(client, auth_headers) -> None:
     assert r.json()["stub_mode"] is True  # 測試無 token → stub
 
 
-# ── findings：狀態 / 真值標註 ──────────────────────────────────────
+# ── findings：狀態覆核 ──────────────────────────────────────
 def _seed_one_finding() -> str:
-    """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態/真值端點成功路徑測試）。"""
+    """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態端點成功路徑測試）。"""
     db.insert_source_batch(
         "product_reviews",
         [
@@ -193,27 +193,6 @@ def test_patch_finding_status_rejects_invalid_value(client, auth_headers) -> Non
         ).status_code
         == 422
     )
-
-
-def test_patch_true_label_requires_auth(client) -> None:
-    assert (
-        client.patch("/api/findings/x/true_label", json={"true_label": "content"}).status_code
-        == 401
-    )
-
-
-def test_patch_true_label_not_found_and_success(client, auth_headers) -> None:
-    assert (
-        client.patch(
-            "/api/findings/nope/true_label", json={"true_label": "content"}, headers=auth_headers
-        ).status_code
-        == 404
-    )
-    fid = _seed_one_finding()
-    r = client.patch(
-        f"/api/findings/{fid}/true_label", json={"true_label": "content"}, headers=auth_headers
-    )
-    assert r.status_code == 200 and r.json()["true_label"] == "content"
 
 
 # ── problems ──────────────────────────────────────────────────────

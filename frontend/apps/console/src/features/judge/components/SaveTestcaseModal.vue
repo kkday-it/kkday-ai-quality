@@ -2,7 +2,7 @@
 /**
  * 「存為測試 case」共用彈窗（B3：分歧一鍵入集）：PromptEvalModal 批量分歧表 / RowPromptTestModal
  * 單條測試皆帶入 prefill（文字 + 猜測的域/面向/傾向），使用者確認/修正後存入 prompt_testcases，
- * 邊界測試集自然生長，不靠手工造 CSV。域/面向選項復用既有 `getTaxonomyCascade`（標真值同一份 SSOT，
+ * 邊界測試集自然生長，不靠手工造 CSV。域/面向選項復用既有 `getTaxonomyCascade`（分類結構單一真相源，
  * 不另建一份域清單）。
  */
 import { computed, ref, watch } from 'vue';

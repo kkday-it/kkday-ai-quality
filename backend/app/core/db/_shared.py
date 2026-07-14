@@ -109,7 +109,7 @@ def attribution_dto(r: dict) -> dict:
     """judgments 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
     r 為含判決欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
-    或直接傳 judgments 列 mapping）。人工覆核軸（status/true_label）與 finding_id 亦在其中。
+    或直接傳 judgments 列 mapping）。人工覆核軸（status）與 finding_id 亦在其中。
 
     Args:
         r: 判決欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
@@ -117,7 +117,7 @@ def attribution_dto(r: dict) -> dict:
     Returns:
         巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
         confidence:{value,raw,tier}, content:{summary,evidence,action},
-        owner, model, notes_count, is_primary, status, true_label}。
+        owner, model, notes_count, is_primary, status}。
     """
     l1_code = r.get("l1_code")
     summary_langs = _summary_langs(r.get("summary"))
@@ -149,7 +149,6 @@ def attribution_dto(r: dict) -> dict:
         "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
         "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
-        "true_label": r.get("true_label"),  # 人工標註真值分類
     }
 
 

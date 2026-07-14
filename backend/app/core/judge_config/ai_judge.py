@@ -32,9 +32,6 @@ _domain_owner: dict[str, str] = {}  # domain → 負責單位（自 domains.json
 _cascade: list[
     dict[str, Any]
 ] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域機器值，L2 value=面向 code）
-_path_label: dict[
-    str, str
-] = {}  # value（域機器值 / 面向 code）→ 可讀路徑「L1 › L2」（供標真值評分 prompt）
 _loaded = False
 
 
@@ -111,26 +108,21 @@ def _ensure_loaded() -> None:
                         {"code": f.get("code", ""), "label": f.get("label", "")} for f in facets
                     ],
                 },
-                [],
                 root=True,
             )
         )
     _loaded = True
 
 
-def _build_cascade(node: dict[str, Any], ancestors: list[str], *, root: bool) -> dict[str, Any]:
-    """遞迴組級聯節點 {value,label,children}，並登記每個 value 的完整路徑 label（供標真值評分 prompt）。
+def _build_cascade(node: dict[str, Any], *, root: bool) -> dict[str, Any]:
+    """遞迴組級聯節點 {value,label,children}（供前端歸因分類 cascader：標記真值 / B3 存為測試 case）。
 
-    root（L1 域）value＝域機器值（domain，對齊 selectable_domains / true_label 儲存）；L2 value＝面向 code。
-    現輸入固定二層（domain→facets），但演算法本身仍為通用遞迴、非本次改動範圍。
+    root（L1 域）value＝域機器值（domain）；L2 value＝面向 code。現輸入固定二層（domain→facets）。
     """
     value = node.get("domain", "") if root else node.get("code", "")
     label = node.get("label", "") or value
-    path = [*ancestors, label]
-    if value:
-        _path_label[value] = " › ".join(path)
     out: dict[str, Any] = {"value": value, "label": label}
-    children = [_build_cascade(ch, path, root=False) for ch in (node.get("children") or [])]
+    children = [_build_cascade(ch, root=False) for ch in (node.get("children") or [])]
     if children:
         out["children"] = children
     return out
@@ -152,7 +144,6 @@ def reload() -> None:
     _domain_action.clear()
     _domain_owner.clear()
     _cascade.clear()
-    _path_label.clear()
     _loaded = False
     from app.judge import prompt_source
 
@@ -164,12 +155,6 @@ def cascade_tree() -> list[dict[str, Any]]:
     """完整歸因分類級聯樹（巢狀 {value,label,children}）——供前端標真值級聯選 L1→L2 葉。"""
     _ensure_loaded()
     return _cascade
-
-
-def path_label(code: str) -> str:
-    """歸因 value（域機器值 / 面向 code）→ 可讀完整路徑「L1 › L2」；未知回空字串。"""
-    _ensure_loaded()
-    return _path_label.get(code, "")
 
 
 def domain_label(code: str) -> str:

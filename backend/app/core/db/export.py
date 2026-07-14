@@ -63,7 +63,6 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("判決階段", "judgment_stage", 12),
     ("判決模型", "model", 14),  # 判決溯源（attr 級；快照模式＝所選輸出版本模型）
     ("覆核狀態", "status", 10),  # 人工處置軸（待處理/自動確認/已確認/已忽略；attr 級）
-    ("真值", "true_label", 12),  # 人工標註真值分類（葉 code；attr 級）
 ]
 
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
@@ -111,7 +110,6 @@ def _flat_attr(a: dict) -> dict:
         "summary": (a.get("content") or {}).get("summary"),
         "model": a.get("model"),
         "status": a.get("status"),
-        "true_label": a.get("true_label"),
     }
 
 
@@ -162,8 +160,8 @@ def _adapt_snapshot(a: dict, model: str) -> dict:
     - owner：純函式 `_domain_owner(l1.code)` 讀取時派生（與 attribution_dto 同源）。
     - notes_count＝0：快照 finding_id 是歷史值，重判後與現行 finding_notes 的對應不可靠，
       且那些備註語義上屬「當時那次判決」——不 join、不冒充。
-    - status/true_label＝None：人工覆核軸綁「當前判決」可變狀態，歷史快照是不可變切片，
-      硬塞會產生假象（xlsx 該兩欄輸出空白屬預期）。
+    - status＝None：人工覆核軸綁「當前判決」可變狀態，歷史快照是不可變切片，
+      硬塞會產生假象（xlsx 該欄輸出空白屬預期）。
     """
     content = a.get("content") or {}
     langs = _summary_langs(content.get("summary"))
@@ -180,7 +178,6 @@ def _adapt_snapshot(a: dict, model: str) -> dict:
         "model": model,
         "notes_count": 0,
         "status": None,
-        "true_label": None,
     }
 
 
@@ -339,7 +336,7 @@ def export_problems_xlsx(
     ws.append([c[0] for c in cols])
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級。
     # ⚠️ 新增歸因級欄位必須同步三處：_EXPORT_XLSX_COLS + _flat_attr + 本集合——缺此集合會
-    # fallback 讀 row 級（_enrich_problem 的 status 恆 None）→ 欄位靜默空白（status/true_label 曾踩）。
+    # fallback 讀 row 級（_enrich_problem 的 status 恆 None）→ 欄位靜默空白（status 曾踩）。
     _attr_keys = {
         "l1_label",
         "l2_label",
@@ -350,7 +347,6 @@ def export_problems_xlsx(
         "summary",
         "model",
         "status",
-        "true_label",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)

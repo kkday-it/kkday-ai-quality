@@ -20,7 +20,6 @@ from app.core.db.findings import (
     list_finding_notes,
     replace_source_findings,
     update_finding_status,
-    update_finding_true_label,
 )
 from app.core.db.ingest import (
     create_batch,
@@ -147,5 +146,4 @@ __all__ = [
     "update_prompt_testcase",
     "update_batch_inserted",
     "update_finding_status",
-    "update_finding_true_label",
 ]

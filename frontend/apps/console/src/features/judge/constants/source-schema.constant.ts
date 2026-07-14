@@ -116,8 +116,6 @@ export interface Attribution {
   is_primary?: boolean;
   /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——覆核徽章用。 */
   status?: string;
-  /** 人工標註真值分類 true_label——標真值功能用。 */
-  true_label?: string;
 }
 
 /**

@@ -30,7 +30,6 @@ def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVI
 | `data.datapack.export` | admin export/start | qc+admin |
 | `data.source.upload` | inbound validate/upload | qc+admin |
 | `finding.review.update` | findings PATCH /status | qc+admin |
-| `finding.true-label.update` | findings PATCH /true_label | qc+admin |
 | `problem.list.export` | problems POST /export | qc+admin |
 
 角色→key 映射 SSOT＝`config/global/role_permissions.json`；provider 切換＝`config/global/auth.config.json`。

@@ -26,7 +26,6 @@ export const PERM = {
   dataDatapackExport: 'data.datapack.export',
   dataSourceUpload: 'data.source.upload',
   findingReviewUpdate: 'finding.review.update',
-  findingTrueLabelUpdate: 'finding.true-label.update',
   problemListExport: 'problem.list.export',
   judgmentPrejudgeRun: 'judgment.prejudge.run',
 } as const;

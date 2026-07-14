@@ -2,7 +2,8 @@
 
 ⚠️ 侷限（循環論證）：以「模型自身 argmax = pseudo-label」＋ raw_confidence 派生 pred_probs 自證，
 屬內部一致性偵測非絕對準確率；系統性偏誤（整片同錯一類）無法揭露，與 rule_coverage 矛盾以人審為準。
-自 accuracy.py 拆出（行為不變）；監督/多 model 路徑見同包 supervised / ensemble_agreement。
+自 accuracy.py 拆出（行為不變）。真值監督（supervised）與多 model 聯合（ensemble_agreement）路徑已隨
+標真值功能於 2026-07-14 退役——本模組為唯一存留的準確度自證代理。
 """
 
 from __future__ import annotations
@@ -193,7 +194,7 @@ def build_report() -> dict[str, Any]:
 _LIMITATION = (
     "> ⚠️ **侷限（循環論證）**：無人工真值，本報表以「模型自身 argmax = pseudo-label」自證，"
     "屬**內部一致性 / 可疑樣本偵測**，非絕對準確率。系統性偏誤（整片同錯一類）無法揭露；"
-    "與 rule_coverage 矛盾時以人審為準。真值（true_label ≥ 200）到位後改走真校準。"
+    "與 rule_coverage 矛盾時以人審為準。"
 )
 
 

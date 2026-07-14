@@ -308,7 +308,7 @@ def test_finalize_attr_l2_supplier_without_order_capped(finalize_l2_env) -> None
 
 
 # ── 多歸因去重 / 排序 / 上限（_resolve_attrs_multi 的防過度歸因邏輯）──────────
-# 鎖：同 L1 域保信心最高（action/owner 為域級）+ 濾全 abstain（無域）+ 依 confidence 降冪 + cap max_n。
+# 鎖：同(域,面向)去重保信心最高（同 L1 不同 L2 面向並列）+ 濾全 abstain（無域）+ 依 confidence 降冪 + cap max_n。
 # mock 掉 LLM 產出階段（_attrs_pack），只測其後的確定性去重/排序（六域並行的合流尾段）。
 
 
@@ -342,6 +342,34 @@ def test_resolve_attrs_multi_caps_at_max_n(non_stub, monkeypatch) -> None:
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
     out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["content", "supplier"]  # 取前 2 高信心
+
+
+def test_resolve_attrs_multi_same_domain_multi_l2_coexist(non_stub, monkeypatch) -> None:
+    """同一 L1 域下多個 L2 面向並列（不再塌成一條）；僅同(域,面向)重複才去重取信心最高。"""
+    monkeypatch.setattr(
+        prejudge, "_evidence_policy", lambda: {}
+    )  # 關閉 secondary/attr 閘門，純測去重粒度
+    synthetic = [
+        {"l1_domain_code": "service", "l2_code": "C-5-1", "l3_code": "", "confidence": 0.9},
+        {
+            "l1_domain_code": "service",
+            "l2_code": "C-5-2",
+            "l3_code": "",
+            "confidence": 0.6,
+        },  # 同域異面向 → 並列
+        {
+            "l1_domain_code": "service",
+            "l2_code": "C-5-1",
+            "l3_code": "",
+            "confidence": 0.4,
+        },  # 同(域,面向) → 被 0.9 覆蓋
+    ]
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 6)
+    assert [(a["l1_domain_code"], a["l2_code"]) for a in out] == [
+        ("service", "C-5-1"),  # 0.9 主
+        ("service", "C-5-2"),  # 0.6 同域第二面向並列
+    ]
 
 
 def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:

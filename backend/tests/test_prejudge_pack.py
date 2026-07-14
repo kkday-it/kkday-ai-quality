@@ -2,7 +2,7 @@
 
 覆蓋：
 - _stage1_polarity → _pack_polarity 吃 00_polarity（parse 出 polarity/sentiment）；
-- _resolve_attrs_multi → _attrs_pack 六域並行 → 各域 attribution 合流 → 共用尾段（同域去重/排序/閘門）。
+- _resolve_attrs_multi → _attrs_pack 六域並行 → 各域 attribution 合流 → 共用尾段（同(域,面向)去重/排序/閘門）。
 
 不需 LLM key / DB：_call、prompt_source.load、_l2_label_map 全 monkeypatch 固定。
 """

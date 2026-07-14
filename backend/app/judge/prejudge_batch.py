@@ -84,7 +84,7 @@ def _work_one(
 
     item 為來源表列（源欄名）。先注入 canonical content + source_id + source（供 prejudge 引擎），
     全 5 來源統一走 to_findings（1:N 多歸因），以 replace_source_findings 整組替換 (source, source_id)
-    舊列（重判冪等、保留 true_label）。
+    舊列（重判冪等、保留人工覆核 status）。
     """
     from app.core import source_mapping as _srcmap
     from app.core.db import source_registry as _reg

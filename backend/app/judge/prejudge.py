@@ -10,7 +10,7 @@
 - Stage 0 零 LLM 略過純好評（rating=5 + 評論極短 + 無負向詞）→ $0，不歸因。
 - Stage 1 極性閘門：進歸因傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral
   ——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
-- 歸因合流閘門（_resolve_attrs_multi 尾段）：同域去重（保信心最高）+ 排序 + attr_min/secondary_min。
+- 歸因合流閘門（_resolve_attrs_multi 尾段）：同(域,面向)去重（保信心最高，同 L1 多 L2 並列）+ 排序 + attr_min/secondary_min。
 - G1 自動確認路由、證據封頂、grounding 壓信心、stub 雙防線等 code-side 機制不屬 prompt。
 
 finding 為純歸因（軸A）：polarity + L1/L2/L3 + confidence + recommended_action；verdict（軸B）已自
@@ -445,32 +445,42 @@ def _summary_map(raw) -> dict[str, str]:
 
 # ── 多歸因（全 5 來源 1:N）：一則負向評論同時違反多規則 → 多條 attr dict，由 to_findings 各組一 TicketFinding ──
 def _max_attributions() -> int:
-    """一則評論最多輸出幾條獨立違規歸因（config；防過度歸因，硬上限 3、下限 1）。"""
+    """一則評論最多輸出幾條獨立違規歸因（config；防過度歸因，硬上限 8、下限 1）。
+
+    上限由 3→8：改採「同(域,面向)並列」歸因粒度後（見 `_gate_attrs`），一則反饋可同時命中
+    多域＋同域多面向（6 域 × 各域 maxItems 2 ＝ 理論 12），硬上限放寬以容納，實際條數仍由
+    config max_attributions 與信心閘門收斂。
+    """
     n = int(_prejudge_cfg().get("max_attributions", 2) or 2)
-    return max(1, min(n, 3))
+    return max(1, min(n, 8))
 
 
 def _gate_attrs(attrs: list[dict], max_n: int) -> list[dict]:
-    """歸因合流尾段共用閘門：同域去重（信心最高）+ 過濾全 abstain + attr_min/secondary_min 信心閘門 + 排序 + cap。
+    """歸因合流尾段共用閘門：同(域,面向)去重（信心最高）+ 過濾全 abstain + attr_min/secondary_min 信心閘門 + 排序 + cap。
 
     純函式（與產生來源解耦——`_resolve_attrs_multi` 餵 `_attrs_pack` 產出、Prompt 評測診斷路徑可餵
     自己的診斷 attrs），確保「這條歸因會不會被判決採信」的規則只有一份，不因生產/評測兩條路徑
     各自實作而 drift。
+
+    去重粒度＝(l1_domain, l2_code)：同一 L1 下不同 L2 面向各自成一條獨立歸因（一則反饋常同時
+    命中一個域的多個面向，如「服務」域下「導遊素質」＋「注意事項宣導不足」）；僅同(域,面向)重複
+    才收斂取信心最高。跨域＋同域多面向的總條數由 max_n（config max_attributions）統一 cap。
     """
     amin = _as_float(_evidence_policy().get("attr_min_confidence"), 0.0)
     # attr 級最低信心閘門（config evidence_policy.attr_min_confidence；0＝關）：
     # 殺「強制/湊數」型歸因（實測 conf 0.09~0.12 的目錄第一組殭屍列）——信心低到這種程度
     # 代表模型自己都不信，留著只汙染列表與統計；正常弱信心（≥閘門）仍留給人審分層。
-    by_domain: dict[str, dict] = {}
+    by_facet: dict[tuple[str, str], dict] = {}
     for a in attrs:
         dom = a.get("l1_domain_code", "")
         if not dom:
             continue  # 全 abstain（無域）→ 不成一條違規線
         if amin and a.get("confidence", 0.0) < amin:
             continue  # 低於 attr 閘門 → 整條丟棄（視同棄權）
-        if dom not in by_domain or a.get("confidence", 0.0) > by_domain[dom].get("confidence", 0.0):
-            by_domain[dom] = a
-    ranked = sorted(by_domain.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
+        key = (dom, a.get("l2_code", ""))  # 同(域,面向)才去重；同域不同面向各自保留
+        if key not in by_facet or a.get("confidence", 0.0) > by_facet[key].get("confidence", 0.0):
+            by_facet[key] = a
+    ranked = sorted(by_facet.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
     # 次要歸因信心閘門（config evidence_policy.secondary_min_confidence；0＝關）：多歸因時
     # 非 primary 條目要求更高信心——低信心第二歸因（實測 conf 0.49~0.65 的「順帶一提」面向）
     # 是與多模型多數決不一致的 extra 簇主因；primary 不受影響，仍走 attr_min_confidence。
@@ -576,11 +586,12 @@ def to_findings(
     進歸因的傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral——
     混合中性評論的具體問題點也要歸因，kiki 2026-07-06 反饋）：
     - 正向/純好評/不在 gate 清單 → [單一 non_issue finding]（不歸因）。
-    - 負向/混合中性且有歸因 → 每域一條 finding（信心最高標 is_primary；列 polarity＝整則傾向）。
+    - 負向/混合中性且有歸因 → 每(域,面向)一條 finding（信心最高標 is_primary；列 polarity＝整則傾向；
+      同一 L1 下多個 L2 面向各自成一條並列，如「服務」域同時命中導遊素質＋注意事項宣導不足）。
     - 負向但全無法歸類 → [單一負向未歸因 finding]（pending_data）。
     - 混合中性但找不到具體問題點 → [單一 non_issue finding]（judged，非 pending_data——整體無礙）。
 
-    finding_id：非負向/未歸因＝`fd_{item_id}`；多歸因每條＝`fd_{item_id}__{l1_domain}`（域級去重→唯一）。
+    finding_id：非負向/未歸因＝`fd_{item_id}`；多歸因每條＝`fd_{item_id}__{l1_domain}__{l2_code}`（面向級去重→唯一）。
 
     Args:
         item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
@@ -624,63 +635,18 @@ def to_findings(
         return _route([f])
     findings: list[TicketFinding] = []
     ensemble_model = "ensemble" if model_votes else used_model  # ensemble 觸發 → model 標 ensemble
-    for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同域去重
+    for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同(域,面向)去重
         f = _attributed_finding(
             item, attr, ensemble_model, enhanced=False, polarity=polarity, sentiment=sentiment
         )
         f.finding_id = (
-            f"fd_{src}_{source_id}__{attr['l1_domain_code']}"  # 每域一筆獨立列（域級唯一）
+            # 每(域,面向)一筆獨立列（面向級唯一）——同 L1 下多個 L2 面向並列時 id 不撞、落庫不互相覆蓋。
+            f"fd_{src}_{source_id}__{attr['l1_domain_code']}__{attr['l2_code']}"
         )
         f.is_primary = i == 0  # 信心最高一條為主歸因
         f.model_votes = model_votes  # ensemble 各 voter 攤平票（單模型判決為空）
         findings.append(f)
     return _route(findings)
-
-
-def _proposed_label_path(proposed_code: str) -> str:
-    """真值 code → 可讀「L1 › L2 › L3」路徑（供 LLM prompt）；未知 code 回原 code。
-
-    proposed_code 可為 L1 域 code（如 content）或任一層 C-code（級聯選出）。走 ai_judge.path_label
-    （級聯樹建立時登記的完整路徑 label，任一層皆解得），未登記者回原 code。
-    """
-    return ai_judge.path_label(proposed_code) or proposed_code
-
-
-def score_true_label(text: str, proposed_code: str, model: str) -> dict:
-    """LLM 評估『人工提議真值分類』與反饋原文的契合信心（標真值把關，不改變 AI 判決）。
-
-    給定反饋全文 + 人工用級聯選出的歸因分類，請 LLM 評 0~1 契合度 + 一句理由。呼叫端據此與原判信心對比，
-    信心明顯下降時要求填修改理由（防亂標／故意修改）。stub 模式無法真評分 → 回中性 0.5。
-
-    Args:
-        text: 反饋原文（_text_of 產出）。
-        proposed_code: 人工提議的真值分類 code（L1 域 code 或 L3 葉 C-code）。
-        model: 評分用模型（呼叫端由 judgment.true_label.evaluate_model / stage1_model 決定）。
-
-    Returns:
-        {confidence: 0~1 float, reason: 一句話理由}。
-    """
-    if client.is_stub():
-        return {"confidence": 0.5, "reason": "stub 模式：未接 LLM，無法真評分"}
-    label = _proposed_label_path(proposed_code)
-    system = (
-        "你是內容品質稽核員。判斷『人工提議的歸因分類』是否正確反映這則使用者反饋。"
-        "只評契合度、不改判決。confidence 高＝該分類確實貼合反饋內容；低＝不貼合／證據不足／過度延伸。"
-        '輸出 JSON：{"confidence":0~1 浮點,"reason":"一句話中文理由"}。'
-    )
-    user = f"反饋內容：\n{text}\n\n人工提議的歸因分類：{label}（code={proposed_code}）"
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["confidence", "reason"],
-        "properties": {
-            "confidence": {"type": "number"},
-            "reason": {"type": "string"},
-        },
-    }
-    out = _call(system, user, "true_label", model, schema=schema)
-    conf = max(0.0, min(1.0, _as_float(out.get("confidence"), 0.5)))
-    return {"confidence": conf, "reason": str(out.get("reason", ""))[:200]}
 
 
 def _attribute_when() -> frozenset[str]:
@@ -825,7 +791,7 @@ def _attrs_pack(
     每域回 {"attributions":[{l2_code,confidence,summary,evidence_quote}...]}，逐條過 _finalize_attr_l2
     （grounding 壓信心 / 證據封頂 / 白名單校驗）。l2→l1 由 _sanitize_l2 映射——自洽 drift 護欄
     （prompt_source.validate：facet_catalog codes == Schema l2_code enum）保證回的 l2_code 必落該
-    prompt 對應域，故等同「由回覆 prompt 歸屬直接給」。合流後的同域去重 / 排序 / attr_min /
+    prompt 對應域，故等同「由回覆 prompt 歸屬直接給」。合流後的同(域,面向)去重 / 排序 / attr_min /
     secondary_min 閘門由 _resolve_attrs_multi 尾段共用。
 
     並行安全：contextvar _current（effective LLM 設定）於呼叫端 copy_context() 快照後 ctx.run——比照

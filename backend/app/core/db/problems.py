@@ -36,7 +36,6 @@ _JG_COLS = (
     "model",
     "is_primary",
     "status",
-    "true_label",
 )
 
 
@@ -275,9 +274,7 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         fan = (
             select(
                 tbl,
-                *[
-                    jg.c[k].label(f"jg_{k}") for k in _JG_COLS
-                ],  # typed 判決欄（含 status/true_label）
+                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 判決欄（含 status）
                 jg.c.needs_review.label("jg_needs_review"),
                 notes_count,
             )

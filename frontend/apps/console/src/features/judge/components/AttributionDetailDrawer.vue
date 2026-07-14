@@ -148,7 +148,6 @@ const otherLangs = (a: Attribution): [string, string][] =>
               <a-tag v-if="a.status" size="small" :color="STATUS_COLOR[a.status]">
                 {{ STATUS_LABEL[a.status] || a.status }}
               </a-tag>
-              <a-tag v-if="a.true_label" size="small" color="cyan">已標真值</a-tag>
             </div>
           </template>
           <a-descriptions-item label="歸因分類">
@@ -214,9 +213,6 @@ const otherLangs = (a: Attribution): [string, string][] =>
             {{ a.content?.action ? ACTION_LABEL[a.content.action] || a.content.action : '—' }}
           </a-descriptions-item>
           <a-descriptions-item v-if="a.owner" label="負責單位">{{ a.owner }}</a-descriptions-item>
-          <a-descriptions-item v-if="a.true_label" label="人工真值">
-            {{ a.true_label }}
-          </a-descriptions-item>
           <a-descriptions-item label="finding">
             <span class="break-all text-xs text-[var(--color-text-3)]">{{
               a.finding_id || '—'

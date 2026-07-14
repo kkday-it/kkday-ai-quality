@@ -74,7 +74,7 @@ def domain_verdicts(
 
     每域獨立呼叫該域 prompt（動態附診斷 schema/system，不動 production `_attrs_pack`），命中則附
     reason，棄權則附 abstain_reason——無論匹配與否六個域都有交代。合流閘門委派 `prejudge._gate_attrs`
-    （與 production 同一套同域去重/信心閘門/排序規則，避免評測與生產兩份實作 drift）。
+    （與 production 同一套同(域,面向)去重/信心閘門/排序規則，避免評測與生產兩份實作 drift）。
 
     Args:
         item: 判決輸入 item dict（供 `_finalize_attr_l2` 的證據封頂讀 order_oid 等）。

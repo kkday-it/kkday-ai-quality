@@ -1,7 +1,7 @@
 """導出「輸出結果版本」（snapshot_model 歷史快照替換）+ xlsx 欄位回歸測試。
 
 覆蓋：快照模式內容/底色列傾向同步/覆核軸空白/未命中排除/統計附註；
-當前判決模式「覆核狀態/真值」欄非空（鎖住 _attr_keys 既有 bug 修復——曾因缺 key
+當前判決模式「覆核狀態」欄非空（鎖住 _attr_keys 既有 bug 修復——曾因缺 key
 fallback 讀 row 級恆 None 而靜默空白）。
 """
 
@@ -64,17 +64,15 @@ def _col(headers: list, name: str) -> int:
 
 
 def test_export_current_mode_status_and_model_columns(temp_db) -> None:
-    """當前判決模式：「判決模型」「覆核狀態」「真值」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
+    """當前判決模式：「判決模型」「覆核狀態」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
     db.insert_source_batch("product_reviews", [_pr_row("E1")])
     db.replace_source_findings("product_reviews", "E1", [_finding("E1", "gpt-5-mini")])
     db.update_finding_status("fd_product_reviews_E1__content", "confirmed", actor="qa@kkday.com")
-    db.update_finding_true_label("fd_product_reviews_E1__content", "content")
     headers, rows = _cells(db.export_problems_xlsx(source="product_reviews"))
-    assert "判決模型" in headers and "覆核狀態" in headers and "真值" in headers
+    assert "判決模型" in headers and "覆核狀態" in headers
     r = rows[0]
     assert r[_col(headers, "判決模型")] == "gpt-5-mini"
     assert r[_col(headers, "覆核狀態")] == "已確認"  # _STATUS_LABEL_ZH 中文化
-    assert r[_col(headers, "真值")] == "content"
 
 
 def test_export_snapshot_model_replaces_content(temp_db) -> None:
@@ -101,8 +99,8 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
     assert r[_col(headers, "問題摘要")] == "他模型觀點"
     assert r[_col(headers, "判決模型")] == "seed-2-0-lite"
     assert r[_col(headers, "情緒傾向")] == "4"  # row 級 our_sentiment 同步為快照 primary
-    # 覆核軸屬「當前判決」語義，歷史快照不冒充 → 兩欄空白
-    assert not r[_col(headers, "覆核狀態")] and not r[_col(headers, "真值")]
+    # 覆核軸屬「當前判決」語義，歷史快照不冒充 → 空白
+    assert not r[_col(headers, "覆核狀態")]
 
 
 def test_export_snapshot_selects_that_models_view(temp_db) -> None:

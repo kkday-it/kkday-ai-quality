@@ -10,13 +10,26 @@ import { computed, ref } from 'vue';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { BarChart, LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, LegendComponent, MarkLineComponent } from 'echarts/components';
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+} from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { IconRefresh } from '@arco-design/web-vue/es/icon';
 import { StateGuard, CardSection, KpiCard } from '@/components';
 import { useUsageDashboard } from '../composables';
 
-use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent, CanvasRenderer]);
+use([
+  BarChart,
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+  CanvasRenderer,
+]);
 
 // 日期區間（'YYYY-MM-DD' 陣列）+ 趨勢粒度（年/月/日），驅動聚合重載
 const dateRange = ref<string[]>([]);
@@ -48,7 +61,12 @@ const num = (n: number) => n.toLocaleString();
 <template>
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
-      <a-range-picker v-model="dateRange" size="small" value-format="YYYY-MM-DD" style="width: 240px" />
+      <a-range-picker
+        v-model="dateRange"
+        size="small"
+        value-format="YYYY-MM-DD"
+        style="width: 240px"
+      />
       <a-radio-group v-model="granularity" type="button" size="small">
         <a-radio value="year">年</a-radio>
         <a-radio value="month">月</a-radio>
@@ -74,7 +92,11 @@ const num = (n: number) => n.toLocaleString();
           <KpiCard label="總成本" :value="costText" subtext="USD（含 prompt cache 折扣）" />
           <KpiCard label="總 tokens" :value="num(kpi.tokens)" subtext="prompt + completion" />
           <KpiCard label="總呼叫數" :value="num(kpi.calls)" subtext="真 LLM 呼叫次數" />
-          <KpiCard label="快取節省" :value="num(kpi.cached)" subtext="命中 prompt cache 的 tokens" />
+          <KpiCard
+            label="快取節省"
+            :value="num(kpi.cached)"
+            subtext="命中 prompt cache 的 tokens"
+          />
         </div>
       </CardSection>
 
@@ -95,17 +117,29 @@ const num = (n: number) => n.toLocaleString();
       <!-- 各維度成本分布：模型 / 階段 / 來源（hint 短句避免擠掉標題；詳解放 desc 的 ⓘ popover）-->
       <a-row :gutter="[16, 16]" align="stretch">
         <a-col :span="8">
-          <CardSection title="各模型成本" hint="USD" desc="依模型分組的成本佔比（USD），依成本高低排序。">
+          <CardSection
+            title="各模型成本"
+            hint="USD"
+            desc="依模型分組的成本佔比（USD），依成本高低排序。"
+          >
             <v-chart :option="byModelOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="各階段成本" hint="USD" desc="依呼叫階段分組：polarity 極性閘門 / attribute 歸因 / domain 域分類 / attribute_b cascade / true_label 標真值評分 / translate 摘要翻譯。">
+          <CardSection
+            title="各階段成本"
+            hint="USD"
+            desc="依呼叫階段分組：polarity 極性閘門 / attribute 歸因 / domain 域分類 / attribute_b cascade / translate 摘要翻譯。"
+          >
             <v-chart :option="byStageOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
         <a-col :span="8">
-          <CardSection title="各來源成本" hint="USD" desc="依判決來源分組（product_reviews / conversations…）；ad-hoc 單次呼叫無來源者歸「（未標）」。">
+          <CardSection
+            title="各來源成本"
+            hint="USD"
+            desc="依判決來源分組（product_reviews / conversations…）；ad-hoc 單次呼叫無來源者歸「（未標）」。"
+          >
             <v-chart :option="bySourceOption" class="h-[300px]" autoresize />
           </CardSection>
         </a-col>
