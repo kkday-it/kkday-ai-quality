@@ -10,6 +10,8 @@
 
 **3. 簡單優先，不過早抽象。** 相同邏輯出現第 3 次才抽（Rule of Three），勿為假設性未來預先抽象。「找成熟輪子」適用於非平凡功能（複雜元件 / 演算法 / 標準解已存在者）；一兩行能解的小工具直接寫純函式，不硬找套件。
 
+**4. 退役即徹底，不留痕跡。** 移除舊功能一律走**全棧清退**：代碼邏輯 / DB 欄（含 migration）/ 前端 / 配置 / 文件 / 註釋 / 測試各層一併清乾淨——不留 tombstone 註釋、不留「歷史相容」死欄、不留死 config key、不留 orphan import。後面若再需要，直接在對應層重新補到位，不預留半殘骨架。完整盤點 → 清退 → 驗證清單見 `.claude/rules/feature-retirement.md`（編輯 migration / tables.py 時自動載入；純代碼退役亦須主動遵循）。
+
 ## 技術棧鐵律（強制，禁止偏離）
 
 前端一律用既有輪子，**禁止**自行引入功能重疊的第三方套件：
@@ -44,5 +46,6 @@
 | `python.md` | `**/*.py` | Google-style docstring + 註釋密度 + 重庫 lazy import |
 | `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` | 禁硬編碼配置化完整規範 |
 | `docs-sync.md` | `**/*.py` `**/*.ts` `**/*.vue` `config/**` `constants/**` | 改邏輯/結構/契約 → 同步更新所有相關文檔（寫前先核實 code）|
+| `feature-retirement.md` | `**/alembic/versions/**` `**/tables.py` `**/migrations/**` | 功能退場機制：盤點消費點 → 全棧清退（代碼/DB/前端/config/文件/註釋/測試零殘留）→ 驗證清單（呼應核心原則 4）|
 
 > 冷啟動問「有什麼規則」時，只答本檔常駐部分；rules/ 條件規則不列為常駐。
