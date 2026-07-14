@@ -1,16 +1,14 @@
 <script setup lang="ts">
 /**
- * 初判 Prompt 快測彈窗（Prompt-as-Source 調適閉環 UI）：抽 N 則現行判決為參照、只跑當前這支 prompt
- * → 指標卡（域：primary/命中/棄權/多報；極性：polarity/sentiment）+ 逐案分歧表（含診斷理由 reason，
- * B0 overlay：命中取首條歸因理由、棄權取 abstain_reason）。消耗 LLM 額度。
- * 大樣本 / golden / A/B 比較走 CLI scripts/tools/eval_prompt_single.py。
+ * 測試 Prompt 彈窗（Prompt-as-Source 調適閉環 UI，歸因列表工具列「測試 Prompt」唯一入口）：
+ * 選一支 prompt、切換「真實列表」（現行判決，`filters` 給定時＝當前歸因列表篩選子集，B1）／
+ * 「mock 列表」（B3 邊界測試集，測全部啟用中 case）→ 指標卡（域：primary/命中/棄權/多報；
+ * 極性：polarity/sentiment）+ 逐案分歧表（含診斷理由 reason，B0 overlay：命中取首條歸因理由、
+ * 棄權取 abstain_reason）。消耗 LLM 額度。大樣本 / golden / A/B 比較走 CLI
+ * scripts/tools/eval_prompt_single.py。
  *
- * 兩種入口：① RuleManager 編某支 prompt 時快測——`promptCode` 固定、`selectable` 關（預設）。
- * ② 歸因列表工具列「測試 Prompt」——`selectable` 開，改用下拉選任一支；`filters` 給定時
- * （B1）樣本＝列表當前篩選子集，非 md5 全表抽樣。
- *
- * `source="mock"`（B3）：樣本改讀邊界測試集（忽略樣本數與 filters），供「用此集測某支 prompt」
- * 入口使用（見 PromptTestcasesModal）。分歧表每案可「存為測試 case」（分歧一鍵入集）。
+ * 「管理測試集」開 `PromptTestcasesDrawer`（CSV 上傳/手動新增/CRUD），免離開此彈窗即可切
+ * mock 模式重測；分歧表每案可「存為測試 case」（分歧一鍵入集，邊界集自然生長）。
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
@@ -26,35 +24,30 @@ import {
 } from '@/api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import SaveTestcaseModal, { type TestcasePrefill } from './SaveTestcaseModal.vue';
+import PromptTestcasesDrawer from './PromptTestcasesDrawer.vue';
 import { fmtDt } from '../utils';
 
-const props = withDefaults(
-  defineProps<{
-    /** 是否顯示。 */
-    visible: boolean;
-    /** 當前 prompt rule_code（prompt_polarity / prompt_C-1~6）；selectable 時僅作預設選中值。 */
-    promptCode?: string;
-    /** 開啟後改用下拉選任一支 prompt（歸因列表工具列入口用）。 */
-    selectable?: boolean;
-    /** B1：給定時樣本＝此篩選子集（PrejudgeBody 同形），取代 md5 全表抽樣。 */
-    filters?: PrejudgeBody;
-    /** B3：'mock' 時樣本改讀邊界測試集（忽略樣本數/filters），供「用此集測某支 prompt」入口使用。 */
-    source?: 'production' | 'mock';
-  }>(),
-  { promptCode: '', selectable: false, filters: undefined, source: 'production' },
-);
+const props = defineProps<{
+  /** 是否顯示。 */
+  visible: boolean;
+  /** B1：給定時「真實列表」樣本＝此篩選子集（PrejudgeBody 同形），取代 md5 全表抽樣。 */
+  filters?: PrejudgeBody;
+}>();
 
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 
 const n = ref(8);
 const loading = ref(false);
 const result = ref<PromptEvalResult | null>(null);
+/** 真實列表（production，樣本＝filters 篩選子集或 md5 全表）／mock 列表（B3 邊界測試集）。 */
+const testSource = ref<'production' | 'mock'>('production');
+const isMock = computed(() => testSource.value === 'mock');
 
-// selectable 模式：從 judgeRules store 取 7 支 prompt 的 rule_code + 中文名（SSOT，免另存一份標籤）。
+// 從 judgeRules store 取 7 支 prompt 的 rule_code + 中文名（SSOT，免另存一份標籤）。
 const store = useJudgeRulesStore();
-const selectedCode = ref(props.promptCode);
+const selectedCode = ref('');
 onMounted(async () => {
-  if (props.selectable && !store.metas.length) await store.loadList();
+  if (!store.metas.length) await store.loadList();
   if (!selectedCode.value) {
     selectedCode.value =
       store.metas.find((m) => m.rule_code.startsWith('prompt_'))?.rule_code || 'prompt_polarity';
@@ -77,7 +70,6 @@ const promptOptions = computed(() =>
 /** rule_code → 端點 prompt 參數（prompt_C-3 → C-3、prompt_polarity → polarity）。 */
 const promptArg = computed(() => selectedCode.value.replace('prompt_', ''));
 const isPolarity = computed(() => promptArg.value === 'polarity');
-const isMock = computed(() => props.source === 'mock');
 
 // 「存為測試 case」域機器值猜測：以中文 label 對照級聯樹 L1（同一份 SSOT，免另存 C-N→域機器值表）。
 const cascadeOpts = ref<CascadeNode[]>([]);
@@ -155,6 +147,9 @@ function openSaveTestcase(record: NonNullable<PromptEvalResult['mismatches']>[nu
   saveOpen.value = true;
 }
 
+// 管理測試集（B3：CSV 上傳/手動新增/CRUD）——免離開此彈窗即可切 mock 模式重測。
+const testcasesOpen = ref(false);
+
 // ── 測試歷史（B2）：對「當前選中這支 prompt」查歷次測試結果，供改 prompt 前後對比 ──
 const history = ref<PromptEvalRunSummary[]>([]);
 const historyLoading = ref(false);
@@ -184,16 +179,15 @@ async function viewHistoryRun(runId: string) {
   }
 }
 
-// 開啟時重置：非 selectable 時每次固定跟隨 promptCode；關閉時清結果（下次開重測，避免看到殘留）。
+// 開啟時清結果（下次開重測，避免看到殘留）+ 載入歷史。
 watch(
   () => props.visible,
   (v) => {
-    if (v && !props.selectable && props.promptCode) selectedCode.value = props.promptCode;
     if (v) loadHistory();
     if (!v) result.value = null;
   },
 );
-// 切換選中 prompt（selectable 模式）→ 重載該支的測試歷史。
+// 切換選中 prompt → 重載該支的測試歷史。
 watch(promptArg, () => {
   if (props.visible) loadHistory();
 });
@@ -202,16 +196,28 @@ watch(promptArg, () => {
 <template>
   <a-modal
     :visible="visible"
-    title="測試此 Prompt（對現行判決）"
+    title="測試 Prompt"
     :width="720"
     :footer="false"
     @cancel="emit('update:visible', false)"
   >
-    <!-- 選 prompt（僅 selectable 入口顯示） -->
-    <div v-if="selectable" class="mb-3 flex items-center gap-3">
-      <span class="text-xs text-[var(--color-text-3)]">測試 Prompt</span>
-      <a-select v-model="selectedCode" size="small" class="w-56" :options="promptOptions" />
-    </div>
+    <!-- 選 prompt + 真實/mock 列表切換 -->
+    <a-row :gutter="[12, 12]" align="center" wrap class="mb-3">
+      <a-col :flex="'none'"><span class="text-xs text-[var(--color-text-3)]">Prompt</span></a-col>
+      <a-col :flex="'160px'">
+        <a-select v-model="selectedCode" size="small" class="w-full" :options="promptOptions" />
+      </a-col>
+      <a-col :flex="'none'">
+        <a-radio-group v-model="testSource" type="button" size="small">
+          <a-radio value="production">真實列表</a-radio>
+          <a-radio value="mock">mock 列表</a-radio>
+        </a-radio-group>
+      </a-col>
+      <a-col :flex="'auto'" />
+      <a-col :flex="'none'">
+        <a-button size="small" type="text" @click="testcasesOpen = true">管理測試集</a-button>
+      </a-col>
+    </a-row>
 
     <!-- 配置列：樣本數 + 執行（mock 模式：測全部啟用中測試 case，不需設樣本數） -->
     <div class="mb-3 flex items-center gap-3">
@@ -308,4 +314,7 @@ watch(promptArg, () => {
 
   <!-- 存為測試 case（B3 分歧一鍵入集）：帶入分歧筆的文字/猜測 gold，使用者確認/修正後入 prompt_testcases -->
   <SaveTestcaseModal v-model:visible="saveOpen" :prefill="savePrefill" />
+
+  <!-- 管理測試集（B3：CSV 上傳/手動新增/CRUD） -->
+  <PromptTestcasesDrawer v-model:visible="testcasesOpen" />
 </template>

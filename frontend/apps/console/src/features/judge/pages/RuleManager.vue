@@ -2,9 +2,9 @@
 /**
  * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
  * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
- * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff + 單支快測）。歷史對比恢復 + 單項/整批恢復默認。
- * 工具列「測試集」（B3）：邊界測試集管理抽屜——CSV 上傳 / 手動新增 / 分歧一鍵入集三來源同表，
- * 可對集跑指定 prompt（source=mock）→ 指標 + 分歧，供調適閉環「編 → 測 → 修 → 回歸」使用。
+ * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
+ * 測試 Prompt（真實/mock 列表切換 + 測試集管理）已移至歸因列表工具列「測試 Prompt」入口
+ * （PromptEvalModal），本頁不重複提供。
  * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
  * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
  * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
@@ -22,8 +22,6 @@ import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import PromptHistoryPanel from '../components/PromptHistoryPanel.vue';
-import PromptEvalModal from '../components/PromptEvalModal.vue';
-import PromptTestcasesDrawer from '../components/PromptTestcasesDrawer.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
 
@@ -55,10 +53,6 @@ const mode = ref<'panel' | 'json' | 'history'>('json');
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
-// 初判 Prompt 快測彈窗（Prompt-as-Source 調適閉環）
-const evalOpen = ref(false);
-// 邊界測試集管理抽屜（B3：mock 上傳 → prompt 修正閉環）
-const testcasesOpen = ref(false);
 // 導出背景 job（實時進度 + 停止；與問題列表導出共用 useExportJob）
 const {
   exporting,
@@ -230,7 +224,6 @@ function doResetAll() {
             @click="doResetAll"
             >全部恢復默認</a-button
           >
-          <a-button size="small" type="outline" @click="testcasesOpen = true">測試集</a-button>
           <a-button size="small" type="outline" :loading="exporting" @click="doExport">
             <template #icon><icon-download /></template>
             導出規則
@@ -260,10 +253,6 @@ function doResetAll() {
             store.labelFor(store.activeCode)
           }}</span>
           <div class="flex-1" />
-          <!-- 初判 Prompt 快測（對現行判決）：調適閉環——編 → 測 → 看指標 → 迭代 -->
-          <a-button v-if="isPrompt" size="small" type="outline" @click="evalOpen = true"
-            >測試</a-button
-          >
           <a-button
             size="small"
             type="outline"
@@ -330,12 +319,6 @@ function doResetAll() {
           :auto-size="{ minRows: 2 }"
         />
       </a-modal>
-
-      <!-- 初判 Prompt 快測彈窗（僅 prompt_* 開；抽現行判決 N 則跑當前這支 → 指標 + 分歧）-->
-      <PromptEvalModal v-model:visible="evalOpen" :prompt-code="store.activeCode" />
-
-      <!-- 邊界測試集管理（B3：CSV 上傳 / 手動新增 / 分歧一鍵入集三來源同表 → 用此集測某支 prompt）-->
-      <PromptTestcasesDrawer v-model:visible="testcasesOpen" />
     </div>
   </div>
 </template>

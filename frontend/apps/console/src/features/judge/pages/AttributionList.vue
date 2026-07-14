@@ -191,7 +191,7 @@ const openRowTest = (record: ProblemRow) => {
 };
 
 // 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
-// 樣本＝篩選子集（見 PromptEvalModal selectable 模式 + 後端 run_eval filter_ids）。
+// 真實列表樣本＝篩選子集（見 PromptEvalModal + 後端 run_eval filter_ids）；彈窗內亦可切 mock 列表。
 const promptTestOpen = ref(false);
 const promptEvalFilters = computed<PrejudgeBody>(() => ({
   source: source.value,
@@ -572,7 +572,8 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- 測試 Prompt（B1）：帶當前列表篩選，選一支 prompt 測試（樣本＝篩選子集，不落庫）-->
+      <!-- 測試 Prompt（B1/B3）：帶當前列表篩選，選一支 prompt 測試，彈窗內可切換真實列表（篩選子集，
+           不落庫）／mock 列表（B3 邊界測試集，含 CSV 上傳管理）-->
       <a-button size="small" type="outline" @click="promptTestOpen = true"> 測試 Prompt </a-button>
     </div>
   </Teleport>
@@ -580,8 +581,8 @@ onMounted(init);
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
-  <!-- 測試 Prompt 彈窗（B1；selectable=可選任一支、filters=帶當前列表篩選） -->
-  <PromptEvalModal v-model:visible="promptTestOpen" selectable :filters="promptEvalFilters" />
+  <!-- 測試 Prompt 彈窗（B1：filters=帶當前列表篩選；彈窗內可切換真實/mock 列表） -->
+  <PromptEvalModal v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
 
   <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
   <JudgmentHistoryModal v-model:visible="historyOpen" :source="source" :row="historyRow" />

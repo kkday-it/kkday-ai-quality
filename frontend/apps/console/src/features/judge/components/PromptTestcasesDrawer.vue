@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * 邊界測試集管理（B3：mock 邊界數據上傳 → prompt 修正閉環）：CSV 批量上傳 / 手動新增（複用
- * SaveTestcaseModal）/ 列表 CRUD（啟用開關、刪除）+「用此集測某支 prompt」（開 PromptEvalModal
- * mock 模式，樣本＝全部啟用中 case，不做 md5/篩選抽樣）。三來源同表：CSV 上傳＋手動新增＋
- * 分歧一鍵入集（PromptEvalModal / RowPromptTestModal 的「存為 case」）。
+ * SaveTestcaseModal）/ 列表 CRUD（啟用開關、刪除）。三來源同表：CSV 上傳＋手動新增＋分歧一鍵
+ * 入集（PromptEvalModal / RowPromptTestModal 的「存為 case」）。純 CRUD 管理面板，不含測試執行
+ * ——「用此集測」由 PromptEvalModal 本身的真實/mock 列表切換負責，本元件即由該彈窗開啟。
  */
 import { computed, ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
@@ -20,7 +20,6 @@ import {
 import { TableLayout } from '@/components';
 import { DEFAULT_PAGE_SIZE } from '@/constants';
 import SaveTestcaseModal from './SaveTestcaseModal.vue';
-import PromptEvalModal from './PromptEvalModal.vue';
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
@@ -129,10 +128,6 @@ async function onFileChange(e: Event) {
     if (fileInput.value) fileInput.value.value = '';
   }
 }
-
-// 用此集測某支 prompt（B3 mock 模式）
-const evalOpen = ref(false);
-const evalPromptCode = ref('prompt_C-1');
 </script>
 
 <template>
@@ -186,12 +181,6 @@ const evalPromptCode = ref('prompt_C-1');
               上傳 CSV
             </a-button>
           </a-col>
-          <a-col :flex="'auto'" />
-          <a-col :flex="'none'">
-            <a-button size="small" type="primary" @click="evalOpen = true"
-              >用此集測試 Prompt</a-button
-            >
-          </a-col>
         </a-row>
         <a-alert v-if="uploadErrors.length" type="warning" class="mt-2" closable>
           <div v-for="e in uploadErrors" :key="e.row" class="text-xs">
@@ -230,12 +219,4 @@ const evalPromptCode = ref('prompt_C-1');
 
   <!-- 手動新增（複用「存為測試 case」表單，prefill 為空） -->
   <SaveTestcaseModal v-model:visible="addOpen" :prefill="null" @saved="load" />
-
-  <!-- 用此集測某支 prompt（mock 模式：樣本＝全部啟用中 case） -->
-  <PromptEvalModal
-    v-model:visible="evalOpen"
-    :prompt-code="evalPromptCode"
-    selectable
-    source="mock"
-  />
 </template>
