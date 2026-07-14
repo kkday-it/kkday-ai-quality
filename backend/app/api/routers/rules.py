@@ -6,9 +6,8 @@ judgment 已移出＝專案靜態設定檔，不經此管理）。
 drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。
 全端點 JWT 守衛。
 
-註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
-重構退役——判準已全數移入 prompt_C-1~6，不再經此端點管理（歷史 DB 版本保留，僅無新寫入路徑）。
-同日 global_rule（極性閘門 + 證據政策）併入 judgment.json（減少判決 config 檔案數），亦移出本端點。
+註：判準走 prompt_C-1~6（不經此端點管理 schema 樹）；global_rule（極性閘門 + 證據政策）走
+judgment.json 靜態設定檔，亦不經本端點。
 """
 
 from __future__ import annotations

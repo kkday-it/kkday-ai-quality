@@ -36,7 +36,6 @@ def snapshot_of(values: dict) -> dict:
         "stage": values.get("stage"),
         "l1": {"code": values.get("l1_code"), "label": values.get("l1_label")},
         "l2": {"code": values.get("l2_code"), "label": values.get("l2_label")},
-        "l3": {"code": values.get("l3_code"), "label": values.get("l3_label")},
         "confidence": {
             "value": values.get("conf_value"),
             "raw": values.get("conf_raw"),
@@ -55,7 +54,7 @@ def result_digest(attributions: list[dict]) -> str:
     """快照陣列 → 正規化 sha256（去重比對鍵）。
 
     全欄位嚴格比對（使用者拍板）：快照含摘要措辭/信心值，任一欄漂移即視為結果變化；
-    僅 judged_at 時戳先天不入快照。排序鍵 (l1.code, l2.code, l3.code, finding_id) 消除
+    僅 judged_at 時戳先天不入快照。排序鍵 (l1.code, l2.code, finding_id) 消除
     多歸因列序差異；default=str 兜底非 JSON 原生型別（Decimal 等）。
     """
     ordered = sorted(
@@ -63,7 +62,6 @@ def result_digest(attributions: list[dict]) -> str:
         key=lambda a: (
             (a.get("l1") or {}).get("code") or "",
             (a.get("l2") or {}).get("code") or "",
-            (a.get("l3") or {}).get("code") or "",
             a.get("finding_id") or "",
         ),
     )
@@ -77,7 +75,6 @@ def insert_judgment_event(
     source_id: str,
     *,
     model: str,
-    model_votes: list | None,
     params: dict | None,
     attributions: list[dict],
     job_id: str | None,
@@ -114,7 +111,6 @@ def insert_judgment_event(
             source_id=source_id,
             kind="judgment",
             model=model,
-            model_votes=model_votes or None,
             params=params or {},
             attributions=attributions,
             result_digest=digest,

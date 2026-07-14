@@ -277,15 +277,14 @@ def attribution_breakdown(
     product_vertical: str | list[str] | None = None,
     model: list[str] | None = None,
 ) -> dict:
-    """某 L1 歸因域下的 L2 / L3 細項分布（縱覽下鑽·懶載）。
+    """某 L1 歸因域下的 L2 面向分布（縱覽下鑽·懶載）。
 
-    L2/L3 取自 judgments.data JSON，限定該 L1 域；GROUP BY code（carry label），依筆數降序。
+    L2 取自 judgments typed 欄，限定該 L1 域；GROUP BY code（carry label），依筆數降序。
     source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
     model：判決模型多選（judgments.model IN，當前判決維度；與 attribution_overview 同口徑）。
 
     Returns:
-        {l1_code, l1_label, by_l2, by_l3}；by_l2/by_l3 為 [{code, label, n, neg, avg_conf, auto}]，
-        by_l3 額外帶 l2_code（父層 code，供前端點 L2 即時篩該 L2 下的 L3）。
+        {l1_code, l1_label, by_l2}；by_l2 為 [{code, label, n, neg, avg_conf, auto}]。
     """
     # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
     spec = _vertical_scoped_spec(source, product_vertical)
@@ -293,7 +292,6 @@ def attribution_breakdown(
     cnt = func.count().label("n")
     l1c, l1l = jg.c.l1_code, jg.c.l1_label
     l2c, l2l = jg.c.l2_code, jg.c.l2_label
-    l3c, l3l = jg.c.l3_code, jg.c.l3_label
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
 
     # spec 命中：join 該表（可套 date/vertical）；source=None：judgments 直接聚合
@@ -313,7 +311,7 @@ def attribution_breakdown(
         frm = jg
         extra = []
     if model:
-        # 判決模型篩選：進 extra 統一由 _level() 套用（L2/L3 兩層一次覆蓋）
+        # 判決模型篩選：進 extra 統一由 _level() 套用
         extra.append(jg.c.model.in_(model))
 
     # 多指標（供商品內容細化表）：負向數 / 平均信心 / 自動採信數（占比與自動採信率由前端 n 換算）。
@@ -321,21 +319,13 @@ def attribution_breakdown(
     avg_conf = func.avg(jg.c.conf_value).label("avg_conf")
     auto = func.count().filter(jg.c.conf_tier == "auto_accept").label("auto")
 
-    def _level(code_col, label_col, parent_col=None):
-        """組某層（L2/L3）GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序；帶多指標。
-
-        parent_col 非 None 時額外 carry 父層 code（L3 帶 l2_code），供前端「點左側 L2 即時
-        篩右側 L3」——一次載入全 L3、點擊時 client 端按 l2_code 過濾，免每次點擊回打後端。
-        """
+    def _level(code_col, label_col):
+        """組 L2 GROUP BY：限定 L1 域 + 非空 code + 篩選，依筆數降序；帶多指標。"""
         cols = [code_col.label("code"), label_col.label("label"), cnt, neg, avg_conf, auto]
-        group = [code_col, label_col]
-        if parent_col is not None:
-            cols.insert(0, parent_col.label("l2_code"))
-            group.insert(0, parent_col)
         stmt = select(*cols).select_from(frm).where(l1c == l1, code_col.isnot(None), code_col != "")
         for w in extra:
             stmt = stmt.where(w)
-        return stmt.group_by(*group).order_by(cnt.desc())
+        return stmt.group_by(code_col, label_col).order_by(cnt.desc())
 
     def _rows(c, stmt):
         """執行並將 avg_conf 四捨五入（float，避免前端顯示長尾）。"""
@@ -354,8 +344,7 @@ def attribution_breakdown(
             or l1
         )
         by_l2 = _rows(c, _level(l2c, l2l))
-        by_l3 = _rows(c, _level(l3c, l3l, parent_col=l2c))
-    return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2, "by_l3": by_l3}
+    return {"l1_code": l1, "l1_label": l1_label, "by_l2": by_l2}
 
 
 def ai_judge_overview_stats(months: int = 6) -> dict:

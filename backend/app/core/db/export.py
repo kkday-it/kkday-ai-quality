@@ -57,7 +57,6 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("情緒傾向", "our_sentiment", 10),  # 我方情緒分 1-5（正5/中3/負1；與外部評論同尺度）
     ("L1 分類", "l1_label", 14),
     ("L2 分類", "l2_label", 14),
-    ("L3 分類", "l3_label", 18),
     ("信心度", "confidence", 8),
     ("判決分層", "confidence_tier", 12),
     ("判決階段", "judgment_stage", 12),
@@ -103,7 +102,6 @@ def _flat_attr(a: dict) -> dict:
     return {
         "l1_label": (a.get("l1") or {}).get("label"),
         "l2_label": (a.get("l2") or {}).get("label"),
-        "l3_label": (a.get("l3") or {}).get("label"),
         "confidence": (a.get("confidence") or {}).get("value"),
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
         "judgment_stage": a.get("stage"),
@@ -340,7 +338,6 @@ def export_problems_xlsx(
     _attr_keys = {
         "l1_label",
         "l2_label",
-        "l3_label",
         "confidence",
         "confidence_tier",
         "judgment_stage",

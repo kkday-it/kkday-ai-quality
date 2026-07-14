@@ -52,7 +52,7 @@ def prejudge_target_ids(
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'）。
         rec_oid/prod_oid/order_oid: 關聯資料精確篩選（表有對應欄才生效）。
         confidence_tier: 已判分支的信心分層收斂（auto_accept/jury/needs_review）。
-        taxonomy: 已判分支的歸因分類收斂（任意層級 code 多選；l1/l2/l3_code 任一 IN 命中＝子樹語義）。
+        taxonomy: 已判分支的歸因分類收斂（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
         has_external: 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。
         within_ids: 範圍收斂——僅在此特徵 id 清單內做目標選取（前端「已選 N 筆內」；
             兩分支皆套；None＝不限、空清單＝空範圍回空）。
@@ -108,7 +108,6 @@ def prejudge_target_ids(
                     or_(
                         jg.c.l1_code.in_(taxonomy),
                         jg.c.l2_code.in_(taxonomy),
-                        jg.c.l3_code.in_(taxonomy),
                     )
                 )
             ids.update(r[0] for r in c.execute(_scope(s)))

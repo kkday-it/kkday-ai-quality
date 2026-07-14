@@ -17,7 +17,7 @@ paths:
 | **機密**（token / 密碼 / private key）| `backend/.env`（Pydantic `Settings`）| `config.py`，同名大寫 env var 覆蓋 |
 | **跨環境會變的非機密**（DB URL / CORS origins / port / project id / timeout / 並發數）| `backend/.env`（有 dev default）| `config.py` |
 | **前後端共用「業務可調」非機密**（模型清單 / provider 目錄 / QC 連線預設 / 顯示 label / 定價）| `config/global/*.json` | 後端 `settings.py`、前端 `@config/global/*` **同讀一份**（SSOT）|
-| **判決領域**（verdict / L1-L3 判準 / 來源欄位映射 / 信心分層閾值）| `config/ai_judge/*.json` | 後端 lazy load、前端 import 同一 JSON |
+| **判決領域**（verdict / L1-L2 判準 / 來源欄位映射 / 信心分層閾值）| `config/ai_judge/*.json` | 後端 lazy load、前端 import 同一 JSON |
 | **前後端共用「固定參照」常數**（enum / 代碼字典，如 traveller_type 代碼→文案、狀態碼→中文，非業務可調）| `constants/<維度>/*.json`（repo 根，按維度分子資料夾）| 後端 `paths.CONSTANTS_DIR`、前端 `@constants/<維度>/*` **同讀一份**（SSOT）|
 | **純前端 UI**（Arco 色 token / 分頁大小 / 輪詢間隔 / 元件私有常數）| `frontend/.../features/*/constants/*.constant.ts` | barrel `index.ts` 出口 |
 

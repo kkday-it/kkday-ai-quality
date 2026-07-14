@@ -51,13 +51,11 @@ judgments = Table(
     # 同尺度，供評論對比表逐則比對；null＝未判。
     Column("sentiment_score", Integer),
     Column("stage", Text),  # judged / pending_review / pending_data
-    # ── 歸因分類 L1→L3（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
+    # ── 歸因分類 L1→L2（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
     Column("l1_code", Text),
     Column("l1_label", Text),
     Column("l2_code", Text),
     Column("l2_label", Text),
-    Column("l3_code", Text),
-    Column("l3_label", Text),
     # ── 信心 ──
     Column("conf_value", Float),  # 最終信心（校準後）
     Column("conf_raw", Float),  # arbiter LLM 原始信心
@@ -69,10 +67,7 @@ judgments = Table(
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──
-    Column("model", Text),  # 判決模型（stub 時為 "stub"；ensemble 聯合判決為 "ensemble"）
-    Column(
-        "model_votes", JSONB
-    ),  # ensemble 各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為 NULL
+    Column("model", Text),  # 判決模型（stub 時為 "stub"）
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
@@ -90,9 +85,8 @@ judgments = Table(
     Index("idx_judgments_polarity", "polarity"),
     Index("idx_judgments_stage", "stage"),
     Index("idx_judgments_l1", "l1_code"),
-    # L2/L3 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/l3/sentiment 全表掃）
+    # L2 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/sentiment 全表掃）
     Index("idx_judgments_l2", "l2_code"),
-    Index("idx_judgments_l3", "l3_code"),
     Index("idx_judgments_sentiment", "sentiment_score"),
     Index("idx_judgments_tier", "conf_tier"),
 )
@@ -254,9 +248,7 @@ user_settings = Table(
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
 # 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
 # docs/prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
-# 註：C-1~C-6（歸因判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 退役，歷史版本保留於表中
-# 不刪（僅不再有新寫入），判準改走 prompt_C-1~6；同日 global_rule 併入 judgment.json 靜態設定檔，
-# 亦不再經此表新增版本（歷史版本同樣保留不刪）。
+# 版本化 rule_code：product_vertical / source_mapping / prompt_polarity / prompt_C-1~6。
 judge_rule_versions = Table(
     "judge_rule_versions",
     metadata,
@@ -334,10 +326,7 @@ judgment_runs = Table(
     ),  # 標的先前已有判決 → 重判（single/selected 查 judgments；batch 依 stages 含已判階段）
     Column("source", Text),  # 反饋來源 code（product_reviews…）
     Column("model", Text),  # 主判決模型
-    Column("ensemble_voters", Integer),  # 跨廠 ensemble voter 數（0＝單模型）
-    Column(
-        "params", JSONB
-    ),  # 發起參數快照（stages/verticals/傾向/信心上限/voter 配置…；item_ids 只留樣本）
+    Column("params", JSONB),  # 發起參數快照（stages/verticals/傾向/信心上限…；item_ids 只留樣本）
     Column("status", Text, nullable=False),  # running/paused/cancelling → 終態 done/error/cancelled
     Column("total", Integer),  # 標的筆數
     Column("processed", Integer),  # 已處理（終態回寫；執行中由 in-mem 快照 overlay）
@@ -366,9 +355,6 @@ judgment_history = Table(
         "kind", Text, nullable=False
     ),  # 事件類型：judgment（判決快照）/ status（覆核轉移）/ note
     Column("model", Text),  # 判決模型（kind=judgment；stub 同 judgments.model 語意）
-    Column(
-        "model_votes", JSONB
-    ),  # 舊 ensemble 各 voter 票（ensemble 已退役，恆 NULL；欄保留供歷史相容）
     # 事件細節：judgment 存 {model, …}（精餾小字典，回填列為 {"backfilled": true}）；
     # status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，避免對 judgment/note 恆 NULL 的稀疏欄）。
     Column("params", JSONB),
@@ -409,27 +395,6 @@ prompt_eval_runs = Table(
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     # 歷史列表熱路徑：同一 prompt_id 依時間倒序（「改 prompt 前後對比」逐支查歷史）
     Index("idx_prompt_eval_runs_prompt_created", "prompt_id", "created_at"),
-)
-
-# 邊界測試集（B3：Prompt-as-Source 調適閉環——mock 上傳 CSV / 手動新增 / 分歧一鍵入集三來源同表），
-# 供 `prompt_eval.run_eval(source="mock")` 消費：gold_l1 同域者為正例、他域者為該域棄權分母。
-prompt_testcases = Table(
-    "prompt_testcases",
-    metadata,
-    Column("id", Text, primary_key=True),  # tc_* uuid4 hex
-    Column("text", Text, nullable=False),
-    Column(
-        "gold_l1", Text, nullable=False
-    ),  # 域機器值（對 domains.json 驗，見 app/judge/prompt_testcases.validate_row）
-    Column("gold_l2", Text),  # L2 面向 code（可空＝僅標「屬此域」不釘特定面向；對該域 facets 驗）
-    Column("expected_polarity", Text),  # negative/neutral/positive（可空）
-    Column("note", Text),
-    Column("tags", JSONB),  # 字串陣列
-    Column("enabled", Boolean, nullable=False, server_default=text("true")),
-    Column("created_by", Text),
-    Column("created_at", DateTime(timezone=True), server_default=func.now()),
-    # 依域篩選熱路徑：run_eval(source=mock) 抽樣＋管理列表按 gold_l1 篩選
-    Index("idx_prompt_testcases_gold_l1", "gold_l1"),
 )
 
 

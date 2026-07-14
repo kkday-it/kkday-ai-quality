@@ -92,7 +92,6 @@ type Snap = {
   sentiment_score?: number | null;
   l1?: { code?: string; label?: string };
   l2?: { code?: string; label?: string };
-  l3?: { code?: string; label?: string };
   confidence?: { value?: number | null; tier?: string };
   content?: { summary?: unknown };
   is_primary?: boolean;
@@ -111,17 +110,14 @@ const snapSummary = (s: Snap): string => {
   return '';
 };
 
-/** L1›L2›L3 麵包屑（缺層自動略過）。 */
+/** L1›L2 麵包屑（缺層自動略過）。 */
 const snapPath = (s: Snap): string =>
-  [s.l1?.label, s.l2?.label, s.l3?.label].filter(Boolean).join(' › ') || '未歸因';
+  [s.l1?.label, s.l2?.label].filter(Boolean).join(' › ') || '未歸因';
 
-/** 快照結構鍵（分類變化對比用：傾向+情緒分+L1-L3 code，排序後串接）。 */
+/** 快照結構鍵（分類變化對比用：傾向+情緒分+L1-L2 code，排序後串接）。 */
 const structKey = (snaps: Snap[]): string =>
   snaps
-    .map(
-      (s) =>
-        `${s.polarity}|${s.sentiment_score}|${s.l1?.code || ''}|${s.l2?.code || ''}|${s.l3?.code || ''}`,
-    )
+    .map((s) => `${s.polarity}|${s.sentiment_score}|${s.l1?.code || ''}|${s.l2?.code || ''}`)
     .sort()
     .join(';');
 
@@ -223,12 +219,6 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                     <div v-if="snapSummary(s)" class="mt-0.5 text-[var(--color-text-2)]">
                       {{ snapSummary(s) }}
                     </div>
-                  </div>
-                  <div
-                    v-if="((e.params as any)?.voter_models || []).length"
-                    class="text-[11px] text-[var(--color-text-3)]"
-                  >
-                    ensemble voters：{{ ((e.params as any).voter_models as string[]).join('、') }}
                   </div>
                 </div>
                 <div

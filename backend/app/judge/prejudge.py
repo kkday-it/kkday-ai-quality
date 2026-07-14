@@ -3,8 +3,7 @@
 **Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝docs/prompts/*.md（DB active 版可
 線上熱編，見 prompt_source）。Stage1 極性吃 00_polarity（`_pack_polarity`）；歸因段六支域 prompt
 （01_C-1~06_C-6）ThreadPool 並行，各判本域問題（`_attrs_pack`）→合流過共用閘門
-（`_resolve_attrs_multi` 尾段）。舊「JSON 規則樹拼 system + 單呼叫 32 面向目錄」legacy 引擎與 DB
-`judge_rule_versions` C-1~C-6 樹已全數退役（判準與結構皆已轉為 prompt 本身，見 ai_judge.py）。
+（`_resolve_attrs_multi` 尾段）。判準與結構皆源自 prompt 本身（見 ai_judge.py）。
 
 管線：
 - Stage 0 零 LLM 略過純好評（rating=5 + 評論極短 + 無負向詞）→ $0，不歸因。
@@ -214,15 +213,15 @@ def _evidence_cap(l1_domain: str, item: dict, raw_conf: float) -> float:
     return raw_conf
 
 
-def _derive_stage(polarity: str, l3_code: str, tier: str, evidence_capped: bool) -> str:
+def _derive_stage(polarity: str, landing: str, tier: str, evidence_capped: bool) -> str:
     """判決階段派生（歸因 finding 專用；non_issue 於 _non_issue_finding 直接設 stage）。
 
     歸因列不分整體傾向（負向或混合中性的問題面向同規則）：
-    - judged 已判決：歸到 L3+高信心+未觸 cap。
-    - pending_data 待數據補充：L3 空(abstain) 或 evidence-cap 觸發(缺訂單/商品頁)——需外部佐證、能救。
-    - pending_review 待覆核：有 L3+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
+    - judged 已判決：歸到 L2+高信心+未觸 cap。
+    - pending_data 待數據補充：L2 空(abstain) 或 evidence-cap 觸發(缺訂單/商品頁)——需外部佐證、能救。
+    - pending_review 待覆核：有 L2+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
     """
-    if evidence_capped or not l3_code:
+    if evidence_capped or not landing:
         return "pending_data"
     return "judged" if tier == "auto_accept" else "pending_review"
 
@@ -249,7 +248,7 @@ def _call(
 ) -> dict:
     """呼叫 LLM；暫時覆寫 contextvar 的 model（及可選 reasoning_effort）為本階段值，呼叫後還原（thread-local 安全）。
 
-    schema 傳入時走 Structured Outputs（強制 l3_code 只吐候選白名單合法 code）。
+    schema 傳入時走 Structured Outputs（強制 l2_code 只吐候選白名單合法 code）。
     effort 傳入時暫時覆寫 reasoning_effort（① 收緊輸出：attribute 階段可獨立降 effort 省 completion；
     見 _attr_effort。None＝沿用當前 config，零行為改變）。
     """
@@ -357,9 +356,8 @@ def _attributed_finding(
     """
     conf = attr["confidence"]
     tier = _tier_for(conf)
-    # 判決落點：prompt_pack 只判到 L2（l3_code 恆空字串，見 _sanitize_l2），L2 面向即為本階段終點
-    # （不得因 l3_code 空就誤標 pending_data——高信心 L2 歸因照走 judged/G1 路由）。
-    landing = attr["l3_code"] or attr["l2_code"]
+    # 判決落點＝L2 面向（prompt_pack 只判到 L2；高信心 L2 歸因走 judged/G1 路由，空 L2 才 pending_data）。
+    landing = attr["l2_code"]
     stage = _derive_stage(polarity, landing, tier, attr.get("evidence_capped", False))
     return TicketFinding(
         **_base_kwargs(item),
@@ -381,9 +379,6 @@ def _attributed_finding(
         l1_label=attr["l1_label"],
         l2_code=attr["l2_code"],
         l2_label=attr["l2_label"],
-        l3_code=attr["l3_code"],
-        l3_label=attr["l3_label"],
-        l3_candidates=attr.get("l3_candidates", []),
         model_used=model,
     )
 
@@ -609,7 +604,7 @@ def batch_service_tier(n_items: int) -> str | None:
 def _l2_label_map() -> dict[str, tuple[str, str, str]]:
     """L2 面向 code → (l1_domain, l1_label, l2_label)（自攤平葉推導；含 L2 葉自身）。"""
     out: dict[str, tuple[str, str, str]] = {}
-    for n in ai_judge.l3_nodes_for_domains([]):
+    for n in ai_judge.l2_nodes_for_domains([]):
         c = str(n.get("l2_code") or "")
         if c and c not in out:
             out[c] = (n.get("l1_domain", ""), n.get("l1_label", ""), n.get("l2_label", ""))
@@ -617,28 +612,23 @@ def _l2_label_map() -> dict[str, tuple[str, str, str]]:
 
 
 def _sanitize_l2(code: str, valid: dict[str, tuple[str, str, str]]) -> dict[str, str]:
-    """校驗 l2_code ∈ 面向白名單並回填 l1/l2 label；非法回全空（未歸類）。L3 恆空（留待深判）。"""
+    """校驗 l2_code ∈ 面向白名單並回填 l1/l2 label；非法回全空（未歸類）。"""
     info = valid.get(code)
     if not info:
-        return {
-            k: ""
-            for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
-        }
+        return {k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label")}
     l1, l1_label, l2_label = info
     return {
         "l1_domain_code": l1,
         "l1_label": l1_label,
         "l2_code": code,
         "l2_label": l2_label,
-        "l3_code": "",
-        "l3_label": "",
     }
 
 
 def _finalize_attr_l2(
     item: dict, text: str, out: dict, valid: dict[str, tuple[str, str, str]]
 ) -> dict:
-    """L2 歸因輸出 → 淨化 attr dict：白名單校驗 + evidence grounding + 證據封頂（與 L3 版同政策）。
+    """L2 歸因輸出 → 淨化 attr dict：白名單校驗 + evidence grounding + 證據封頂。
 
     grounding 不落地（evidence_quote 非原文逐字片段）→ 信心壓到 needs_review 帶交人審——
     「低信心反饋」的第一環（第二環＝attr_min_confidence 閘門整條丟棄、第三環＝負反饋重問）。
@@ -660,7 +650,6 @@ def _finalize_attr_l2(
         "raw_confidence": raw_conf,
         "summary": summary,
         "evidence_quote": evidence,
-        "l3_candidates": [],
         "evidence_capped": _evidence_capped(resolved["l1_domain_code"], item),
     }
 

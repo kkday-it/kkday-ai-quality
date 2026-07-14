@@ -144,7 +144,7 @@ def test_attribution_overview_model_filter_all_sources_branch(temp_db) -> None:
 
 
 def test_attribution_breakdown_model_filter(temp_db) -> None:
-    """breakdown 的 model 篩選經 extra 統一套用（L2/L3 兩層一次覆蓋）。"""
+    """breakdown 的 model 篩選經 extra 統一套用。"""
     _seed(temp_db)
     ov = db.attribution_breakdown(source="product_reviews", l1="content", model=["nonexistent"])
-    assert ov["by_l2"] == [] and ov["by_l3"] == []  # 無該模型判決 → 空分布
+    assert ov["by_l2"] == []  # 無該模型判決 → 空分布

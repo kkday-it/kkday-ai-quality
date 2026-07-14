@@ -25,8 +25,6 @@ _JG_COLS = (
     "l1_label",
     "l2_code",
     "l2_label",
-    "l3_code",
-    "l3_label",
     "conf_value",
     "conf_raw",
     "conf_tier",
@@ -217,7 +215,7 @@ def _derive_stage(dto: dict) -> str:
     pol = dto.get("polarity")
     if pol != "negative":
         return "judged"
-    if not (dto.get("l3") or {}).get("code"):
+    if not (dto.get("l2") or {}).get("code"):
         return "pending_data"
     return (
         "judged" if (dto.get("confidence") or {}).get("tier") == "auto_accept" else "pending_review"
@@ -340,7 +338,7 @@ def list_problems(
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
-        taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2/l3_code 任一 IN 命中＝子樹語義）。
+        taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
         status: 覆核狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
         model: 判決模型多選（judgments.model IN——當前判決維度；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
@@ -440,15 +438,14 @@ def _list_problems_spec(
             # 判決模型多選（當前判決維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))
         if taxonomy:
-            # 歸因分類多選：任意層級 code，l1/l2/l3_code 任一 IN 命中＝子樹語義
-            # （選 L1 涵蓋整域，含只判到 L2 的列；選 L3 精確到葉）
+            # 歸因分類多選：任意層級 code，l1/l2_code 任一 IN 命中＝子樹語義
+            # （選 L1 涵蓋整域，含只判到 L2 的列；選 L2 精確到面向）
             stmt = stmt.where(
                 _jg_exists(
                     spec,
                     or_(
                         jg.c.l1_code.in_(taxonomy),
                         jg.c.l2_code.in_(taxonomy),
-                        jg.c.l3_code.in_(taxonomy),
                     ),
                 )
             )

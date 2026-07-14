@@ -64,7 +64,7 @@ def patch_finding_status(
 @router.get("/api/findings/taxonomy-cascade")
 def get_taxonomy_cascade() -> list[dict]:
     """歸因分類級聯樹（L1→L2 巢狀 {value,label,children}）——供前端歸因分類 cascader
-    （歸因列表篩選 / B3 存為測試 case 選域與面向）。"""
+    （歸因列表篩選選域與面向）。"""
     from app.core.judge_config import ai_judge
 
     return ai_judge.cascade_tree()

@@ -256,7 +256,7 @@ def chat_json(
 
     Args:
         schema: 傳入時用 OpenAI Structured Outputs（response_format=json_schema, strict）——
-            生成階段即 token-level 保證輸出符合此 JSON Schema（如 l3_code enum 只吐合法 code）。
+            生成階段即 token-level 保證輸出符合此 JSON Schema（如 l2_code enum 只吐合法 code）。
             不支援 json_schema 的 provider（回 400）自動回退 json_object（事後由白名單校驗）。
             None＝維持 json_object（極性等不需 enum 的階段）。
         cache_key: OpenAI prompt caching 路由提示（`prompt_cache_key`），把相同前綴的呼叫導向同一

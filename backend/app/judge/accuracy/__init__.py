@@ -1,9 +1,7 @@
 """初判歸因準確度（package）：label-free 一致性自證（無真值時的代理指標）。
 
-> 2026-07-14：`supervised`（true_label 監督真準確率）與 `ensemble_agreement`（多 voter vs
-> true_label）兩模組隨標真值功能整支退役而移除——人工真值來源（judgments.true_label）已刪，
-> 監督臂無資料基礎。僅存 label-free 自證（Cleanlab confident-learning，有循環論證侷限，見
-> labelfree._LIMITATION）。
+僅 label-free 自證（Cleanlab confident-learning，有循環論證侷限，見 labelfree._LIMITATION）——
+線上無人工真值來源，故不做監督式準確率。
 
 對外沿用 `from app.judge import accuracy; accuracy.run()`；`run()` 寫 data/reports/accuracy.{md,json}。
 """
@@ -33,7 +31,7 @@ def run() -> dict[str, Any]:
 
     Returns:
         {label_free} 報表 dict（供腳本印摘要）。label-free 為無真值時的自證代理（循環論證侷限見
-        labelfree._LIMITATION）——真值監督臂已隨標真值功能退役。
+        labelfree._LIMITATION）——線上無人工真值來源，故不做監督式準確率。
     """
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     rep = build_report()

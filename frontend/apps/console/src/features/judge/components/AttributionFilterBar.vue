@@ -25,7 +25,7 @@ const props = withDefaults(
     model: AttributionFilters;
     /** 要渲染的欄位（順序即顯示順序）。 */
     fields: FilterField[];
-    /** 歸因分類級聯選項（L1→L3 樹；有 taxonomy 欄時必給，來自 getTaxonomyCascade）。 */
+    /** 歸因分類級聯選項（L1→L2 樹；有 taxonomy 欄時必給，來自 getTaxonomyCascade）。 */
     cascadeOptions?: CascadeNode[];
     /** 判決模型選項（有 model 欄時必給，來自 getJudgmentModels；注入模式，元件不發請求）。 */
     modelOptions?: { value: string; label: string }[];
@@ -262,8 +262,8 @@ function applyRecentDays(n: number): void {
           @change="onChange"
         />
       </a-col>
-      <!-- 歸因分類：L1→L3 級聯複選。check-strictly＝任意層級可獨立勾選（值＝該節點 code），
-           選 L1/L2 即代表整個子樹（後端 l1/l2/l3_code 任一 IN 命中），涵蓋只判到 L2 的列。 -->
+      <!-- 歸因分類：L1→L2 級聯複選。check-strictly＝任意層級可獨立勾選（值＝該節點 code），
+           選 L1/L2 即代表整個子樹（後端 l1/l2_code 任一 IN 命中）。 -->
       <a-col v-if="has('taxonomy')" :flex="FIELD_FLEX.taxonomy">
         <a-cascader
           v-model="state.taxonomy"

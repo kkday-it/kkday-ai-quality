@@ -4,11 +4,7 @@
 active 版）後，只跑這一支對 N 則參照集驗證，出該支指標——不跑其他六支、不動 production 判決管線。
 prompt 直接讀 **prompt_source**（判決引擎同源 SSOT：DB active→檔案 fallback），天然與線上一致。
 
-參照集（--source）：
-- production（預設）：judgments 現行判決為參照（本域正/他域負各半），量測「與現行判決一致度」。
-- mock：`prompt_testcases` 邊界測試集（B3：CSV 上傳 / 手動新增 / 分歧一鍵入集，gold_l1/gold_l2/
-  expected_polarity 為真值），防洩題、可控分佈；委派 `app.judge.prompt_eval.sample_domain_mock`/
-  `sample_polarity_mock`，與 UI「用此集測某支 prompt」同一份抽樣邏輯，不平行維護兩套。
+參照集：judgments 現行判決為參照（本域正/他域負各半），量測「與現行判決一致度」。
 
 指標（純函式，SSOT＝後端 app.judge.prompt_eval.compute_*_metrics，UI「測試」端點共用）：
     域 prompt：primary 一致率 / 棄權正確率 / 命中率 / 多報率。
@@ -21,7 +17,7 @@ A/B（--compare baseline.json）：對上一輪結果逐案 diff（improvements 
 用法（scripts/ 未掛載，先 docker cp）：
     docker cp scripts/tools/eval_prompt_single.py kkday-ai-quality-backend:/app/scripts/tools/
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_prompt_single.py \
-        --prompt C-3 --n 60 --source mock \
+        --prompt C-3 --n 60 \
         --user alvin.bian@kkday.com --compare /app/tmp/BASELINE_C-3.json --out /app/tmp/eval_C-3.json
 """
 
@@ -44,11 +40,9 @@ from app.core import settings as app_settings  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
 from app.judge import prompt_source  # noqa: E402
 from app.judge.llm import client  # noqa: E402
-from app.judge.prompt_eval import (  # noqa: E402  指標/抽樣純函式 SSOT（後端，UI 端點共用）
+from app.judge.prompt_eval import (  # noqa: E402  指標純函式 SSOT（後端，UI 端點共用）
     compute_domain_metrics,
     compute_polarity_metrics,
-    sample_domain_mock,
-    sample_polarity_mock,
 )
 
 _SOURCE = "product_reviews"
@@ -86,9 +80,9 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
     return {sid: (f"{t}\n{d}".strip()) for sid, t, d in rows}
 
 
-# ─────────────────────────── 抽樣（依 --source）───────────────────────────
-def _sample_domain_production(dom_machine: str, n: int) -> list[dict]:
-    """production 參照：judgments 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
+# ─────────────────────────── 抽樣 ───────────────────────────
+def _sample_domain(dom_machine: str, n: int) -> list[dict]:
+    """域參照：judgments 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
 
     回統一參照記錄：{id, text, polarity, ref_l2s, ref_primary}。
     """
@@ -131,21 +125,8 @@ def _sample_domain_production(dom_machine: str, n: int) -> list[dict]:
     return [dict(v, text=texts.get(k, "")) for k, v in by_rec.items() if texts.get(k, "").strip()]
 
 
-def _sample_domain(dom_machine: str, n: int, source: str) -> list[dict]:
-    """依 --source 抽域參照集。mock 委派 `prompt_eval.sample_domain_mock`（B3：測全部啟用中 case，
-    忽略 n，與 UI「用此集測某支 prompt」同一份抽樣邏輯）。
-    """
-    if source == "mock":
-        return sample_domain_mock(dom_machine)
-    return _sample_domain_production(dom_machine, n)
-
-
-def _sample_polarity(n: int, source: str) -> list[dict]:
-    """極性參照集：mock 委派 `prompt_eval.sample_polarity_mock`（測全部啟用中 case，忽略 n）；
-    否則三態各 n/3（md5 穩定），帶 production polarity/sentiment 真值。
-    """
-    if source == "mock":
-        return sample_polarity_mock()
+def _sample_polarity(n: int) -> list[dict]:
+    """極性參照集：三態各 n/3（md5 穩定），帶 production polarity/sentiment 真值。"""
     per = max(1, n // 3)
     out: list[dict] = []
     with T.get_engine().connect() as c:
@@ -280,17 +261,11 @@ def _compare(result: dict, baseline_path: str) -> dict:
 
 
 def main() -> None:
-    """CLI：--prompt polarity|C-1..C-6 → 抽樣（--source）→ 單支跑 → 指標 JSON（可 --compare / --repeats）。"""
+    """CLI：--prompt polarity|C-1..C-6 → 抽樣 → 單支跑 → 指標 JSON（可 --compare / --repeats）。"""
     ap = argparse.ArgumentParser(description="單支 Prompt 評測（Prompt-as-Source 調適閉環驗證端）")
     ap.add_argument("--prompt", required=True, help="polarity 或 C-1..C-6")
     ap.add_argument("--n", type=int, default=20, help="樣本數（md5 穩定排序，跨 run 可比）")
     ap.add_argument("--user", required=True, help="user_settings token 來源（email）")
-    ap.add_argument(
-        "--source",
-        default="production",
-        choices=["production", "mock"],
-        help="參照集：production（現行判決）/ mock（prompt_testcases 邊界測試集）",
-    )
     ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（空＝active）")
     ap.add_argument(
         "--compare", default="", help="baseline.json 路徑（逐案 diff improvements/regressions）"
@@ -313,9 +288,9 @@ def main() -> None:
 
     pid = _prompt_id_of(args.prompt)
     if args.prompt == "polarity":
-        samples = _sample_polarity(args.n, args.source)
+        samples = _sample_polarity(args.n)
         print(
-            f"樣本 {len(samples)} 則（三態分層·source={args.source}）· model={eff.get('model')}",
+            f"樣本 {len(samples)} 則（三態分層）· model={eff.get('model')}",
             flush=True,
         )
         result = _run_polarity(pid, samples)
@@ -323,14 +298,14 @@ def main() -> None:
         dom = _domain_of_prompt(args.prompt)
         if not dom:
             raise SystemExit(f"未知域：{args.prompt}")
-        samples = _sample_domain(dom, args.n, args.source)
+        samples = _sample_domain(dom, args.n)
         print(
-            f"樣本 {len(samples)} 則（本域/他域各半·source={args.source}）· model={eff.get('model')}",
+            f"樣本 {len(samples)} 則（本域/他域各半）· model={eff.get('model')}",
             flush=True,
         )
         result = _run_domain(pid, args.prompt, samples, args.repeats)
     result["model"] = eff.get("model")
-    result["source"] = args.source
+    result["source"] = "production"
 
     if args.compare:
         result["compare"] = _compare(result, args.compare)

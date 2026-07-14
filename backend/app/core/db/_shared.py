@@ -17,7 +17,7 @@ from app.core.db import tables as T
 from app.core.judge_config.ai_judge import domain_owner as _domain_owner
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
-# ── 判決顯示標籤 + 信心閾值（judgment.json；取代已移除的 taxonomy）───────────────
+# ── 判決顯示標籤 + 信心閾值（judgment.json）───────────────
 # 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
 # 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
@@ -130,7 +130,6 @@ def attribution_dto(r: dict) -> dict:
         "stage": r.get("stage"),
         "l1": {"code": l1_code, "label": r.get("l1_label")},
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
-        "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
         "confidence": {
             "value": r.get("conf_value"),
             "raw": r.get("conf_raw"),

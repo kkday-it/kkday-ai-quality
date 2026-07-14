@@ -2,7 +2,7 @@
 
 **AI 商品質檢平台 — AI 法官（內容爭議裁決系統）**（KKday 內容質量 Pod 第三支柱）
 
-把客訴 / 商品差評 / 工單 / App 反饋 / 埋點等真實負面訊號，自動**歸因**到「哪個歸因域的哪個問題」（L1→L2→L3 三層分類），標註信心與判決階段，產出可執行方向，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
+把客訴 / 商品差評 / 工單 / App 反饋 / 埋點等真實負面訊號，自動**歸因**到「哪個歸因域的哪個問題」（L1→L2 兩層分類），標註信心與判決階段，產出可執行方向，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
 
 > 邏輯參照 [folder 2117435397](https://kkday.atlassian.net/wiki/spaces/VM/folder/2117435397)（工單驅動審核）+ [AI 法官 V2 總覽](https://kkday.atlassian.net/wiki/spaces/VM/pages/2125660181)。
 
@@ -108,7 +108,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET | `/health` | 健康檢查 |
 | POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
 | GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/判決階段(多選)/信心分層/覆核狀態(status 多選)/判決模型(model 多選·當前判決維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
-| GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2/L3 下鑽；可選 model（CSV 多選）篩判決模型——當前判決維度，僅套判決級指標（total_intake 不受影響）。需登入 |
+| GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩判決模型——當前判決維度，僅套判決級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |
 | POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 judgment_history 最新快照（未判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
 | POST | `/api/judge-rules/export` | 啟動判決規則 xlsx 導出背景 job → {job_id} |
@@ -126,7 +126,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 
 ## 架構要點
 - **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），judgments 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
-- **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L3、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
+- **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
 - **判準 SSOT**＝`docs/prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，判決引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。

@@ -102,13 +102,9 @@ const {
   funnel,
   l1Bar,
   l2Bar,
-  l3Bar,
   tierDonut,
   trend,
-  selectedL2,
   contentL2Bar,
-  contentL3Bar,
-  onContentL2Click,
 } = useAttributionDashboard(() => active.value.source, {
   dateFrom: () => dateRange.value?.[0],
   dateTo: () => dateRange.value?.[1],
@@ -243,30 +239,15 @@ const onExport = async () => {
         </div>
       </CardSection>
 
-      <!-- 商品內容細化：左 L2 面向（可點）→ 右 L3 細項即時更新；長條堆疊負向 + tooltip 全維度 -->
+      <!-- 商品內容細化：L2 面向問題分布；長條即負向筆數 + tooltip 全維度 -->
       <CardSection
         data-report-block
         title="商品內容細化"
-        hint="點左側 L2 面向 · 右側即時切換其 L3 細項"
-        desc="商品內容（L1）底下的 L2 面向 / L3 細項問題分布（僅負向才歸類，長條即負向筆數）。滑鼠移入看完整維度（筆數 / 占比 / 平均信心 / 自動採信率）。點左側任一 L2，右側即時更新為該 L2 底下的 L3 細項。"
+        hint="商品內容底下的 L2 面向問題分布"
+        desc="商品內容（L1）底下的 L2 面向問題分布（僅負向才歸類，長條即負向筆數）。滑鼠移入看完整維度（筆數 / 占比 / 平均信心 / 自動採信率）。"
       >
-        <a-row :gutter="16" align="stretch">
-          <a-col :span="12">
-            <div class="mb-1 text-xs text-gray-500">L2 面向（點擊切換右側）</div>
-            <v-chart
-              :option="contentL2Bar"
-              class="h-[360px]"
-              autoresize
-              @click="onContentL2Click"
-            />
-          </a-col>
-          <a-col :span="12">
-            <div class="mb-1 text-xs text-gray-500">
-              L3 細項<span v-if="selectedL2">：{{ selectedL2.label }}</span>
-            </div>
-            <v-chart :option="contentL3Bar" class="h-[360px]" autoresize />
-          </a-col>
-        </a-row>
+        <div class="mb-1 text-xs text-gray-500">L2 面向</div>
+        <v-chart :option="contentL2Bar" class="h-[360px]" autoresize />
       </CardSection>
 
       <!-- 歸因佔比（全部 L1 域組成·可切圓餅/長條）＋ 問題量趨勢 -->
@@ -275,7 +256,7 @@ const onExport = async () => {
           <CardSection
             data-report-block
             title="歸因佔比"
-            desc="全部 L1 歸因域的問題組成佔比（僅負向才歸類，故＝負向問題的域分布）。可切換圓餅（占比視角）／長條（排名視角）；下方「L1 歸因域分布」可點長條下鑽 L2/L3。"
+            desc="全部 L1 歸因域的問題組成佔比（僅負向才歸類，故＝負向問題的域分布）。可切換圓餅（占比視角）／長條（排名視角）；下方「L1 歸因域分布」可點長條下鑽 L2。"
           >
             <template #extra>
               <a-radio-group v-model="shareChart" type="button" size="mini">
@@ -316,7 +297,7 @@ const onExport = async () => {
           <CardSection
             data-report-block
             title="L1 歸因域分布"
-            hint="負向問題的六大歸因域 · 點長條下鑽 L2/L3"
+            hint="負向問題的六大歸因域 · 點長條下鑽 L2"
           >
             <v-chart :option="l1Bar" class="h-[320px]" autoresize @click="onL1Click" />
           </CardSection>
@@ -326,27 +307,21 @@ const onExport = async () => {
       <CardSection
         v-if="drillL1"
         data-report-block
-        :title="`下鑽：${drillL1.label}（L2 / L3 細項）`"
-        hint="該歸因域下的二、三層細項分布"
+        :title="`下鑽：${drillL1.label}（L2 面向）`"
+        hint="該歸因域下的 L2 面向分布"
       >
         <template #extra>
           <a-link @click="drillL1 = null">收合</a-link>
         </template>
         <a-spin :loading="drillLoading" class="block w-full">
           <a-empty
-            v-if="!drillLoading && !breakdown?.by_l2.length && !breakdown?.by_l3.length"
-            description="該域暫無 L2/L3 細項資料"
+            v-if="!drillLoading && !breakdown?.by_l2.length"
+            description="該域暫無 L2 面向資料"
           />
-          <a-row v-else :gutter="[16, 16]" align="stretch">
-            <a-col :span="12">
-              <div class="mb-1 text-xs text-gray-500">L2 面向</div>
-              <v-chart :option="l2Bar" class="h-[300px]" autoresize />
-            </a-col>
-            <a-col :span="12">
-              <div class="mb-1 text-xs text-gray-500">L3 細項</div>
-              <v-chart :option="l3Bar" class="h-[300px]" autoresize />
-            </a-col>
-          </a-row>
+          <div v-else>
+            <div class="mb-1 text-xs text-gray-500">L2 面向</div>
+            <v-chart :option="l2Bar" class="h-[300px]" autoresize />
+          </div>
         </a-spin>
       </CardSection>
 

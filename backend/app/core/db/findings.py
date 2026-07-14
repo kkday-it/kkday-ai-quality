@@ -124,17 +124,12 @@ def replace_source_findings(
                 values["status_updated_at"] = old["status_updated_at"]
             c.execute(sa_insert(jg).values(**values))
         if findings:
-            # 評論級判決歷史（同交易；model/votes 每次 to_findings 呼叫內一致，取首筆即可）
+            # 評論級判決歷史（同交易；model 每次 to_findings 呼叫內一致，取首筆即可）
             _history.insert_judgment_event(
                 c,
                 source,
                 source_id,
                 model=findings[0].model_used,
-                model_votes=[
-                    {"finding_id": f.finding_id, "votes": f.model_votes}
-                    for f in findings
-                    if f.model_votes
-                ],
                 params=params,
                 attributions=snapshots,
                 job_id=job_id,

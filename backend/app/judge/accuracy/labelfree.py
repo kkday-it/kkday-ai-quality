@@ -2,8 +2,7 @@
 
 ⚠️ 侷限（循環論證）：以「模型自身 argmax = pseudo-label」＋ raw_confidence 派生 pred_probs 自證，
 屬內部一致性偵測非絕對準確率；系統性偏誤（整片同錯一類）無法揭露，與 rule_coverage 矛盾以人審為準。
-自 accuracy.py 拆出（行為不變）。真值監督（supervised）與多 model 聯合（ensemble_agreement）路徑已隨
-標真值功能於 2026-07-14 退役——本模組為唯一存留的準確度自證代理。
+自 accuracy.py 拆出（行為不變）。線上無人工真值來源，故本模組為唯一的準確度自證代理。
 """
 
 from __future__ import annotations
@@ -44,8 +43,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
                 )
             )
             for fid, sid, code, raw_conf in rows:
-                # l3_candidates 於攤平時移除（實測全庫恆空，候選機制未落庫）→ candidates 恆空，行為不變
-                node = ai_judge.l3_by_code(code) or {}
+                node = ai_judge.l2_by_code(code) or {}
                 out.append(
                     {
                         "finding_id": fid or "",

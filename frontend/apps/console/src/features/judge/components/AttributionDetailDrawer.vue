@@ -42,12 +42,12 @@ const TIER_COLOR: Record<string, string> = {
   needs_review: 'red',
 };
 
-/** 歸因路徑「L1 › L2 › L3」；未歸因回占位文字。 */
+/** 歸因路徑「L1 › L2」；未歸因回占位文字。 */
 const attrPath = (a: Attribution): string =>
-  [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
+  [a.l1?.label, a.l2?.label].filter(Boolean).join(' › ') || '未歸因';
 
-/** 最深層 code（L3 → L2 → L1 取第一個非空），路徑旁小字輔助定位規則樹。 */
-const attrCode = (a: Attribution): string => a.l3?.code || a.l2?.code || a.l1?.code || '';
+/** 最深層 code（L2 → L1 取第一個非空），路徑旁小字輔助定位規則樹。 */
+const attrCode = (a: Attribution): string => a.l2?.code || a.l1?.code || '';
 
 /** 欄位缺值顯示（'—'）。 */
 const cell = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));

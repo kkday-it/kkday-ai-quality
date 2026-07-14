@@ -60,7 +60,7 @@ def get_problems(
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
     商品垂直分類 product_verticals / 判決階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
-    confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2/l3_code 任一 IN 命中＝子樹語義）為多值判決過濾。
+    confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2_code 任一 IN 命中＝子樹語義）為多值判決過濾。
     status（覆核狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
     model（判決模型 CSV 多選：judgments.model IN——當前判決維度）。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。

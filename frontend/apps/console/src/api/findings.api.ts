@@ -15,7 +15,7 @@ export interface CascadeNode {
   children?: CascadeNode[];
 }
 
-/** 取歸因分類級聯樹（L1→L2）供 a-cascader 選項（歸因列表篩選 / B3 存為測試 case 選域與面向）。 */
+/** 取歸因分類級聯樹（L1→L2）供 a-cascader 選項（歸因列表篩選選域與面向）。 */
 export const getTaxonomyCascade = (): Promise<CascadeNode[]> =>
   j<CascadeNode[]>(`${BASE}/findings/taxonomy-cascade`);
 
@@ -62,14 +62,12 @@ export interface JudgmentHistoryEntry {
   source_id: string;
   /** 事件類型：judgment（判決快照）/ status（覆核轉移）/ note（評論級備註）。 */
   kind: 'judgment' | 'status' | 'note';
-  /** 判決模型（kind=judgment；stub/ensemble 同 judgments.model 語意）。 */
+  /** 判決模型（kind=judgment；stub 同 judgments.model 語意）。 */
   model?: string | null;
-  /** ensemble 各 voter 票（單模型 null；供多模型對比）。 */
-  model_votes?: unknown;
-  /** 事件細節：judgment＝{model, voter_models, ensemble_sample_rate}（回填列 {backfilled:true}）；
+  /** 事件細節：judgment＝{model}（回填列 {backfilled:true}）；
    *  status＝{to, changes:[{finding_id, from}]}。 */
   params?: Record<string, unknown> | null;
-  /** 判決快照（kind=judgment；每筆形狀近 Attribution：l1-l3/傾向/情緒分/信心/內容）。 */
+  /** 判決快照（kind=judgment；每筆形狀近 Attribution：l1-l2/傾向/情緒分/信心/內容）。 */
   attributions?: Record<string, unknown>[] | null;
   result_digest?: string | null;
   job_id?: string | null;

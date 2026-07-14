@@ -77,8 +77,8 @@ def build_rules_workbook_bytes(ctx: ExportCtx | None = None) -> bytes:
     """組出判決規則 Excel（bytes）：全部 C-N 歸因分類各一分頁 ＋ judgment 判決配置分頁。
 
     資料源＝6 域 prompt 分類結構（規則配置頁「初判 Prompt」的當前生效內容）＋ judgment.json
-    （靜態設定檔，改值需重啟後端，見 db/_shared.read_judgment_config）。schema 結構規格（已退役）、
-    product_vertical 選項池皆非人閱法典，故不含。
+    （靜態設定檔，改值需重啟後端，見 db/_shared.read_judgment_config）。product_vertical 選項池
+    非人閱法典，故不含。
 
     Args:
         ctx: 背景 job 進度把手（可選）；給定時每完成一分頁回報進度並輪詢取消，None＝同步直呼。

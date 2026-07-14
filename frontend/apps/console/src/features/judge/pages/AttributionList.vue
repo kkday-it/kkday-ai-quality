@@ -4,7 +4,7 @@
  *
  * 分頁/篩選/排序皆走後端（/api/problems limit-offset；occurred_at DESC 穩定）；表頭固定、表身內滾動、
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
- * 正向/中性 不歸因，只有負向才有 L1→L3。
+ * 正向/中性 不歸因，只有負向才有 L1→L2。
  *
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
@@ -179,7 +179,7 @@ const openRowTest = (record: ProblemRow) => {
 };
 
 // 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
-// 真實列表樣本＝篩選子集（見 PromptEvalModal + 後端 run_eval filter_ids）；彈窗內亦可切 mock 列表。
+// 樣本＝篩選子集（見 PromptEvalModal + 後端 run_eval filter_ids）。
 const promptTestOpen = ref(false);
 const promptEvalFilters = computed<PrejudgeBody>(() => ({
   source: source.value,
@@ -419,8 +419,7 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- 測試 Prompt（B1/B3）：帶當前列表篩選，選一支 prompt 測試，彈窗內可切換真實列表（篩選子集，
-           不落庫）／mock 列表（B3 邊界測試集，含 CSV 上傳管理）-->
+      <!-- 測試 Prompt（B1）：帶當前列表篩選，選一支 prompt 對篩選子集測試（不落庫）-->
       <a-button size="small" type="outline" @click="promptTestOpen = true"> 測試 Prompt </a-button>
     </div>
   </Teleport>
@@ -428,7 +427,7 @@ onMounted(init);
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
-  <!-- 測試 Prompt 彈窗（B1：filters=帶當前列表篩選；彈窗內可切換真實/mock 列表） -->
+  <!-- 測試 Prompt 彈窗（B1：filters=帶當前列表篩選，對篩選子集測試） -->
   <PromptEvalModal v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
 
   <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
@@ -668,7 +667,7 @@ onMounted(init);
           </div>
         </div>
       </template>
-      <!-- 判決歸因合併欄：每條歸因一塊（L1→L3 + 信心 + 分層 + 判決階段 全放一起），
+      <!-- 判決歸因合併欄：每條歸因一塊（L1→L2 + 信心 + 分層 + 判決階段 全放一起），
                塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
       <template #verdict="{ record }">
         <template v-if="record.attributions && record.attributions.length">
@@ -695,9 +694,9 @@ onMounted(init);
                 >歸因</span
               >
               <div class="min-w-0">
-                <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
+                <template v-if="[a.l1?.label, a.l2?.label].some(Boolean)">
                   <template
-                    v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
+                    v-for="(lvl, li) in [a.l1?.label, a.l2?.label].filter(Boolean)"
                     :key="li"
                   >
                     <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>

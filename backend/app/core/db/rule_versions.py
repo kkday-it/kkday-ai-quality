@@ -10,9 +10,7 @@
 RULE_CODES，降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀
 檔案），不再 DB 版本化 / 不列規則頁。同日原 global_rule（極性閘門 polarity_gate + 證據政策
 evidence_policy）併入 judgment.json 一併退出 RULE_CODES，減少判決 config 檔案數。
-註：C-1~C-6（L1/L2/L3 歸因判準樹）+ schema（歸因樹 JSON Schema）已於 2026-07-13 隨 Prompt-as-Source
-全面重構退役——判準已 100% 移入 prompt_C-1~6 的 System 自由文本，樹為冗餘雙源，歷史版本保留於 DB
-（不刪表）僅不再經此路徑寫入新版；域結構改由 app.judge.prompt_source.structure() 派生。
+判準文字由 prompt_C-1~6 的 System 承載、域結構由 app.judge.prompt_source.structure() 派生（非本表）。
 """
 
 from __future__ import annotations
@@ -83,8 +81,8 @@ def list_rule_meta() -> list[dict]:
     label 取 `_meta.label`（各 rule content 的顯示名慣例，含 prompt_* 的 default_prompt_content）；
     缺值回 None 由前端 fallback 補（JSONB 路徑抽出，避免拉整份 content）。
 
-    以 RULE_CODES 過濾（非撈全表 active）：退役 rule_code（如已刪的 C-1~C-6/schema）的歷史列仍留在
-    DB（不刪表），若不過濾會在前端「幽靈重現」——已無管理端點卻仍顯示於清單，令人困惑。
+    以 RULE_CODES 過濾（非撈全表 active）：非當前版本化的 rule_code 之歷史列仍留在 DB，若不過濾
+    會在前端「幽靈重現」——已無管理端點卻仍顯示於清單，令人困惑。
     """
     j = _jrv()
     stmt = (

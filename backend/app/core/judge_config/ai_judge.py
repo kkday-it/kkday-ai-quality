@@ -3,13 +3,11 @@
 **結構 SSOT＝docs/prompts/*.md**（Prompt-as-Source 架構）：域機器值來自 prompt 檔名尾綴
 （content/quality/supplier/platform/service/customer）、L2 面向（facets）來自各域 prompt 的
 `<facet_catalog>`「■ CODE LABEL」行解析、域中文名／action／owner 來自 `config/ai_judge/domains.json`
-（唯一不可從 prompt 推導的域層業務 metadata）。原 JSON 規則樹（judge_rule_versions 的 C-1~C-6）已退役
-——判準文字（canon/allow/forbid/正反例）現為 prompt 本身內容，供 LLM 直接讀，本模組不再攜帶這些欄位；
-僅建「分類結構」索引（域/面向 code↔label、級聯樹），供歸因列表級聯篩選、judgments 顯示、
-B3 存為測試 case cascader、`_l2_label_map` 等消費端查詢。
+（唯一不可從 prompt 推導的域層業務 metadata）。判準文字（canon/allow/forbid/正反例）為 prompt 本身
+內容，供 LLM 直接讀，本模組不攜帶；僅建「分類結構」索引（域/面向 code↔label、級聯樹），供歸因
+列表級聯篩選、judgments 顯示、`_l2_label_map` 等消費端查詢。
 
-深度：僅 L1（域）→ L2（面向）二層（L3 隨 legacy 判決引擎於 2026-07-13 一併退役，判決引擎 prompt_pack
-本就只判到 L2）。
+深度：僅 L1（域）→ L2（面向）二層（判決引擎 prompt_pack 只判到 L2）。
 
 快取：首次存取時 lazy 載入並快取於模組級變數；reload() 連動清空 prompt_source 快取後重建，保證
 「prompt 存檔／恢復默認／批次判決入口重載」時分類結構與判決 prompt 同步刷新（不會一邊新一邊舊）。
@@ -20,8 +18,8 @@ from __future__ import annotations
 from typing import Any
 
 # ── 模組級快取（lazy；reload() 清空重建）──
-_l3_by_code: dict[str, dict[str, Any]] = {}
-_l3_by_domain: dict[str, list[dict[str, Any]]] = {}
+_l2_by_code: dict[str, dict[str, Any]] = {}
+_l2_by_domain: dict[str, list[dict[str, Any]]] = {}
 _domain_label: dict[str, str] = {}  # domain 機器值 → 中文域名（自 domains.json label）
 _domain_action: dict[str, str] = {}  # domain → recommended_action（自 domains.json action）
 _domain_owner: dict[str, str] = {}  # domain → 負責單位（自 domains.json owner；空則前端不顯示）
@@ -38,12 +36,8 @@ def _leaf_record(
     *,
     l2_code: str,
     l2_label: str,
-    l3_label: str,
 ) -> dict[str, Any]:
-    """組單一面向葉節點的攤平記錄（帶 L1/L2 上下文）。
-
-    l3_label 參數保留（欄位形狀相容既有消費端）但呼叫端恆傳空字串——無 L3 深度。
-    """
+    """組單一面向葉節點的攤平記錄（帶 L1/L2 上下文）。"""
     return {
         "code": node.get("code", ""),
         "level": node.get("level"),
@@ -51,7 +45,6 @@ def _leaf_record(
         "l1_label": l1_label,
         "l2_code": l2_code,
         "l2_label": l2_label,
-        "l3_label": l3_label,
     }
 
 
@@ -87,10 +80,9 @@ def _ensure_loaded() -> None:
                 label,
                 l2_code=f.get("code", ""),
                 l2_label=f.get("label", ""),
-                l3_label="",
             )
-            _l3_by_domain.setdefault(domain, []).append(leaf)
-            _l3_by_code[leaf["code"]] = leaf
+            _l2_by_domain.setdefault(domain, []).append(leaf)
+            _l2_by_code[leaf["code"]] = leaf
         _cascade.append(
             _build_cascade(
                 {
@@ -107,7 +99,7 @@ def _ensure_loaded() -> None:
 
 
 def _build_cascade(node: dict[str, Any], *, root: bool) -> dict[str, Any]:
-    """遞迴組級聯節點 {value,label,children}（供前端歸因分類 cascader：標記真值 / B3 存為測試 case）。
+    """遞迴組級聯節點 {value,label,children}（供前端歸因分類 cascader：歸因列表篩選）。
 
     root（L1 域）value＝域機器值（domain）；L2 value＝面向 code。現輸入固定二層（domain→facets）。
     """
@@ -128,8 +120,8 @@ def reload() -> None:
     prompt_source，本函式起自洽，呼叫端毋須額外記得）。
     """
     global _loaded
-    _l3_by_code.clear()
-    _l3_by_domain.clear()
+    _l2_by_code.clear()
+    _l2_by_domain.clear()
     _domain_label.clear()
     _domain_action.clear()
     _domain_owner.clear()
@@ -143,7 +135,7 @@ def reload() -> None:
 
 def cascade_tree() -> list[dict[str, Any]]:
     """完整歸因分類級聯樹（巢狀 {value,label,children}）——供前端 L1→L2 級聯選
-    （歸因列表篩選 / B3 存為測試 case 選域與面向）。"""
+    （歸因列表篩選選域與面向）。"""
     _ensure_loaded()
     return _cascade
 
@@ -173,27 +165,27 @@ def domain_owner(code: str) -> str:
     return _domain_owner.get(code, "")
 
 
-def l3_by_code(code: str) -> dict[str, Any] | None:
-    """面向 code（如 C-3-1）→ 該面向攤平記錄（l3_label 恆空，無 L3）；不存在回 None。"""
+def l2_by_code(code: str) -> dict[str, Any] | None:
+    """面向 code（如 C-3-1）→ 該面向攤平記錄；不存在回 None。"""
     _ensure_loaded()
-    return _l3_by_code.get(code)
+    return _l2_by_code.get(code)
 
 
-def l3_nodes_for_domains(domain_codes: list[str]) -> list[dict[str, Any]]:
+def l2_nodes_for_domains(domain_codes: list[str]) -> list[dict[str, Any]]:
     """取指定歸因域（code 清單）底下所有 L2 面向節點（保序去重；空清單回全部）。
 
     Args:
         domain_codes: 域機器值清單（如 ["content", "supplier"]）；空清單→全部域。
 
     Returns:
-        面向攤平清單（每筆 l3_label 恆空，無 L3）。
+        面向攤平清單。
     """
     _ensure_loaded()
-    codes = domain_codes or list(_l3_by_domain.keys())
+    codes = domain_codes or list(_l2_by_domain.keys())
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for dc in codes:
-        for n in _l3_by_domain.get(dc, []):
+        for n in _l2_by_domain.get(dc, []):
             if n["code"] not in seen:
                 seen.add(n["code"])
                 out.append(n)

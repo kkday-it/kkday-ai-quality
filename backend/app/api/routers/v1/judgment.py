@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -98,15 +98,12 @@ class PromptEvalIn(BaseModel):
     filters 給定時（B1：按目前歸因列表篩選 × 單一 prompt 測試）：與 `PrejudgeIn` 同形，走
     `_resolve_target_ids` 解析出目標 id 集合，樣本改為該子集（取代 md5 全表抽樣）；未給沿用
     現行 production 參照抽樣（預設行為不變）。
-
-    source="mock"（B3）：樣本改讀 `prompt_testcases` 邊界測試集（忽略 n/filters）。
     """
 
     prompt: str
     n: int = 8
     llm_config_id: str | None = None
     filters: PrejudgeIn | None = None
-    source: str = "production"  # production | mock
 
 
 @router.post("/prompt-eval")
@@ -118,19 +115,14 @@ async def prompt_eval(
 
     同步評測以 asyncio.to_thread 卸到執行緒（不阻塞 event loop 單 worker）；set_current 的 contextvar 隨
     to_thread 的 copy_context 複製，故執行緒內 client 讀得到 effective LLM 設定。N 限 1~30（UI 快測；
-    大樣本 / --source golden|mock / --compare 用 CLI scripts/tools/eval_prompt_single.py）。
+    大樣本 / --compare 用 CLI scripts/tools/eval_prompt_single.py）。
 
     `body.filters` 給定時（B1）：樣本＝當前歸因列表篩選子集（與 `/prejudge/count` 同一套目標解析），
-    忠實反映使用者在列表上選的範圍，而非全表 md5 抽樣。`body.source="mock"`（B3）：樣本改讀邊界
-    測試集（忽略 n/filters）。
+    忠實反映使用者在列表上選的範圍，而非全表 md5 抽樣。
     """
     from app.judge import prompt_eval as pe
     from app.judge.llm import client
 
-    if body.source not in ("production", "mock"):
-        raise HTTPException(
-            status_code=400, detail=f"未知 source：{body.source}（須為 production/mock）"
-        )
     n = max(1, min(int(body.n or 8), 30))
     eff = app_settings.effective_llm_dict(
         app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
@@ -139,12 +131,9 @@ async def prompt_eval(
     app_settings.set_current(eff)
     client.set_llm_cache_read(False)  # 量測真實行為（寫入照常回填）
     client.set_usage_context({"job_id": f"prompt_eval_{body.prompt}"})
-    is_mock = body.source == "mock"
-    filter_ids = None if is_mock else (_resolve_target_ids(body.filters) if body.filters else None)
+    filter_ids = _resolve_target_ids(body.filters) if body.filters else None
     try:
-        result = await asyncio.to_thread(
-            pe.run_eval, body.prompt, n, filter_ids=filter_ids, source=body.source
-        )
+        result = await asyncio.to_thread(pe.run_eval, body.prompt, n, filter_ids=filter_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     result["model"] = eff.get("model", "")
@@ -154,16 +143,14 @@ async def prompt_eval(
     prompt_version = next(
         (m["version"] for m in db.list_rule_meta() if m["rule_code"] == rule_code), None
     )
-    history_source = "mock" if is_mock else ("filtered" if filter_ids is not None else "production")
+    history_source = "filtered" if filter_ids is not None else "production"
     db.insert_prompt_eval_run(
         {
             "prompt_id": body.prompt,
             "prompt_version": prompt_version,
             "source": history_source,
             "n": result.get("n", n),
-            "filters": (
-                body.filters.model_dump(exclude_none=True) if body.filters and not is_mock else None
-            ),
+            "filters": (body.filters.model_dump(exclude_none=True) if body.filters else None),
             "metrics": {k: v for k, v in result.items() if k != "mismatches"},
             "mismatches": result.get("mismatches", []),
             "model": result["model"],
@@ -194,122 +181,6 @@ def get_prompt_eval_run(run_id: str, user: dict = Depends(auth.get_current_user)
     if row is None:
         raise HTTPException(status_code=404, detail="找不到此測試紀錄")
     return row
-
-
-class PromptTestcaseIn(BaseModel):
-    """單筆邊界測試 case（B3：手動新增 / 分歧一鍵入集共用入口）。"""
-
-    text: str
-    gold_l1: str  # 域機器值（對 domains.json 驗）
-    gold_l2: str | None = None  # L2 面向 code（可空＝僅標「屬此域」；對該域 facets 驗）
-    expected_polarity: str | None = None  # negative/neutral/positive（可空）
-    note: str | None = None
-    tags: list[str] | None = None
-
-
-@router.post("/prompt-testcases")
-def create_prompt_testcase(
-    body: PromptTestcaseIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
-) -> dict:
-    """新增單筆邊界測試 case（手動新增 / 分歧一鍵入集共用）→ {id}。"""
-    from app.judge import prompt_testcases as pt
-
-    try:
-        row = pt.validate_row(body.model_dump())
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from None
-    row["created_by"] = user.get("email") or user.get("user_id", "")
-    return {"id": db.insert_prompt_testcase(row)}
-
-
-@router.post("/prompt-testcases/upload")
-async def upload_prompt_testcases(
-    file: UploadFile = File(...),
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
-) -> dict:
-    """CSV 批量上傳邊界測試 case（獨立輕量 parse，不走 inbound 管線）→ {inserted, skipped, errors}。
-
-    欄位：text,gold_l1,gold_l2,expected_polarity,note,tags；gold_l1/gold_l2/expected_polarity 逐行
-    驗證（對 domains.json + 該域 facets + 三態），不合法者不入庫、回行號 + 原因；重複 text（含既有
-    資料）跳過並計入 skipped。
-    """
-    from app.judge import prompt_testcases as pt
-
-    content = await file.read()
-    valid, errors = pt.parse_csv(content)
-    by = user.get("email") or user.get("user_id", "")
-    for row in valid:
-        row["created_by"] = by
-    result = db.bulk_insert_prompt_testcases(valid) if valid else {"inserted": 0, "skipped": 0}
-    result["errors"] = errors
-    return result
-
-
-@router.get("/prompt-testcases")
-def list_prompt_testcases(
-    gold_l1: str | None = None,
-    tags: str | None = None,  # 逗號分隔
-    enabled: bool | None = None,
-    limit: int = 50,
-    offset: int = 0,
-    _: dict = Depends(auth.get_current_user),
-) -> dict:
-    """邊界測試集列表（篩 gold_l1/tags/enabled，分頁）→ {total, items}。"""
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-    return db.list_prompt_testcases(
-        gold_l1=gold_l1, tags=tag_list, enabled=enabled, limit=limit, offset=offset
-    )
-
-
-class PromptTestcasePatch(BaseModel):
-    """局部更新邊界測試 case（enabled 開關 / 修正 gold 值等；缺省欄位不動）。"""
-
-    text: str | None = None
-    gold_l1: str | None = None
-    gold_l2: str | None = None
-    expected_polarity: str | None = None
-    note: str | None = None
-    tags: list[str] | None = None
-    enabled: bool | None = None
-
-
-@router.patch("/prompt-testcases/{tc_id}")
-def update_prompt_testcase(
-    tc_id: str,
-    body: PromptTestcasePatch,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
-) -> dict:
-    """局部更新一筆測試 case；改動 text/gold_l1/gold_l2/expected_polarity 時與既有值合併後重新驗證
-    （gold_l2 是否屬於 gold_l1 需以合併後的完整狀態判斷）。
-    """
-    from app.judge import prompt_testcases as pt
-
-    patch = body.model_dump(exclude_none=True)
-    if not patch:
-        raise HTTPException(status_code=400, detail="無更新欄位")
-    if {"text", "gold_l1", "gold_l2", "expected_polarity"} & patch.keys():
-        current = db.get_prompt_testcase(tc_id)
-        if current is None:
-            raise HTTPException(status_code=404, detail="找不到此測試 case")
-        try:
-            validated = pt.validate_row({**current, **patch})
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from None
-        patch.update({k: v for k, v in validated.items() if k in patch})
-    if not db.update_prompt_testcase(tc_id, patch):
-        raise HTTPException(status_code=404, detail="找不到此測試 case")
-    return {"updated": True}
-
-
-@router.delete("/prompt-testcases/{tc_id}")
-def delete_prompt_testcase(
-    tc_id: str, user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
-) -> dict:
-    """刪除單筆測試 case。"""
-    if not db.delete_prompt_testcase(tc_id):
-        raise HTTPException(status_code=404, detail="找不到此測試 case")
-    return {"deleted": True}
 
 
 class ClassifyOneIn(BaseModel):

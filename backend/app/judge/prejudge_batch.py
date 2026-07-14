@@ -356,7 +356,6 @@ def start_job(
                 "rejudge": rejudge,
                 "source": source or "",
                 "model": model,
-                "ensemble_voters": 0,  # ensemble 已退役；欄位保留（歷史相容），恆 0
                 "params": params or {},
                 "status": "running",
                 "total": len(item_ids),
