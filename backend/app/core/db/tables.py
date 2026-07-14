@@ -260,7 +260,7 @@ user_settings = Table(
 # ── 判決規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
 # 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
-# docs/prompts/prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# docs/prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
 # 註：C-1~C-6（歸因判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 退役，歷史版本保留於表中
 # 不刪（僅不再有新寫入），判準改走 prompt_C-1~6；同日 global_rule 併入 judgment.json 靜態設定檔，
 # 亦不再經此表新增版本（歷史版本同樣保留不刪）。

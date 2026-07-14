@@ -4,7 +4,7 @@
 - product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
 - prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：判決 prompt 唯一真相源＝
-  docs/prompts/prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
+  docs/prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
   存檔驗證/drift 護欄委派 app.judge.prompt_source。
 註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕 + 極性閘門 + 證據政策）已於 2026-07-13 移出
 RULE_CODES，降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀
@@ -31,7 +31,7 @@ from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 RULE_CODES = (
     "product_vertical",
     "source_mapping",
-    # 初判 Prompt（Prompt-as-Source 架構）：判決 prompt 唯一真相源＝docs/prompts/prompts/*.md，
+    # 初判 Prompt（Prompt-as-Source 架構）：判決 prompt 唯一真相源＝docs/prompts/*.md，
     # 經此機制 DB 版本化（線上熱編 + 歷史 + 恢復默認）。content={"_meta":..., "text": md 全文}，
     # 非 L1/L2/L3 歸因樹（default seed 讀 md 而非 JSON，見 default_rule_content）。
     "prompt_polarity",
@@ -63,7 +63,7 @@ def _rule_file(code: str) -> Path:
 def default_rule_content(code: str) -> dict:
     """讀默認檔內容（恢復默認用）；檔不存在拋 FileNotFoundError。
 
-    prompt_*（初判 Prompt）默認 seed 非 JSON 檔，而是 docs/prompts/prompts/*.md 原文——委派
+    prompt_*（初判 Prompt）默認 seed 非 JSON 檔，而是 docs/prompts/*.md 原文——委派
     prompt_source.default_prompt_content 讀 md 包成 {"_meta":..., "text": md} 版本化格式。
     """
     if code.startswith("prompt_"):

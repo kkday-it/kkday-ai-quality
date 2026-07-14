@@ -1,10 +1,10 @@
 """判決 Prompt 唯一真相源載入層（Prompt-as-Source 架構核心）。
 
-架構反轉：判決 prompt 不再由「JSON 規則樹 → 槽位渲染」派生，而是 **7 支完整 md（docs/prompts/prompts/
+架構反轉：判決 prompt 不再由「JSON 規則樹 → 槽位渲染」派生，而是 **7 支完整 md（docs/prompts/
 *.md：00_polarity + 01_C-1~06_C-6）＝唯一真相源**——人直接編輯、git 版控、PR 審查。
 
 三溫層：
-- **檔案**（docs/prompts/prompts/*.md）＝git 版控默認 seed（容器 dev 掛 ./docs、prod COPY docs/prompts）。
+- **檔案**（docs/prompts/*.md）＝git 版控默認 seed（容器 dev 掛 ./docs、prod COPY docs/prompts）。
 - **DB**（judge_rule_versions 的 prompt_polarity + prompt_C-1~6，content={"_meta":..., "text": md 全文}）
   ＝線上熱編 active 版 + 完整歷史（RuleManager「初判 Prompt」分組編輯）。
 - **本模組** load()：DB active 優先 → 檔案 fallback；parse 三節（System/User/Schema）；模組級 lazy cache，
@@ -29,7 +29,7 @@ import re
 from typing import Any
 
 # ── prompt_id ↔ rule_code 對照（SSOT）──
-# prompt_id＝docs/prompts/prompts/{id}.md 檔名（去副檔名）；rule_code＝judge_rule_versions 主鍵。
+# prompt_id＝docs/prompts/{id}.md 檔名（去副檔名）；rule_code＝judge_rule_versions 主鍵。
 # 域 prompt 的 rule_code = prompt_C-N，對應歸因分類樹 rule_code C-N（同 N，取樹域機器值用）。
 _PROMPT_RULE: dict[str, str] = {
     "00_polarity": "prompt_polarity",
@@ -132,7 +132,7 @@ def parse_md(text: str) -> dict[str, Any]:
 
 # ─────────────────────────── 載入（DB-first → 檔案 fallback）───────────────────────────
 def _raw_text(prompt_id: str) -> str:
-    """取某 prompt 的 md 原文：DB active（content["text"]）優先，缺則 docs/prompts/prompts/{id}.md。
+    """取某 prompt 的 md 原文：DB active（content["text"]）優先，缺則 docs/prompts/{id}.md。
 
     Raises:
         FileNotFoundError: DB 無 active 版且檔案不存在（引擎 fail-loud，不靜默走空 prompt）。
@@ -184,7 +184,7 @@ def reload() -> None:
 def default_prompt_content(rule_code: str) -> dict[str, Any]:
     """rule_code（prompt_*）→ 默認 seed content（DB 版本化格式）。
 
-    讀 docs/prompts/prompts/{id}.md 原文，包成 {"_meta": {label, kind:"prompt"}, "text": md 全文}。
+    讀 docs/prompts/{id}.md 原文，包成 {"_meta": {label, kind:"prompt"}, "text": md 全文}。
     _meta.label 供 list_rule_meta 左選單顯示（prompt_* 無 tree，回退 _meta.label）。
 
     Raises:

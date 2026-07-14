@@ -1,6 +1,6 @@
 """單支 Prompt 評測 harness — 對 7 支判決 prompt（polarity / C-1~C-6）逐支獨立驗證調適效果。
 
-定位：Prompt-as-Source 調適閉環的驗證端。改單支 prompt（docs/prompts/prompts/*.md 或線上熱編 DB
+定位：Prompt-as-Source 調適閉環的驗證端。改單支 prompt（docs/prompts/*.md 或線上熱編 DB
 active 版）後，只跑這一支對 N 則參照集驗證，出該支指標——不跑其他六支、不動 production 判決管線。
 prompt 直接讀 **prompt_source**（判決引擎同源 SSOT：DB active→檔案 fallback），天然與線上一致。
 

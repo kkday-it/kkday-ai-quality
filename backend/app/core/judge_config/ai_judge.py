@@ -1,6 +1,6 @@
 """AI 法官「問題分類結構」載入器：prompt_source.structure()（7 支 prompt md 派生）→ 扁平索引。
 
-**結構 SSOT＝docs/prompts/prompts/*.md**（Prompt-as-Source 架構）：域機器值來自 prompt 檔名尾綴
+**結構 SSOT＝docs/prompts/*.md**（Prompt-as-Source 架構）：域機器值來自 prompt 檔名尾綴
 （content/quality/supplier/platform/service/customer）、L2 面向（facets）來自各域 prompt 的
 `<facet_catalog>`「■ CODE LABEL」行解析、域中文名／action／owner 來自 `config/ai_judge/domains.json`
 （唯一不可從 prompt 推導的域層業務 metadata）。原 JSON 規則樹（judge_rule_versions 的 C-1~C-6）已退役

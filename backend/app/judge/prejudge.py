@@ -1,6 +1,6 @@
 """初判歸因單條引擎：一條進線資料 → TicketFinding（極性閘門 → 歸因）。
 
-**Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝docs/prompts/prompts/*.md（DB active 版可
+**Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝docs/prompts/*.md（DB active 版可
 線上熱編，見 prompt_source）。Stage1 極性吃 00_polarity（`_pack_polarity`）；歸因段六支域 prompt
 （01_C-1~06_C-6）ThreadPool 並行，各判本域問題（`_attrs_pack`）→合流過共用閘門
 （`_resolve_attrs_multi` 尾段）。舊「JSON 規則樹拼 system + 單呼叫 32 面向目錄」legacy 引擎與 DB
@@ -809,7 +809,7 @@ def _finalize_attr_l2(
 
 
 # ── Prompt-as-Source 引擎：極性 + 六域並行歸因 ────────────────────────────
-# 判決 prompt 唯一真相源＝docs/prompts/prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
+# 判決 prompt 唯一真相源＝docs/prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
 def _render_pack_user(template: str, text: str, polarity: str) -> str:
     """填 prompt user 模板槽位（{TEXT}/{POLARITY}）。
 

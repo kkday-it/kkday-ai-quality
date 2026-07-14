@@ -1,4 +1,4 @@
-"""類別定義文檔生成器（C1 交付物）——從 docs/prompts/prompts/*.md 生成人讀版類別定義文檔。
+"""類別定義文檔生成器（C1 交付物）——從 docs/prompts/*.md 生成人讀版類別定義文檔。
 
 單一生成方向：**prompts → 文檔**，不反向（文檔僅供人讀，判準修改一律回 prompt md，不得直接改
 生成物）。來源與 prompt_source（判決引擎同一份 SSOT）一致：域機器值←檔名尾綴、L2 面向←
@@ -124,7 +124,7 @@ def generate() -> str:
     parts = [
         "# 類別定義 V0.1",
         "",
-        "> 本文檔由 `scripts/tools/gen_taxonomy_doc.py` 從 `docs/prompts/prompts/*.md`"
+        "> 本文檔由 `scripts/tools/gen_taxonomy_doc.py` 從 `docs/prompts/*.md`"
         "（Prompt-as-Source 判準唯一真相源）自動生成，**單向生成，不得手改**——"
         "調整判準請改對應域 prompt md 後重新產生本檔。",
         "",

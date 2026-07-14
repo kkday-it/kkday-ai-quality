@@ -1,6 +1,6 @@
 """標真值把關核心邏輯——級聯樹 / 路徑 label / LLM 評分器（stub）。
 
-皆走 ai_judge（Prompt-as-Source：結構自 prompt_source.structure() 派生，SSOT＝docs/prompts/prompts/*.md，
+皆走 ai_judge（Prompt-as-Source：結構自 prompt_source.structure() 派生，SSOT＝docs/prompts/*.md，
 DB 無 active 版時回退檔案），故免測試庫。
 """
 

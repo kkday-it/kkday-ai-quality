@@ -21,7 +21,7 @@ CONFIG_DIR: Path = Path(os.getenv("AIQ_CONFIG_DIR") or (REPO_ROOT / "config")).r
 GLOBAL_DIR: Path = CONFIG_DIR / "global"  # 前後端共用非機密（model 清單 / QC 預設 / 定價）
 AI_JUDGE_DIR: Path = (
     CONFIG_DIR / "ai_judge"
-)  # 判決領域規則配置（judgment / source_mapping / domains；判準文字本體在 docs/prompts/prompts）
+)  # 判決領域規則配置（judgment / source_mapping / domains；判準文字本體在 docs/prompts）
 
 # repo 根 data/：runtime 派生產物（報表 / 校準參數），整目錄 gitignore、可整刪重生。
 # 曾散落各檔自拼 REPO_ROOT/"data"/...（calibration / accuracy），收斂至此 SSOT；env 覆蓋同 CONFIG_DIR 邏輯。
@@ -35,8 +35,8 @@ LLM_CACHE_DIR: Path = (
 # repo 根 constants/：前後端共用「固定參照」字典（前端 @constants alias 同讀；後端按需讀取）。
 CONSTANTS_DIR: Path = REPO_ROOT / "constants"
 
-# repo 根 docs/：人閱文檔；其中 docs/prompts/prompts/ 為「判決 Prompt 唯一真相源」（7 支 md），
+# repo 根 docs/：人閱文檔；其中 docs/prompts/ 為「判決 Prompt 唯一真相源」（7 支 md），
 # prompt_source 於 DB 無 active 版時的檔案 fallback 讀此。容器：dev 掛 ./docs:/app/docs、prod Dockerfile
 # COPY docs/prompts；env 覆蓋同 CONFIG_DIR 邏輯（跨環境會變的路徑走 env）。
 DOCS_DIR: Path = Path(os.getenv("AIQ_DOCS_DIR") or (REPO_ROOT / "docs")).resolve()
-DOCS_PROMPTS_DIR: Path = DOCS_DIR / "prompts" / "prompts"
+DOCS_PROMPTS_DIR: Path = DOCS_DIR / "prompts"

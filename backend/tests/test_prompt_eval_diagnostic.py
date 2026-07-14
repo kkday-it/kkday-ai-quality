@@ -16,7 +16,7 @@ import copy
 from app.judge import prejudge, prompt_source
 from app.judge import prompt_eval as pe
 
-# 域 prompt 代表性 schema 骨架（對齊 docs/prompts/prompts/0N_C-N_*.md 的 Schema 節形狀）。
+# 域 prompt 代表性 schema 骨架（對齊 docs/prompts/0N_C-N_*.md 的 Schema 節形狀）。
 _DOMAIN_SCHEMA = {
     "type": "object",
     "additionalProperties": False,

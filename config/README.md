@@ -13,7 +13,7 @@
 - `auth.config.json` — 權限 provider 切換開關（`provider`=local｜be2·唯一替換點）+ `whiteList`（be2 免權限路徑預留）+ `businessListTtlMs`（前端權限清單快取 TTL）
 
 ## ai_judge/（判準領域）
-> **判準文字唯一真相源已改為 `docs/prompts/prompts/*.md`**（Prompt-as-Source 架構，7 支：00_polarity +
+> **判準文字唯一真相源已改為 `docs/prompts/*.md`**（Prompt-as-Source 架構，7 支：00_polarity +
 > 01~06_C-N）。2026-07-13 全面重構：原 `rule_C-1 ~ rule_C-6.json`（L1→L2→L3 判準樹，canon/allow/forbid/
 > 正反例四欄）+ `rule.schema.json`（樹結構規格）+ `prompt_templates/`（評測 Prompt 包骨架層）已退役刪除，
 > 判準改由 LLM 直讀各域 prompt 的 System 區塊，分類結構（域機器值/L2 面向）由

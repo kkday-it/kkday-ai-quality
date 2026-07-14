@@ -19,7 +19,7 @@ RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/pyproject
 # config/ + constants/ 為前後端共用 SSOT，後端 runtime 讀取（config 經 AIQ_CONFIG_DIR；constants 走 REPO_ROOT/constants=/app/constants）
 COPY config/ config/
 COPY constants/ constants/
-# docs/prompts/：判決 Prompt 唯一真相源（prompt_source 檔案 fallback 讀 /app/docs/prompts/prompts/*.md）。
+# docs/prompts/：判決 Prompt 唯一真相源（prompt_source 檔案 fallback 讀 /app/docs/prompts/*.md）。
 # 只 COPY prompts 子樹（其餘 docs 為人閱文檔，runtime 不需），image 精簡。
 COPY docs/prompts/ docs/prompts/
 COPY backend/ backend/

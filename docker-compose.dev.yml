@@ -58,7 +58,7 @@ services:
       - ./backend/docker-entrypoint.sh:/app/backend/docker-entrypoint.sh
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
-      - ./docs:/app/docs                     # 判決 Prompt 唯一真相源（docs/prompts/prompts/*.md；熱編即生效，image 未含此處補上）
+      - ./docs:/app/docs                     # 判決 Prompt 唯一真相源（docs/prompts/*.md；熱編即生效，image 未含此處補上）
     depends_on:
       db:
         condition: service_healthy
