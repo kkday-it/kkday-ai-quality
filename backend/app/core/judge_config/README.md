@@ -6,7 +6,7 @@
 
 | loader | 讀取 | 提供 |
 |---|---|---|
-| `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source，取代已退役的 DB rule_C-* 樹） | 分類結構索引（selectable_domains / l3_nodes_for_domains / domain_action / domain_owner / cascade_tree / path_label…）；判準文字本體在 `docs/prompts/*.md`，非本模組職責 |
+| `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source，取代已退役的 DB rule_C-* 樹） | 分類結構索引（l3_nodes_for_domains / l3_by_code / domain_label / domain_action / domain_owner / cascade_tree…）；判準文字本體在 `docs/prompts/*.md`，非本模組職責。2026-07-14 退役：`selectable_domains`/`domain_l2_labels`（漏斗時代零消費）+ `path_label`（隨標真值評分退役） |
 | `product_vertical.py` | product_vertical 規則（DB active）| 商品垂直分類分組 → CATEGORY 代碼（codes_for_group）|
 | `source_mapping.py` | DB active 版 source_mapping + config/ai_judge fallback | 5 來源欄位映射（源欄→canonical，normalize_row）+ 上傳指紋辨識／必備表頭校驗（RuleManager 線上編輯，存檔熱重載）|
 | `sources.py` | config/global/sources.json | 來源目錄（label_for / natural_key）|

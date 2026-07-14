@@ -14,16 +14,16 @@
 
 一列 = 一條歸因，**全 typed scalar 欄**（無 JSONB blob）。判決表是查詢/聚合/篩選密集的分析核心且 schema 已穩定，故 storage 用 typed 欄（可直接 btree 索引、SQL 乾淨），巢狀物件屬呈現層於 API DTO 組（`_shared.attribution_dto`）。
 
-**欄位**：關聯鍵 `finding_id`PK / `source` / `source_id` / `prod_oid`；查詢便利 `dimension`；傾向階段 `polarity` / `sentiment_score`（情緒分 1-5·LLM 讀原文細分夾區間 負1-2/中3/正4-5·與外部評論 sentiment 同尺度供對比表比對·null＝未判）/ `stage`；歸因 `l1_code` `l1_label` `l2_code` `l2_label` `l3_code` `l3_label`；信心 `conf_value` `conf_raw` `conf_tier`；內容 `summary` `evidence` `action`；元 `model` `is_primary` `judged_at`；人工覆核 `status`（new / auto_confirmed / confirmed / dismissed；**fixed 已撤除**，migration `a3b9d5e72f04` 併入 confirmed）`true_label`（+把關 audit `true_label_reason` `true_label_conf`）`needs_review` `created_at`；操作者 audit `status_updated_by/at` `true_label_updated_by/at`（人工改狀態/標真值時記操作者 email + ISO 時間；系統自動路由不寫·重判依 finding_id 一併保留；**完整轉移軌跡在 judgment_history kind='status'**）。
+**欄位**：關聯鍵 `finding_id`PK / `source` / `source_id` / `prod_oid`；傾向階段 `polarity` / `sentiment_score`（情緒分 1-5·LLM 讀原文細分夾區間 負1-2/中3/正4-5·與外部評論 sentiment 同尺度供對比表比對·null＝未判）/ `stage`；歸因 `l1_code` `l1_label` `l2_code` `l2_label` `l3_code` `l3_label`；信心 `conf_value` `conf_raw` `conf_tier`；內容 `summary` `evidence` `action`；元 `model` `is_primary` `judged_at`；人工覆核 `status`（new / auto_confirmed / confirmed / dismissed；**fixed 已撤除**，migration `a3b9d5e72f04` 併入 confirmed）`needs_review` `created_at`；操作者 audit `status_updated_by/at`（人工改狀態時記操作者 email + ISO 時間；系統自動路由不寫·重判依 finding_id 保留 status；**完整轉移軌跡在 judgment_history kind='status'**）。<br>2026-07-14 退役欄：`dimension`（8 面向平行分類，migration `6d4dfda55ce3`）+ `true_label`/`true_label_reason`/`true_label_conf`/`true_label_updated_by/at`（標真值功能整支退役，migration `3860ce73192a`）。
 
 - **寫入**：`schema.TicketFinding.to_columns()` 產出判決 payload 欄 + `findings._finding_values` 補關聯/人工欄（殘留/legacy 欄不入庫）。
 - **查詢**（GROUP BY / FILTER / SORT）：直接 `jg.c.polarity == x` / `jg.c.l1_code` / `func.max(jg.c.conf_value)`，走 `idx_judgments_{polarity,stage,l1,l2,l3,sentiment,tier}` btree 索引（l2/l3/sentiment 為 taxonomy 子樹 + 情緒篩選熱路徑）。
-- **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, model, notes_count, is_primary, status, true_label}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
+- **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, model, notes_count, is_primary, status}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳 `plans/1-peaceful-wirth.md`。
 | `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
 | `rule_versions.py` | 判決規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝product_vertical + source_mapping + prompt_polarity + prompt_C-1~6（C-1..6/schema/global_rule/judgment 已陸續移出，見表註）。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
-| `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`〔重判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入判決歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量覆核·單交易 diff〕/`update_finding_true_label` + 歸因備註）。 |
+| `findings.py` | judgments CRUD（`insert_finding`/`replace_source_findings`〔重判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入判決歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量覆核·單交易 diff〕+ 歸因備註）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；判決級（僅已判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
