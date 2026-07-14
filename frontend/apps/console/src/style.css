@@ -17,3 +17,12 @@
 .medium-zoom-image--opened {
   z-index: 900 !important;
 }
+
+/**
+ * 預覽 code block 的 sticky 標頭（mac 三點 + Copy）z-index 同樣高達 10000，捲動後停在
+ * 區塊頂端時會蓋住 Arco Modal（1001）。它只需壓過區塊內的程式碼內容（z: auto），
+ * z: 1 已足夠，永遠不會與頁面級浮層競爭。
+ */
+.md-editor-code-head {
+  z-index: 1 !important;
+}
