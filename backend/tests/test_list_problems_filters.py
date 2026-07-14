@@ -91,7 +91,6 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R1",
             ticket_id="R1",
-            dimension="non_content",
             recommended_action="no_action",
             polarity="negative",
             l1_domain_code="content",
@@ -105,7 +104,6 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R2",
             ticket_id="R2",
-            dimension="non_content",
             recommended_action="no_action",
             polarity="negative",
             l1_domain_code="supplier",
@@ -162,7 +160,6 @@ def test_list_problems_source_registry_judged_filter(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R1",
             ticket_id="R1",  # source_id（product_reviews→rec_oid）
-            dimension="non_content",
             recommended_action="no_action",
         ),
         "product_reviews",
@@ -184,7 +181,6 @@ def test_prejudge_target_ids_uses_registry_for_product_reviews(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R1",
             ticket_id="R1",
-            dimension="non_content",
             recommended_action="no_action",
         ),
         "product_reviews",
@@ -248,7 +244,6 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R1",
             ticket_id="R1",
-            dimension="non_content",
             recommended_action="no_action",
             confidence=0.3,
         ),
@@ -258,7 +253,6 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R2",
             ticket_id="R2",
-            dimension="non_content",
             recommended_action="no_action",
             confidence=0.9,
         ),
@@ -292,7 +286,6 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R3",
             ticket_id="R3",
-            dimension="non_content",
             recommended_action="no_action",
             polarity="negative",
             confidence=0.6,
@@ -342,7 +335,6 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_R3",
             ticket_id="R3",
-            dimension="non_content",
             recommended_action="no_action",
             judgment_stage="judged",
         ),
@@ -372,7 +364,6 @@ def test_list_problems_model_filter(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_M1",
             ticket_id="M1",
-            dimension="non_content",
             recommended_action="no_action",
             polarity="negative",
             l1_domain_code="content",
@@ -385,7 +376,6 @@ def test_list_problems_model_filter(temp_db) -> None:
         TicketFinding(
             finding_id="fd_product_reviews_M2",
             ticket_id="M2",
-            dimension="non_content",
             recommended_action="no_action",
             polarity="negative",
             l1_domain_code="supplier",

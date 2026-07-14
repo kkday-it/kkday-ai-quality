@@ -43,7 +43,6 @@ def _finding(
     return TicketFinding(
         finding_id=f"fd_product_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
-        dimension="non_content",
         recommended_action="no_action",
         polarity=polarity,
         sentiment_score=sentiment,

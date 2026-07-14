@@ -197,7 +197,6 @@ def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "positive"
     assert f.judgment_stage == "judged"
-    assert f.dimension == "non_content"
     assert f.finding_id == "fd_product_reviews_R1"
 
 

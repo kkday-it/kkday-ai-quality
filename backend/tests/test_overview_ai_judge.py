@@ -14,7 +14,6 @@ def _finding(sid: str, l1_code: str, judged_at: str, suffix: str = "") -> Ticket
     return TicketFinding(
         finding_id=f"fd_product_reviews_{sid}{('__' + suffix) if suffix else ''}",
         ticket_id=sid,
-        dimension="non_content",
         recommended_action="no_action",
         polarity="negative" if l1_code else "positive",
         l1_domain_code=l1_code,

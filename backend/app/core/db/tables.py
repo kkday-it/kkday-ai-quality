@@ -43,9 +43,8 @@ judgments = Table(
     #  app_feedback→oid / mixpanel_tracker→insert_id）。
     Column("source", Text),
     Column("source_id", Text),
-    # ── 關聯 / 查詢便利欄（prod_oid/dimension 供 ProductDetail 下鑽）──
+    # ── 關聯 / 查詢便利欄（prod_oid 供 ProductDetail 下鑽）──
     Column("prod_oid", Text),
-    Column("dimension", Text),
     # ── 傾向 / 階段 ──
     Column("polarity", Text),  # positive | negative | neutral
     # 情緒分 1-5（LLM 讀原文判；與 polarity 同段輸出：負面1-2/中立3/正面4-5）——與外部評論 sentiment

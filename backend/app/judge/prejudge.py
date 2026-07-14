@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from typing import Any, get_args
 
 from app.core import ai_judge
-from app.core.schema import CONTENT_DIMENSIONS, RecommendedAction, TicketFinding
+from app.core.schema import RecommendedAction, TicketFinding
 from app.judge import ensemble
 from app.judge.llm import client
 
@@ -141,20 +141,6 @@ def _route(findings: list[TicketFinding]) -> list[TicketFinding]:
 # 不再於此硬編碼（舊 dict 用已廢域名 order/platform/cs，現行 quality/platform/service 查無而失準）。
 _VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendedAction))
 
-# content 域 L2 label 關鍵詞 → 舊 8 面向 Dimension（TicketFinding.dimension 必填、為 legacy 欄）。
-# dim label 引用 schema.CONTENT_DIMENSIONS（單一真相源，不再手打中文）；關鍵詞為本檔專有比對規則。
-# 新流程真實信號在 l1/l2/l3_code；dimension 僅為相容既有彙總，低權重。無匹配→非內容用 non_content。
-_CONTENT_DIM_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
-    (("定位", "名稱", "特色", "摘要"), CONTENT_DIMENSIONS[0]),  # 商品定位
-    (("行程", "流程", "步驟"), CONTENT_DIMENSIONS[1]),  # 行程流程
-    (("費用", "價格", "包含", "退款"), CONTENT_DIMENSIONS[2]),  # 費用資訊
-    (("集合", "地點", "交通"), CONTENT_DIMENSIONS[3]),  # 集合資訊
-    (("兌換", "使用", "憑證", "voucher"), CONTENT_DIMENSIONS[4]),  # 使用兌換
-    (("成團", "人數"), CONTENT_DIMENSIONS[5]),  # 成團條件
-    (("限制", "風險", "年齡", "安全"), CONTENT_DIMENSIONS[6]),  # 限制與風險
-    (("承諾", "sla", "保證"), CONTENT_DIMENSIONS[7]),  # 承諾與SLA
-]
-
 
 def _now_iso() -> str:
     """UTC ISO 時間（判決/建立時間戳）。"""
@@ -186,17 +172,6 @@ def _neg_keywords() -> list[str]:
 def _has_neg_kw(text: str) -> bool:
     """文字是否含負向關鍵詞（stub/Stage0 判負向用）。"""
     return any(kw in text for kw in _neg_keywords())
-
-
-def _dimension_for(l1_domain: str, l2_label: str) -> str:
-    """L1 域 + L2 label → 舊 8 面向 Dimension（相容欄）；非內容域回 non_content。"""
-    if l1_domain != "content":
-        return "non_content"
-    low = (l2_label or "").lower()
-    for kws, dim in _CONTENT_DIM_KEYWORDS:
-        if any(k in low for k in kws):
-            return dim
-    return CONTENT_DIMENSIONS[0]  # content 域無匹配時的保守預設（Literal 需合法值）
 
 
 def _action_for(l1_domain: str) -> str:
@@ -351,7 +326,6 @@ def _non_issue_finding(item: dict, polarity: str, model: str, sentiment: int = 0
     """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。sentiment＝情緒分 1-5（0＝未判）。"""
     return TicketFinding(
         **_base_kwargs(item),
-        dimension="non_content",
         recommended_action="no_action",
         polarity=polarity,
         sentiment_score=sentiment,
@@ -385,7 +359,6 @@ def _attributed_finding(
     stage = _derive_stage(polarity, landing, tier, attr.get("evidence_capped", False))
     return TicketFinding(
         **_base_kwargs(item),
-        dimension=_dimension_for(attr["l1_domain_code"], attr["l2_label"]),
         recommended_action=_action_for(attr["l1_domain_code"]),
         # 語系→摘要 map；LLM 未產則回退原文片段包成 {zh-tw: …}（表格恆有顯示值）
         summary=attr.get("summary")

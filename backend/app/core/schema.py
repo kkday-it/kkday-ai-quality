@@ -6,40 +6,9 @@
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from typing import Literal
 
 from pydantic import BaseModel, Field
-
-# 8 大內容治理 dimension label 的單一真相源（legacy 相容欄；roster.DIM_CODE / prejudge 關鍵詞映射皆引用此，
-# 不再各自手打中文，杜絕三處副本漂移）。順序即語義順序。
-CONTENT_DIMENSIONS: tuple[str, ...] = (
-    "商品定位",
-    "行程流程",
-    "費用資訊",
-    "集合資訊",
-    "使用兌換",
-    "成團條件",
-    "限制與風險",
-    "承諾與SLA",
-)
-
-# Dimension 型別（compile-time Literal 無法由 tuple 展開，故字面重列；下方 assert 保證與 CONTENT_DIMENSIONS 一致）。
-Dimension = Literal[
-    "商品定位",
-    "行程流程",
-    "費用資訊",
-    "集合資訊",
-    "使用兌換",
-    "成團條件",
-    "限制與風險",
-    "承諾與SLA",
-    "non_content",  # 出貨/退款/系統/服務等非內容
-]
-
-# import 期守衛：Literal 與 tuple 兩份字面若漂移即炸，強制同檔內同步（取代跨檔三副本的隱性 drift）。
-assert set(CONTENT_DIMENSIONS) | {"non_content"} == set(get_args(Dimension)), (
-    "CONTENT_DIMENSIONS 與 Dimension Literal 不一致，請同步"
-)
 
 RecommendedAction = Literal[
     "rewrite_field",
@@ -77,8 +46,6 @@ class TicketFinding(BaseModel):
     ticket_id: str = ""
     prod_oid: str = ""
     pkg_oid: str = ""
-    # L2 問題理解
-    dimension: Dimension
     # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
     summary: dict[str, str] = Field(default_factory=dict)
     # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
@@ -153,7 +120,7 @@ class TicketFinding(BaseModel):
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取 14 個真訊號欄；
         殘留 / legacy / 恆空欄（verdict 軸、symptom_tag、severity、evidence_level、
         l3_candidates… 見 plans/1-peaceful-wirth.md）一律不入庫。finding_id / source /
-        source_id / prod_oid / dimension / status / created_at / needs_review / true_label
+        source_id / prod_oid / status / created_at / needs_review / true_label
         由 db.findings._finding_values 補齊（來源關聯 + 人工覆核軸）。
 
         Returns:

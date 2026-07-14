@@ -20,7 +20,7 @@ _log = logging.getLogger(__name__)
 def _finding_values(f: TicketFinding, source: str) -> dict:
     """TicketFinding → judgments typed 欄位 dict（全 typed 欄，無 JSONB blob）。
 
-    關聯鍵（source/source_id/prod_oid/dimension）+ 人工覆核軸（status/created_at/needs_review）
+    關聯鍵（source/source_id/prod_oid）+ 人工覆核軸（status/created_at/needs_review）
     於此補齊；判決 payload 17 欄由 f.to_columns() 攤出（polarity/l1_code…/conf_value/summary…）。
     殘留/legacy 欄不入庫。true_label 由 replace_source_findings 的 preserve 邏輯補（非首寫）。
     """
@@ -29,7 +29,6 @@ def _finding_values(f: TicketFinding, source: str) -> dict:
         "source": source,
         "source_id": f.ticket_id,  # prejudge 設 ticket_id = 特徵 id（source_id）
         "prod_oid": f.prod_oid,  # 商品維度關聯（歸因列表 prod_oid 篩選 / 概覽下鑽）
-        "dimension": f.dimension,  # 內容 / 非內容維度過濾
         "status": f.status,
         "created_at": f.created_at,
         "needs_review": bool(f.needs_review),  # 人審佇列篩選

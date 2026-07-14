@@ -159,7 +159,6 @@ def _seed_one_finding() -> str:
             TicketFinding(
                 finding_id=fid,
                 ticket_id="R1",
-                dimension="non_content",
                 recommended_action="no_action",
             )
         ],

@@ -122,7 +122,6 @@ def test_any_judged_detects_rejudge(temp_db) -> None:
     f = TicketFinding(
         finding_id="fd_product_reviews_R9",
         ticket_id="R9",
-        dimension="non_content",
         recommended_action="no_action",
         polarity="negative",
         confidence=0.9,

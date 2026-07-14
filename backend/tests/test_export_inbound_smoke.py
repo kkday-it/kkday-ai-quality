@@ -31,7 +31,6 @@ def _seed_one(temp_db) -> None:
             TicketFinding(
                 finding_id="fd_product_reviews_R1__content",
                 ticket_id="R1",
-                dimension="non_content",
                 recommended_action="rewrite_field",
                 polarity="negative",
                 l1_domain_code="content",

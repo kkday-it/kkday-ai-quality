@@ -35,7 +35,6 @@ def _finding(rec_oid: str, domain: str = "content", status: str = "new") -> Tick
     return TicketFinding(
         finding_id=f"fd_product_reviews_{rec_oid}__{domain}",
         ticket_id=rec_oid,  # source_id
-        dimension="non_content",
         recommended_action="no_action",
         status=status,
     )

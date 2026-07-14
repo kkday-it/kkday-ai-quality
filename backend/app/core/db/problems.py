@@ -204,7 +204,6 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "our_sentiment": row.get(
                 "jg_sentiment_score"
             ),  # 列級我方情緒分 1-5（傾向細分顯示 + 評論對比表；與外部 sentiment 同尺度）
-            "dimension": row.get("jg_dimension"),
         }
     )
     return base
@@ -280,7 +279,6 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
                     jg.c[k].label(f"jg_{k}") for k in _JG_COLS
                 ],  # typed 判決欄（含 status/true_label）
                 jg.c.needs_review.label("jg_needs_review"),
-                jg.c.dimension.label("jg_dimension"),
                 notes_count,
             )
             .select_from(tbl.outerjoin(jg, _jg_join_cond(spec)))
