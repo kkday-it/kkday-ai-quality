@@ -16,25 +16,18 @@
 finding 為純歸因（軸A）：polarity + L1/L2/L3 + confidence + recommended_action；verdict（軸B）已自
 schema.TicketFinding 移除，本引擎不產 verdict，recommended_action 由歸因域推導。
 無 token（client.is_stub）→ 全程啟發式，model_used="stub"，讓零 key 也跑通閉環。
-
-⚠️ 凍結件：`_use_config`/`_sample_hit`/`_ensemble_attrs`（跨廠 ensemble voter）與獨立於本次
-Prompt-as-Source 重構，本期維持凍結（`to_findings` 內未實際呼叫，voter_cfgs 恆不觸發）——
-非 JSON 規則樹遺留，是另一個待重新設計降本方案後才重接的正交機制，不與本檔案其餘刪除範圍混淆。
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import random
 import re
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, get_args
 
 from app.core import ai_judge
 from app.core.schema import RecommendedAction, TicketFinding
-from app.judge import ensemble
 from app.judge.llm import client
 
 # ── config（judgment.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
@@ -500,85 +493,7 @@ def _resolve_attrs_multi(
     return _gate_attrs(attrs, max_n)
 
 
-@contextmanager
-def _use_config(cfg: dict):
-    """暫時把整套 effective LLM config 設為 current（ensemble voter 換廠：base_url/token/model 全換）。
-
-    有別於 _call 只覆寫 model 一欄——跨廠 voter（OpenAI↔Gemini↔ByteDance）需連 base_url/token 一起換。
-    離開時還原原 config，不污染後續判決。
-    """
-    from app.core import settings as app_settings
-
-    cur = app_settings.current()
-    app_settings.set_current(cfg)
-    try:
-        yield
-    finally:
-        app_settings.set_current(cur)
-
-
-def _sample_hit(item: dict, rate: float) -> bool:
-    """deterministic 抽樣命中：以 source_id hash 落在 [0, rate) 判定（可重現·同筆每次一致，非亂數）。
-
-    用於「④抽樣稽核」——對高信心筆按比例也跑 ensemble 驗證，補 confidence-gate 只驗低信心的盲區
-    （防自動化偏誤：LLM 高召回低精確，高信心也可能系統性錯）。rate≤0 全不中、≥1 全中。
-    """
-    if rate <= 0:
-        return False
-    if rate >= 1:
-        return True
-    key = f"{item.get('source', '')}_{item.get('source_id', '')}"
-    h = int(hashlib.md5(key.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
-    return h < rate
-
-
-def _ensemble_attrs(
-    item: dict,
-    text: str,
-    base_attrs: list[dict],
-    base_model: str,
-    voter_cfgs: list[dict],
-    sample_rate: float = 0.0,
-    polarity: str = "negative",
-) -> tuple[list[dict], list[dict]]:
-    """confidence-gated 聯合判決：低信心 or 抽樣命中才跨廠複判 → merge_votes；否則原樣回（省 token）。
-
-    觸發條件（任一）：① 主判決有低信心 attr（< auto_accept）→ 該投票釐清；② 命中抽樣（sample_rate）→
-    高信心筆的品質稽核（與 gate 互補：gate 驗不確定、抽樣驗確定）。兩者皆否 → 回原 attrs + 空票（省 token）。
-    觸發後對每個 voter 換整套 config 重跑 _resolve_attrs_multi，連同主判決 L1 域投票合併；全分歧丟棄 →
-    保底回原 attrs（不因 ensemble 丟失判決）。
-
-    Args:
-        item/text: 進線列與其文字。
-        base_attrs: 主判決（base_model）的多歸因 attr 清單。
-        base_model: 主判決模型名。
-        voter_cfgs: 跨廠 voter 的 effective LLM config 清單（各含 model/base_url/token）。
-        sample_rate: 高信心筆的抽樣稽核比例（0＝純 confidence-gate·1＝全量 ensemble）。
-
-    Returns:
-        (聯合後 attrs, model_votes 攤平票)；未觸發 ensemble 時 model_votes 為空。
-    """
-    auto = _tiers().get("auto_accept", 0.8)
-    low = any(ensemble.should_ensemble(a.get("confidence", 0.0), auto) for a in base_attrs)
-    if not low and not _sample_hit(item, sample_rate):
-        return base_attrs, []  # 全高信心且未命中抽樣 → 不 ensemble（省 token）
-    max_n = _max_attributions()
-    voter_results = [{"model": base_model, "attrs": base_attrs}]
-    for cfg in voter_cfgs:
-        with _use_config(cfg):
-            v_attrs = _resolve_attrs_multi(item, text, cfg.get("model", ""), max_n, polarity)
-        voter_results.append({"model": cfg.get("model", ""), "attrs": v_attrs})
-    merged = ensemble.merge_votes(voter_results)
-    return (merged["merged"] or base_attrs), merged["model_votes"]
-
-
-def to_findings(
-    item: dict,
-    *,
-    model: str,
-    voter_cfgs: list[dict] | None = None,
-    ensemble_sample_rate: float = 0.0,
-) -> list[TicketFinding]:
+def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
     全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、判決階段、
@@ -596,11 +511,9 @@ def to_findings(
     Args:
         item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
         model: 主判決模型；stub 走啟發式極性、負向回未歸因單筆。
-        voter_cfgs: ⚠️ 本期未接線（凍結中，見模組 docstring）——參數保留供 API 相容，不觸發 ensemble。
-        ensemble_sample_rate: ⚠️ 同上，本期未接線。
 
     Returns:
-        TicketFinding 清單（≥1 筆）；model_votes 本期恆空（ensemble 未接線）。
+        TicketFinding 清單（≥1 筆）。
     """
     used_model = "stub" if client.is_stub() else model
     text = _text_of(item)
@@ -616,10 +529,6 @@ def to_findings(
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
     attrs = _resolve_attrs_multi(item, text, model, _max_attributions(), polarity)
-    # confidence-gated ensemble：本期仍凍結未接線（見模組 docstring）——voter 複判需對六域並行
-    # prompt_pack 各廠都跑一輪，成本乘數過大；roadmap 設計降本方案後再呼叫 _ensemble_attrs 重接。
-    # voter_cfgs/ensemble_sample_rate 參數保留（API 相容 prejudge_batch/v1/judgment 呼叫端），本期不使用。
-    model_votes: list[dict] = []
     if not attrs:
         if (
             polarity != "negative"
@@ -634,17 +543,15 @@ def to_findings(
         f.evidence_quote = text[:200]
         return _route([f])
     findings: list[TicketFinding] = []
-    ensemble_model = "ensemble" if model_votes else used_model  # ensemble 觸發 → model 標 ensemble
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同(域,面向)去重
         f = _attributed_finding(
-            item, attr, ensemble_model, enhanced=False, polarity=polarity, sentiment=sentiment
+            item, attr, used_model, enhanced=False, polarity=polarity, sentiment=sentiment
         )
         f.finding_id = (
             # 每(域,面向)一筆獨立列（面向級唯一）——同 L1 下多個 L2 面向並列時 id 不撞、落庫不互相覆蓋。
             f"fd_{src}_{source_id}__{attr['l1_domain_code']}__{attr['l2_code']}"
         )
         f.is_primary = i == 0  # 信心最高一條為主歸因
-        f.model_votes = model_votes  # ensemble 各 voter 攤平票（單模型判決為空）
         findings.append(f)
     return _route(findings)
 

@@ -76,8 +76,6 @@ def _work_one(
     item: dict,
     model: str,
     source: str | None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     triggered_by: str = "",
 ) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
@@ -104,15 +102,9 @@ def _work_one(
             norm["prod_oid"] = canon.get("prod_oid") or ""
             norm["order_oid"] = canon.get("order_oid") or ""
             norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
-            findings = prejudge.to_findings(
-                norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate
-            )
+            findings = prejudge.to_findings(norm, model=model)
             # 判決參數精餾快照（評論級歷史去重比對鍵之一；勿塞 job 級大清單）
-            history_params = {
-                "model": model,
-                "voter_models": [v.get("model") or "" for v in (voter_cfgs or [])],
-                "ensemble_sample_rate": sample_rate,
-            }
+            history_params = {"model": model}
             db.replace_source_findings(
                 src,
                 source_id,
@@ -157,8 +149,6 @@ def _run(
     eff: dict,
     model: str,
     source: str | None = None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     cache_read: bool = True,
     triggered_by: str = "",
 ) -> None:
@@ -224,17 +214,7 @@ def _run(
                         _, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
                     in_flight.add(
-                        ex.submit(
-                            c.run,
-                            _work_one,
-                            job_id,
-                            item,
-                            model,
-                            source,
-                            voter_cfgs,
-                            sample_rate,
-                            triggered_by,
-                        )
+                        ex.submit(c.run, _work_one, job_id, item, model, source, triggered_by)
                     )
                 if cancel and cancel.is_set():
                     break
@@ -338,8 +318,6 @@ def start_job(
     eff: dict,
     model: str,
     source: str | None = None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     *,
     triggered_by: str = "",
     kind: str = "batch",
@@ -355,9 +333,6 @@ def start_job(
         model: 主判決模型名（Stage2/2b；stub 模式引擎自走啟發式）。
         source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
             None＝沿用 intake_items 舊行為）。
-        voter_cfgs: 跨廠 ensemble voter 的 effective LLM config 清單（None＝不 ensemble）；穿透至
-            to_findings，主判決有低信心 attr 才對各 voter 複判投票（confidence-gated，見 prejudge._ensemble_attrs）。
-        sample_rate: 高信心筆的 ensemble 抽樣稽核比例（0＝純 confidence-gate）。
         triggered_by: 觸發人（user email；歸因歷史落庫）。
         kind: 觸發型態（batch/selected/single；歸因歷史落庫，端點解析）。
         rejudge: 標的先前已有判決（本次為重判；端點判定）。
@@ -381,7 +356,7 @@ def start_job(
                 "rejudge": rejudge,
                 "source": source or "",
                 "model": model,
-                "ensemble_voters": len(voter_cfgs or []),
+                "ensemble_voters": 0,  # ensemble 已退役；欄位保留（歷史相容），恆 0
                 "params": params or {},
                 "status": "running",
                 "total": len(item_ids),
@@ -392,17 +367,7 @@ def start_job(
         _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(
-            job_id,
-            item_ids,
-            eff,
-            model,
-            source,
-            voter_cfgs,
-            sample_rate,
-            cache_read,
-            triggered_by,
-        ),
+        args=(job_id, item_ids, eff, model, source, cache_read, triggered_by),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()

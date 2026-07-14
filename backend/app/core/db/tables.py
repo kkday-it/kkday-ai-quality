@@ -365,11 +365,12 @@ judgment_history = Table(
     Column(
         "kind", Text, nullable=False
     ),  # 事件類型：judgment（判決快照）/ status（覆核轉移）/ note
-    Column("model", Text),  # 判決模型（kind=judgment；stub/ensemble 同 judgments.model 語意）
-    Column("model_votes", JSONB),  # ensemble 各 voter 票（單模型 NULL；供多模型對比）
-    # 事件細節：judgment 存 {model, voter_models, ensemble_sample_rate, …}（精餾小字典，
-    # 回填列為 {"backfilled": true}）；status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，
-    # 避免對 judgment/note 恆 NULL 的稀疏欄）。
+    Column("model", Text),  # 判決模型（kind=judgment；stub 同 judgments.model 語意）
+    Column(
+        "model_votes", JSONB
+    ),  # 舊 ensemble 各 voter 票（ensemble 已退役，恆 NULL；欄保留供歷史相容）
+    # 事件細節：judgment 存 {model, …}（精餾小字典，回填列為 {"backfilled": true}）；
+    # status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，避免對 judgment/note 恆 NULL 的稀疏欄）。
     Column("params", JSONB),
     Column("attributions", JSONB),  # 判決快照（attribution_dto 形狀陣列；kind=judgment 才有）
     Column("result_digest", Text),  # 快照全欄位（排 judged_at）正規化 sha256，供去重比對
