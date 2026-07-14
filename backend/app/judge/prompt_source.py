@@ -16,7 +16,7 @@ md 格式契約（現有 7 檔已符合，引擎按此解析）：
     ## User     → ``` fence 內＝user 模板；{TEXT} 必有；域 prompt 另需 {POLARITY}
     ## Schema   → ```json fence 內＝該支輸出 JSON Schema；域 prompt 的 attributions[].l2_code enum
 
-分類結構（取代退役的 JSON 樹）：structure() 派生——域機器值 ← prompt 檔名尾綴（content/quality/supplier/
+分類結構：structure() 派生——域機器值 ← prompt 檔名尾綴（content/quality/supplier/
 platform/service/customer）；facets（L2 code→label）← facet_catalog 解析；域中文名/action/owner ←
 config/ai_judge/domains.json（唯一不可從 prompt 推導的域層業務 metadata）。ai_judge loader 讀 structure()
 建索引,不再讀 DB 樹。自洽 drift 護欄：validate() 驗「facet_catalog codes == Schema l2_code enum」。
@@ -51,7 +51,7 @@ PROMPT_RULE_CODES: tuple[str, ...] = tuple(_PROMPT_RULE.values())
 # 純中文名，不重複帶 C-N 後綴——RuleManager 選單已另外把 code（C-1 等）當前綴徽章顯示，
 # label 若又帶「C-1」會與前綴徽章重複（「C-1　商品內容 C-1」）。
 _PROMPT_LABEL: dict[str, str] = {
-    "00_polarity": "情緒傾向（Step1）",
+    "00_polarity": "情緒傾向",
     "01_C-1_content": "商品內容",
     "02_C-2_quality": "商品品質",
     "03_C-3_supplier": "供應商履約",
@@ -274,10 +274,10 @@ def schema_l2_enum_for(prompt_id: str) -> set[str]:
 
 
 def structure() -> dict[str, Any]:
-    """彙整 6 支域 prompt 的分類結構——供 ai_judge loader 建索引,**取代 DB 樹**。
+    """彙整 6 支域 prompt 的分類結構——供 ai_judge loader 建索引。
 
     域機器值 ← prompt 檔名尾綴;facets（L2 code→label）← 各 prompt facet_catalog;域中文名/action/owner ←
-    domains.json（域層業務 metadata）。判準邏輯與結構皆源自 prompt,樹全退役。
+    domains.json（域層業務 metadata）。判準邏輯與結構皆源自 prompt。
 
     Returns:
         {"domains": [{domain, domain_label, action, owner, facets:[{code,label}]}, ...]}（顯示序;polarity 不含）。
