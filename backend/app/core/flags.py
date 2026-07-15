@@ -7,7 +7,7 @@ provider（JudgeConfigProvider）解析到 judgment 判決配置的 confidence_t
 呼叫端零改。
 
 閾值以 module 級 cache 持有（判決熱路徑高頻讀，避免每 finding 打 DB）；規則管理存檔後由
-rules._reload_judge_cache 呼叫 `reload()` 清 cache 即時生效（對齊 ai_judge/global_rule/prejudge）。
+rules._reload_judge_cache 呼叫 `reload()` 清 cache 即時生效（對齊 ai_judge/prejudge）。
 """
 
 from __future__ import annotations

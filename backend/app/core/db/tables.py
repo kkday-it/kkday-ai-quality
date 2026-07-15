@@ -43,22 +43,19 @@ judgments = Table(
     #  app_feedback→oid / mixpanel_tracker→insert_id）。
     Column("source", Text),
     Column("source_id", Text),
-    # ── 關聯 / 查詢便利欄（prod_oid/dimension 供 ProductDetail 下鑽）──
+    # ── 關聯 / 查詢便利欄（prod_oid 供 ProductDetail 下鑽）──
     Column("prod_oid", Text),
-    Column("dimension", Text),
     # ── 傾向 / 階段 ──
     Column("polarity", Text),  # positive | negative | neutral
     # 情緒分 1-5（LLM 讀原文判；與 polarity 同段輸出：負面1-2/中立3/正面4-5）——與外部評論 sentiment
     # 同尺度，供評論對比表逐則比對；null＝未判。
     Column("sentiment_score", Integer),
     Column("stage", Text),  # judged / pending_review / pending_data
-    # ── 歸因分類 L1→L3（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
+    # ── 歸因分類 L1→L2（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
     Column("l1_code", Text),
     Column("l1_label", Text),
     Column("l2_code", Text),
     Column("l2_label", Text),
-    Column("l3_code", Text),
-    Column("l3_label", Text),
     # ── 信心 ──
     Column("conf_value", Float),  # 最終信心（校準後）
     Column("conf_raw", Float),  # arbiter LLM 原始信心
@@ -70,10 +67,7 @@ judgments = Table(
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──
-    Column("model", Text),  # 判決模型（stub 時為 "stub"；ensemble 聯合判決為 "ensemble"）
-    Column(
-        "model_votes", JSONB
-    ),  # ensemble 各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為 NULL
+    Column("model", Text),  # 判決模型（stub 時為 "stub"）
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
     Column("judged_at", Text),  # 判決時間（ISO）
     # ── 人工覆核軸 ──
@@ -82,12 +76,6 @@ judgments = Table(
     # 完整轉移軌跡在 judgment_history（kind='status'）。
     Column("status_updated_by", Text),  # 最後改 status 的操作者 email（系統自動路由不寫）
     Column("status_updated_at", Text),  # 最後改 status 的時間（ISO 字串，與 created_at 同形態）
-    Column("true_label", Text),  # 人工標註真值分類（級聯選出的葉 code）
-    Column("true_label_reason", Text),  # 標真值把關：LLM 信心明顯下降時人工填的修改理由（audit）
-    Column("true_label_conf", Float),  # 標真值時 LLM 對該真值的契合信心（audit + 準確率評估）
-    # 人工標真值 audit：誰、何時標/清了 true_label——與 reason/conf（LLM 把關）互補，記錄操作者身分。
-    Column("true_label_updated_by", Text),  # 最後標/清 true_label 的操作者 email
-    Column("true_label_updated_at", Text),  # 最後標/清 true_label 的時間（ISO 字串）
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
     Index("idx_judgments_source", "source"),
@@ -97,9 +85,8 @@ judgments = Table(
     Index("idx_judgments_polarity", "polarity"),
     Index("idx_judgments_stage", "stage"),
     Index("idx_judgments_l1", "l1_code"),
-    # L2/L3 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/l3/sentiment 全表掃）
+    # L2 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/sentiment 全表掃）
     Index("idx_judgments_l2", "l2_code"),
-    Index("idx_judgments_l3", "l3_code"),
     Index("idx_judgments_sentiment", "sentiment_score"),
     Index("idx_judgments_tier", "conf_tier"),
 )
@@ -257,14 +244,18 @@ user_settings = Table(
     Column("updated_at", Text),
 )
 
-# ── 判決規則版本（config/ai_judge/ 的 7 rule + schema 的 live + 歷史）────────────
+# ── 判決規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
-# 檔案 config/ai_judge/rule_C-*.json 為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
+# prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
+# 版本化 rule_code：product_vertical / source_mapping / prompt_polarity / prompt_C-1~6。
 judge_rule_versions = Table(
     "judge_rule_versions",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("rule_code", Text, nullable=False),  # 'C-1'..'C-7' | 'schema'
+    Column(
+        "rule_code", Text, nullable=False
+    ),  # 'product_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
     Column("version", Integer, nullable=False),  # per rule_code 遞增
     Column("content", JSONB, nullable=False),  # 完整 rule/schema JSON
     Column("note", Text),
@@ -300,7 +291,7 @@ llm_usage = Table(
     "llm_usage",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("stage", Text),  # 呼叫階段：polarity/attribute/domain/attribute_b/true_label/translate
+    Column("stage", Text),  # 呼叫階段：polarity/attribute/domain/attribute_b/translate
     Column("model", Text, nullable=False),  # 使用模型（cfg.model）
     Column("provider", Text),  # 供應商 id（settings.provider_id_for(base_url) 反推）
     Column("prompt_tokens", Integer),  # 輸入 token
@@ -335,10 +326,7 @@ judgment_runs = Table(
     ),  # 標的先前已有判決 → 重判（single/selected 查 judgments；batch 依 stages 含已判階段）
     Column("source", Text),  # 反饋來源 code（product_reviews…）
     Column("model", Text),  # 主判決模型
-    Column("ensemble_voters", Integer),  # 跨廠 ensemble voter 數（0＝單模型）
-    Column(
-        "params", JSONB
-    ),  # 發起參數快照（stages/verticals/傾向/信心上限/voter 配置…；item_ids 只留樣本）
+    Column("params", JSONB),  # 發起參數快照（stages/verticals/傾向/信心上限…；item_ids 只留樣本）
     Column("status", Text, nullable=False),  # running/paused/cancelling → 終態 done/error/cancelled
     Column("total", Integer),  # 標的筆數
     Column("processed", Integer),  # 已處理（終態回寫；執行中由 in-mem 快照 overlay）
@@ -366,11 +354,9 @@ judgment_history = Table(
     Column(
         "kind", Text, nullable=False
     ),  # 事件類型：judgment（判決快照）/ status（覆核轉移）/ note
-    Column("model", Text),  # 判決模型（kind=judgment；stub/ensemble 同 judgments.model 語意）
-    Column("model_votes", JSONB),  # ensemble 各 voter 票（單模型 NULL；供多模型對比）
-    # 事件細節：judgment 存 {model, voter_models, ensemble_sample_rate, …}（精餾小字典，
-    # 回填列為 {"backfilled": true}）；status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，
-    # 避免對 judgment/note 恆 NULL 的稀疏欄）。
+    Column("model", Text),  # 判決模型（kind=judgment；stub 同 judgments.model 語意）
+    # 事件細節：judgment 存 {model, …}（精餾小字典，回填列為 {"backfilled": true}）；
+    # status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，避免對 judgment/note 恆 NULL 的稀疏欄）。
     Column("params", JSONB),
     Column("attributions", JSONB),  # 判決快照（attribution_dto 形狀陣列；kind=judgment 才有）
     Column("result_digest", Text),  # 快照全欄位（排 judged_at）正規化 sha256，供去重比對
@@ -382,6 +368,28 @@ judgment_history = Table(
     # 評論時間軸查詢熱路徑：(source, source_id) 定位 + created_at 排序
     Index("idx_judgment_history_source_id", "source", "source_id", "created_at"),
     Index("idx_judgment_history_created_at", "created_at"),
+)
+
+# 歸因列表 Prompt 測試沙盒歷史（與 judgments/judgment_history/judgment_runs 完全分離——沙盒測試
+# 不落正式判決，只落此表）。一 run＝對 item_ids 逐筆跑 prompt_ids 子集的一次沙盒測試，results 含
+# 逐筆逐 prompt 結果，log 為該次 run_log 快照（供事後回看完整 LLM log；run_log 本身純記憶體不落庫）。
+prompt_sandbox_runs = Table(
+    "prompt_sandbox_runs",
+    metadata,
+    Column("run_id", Text, primary_key=True),  # psbx_* uuid4 hex
+    Column("source", Text, nullable=False),  # 來源 code（product_reviews…）
+    Column("scope", Text, nullable=False),  # single（單列）/ selection（勾選多筆）
+    Column("item_ids", JSONB, nullable=False),  # 受測 source_id 清單
+    Column("prompt_ids", JSONB, nullable=False),  # 勾選的 prompt（polarity / C-1..C-6）
+    Column("item_count", Integer, nullable=False),
+    Column("results", JSONB, nullable=False),  # 逐筆 × 各 prompt 結果（sandbox_classify 輸出集合）
+    Column("log", JSONB, nullable=False),  # run_log.read(job_id) 快照（entries 陣列）
+    Column("model", Text),  # 判決模型
+    Column("triggered_by", Text),  # 觸發人（user email）
+    Column("job_id", Text),  # 對應 run_log job_id（供除錯追溯；log 已快照，非用於即時查詢）
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 歷史列表熱路徑：依時間倒序
+    Index("idx_prompt_sandbox_runs_created", "created_at"),
 )
 
 

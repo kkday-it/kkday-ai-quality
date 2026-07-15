@@ -19,7 +19,6 @@ _INSERT_COLS = (
     "rejudge",
     "source",
     "model",
-    "ensemble_voters",
     "params",
     "status",
     "total",

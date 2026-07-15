@@ -42,7 +42,7 @@ export interface ModelFilterDef {
   type: 'model';
 }
 
-/** 歸因分類篩選（a-cascader L1→L3 級聯複選；選項來自 getTaxonomyCascade，任意層級 code 子樹語義）。 */
+/** 歸因分類篩選（a-cascader L1→L2 級聯複選；選項來自 getTaxonomyCascade，任意層級 code 子樹語義）。 */
 export interface TaxonomyFilterDef {
   type: 'taxonomy';
 }
@@ -70,7 +70,7 @@ export interface SourceListSchema {
   filters: SourceFilterDef[];
 }
 
-/** 歸因分類層（L1/L2/L3 共用形狀）。 */
+/** 歸因分類層（L1/L2 共用形狀）。 */
 export interface AttributionLevel {
   code?: string;
   label?: string;
@@ -95,7 +95,7 @@ export interface AttributionContent {
 
 /**
  * 單條歸因分類（後端 `attribution_dto`：一則評論 1:N 多歸因，乾淨巢狀物件）。
- * 一條形狀貫穿 DB(typed 欄)→API→前端；L1-L3/信心/內容各為分組物件。
+ * 一條形狀貫穿 DB(typed 欄)→API→前端；L1-L2/信心/內容各為分組物件。
  */
 export interface Attribution {
   finding_id?: string;
@@ -104,20 +104,17 @@ export interface Attribution {
   stage?: string;
   l1?: AttributionLevel;
   l2?: AttributionLevel;
-  l3?: AttributionLevel;
   confidence?: AttributionConfidence;
   content?: AttributionContent;
   /** 負責單位（後端自 l1 域 rule _meta.owner_role 派生；業務未填時為空字串，不顯示標籤）。 */
   owner?: string;
-  /** 判決模型（如 gpt-5-mini；stub＝假判、ensemble＝聯合判決）——判決溯源標籤用。 */
+  /** 判決模型（如 gpt-5-mini；stub＝假判）——判決溯源標籤用。 */
   model?: string;
   /** 備註數（finding_notes fan-out 計數）——備註按鈕 badge 用。 */
   notes_count?: number;
   is_primary?: boolean;
   /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——覆核徽章用。 */
   status?: string;
-  /** 人工標註真值分類 true_label——標真值功能用。 */
-  true_label?: string;
 }
 
 /**
@@ -141,7 +138,7 @@ export interface ProblemRow {
  * 排列原則：**源數據在前，判決數據在後**。序號欄由 AttributionList 統一前置。
  *   1. 反饋內容（星等+傾向+標題+內容全文+ID·時間，可按反饋時間排序）
  *   2. 關聯資料（訂單→商品→方案→供應商→旅客，各段小標籤；缺欄防禦式「—」，故各來源皆適用）
- *   3. 判決歸因（L1→L3 + 摘要 + 信心/分層/階段 + per-歸因覆核，每條一塊）
+ *   3. 判決歸因（L1→L2 + 摘要 + 信心/分層/階段 + per-歸因覆核，每條一塊）
  *   4. 操作（整列級 歸因/重判 + 查看詳情）
  * 複合欄（review/context/verdict/actions）以 slotName 客製渲染，欄位 key 皆 `_enrich_problem` 現成
  * （非該來源的欄位回空 → 顯示「—」，達成「盡可能統一」的優雅降級）。

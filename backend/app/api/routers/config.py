@@ -27,14 +27,14 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 _DIRS: tuple[Path, ...] = (_CONFIG / "ai_judge",)
 _BACKUP_DIR: Path = _CONFIG / ".backups"
 
-# config/ai_judge 下的判決規則樹（rule_C-*.json / schema.json）由 /api/judge-rules 版本化管理，
-# 不納入本 raw 編輯端點（避免與 DB 版本化雙寫衝突）。
+# config/ai_judge 下由 /api/judge-rules 版本化管理的檔（schema.json 等），不納入本 raw 編輯端點
+# （避免與 DB 版本化雙寫衝突）。判準走 prompts/*.md（由 /api/judge-rules 的 prompt_* 版本化管理）。
 _VERSIONED_NAMES = {"schema.json"}
 
 
 def _is_versioned(p: Path) -> bool:
-    """是否為 /api/judge-rules 管的版本化規則檔（rule_C-*.json / schema.json）。"""
-    return p.name in _VERSIONED_NAMES or p.name.startswith("rule_C-")
+    """是否為 /api/judge-rules 管的版本化規則檔。"""
+    return p.name in _VERSIONED_NAMES
 
 
 def _editable_files() -> list[Path]:

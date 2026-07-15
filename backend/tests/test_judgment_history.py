@@ -39,7 +39,6 @@ def _finding(
     return TicketFinding(
         finding_id=f"fd_product_reviews_{rec_oid}__{domain}",
         ticket_id=rec_oid,  # source_id
-        dimension="non_content",
         recommended_action="no_action",
         l1_domain_code=l1_code,
         l1_label=l1_code,

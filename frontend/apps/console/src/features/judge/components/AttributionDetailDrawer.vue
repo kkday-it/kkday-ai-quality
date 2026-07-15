@@ -42,12 +42,12 @@ const TIER_COLOR: Record<string, string> = {
   needs_review: 'red',
 };
 
-/** 歸因路徑「L1 › L2 › L3」；未歸因回占位文字。 */
+/** 歸因路徑「L1 › L2」；未歸因回占位文字。 */
 const attrPath = (a: Attribution): string =>
-  [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
+  [a.l1?.label, a.l2?.label].filter(Boolean).join(' › ') || '未歸因';
 
-/** 最深層 code（L3 → L2 → L1 取第一個非空），路徑旁小字輔助定位規則樹。 */
-const attrCode = (a: Attribution): string => a.l3?.code || a.l2?.code || a.l1?.code || '';
+/** 最深層 code（L2 → L1 取第一個非空），路徑旁小字輔助定位規則樹。 */
+const attrCode = (a: Attribution): string => a.l2?.code || a.l1?.code || '';
 
 /** 欄位缺值顯示（'—'）。 */
 const cell = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -148,7 +148,6 @@ const otherLangs = (a: Attribution): [string, string][] =>
               <a-tag v-if="a.status" size="small" :color="STATUS_COLOR[a.status]">
                 {{ STATUS_LABEL[a.status] || a.status }}
               </a-tag>
-              <a-tag v-if="a.true_label" size="small" color="cyan">已標真值</a-tag>
             </div>
           </template>
           <a-descriptions-item label="歸因分類">
@@ -214,9 +213,6 @@ const otherLangs = (a: Attribution): [string, string][] =>
             {{ a.content?.action ? ACTION_LABEL[a.content.action] || a.content.action : '—' }}
           </a-descriptions-item>
           <a-descriptions-item v-if="a.owner" label="負責單位">{{ a.owner }}</a-descriptions-item>
-          <a-descriptions-item v-if="a.true_label" label="人工真值">
-            {{ a.true_label }}
-          </a-descriptions-item>
           <a-descriptions-item label="finding">
             <span class="break-all text-xs text-[var(--color-text-3)]">{{
               a.finding_id || '—'

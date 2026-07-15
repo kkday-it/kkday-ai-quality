@@ -4,36 +4,26 @@
  *
  * 分頁/篩選/排序皆走後端（/api/problems limit-offset；occurred_at DESC 穩定）；表頭固定、表身內滾動、
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
- * 正向/中性 不歸因，只有負向才有 L1→L3。
+ * 正向/中性 不歸因，只有負向才有 L1→L2。
  *
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
+import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
+import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
+import { usePermission } from '@/composables/usePermission';
+import { composeLlmLabel } from '@/features/settings/utils';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
   IconClose,
   IconDownload,
-  IconEdit,
   IconHistory,
   IconMessage,
 } from '@arco-design/web-vue/es/icon';
-import {
-  addFindingNote,
-  evaluateTrueLabel,
-  getFindingNotes,
-  getTaxonomyCascade,
-  updateTrueLabel,
-  type CascadeNode,
-  type FindingNote,
-  type TrueLabelEval,
-} from '@/api';
-import { PERM } from '@/api';
-import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
-import { usePermission } from '@/composables/usePermission';
-import { composeLlmLabel } from '@/features/settings/utils';
-import { AttributionDetailDrawer, AttributionFilterBar } from '../components';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
+import { AttributionDetailDrawer, AttributionFilterBar, PromptSandboxDrawer } from '../components';
+import { useAttributionList } from '../composables';
 import {
   POLARITY_LABELS,
   SOURCES,
@@ -42,11 +32,9 @@ import {
   STATUS_LABEL,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
-  type Attribution,
   type FilterField,
   type ProblemRow,
 } from '../constants';
-import { useAttributionList } from '../composables';
 import { fmtDt } from '../utils';
 
 /** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰）。 */
@@ -70,7 +58,6 @@ const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 const { can } = usePermission();
 const canPrejudge = computed(() => can(PERM.judgmentPrejudgeRun));
 const canReview = computed(() => can(PERM.findingReviewUpdate));
-const canTrueLabel = computed(() => can(PERM.findingTrueLabelUpdate));
 const canExport = computed(() => can(PERM.problemListExport));
 
 // 歸因歷史抽屜（點開才載；每次批量/選取/單筆重判的 LLM 使用紀錄）
@@ -79,9 +66,14 @@ const JudgmentRunsDrawer = defineAsyncComponent(
 );
 const runsDrawerVisible = ref(false);
 
-// 判決歷史彈窗（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
-const JudgmentHistoryModal = defineAsyncComponent(
-  () => import('../components/JudgmentHistoryModal.vue'),
+// 初判執行日誌抽屜（點「初判分類」即開；SSE 流式顯示各階段與 LLM 輸入參數/prompt/輸出；點開才載）
+const PrejudgeLogDrawer = defineAsyncComponent(() => import('../components/PrejudgeLogDrawer.vue'));
+const logDrawerVisible = ref(false);
+const logDrawerJobId = ref('');
+
+// 判決歷史抽屜（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
+const JudgmentHistoryDrawer = defineAsyncComponent(
+  () => import('../components/JudgmentHistoryDrawer.vue'),
 );
 const historyOpen = ref(false);
 const historyRow = ref<ProblemRow | null>(null);
@@ -100,6 +92,8 @@ const {
   modelOptions,
   verticalOptions,
   verticalGroups,
+  effVerticals,
+  listFilters,
   onVerticalChange,
   onSortChange,
   onFilterChange,
@@ -128,6 +122,9 @@ const {
   progress,
   progressPct,
   costText,
+  failedItems,
+  failedTruncated,
+  retryFailed,
   confirmOpen,
   openPrejudge,
   targetMode,
@@ -163,7 +160,12 @@ const {
 // ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
 const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
 const onRejudge = async (id: string) => {
-  await rejudgeRow(id); // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）
+  // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；
+  // 取得 job_id 即開執行日誌抽屜（判決仍在跑，SSE 流式顯示各階段與 LLM 輸入/輸出）
+  await rejudgeRow(id, (jid) => {
+    logDrawerJobId.value = jid;
+    logDrawerVisible.value = true;
+  });
   await nextTick();
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
@@ -171,17 +173,37 @@ const onRejudge = async (id: string) => {
   (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'auto' }); // 即時定位，無滾動動畫
 };
 
-// ── 操作：查看判決詳情彈窗（純前端，資料取自該列 attributions）──
+// ── 操作：查看判決詳情抽屜（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
 const detailOpen = ref(false);
-/** 開查看詳情彈窗。 */
+/** 開查看詳情抽屜。 */
 const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
 };
-/** 歸因詳情：把一條歸因的 L1→L3 併成麵包屑字串。 */
-const attrPath = (a: Attribution): string =>
-  [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean).join(' › ') || '未歸因';
+// Prompt 測試沙盒：單列（列操作區）/ 批量（工具列，內含依條件目標選取）共用同一 Drawer，靠
+// scope 分辨語意。scope='all' 時 Drawer 內部委派 usePromptSandboxTargets 比照初判分類做目標
+// 選取（含「已選內／全部資料」切換，勾選測試已是其子功能，不再另設獨立按鈕），此處需把
+// effVerticals/selectedRowKeys/listFilters/cascadeOptions 一併傳入供其取用。
+const sandboxVisible = ref(false);
+const sandboxScope = ref<'single' | 'all'>('single');
+const sandboxSourceIds = ref<string[]>([]);
+const sandboxRow = ref<ProblemRow | null>(null);
+/** 開單列 Prompt 測試沙盒。 */
+const openRowTest = (record: ProblemRow) => {
+  sandboxRow.value = record;
+  sandboxSourceIds.value = record.source_id ? [record.source_id] : [];
+  sandboxScope.value = 'single';
+  sandboxVisible.value = true;
+};
+/** 開批量 Prompt 測試沙盒（工具列唯一入口；比照初判分類，無勾選亦可開，預設測全部未判；
+ * 有勾選時 Drawer 內建「已選內」範圍可測勾選集合）。 */
+const openBatchTest = () => {
+  sandboxRow.value = null;
+  sandboxSourceIds.value = [];
+  sandboxScope.value = 'all';
+  sandboxVisible.value = true;
+};
 
 /**
  * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
@@ -214,143 +236,6 @@ const extTagColor = (v?: string | number | null): string => {
   return 'green';
 };
 
-// ── 操作欄：標真值彈窗（級聯選 L1→L2→L3 → LLM 評分把關 → 低信心填理由 → 標註）──
-const truelabelOpen = ref(false);
-const truelabelRow = ref<ProblemRow | null>(null);
-const truelabelSaving = ref(false);
-/** 兩階段：select＝選級聯；review＝看 LLM 前後信心對比 + 低信心填理由。 */
-const truelabelPhase = ref<'select' | 'review'>('select');
-/** 級聯樹選項（懶載一次；全 finding 共用）。 */
-const cascadeOpts = ref<CascadeNode[]>([]);
-const cascadeLoading = ref(false);
-/** finding_id → 選定的真值 code（級聯葉；空＝清除標註）。 */
-const truelabelDraft = ref<Record<string, string>>({});
-/** finding_id → LLM 評分結果（review 階段顯示前後信心對比）。 */
-const truelabelEvals = ref<Record<string, TrueLabelEval>>({});
-/** finding_id → 修改理由（低信心 reason_required 時必填）。 */
-const truelabelReasons = ref<Record<string, string>>({});
-
-/** 懶載級聯樹（首次開彈窗才拉，之後快取）。 */
-const ensureCascade = async () => {
-  if (cascadeOpts.value.length || cascadeLoading.value) return;
-  cascadeLoading.value = true;
-  try {
-    cascadeOpts.value = await getTaxonomyCascade();
-  } catch (e: any) {
-    Message.error('載入分類樹失敗：' + (e?.message || e));
-  } finally {
-    cascadeLoading.value = false;
-  }
-};
-
-/** 開標真值彈窗：以各歸因現有 true_label 為初值，回到 select 階段。 */
-const openTrueLabel = (record: ProblemRow) => {
-  if (!record.attributions || !record.attributions.length) {
-    Message.warning('此列尚無歸因可標註，請先歸因');
-    return;
-  }
-  truelabelRow.value = record;
-  truelabelPhase.value = 'select';
-  truelabelDraft.value = {};
-  truelabelEvals.value = {};
-  truelabelReasons.value = {};
-  record.attributions.forEach((a) => {
-    if (a.finding_id) truelabelDraft.value[a.finding_id] = a.true_label || '';
-  });
-  truelabelOpen.value = true;
-  void ensureCascade();
-};
-
-/** 本次有選定真值（非清除）的歸因清單。 */
-const labeledAttrs = computed(() =>
-  (truelabelRow.value?.attributions || []).filter(
-    (a) => a.finding_id && (truelabelDraft.value[a.finding_id] || '').trim(),
-  ),
-);
-/** review 階段：仍有 reason_required 但未填理由者 → 阻擋確認。 */
-const reasonBlocked = computed(() =>
-  labeledAttrs.value.some((a) => {
-    const fid = a.finding_id as string;
-    return (
-      truelabelEvals.value[fid]?.reason_required && !(truelabelReasons.value[fid] || '').trim()
-    );
-  }),
-);
-
-/** 評估並標註（select→review）：對有選定真值的歸因逐一 LLM 評分，收齊後進 review 顯示前後信心對比。 */
-const evaluateTrueLabels = async () => {
-  const attrs = labeledAttrs.value;
-  if (!attrs.length) {
-    // 全為清除 → 無需評分，直接標註（清除）
-    await confirmTrueLabels();
-    return;
-  }
-  truelabelSaving.value = true;
-  try {
-    const results = await Promise.all(
-      attrs.map((a) =>
-        evaluateTrueLabel(a.finding_id as string, truelabelDraft.value[a.finding_id as string]),
-      ),
-    );
-    const evals: Record<string, TrueLabelEval> = {};
-    attrs.forEach((a, i) => (evals[a.finding_id as string] = results[i]));
-    truelabelEvals.value = evals;
-    truelabelPhase.value = 'review';
-  } catch (e: any) {
-    Message.error('評分失敗：' + (e?.message || e));
-  } finally {
-    truelabelSaving.value = false;
-  }
-};
-
-/** review 階段信心對比顯示：回 {text, cls}（升綠降紅）。 */
-const evalDelta = (ev: TrueLabelEval): { text: string; cls: string } => {
-  const llm = ev.llm_confidence.toFixed(2);
-  if (ev.delta == null || ev.original_confidence == null) {
-    return { text: `LLM 對此真值信心 ${llm}`, cls: 'text-[var(--color-text-2)]' };
-  }
-  const up = ev.delta >= 0;
-  return {
-    text: `LLM 對此真值信心 ${llm}（原判 ${ev.original_confidence.toFixed(2)}，${up ? '↑' : '↓'}${Math.abs(ev.delta).toFixed(2)}）`,
-    cls: up ? 'text-[rgb(var(--green-6))]' : 'text-[rgb(var(--red-6))]',
-  };
-};
-
-/** 確認標註（review→存）：逐歸因 PATCH（帶理由 + LLM 信心）；清除者送 null。optimistic 回寫。 */
-const confirmTrueLabels = async () => {
-  const row = truelabelRow.value;
-  if (!row) return;
-  if (reasonBlocked.value) {
-    Message.warning('部分真值信心明顯偏低，請填寫修改理由');
-    return;
-  }
-  const attrs = (row.attributions || []).filter((a) => a.finding_id);
-  truelabelSaving.value = true;
-  try {
-    await Promise.all(
-      attrs.map((a) => {
-        const fid = a.finding_id as string;
-        const val = (truelabelDraft.value[fid] || '').trim() || null;
-        const ev = truelabelEvals.value[fid];
-        return updateTrueLabel(fid, val, {
-          reason: truelabelReasons.value[fid] || undefined,
-          llmConf: ev?.llm_confidence,
-        });
-      }),
-    );
-    attrs.forEach(
-      (a) =>
-        (a.true_label = (truelabelDraft.value[a.finding_id as string] || '').trim() || undefined),
-    );
-    Message.success('已標註真值');
-    truelabelOpen.value = false;
-  } catch (e: any) {
-    Message.error('標註失敗：' + (e?.message || e));
-  } finally {
-    truelabelSaving.value = false;
-  }
-};
-
 // ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）──
 const noteOpen = ref(false);
 const noteFindingId = ref('');
@@ -359,7 +244,7 @@ const noteDraft = ref('');
 const noteLoading = ref(false);
 const noteSaving = ref(false);
 
-/** 開某條歸因的備註彈窗並載入歷史。 */
+/** 開某條歸因的備註抽屜並載入歷史。 */
 const openNotes = async (findingId: string) => {
   noteFindingId.value = findingId;
   noteDraft.value = '';
@@ -517,7 +402,7 @@ onMounted(init);
         placeholder="無 LLM 配置（去設定新增）"
         @change="onSwitchLlm"
       />
-      <!-- 統一操作區：主行為 primary、次要 outline（見 rules/frontend-vue.md 按鈕規範）-->
+      <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）-->
       <a-button
         type="primary"
         size="small"
@@ -525,7 +410,7 @@ onMounted(init);
         :disabled="!canPrejudge"
         @click="openPrejudge"
       >
-        初判歸因{{ runCount ? `（已選 ${runCount}）` : '' }}
+        初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
       <!-- 歸因歷史：純檢視（每次批量/選取/單筆重判的 LLM 使用紀錄），緊鄰初判入口 -->
       <a-button size="small" type="text" @click="runsDrawerVisible = true">
@@ -542,16 +427,46 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
+      <!-- Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」
+           切換，無需先勾選即可開；有勾選時 runCount 顯示於按鈕文字提示 -->
+      <a-button size="small" type="dashed" @click="openBatchTest">
+        Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
+      </a-button>
     </div>
   </Teleport>
 
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
-  <!-- 判決歷史彈窗（評論級時間軸；懶載）-->
-  <JudgmentHistoryModal v-model:visible="historyOpen" :source="source" :row="historyRow" />
+  <!-- 判決歷史抽屜（評論級時間軸；懶載）-->
+  <JudgmentHistoryDrawer v-model:visible="historyOpen" :source="source" :row="historyRow" />
 
   <div class="flex h-full flex-col gap-4">
+    <!-- 本批失敗筆：判決完成後（非執行中）有失敗才顯示——可查原因 + 一鍵重判（走 item_ids 顯式路徑）-->
+    <a-alert v-if="!running && failedItems.length" type="warning" class="flex-none">
+      <template #title>
+        本批 {{ failedItems.length }}{{ failedTruncated ? '+' : '' }} 筆判決失敗（未落庫、等同未判）
+      </template>
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-xs text-[#86909c]"
+          >失敗筆可重判補上；系統性失敗連續多次後會停止隱式重撈，需在此手動重判。</span
+        >
+        <a-popover position="bl">
+          <a-button size="mini" type="text">查看原因</a-button>
+          <template #content>
+            <div class="max-h-64 w-96 overflow-auto text-xs">
+              <div v-for="f in failedItems" :key="f.item_id" class="mb-1 break-all">
+                <span class="text-[#86909c]">{{ f.source_id || f.item_id }}</span
+                >：{{ f.error }}
+              </div>
+            </div>
+          </template>
+        </a-popover>
+        <a-button size="mini" type="primary" status="warning" @click="retryFailed"
+          >重判本批失敗筆</a-button
+        >
+      </div>
+    </a-alert>
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
     <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
       <div class="flex items-center gap-3">
@@ -601,7 +516,7 @@ onMounted(init);
       v-model:page="page"
       v-model:page-size="pageSize"
       :title="`歸因列表（共 ${total} · 未判 ${unjudged}）`"
-      hint="伺服器端分頁；勾選/分頁選取做初判歸因或導出"
+      hint="伺服器端分頁；勾選/分頁選取做初判分類或導出"
       :data="rows"
       :columns="COLS"
       :loading="loading"
@@ -641,7 +556,7 @@ onMounted(init);
             />
           </a-col>
           <a-col flex="none">
-            <a-button size="small" @click="selectPages">選取分頁</a-button>
+            <a-button size="small" type="outline" @click="selectPages">選取分頁</a-button>
           </a-col>
           <a-col flex="none">
             <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
@@ -785,7 +700,7 @@ onMounted(init);
           </div>
         </div>
       </template>
-      <!-- 判決歸因合併欄：每條歸因一塊（L1→L3 + 信心 + 分層 + 判決階段 全放一起），
+      <!-- 判決歸因合併欄：每條歸因一塊（L1→L2 + 信心 + 分層 + 判決階段 全放一起），
                塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整判決。 -->
       <template #verdict="{ record }">
         <template v-if="record.attributions && record.attributions.length">
@@ -805,16 +720,16 @@ onMounted(init);
                 {{ a.content.summary }}
               </div>
             </div>
-            <!-- 歸因（L1→L3 麵包屑 + 真值徽章）-->
+            <!-- 歸因（L1→L2 麵包屑）-->
             <div class="flex gap-1.5">
               <span
                 class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
                 >歸因</span
               >
               <div class="min-w-0">
-                <template v-if="[a.l1?.label, a.l2?.label, a.l3?.label].some(Boolean)">
+                <template v-if="[a.l1?.label, a.l2?.label].some(Boolean)">
                   <template
-                    v-for="(lvl, li) in [a.l1?.label, a.l2?.label, a.l3?.label].filter(Boolean)"
+                    v-for="(lvl, li) in [a.l1?.label, a.l2?.label].filter(Boolean)"
                     :key="li"
                   >
                     <span v-if="li > 0" class="mx-1 text-[var(--color-text-3)]">›</span>
@@ -830,9 +745,6 @@ onMounted(init);
                   </template>
                 </template>
                 <span v-else class="text-[var(--color-text-3)]">未歸因</span>
-                <a-tooltip v-if="a.true_label" :content="`真值：${a.true_label}`">
-                  <span class="ml-1.5 text-[11px] text-[rgb(var(--success-6))]">✔真值</span>
-                </a-tooltip>
               </div>
             </div>
             <!-- 信心（值 + 分層 + 判決模型；stage 僅異常態顯示——三軸標籤收斂：status 移操作列）-->
@@ -867,7 +779,7 @@ onMounted(init);
                 </a-tag>
               </div>
             </div>
-            <!-- 操作（覆核徽章 + 確認採信(綠)/忽略駁回(紅)/標真值/備註；再點選中態＝撤銷覆核）-->
+            <!-- 操作（覆核徽章 + 確認採信(綠)/忽略駁回(紅)/備註；再點選中態＝撤銷覆核）-->
             <div class="flex gap-1.5">
               <span
                 class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
@@ -916,15 +828,6 @@ onMounted(init);
                     忽略
                   </a-button>
                 </a-tooltip>
-                <a-button
-                  size="mini"
-                  type="text"
-                  :disabled="!canTrueLabel"
-                  @click="openTrueLabel(record)"
-                >
-                  <template #icon><IconEdit /></template>
-                  標真值
-                </a-button>
                 <a-badge v-if="a.finding_id" :count="a.notes_count || 0" :max-count="99">
                   <a-button size="mini" type="text" @click="openNotes(a.finding_id)">
                     <template #icon><IconMessage /></template>
@@ -1008,14 +911,14 @@ onMounted(init);
           </div>
         </div>
       </template>
-      <!-- 操作欄：整列級動作全展開（初判歸因 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
+      <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
       <template #actions="{ record }">
         <div class="flex flex-col items-stretch gap-1.5 py-1">
           <!-- 已有歸因時＝覆寫破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次無覆寫，直接執行不製造確認疲勞 -->
           <a-popconfirm
             v-if="record.attributions && record.attributions.length"
             :content="rejudgeConfirmText"
-            ok-text="初判歸因"
+            ok-text="初判分類"
             cancel-text="取消"
             @ok="onRejudge(record._group)"
           >
@@ -1025,7 +928,7 @@ onMounted(init);
               :loading="isRowBusy(record._group)"
               :disabled="!canPrejudge"
             >
-              初判歸因
+              初判分類
             </a-button>
           </a-popconfirm>
           <a-button
@@ -1036,8 +939,10 @@ onMounted(init);
             :disabled="!canPrejudge"
             @click="onRejudge(record._group)"
           >
-            初判歸因
+            初判分類
           </a-button>
+          <!-- Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式判決 -->
+          <a-button size="small" type="dashed" @click="openRowTest(record)"> Prompt 測試 </a-button>
           <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
           <!-- 判決歷史（評論級時間軸：歷次判決快照/覆核轉移/備註；輕量檢視 → text）-->
@@ -1049,10 +954,10 @@ onMounted(init);
       </template>
     </TableLayout>
 
-    <!-- 二次確認彈窗：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
-    <a-modal
+    <!-- 初判分類確認抽屜：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
+    <a-drawer
       v-model:visible="confirmOpen"
-      title="確認初判歸因"
+      title="確認初判分類"
       ok-text="開始判決"
       cancel-text="取消"
       :width="1040"
@@ -1107,7 +1012,7 @@ onMounted(init);
 
         <div class="text-sm text-[var(--color-text-1)]">
           將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
-          筆進行初判歸因（正向不分類；負向與含問題點的中性評論歸 L1→L3）。
+          筆進行初判分類（正向不分類；負向與含問題點的中性評論歸 L1→L2）。
         </div>
 
         <div>
@@ -1124,10 +1029,10 @@ onMounted(init);
         </div>
         <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
       </div>
-    </a-modal>
+    </a-drawer>
 
-    <!-- 導出確認彈窗：草稿帶入列表當前篩選、可重選（共用 AttributionFilterBar）；有勾選則只導勾選列 -->
-    <a-modal
+    <!-- 導出設定抽屜：草稿帶入列表當前篩選、可重選（共用 AttributionFilterBar）；有勾選則只導勾選列 -->
+    <a-drawer
       v-model:visible="exportOpen"
       title="導出列表"
       ok-text="開始導出"
@@ -1189,7 +1094,8 @@ onMounted(init);
           </a-row>
           <div class="mt-1 text-xs text-gray-400">
             每個選定模型在基準右側增加「情緒·M / L1·M / L2·M」三欄，值取該模型
-            <b class="font-medium text-gray-500">最新一次判決</b>（judgment_history 快照）；該模型未判／判為無問題的評論該三欄留空。
+            <b class="font-medium text-gray-500">最新一次判決</b>（judgment_history
+            快照）；該模型未判／判為無問題的評論該三欄留空。
           </div>
         </div>
         <div>
@@ -1203,113 +1109,44 @@ onMounted(init);
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
       </div>
-    </a-modal>
+    </a-drawer>
 
     <!-- 操作欄：查看判決詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
     <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
 
-    <!-- 操作欄：標真值彈窗（級聯選 → LLM 評分把關 → 低信心填理由 → 標註；重判依 finding_id 保留）-->
-    <a-modal
-      v-model:visible="truelabelOpen"
-      title="標註真值分類"
-      :footer="false"
-      :width="560"
-      unmount-on-close
-    >
-      <div v-if="truelabelRow" class="flex flex-col gap-3">
-        <div class="text-xs text-[var(--color-text-3)]">
-          為每條歸因用級聯選正確分類（留空＝清除）。確認時 LLM 會對「該真值 vs
-          反饋原文」評分並對比原判信心， 信心明顯下降需填修改理由。此標註供準確率評估，不改變 AI
-          判決。
-        </div>
+    <!-- 初判執行日誌抽屜：SSE 即時顯示該次判決各階段 + LLM 輸入參數/prompt/輸出（流式）-->
+    <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
-        <div
-          v-for="(a, ai) in truelabelRow.attributions || []"
-          :key="ai"
-          class="flex flex-col gap-1.5 rounded-md border border-[var(--color-neutral-3)] p-2.5"
-        >
-          <div class="text-xs text-[var(--color-text-2)]">AI 歸因：{{ attrPath(a) }}</div>
-          <a-cascader
-            v-if="a.finding_id"
-            v-model="truelabelDraft[a.finding_id]"
-            :options="cascadeOpts"
-            :loading="cascadeLoading"
-            :disabled="truelabelPhase === 'review'"
-            size="small"
-            allow-clear
-            allow-search
-            expand-trigger="hover"
-            placeholder="級聯選正確分類（留空＝清除）"
-          />
+    <!-- Prompt 測試沙盒：單列 / 批量（內建依條件目標選取）共用；跑選定 prompt 子集，ungated、
+         與正式判決分離落庫 -->
+    <PromptSandboxDrawer
+      v-model:visible="sandboxVisible"
+      :source="source"
+      :scope="sandboxScope"
+      :source-ids="sandboxSourceIds"
+      :row="sandboxRow"
+      :eff-verticals="effVerticals"
+      :selected-keys="selectedRowKeys as string[]"
+      :list-filters="listFilters"
+      :cascade-options="cascadeOptions"
+    />
 
-          <!-- review：LLM 前後信心對比 + 低信心必填理由 -->
-          <template
-            v-if="truelabelPhase === 'review' && a.finding_id && truelabelEvals[a.finding_id]"
-          >
-            <div class="text-xs" :class="evalDelta(truelabelEvals[a.finding_id]).cls">
-              {{ evalDelta(truelabelEvals[a.finding_id]).text }}
-            </div>
-            <div
-              v-if="truelabelEvals[a.finding_id].reason_llm"
-              class="text-[11px] leading-snug text-[var(--color-text-3)]"
-            >
-              LLM 判讀：{{ truelabelEvals[a.finding_id].reason_llm }}
-            </div>
-            <a-textarea
-              v-if="truelabelEvals[a.finding_id].reason_required"
-              v-model="truelabelReasons[a.finding_id]"
-              size="small"
-              :auto-size="{ minRows: 2 }"
-              placeholder="此真值 LLM 信心明顯偏低，請填寫修改理由（必填）"
-              class="mt-0.5"
-            />
-          </template>
-        </div>
-
-        <!-- 兩階段 footer -->
-        <div class="flex justify-end gap-2 pt-1">
-          <template v-if="truelabelPhase === 'select'">
-            <a-button size="small" @click="truelabelOpen = false">取消</a-button>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="truelabelSaving"
-              @click="evaluateTrueLabels"
-            >
-              評估並標註
-            </a-button>
-          </template>
-          <template v-else>
-            <a-button size="small" @click="truelabelPhase = 'select'">返回修改</a-button>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="truelabelSaving"
-              :disabled="reasonBlocked"
-              @click="confirmTrueLabels"
-            >
-              確認標註
-            </a-button>
-          </template>
-        </div>
-      </div>
-    </a-modal>
-
-    <!-- 歸因備註彈窗：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史彈窗同比例）-->
-    <a-modal
+    <!-- 歸因備註抽屜：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史抽屜同比例）-->
+    <a-drawer
       v-model:visible="noteOpen"
       title="歸因備註"
       :footer="false"
       :width="680"
       unmount-on-close
+      :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
     >
-      <div class="flex gap-5">
+      <div class="flex min-h-0 flex-1 gap-5">
         <!-- 左：append-only 歷史時間軸（新到舊；佔 7/10）-->
-        <div class="min-w-0 flex-[7]">
+        <div class="flex min-w-0 flex-[7] flex-col">
           <StateGuard :loading="noteLoading" error="">
-            <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryModal）：timeline 是 flex column、
+            <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryDrawer）：timeline 是 flex column、
                  item min-height 78px，max-h+overflow 直掛 timeline 會被 flex-shrink 壓縮致內容堆疊。 -->
-            <div v-if="noteList.length" class="max-h-[360px] overflow-auto">
+            <div v-if="noteList.length" class="min-h-0 flex-1 overflow-auto">
               <a-timeline class="pl-1">
                 <a-timeline-item v-for="n in noteList" :key="n.id">
                   <div
@@ -1353,7 +1190,7 @@ onMounted(init);
           </div>
         </div>
       </div>
-    </a-modal>
+    </a-drawer>
   </div>
 </template>
 

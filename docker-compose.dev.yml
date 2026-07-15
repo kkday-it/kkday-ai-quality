@@ -49,7 +49,7 @@ services:
       AIQ_ALLOW_DATA_IMPORT: "true"
       # ⚠️ 勿寫 OPENAI_API_KEY: ${VAR:-}——host shell 無值時以「空字串」覆蓋 env_file 真值 → 判決靜默走 stub
       #（2026-07-11 踩過：stub 假判覆蓋 1,452 筆真歸因，靠 pg_dump 整表還原）
-      CORS_ALLOW_ORIGINS: http://localhost:5273
+      CORS_ALLOW_ORIGINS: http://localhost:${FRONTEND_PORT:-5273}
     volumes:
       - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
       # migration 檔 + entrypoint 也掛（image 可能過舊）：新增 migration 免 rebuild，重啟容器即自動套用。
@@ -58,11 +58,13 @@ services:
       - ./backend/docker-entrypoint.sh:/app/backend/docker-entrypoint.sh
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
+      - ./prompts:/app/prompts               # 判決 Prompt 唯一真相源（prompts/*.md；熱編即生效，image 未含此處補上）
+      - ./docs:/app/docs                     # 人閱文檔（gen_taxonomy_doc 於容器內寫 docs/類別定義；runtime 判決不需）
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8100:8100"
+      - "${BACKEND_PORT:-8100}:8100"
 
   frontend:
     build:
@@ -73,7 +75,11 @@ services:
     restart: unless-stopped
     environment:
       VITE_BACKEND_URL: http://backend:8100  # vite proxy /api → 後端容器
+      VITE_DEV_PORT: ${FRONTEND_PORT:-5273}  # 容器內 vite 監聽此 port；與 host 映射同值保 HMR/CORS
       CHOKIDAR_USEPOLLING: "true"            # Mac/Docker bind mount 檔案監看需輪詢，否則 HMR 不觸發
+      # 依賴變更後 pnpm 需 purge 舊 node_modules（匿名 volume 沿用），無 TTY 確認會 abort → 重啟迴圈
+      #（踩過：ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY）；CI=true 允許免確認自動重建
+      CI: "true"
     volumes:
       - ./frontend:/app/frontend             # source 熱更
       - /app/frontend/node_modules           # 匿名 volume 遮蔽 host（Mac）node_modules → 用容器內 Linux 依賴
@@ -83,7 +89,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "5273:5273"
+      - "${FRONTEND_PORT:-5273}:${FRONTEND_PORT:-5273}"
 
 volumes:
   pgdata_dev:

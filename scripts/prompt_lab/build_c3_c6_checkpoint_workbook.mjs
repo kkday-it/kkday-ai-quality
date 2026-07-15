@@ -33,7 +33,7 @@ for (const sheet of sheets) {
   const safe = sheet.name.replaceAll(/[\\/:*?"<>|]/g, "_");
   const preview = await reference.render({
     sheetName: sheet.name,
-    autoCrop: "all",
+    range: sheet.name === "總覽" ? "A1:B20" : "A1:Q15",
     scale: 1,
     format: "png",
   });

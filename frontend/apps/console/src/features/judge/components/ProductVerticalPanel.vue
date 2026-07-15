@@ -5,7 +5,7 @@
  * 內容結構為 `{groups:{分組名:[CATEGORY代碼,...]}, group_order:[分組名,...]}`（見 config/global/product_vertical.json）。
  * ⚠️ groups 是 JSONB object map，PostgreSQL jsonb **不保留 key 順序**（按 key 長度重排）——分組顯示順序
  * 以顯式 `group_order` 陣列為準（缺欄回退 Object.keys，即 jsonb 序，向後相容舊版本內容）。
- * 非 L1/L2/L3 樹狀結構故不用 `RuleTreePanel`；emit 介面對齊（`{json, valid}`），由
+ * 非 L1/L2 樹狀結構故不用 `RuleTreePanel`；emit 介面對齊（`{json, valid}`），由
  * `ProductVerticalSettingsPanel`（「配置」抽屜）包一層 save / 歷史 / 恢復默認版本化管線。
  * `_meta`（label 等）原樣保留，不因編輯 groups 遺失。
  */

@@ -15,17 +15,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from sqlalchemy import Connection, and_, select
 from sqlalchemy import insert as sa_insert
 
 from app.core.db import tables as T
 
+_log = logging.getLogger(__name__)
+
 
 def snapshot_of(values: dict) -> dict:
     """judgments 落庫欄位 dict（_finding_values 產出）→ 歷史快照單筆（與回填 migration 同形）。
 
-    只取判決本體欄；人工覆核軸（status/true_label）不入快照——重判會保留人工覆核結果，
+    只取判決本體欄；人工覆核軸（status）不入快照——重判會保留人工覆核結果，
     若入快照，「判決相同但先前已被人工確認」會被誤判為結果變化；覆核轉移由 kind='status'
     事件獨立留痕。summary 存原始 JSONB 語系 map（zh-tw 顯示由前端取用）。
     """
@@ -36,7 +39,6 @@ def snapshot_of(values: dict) -> dict:
         "stage": values.get("stage"),
         "l1": {"code": values.get("l1_code"), "label": values.get("l1_label")},
         "l2": {"code": values.get("l2_code"), "label": values.get("l2_label")},
-        "l3": {"code": values.get("l3_code"), "label": values.get("l3_label")},
         "confidence": {
             "value": values.get("conf_value"),
             "raw": values.get("conf_raw"),
@@ -55,7 +57,7 @@ def result_digest(attributions: list[dict]) -> str:
     """快照陣列 → 正規化 sha256（去重比對鍵）。
 
     全欄位嚴格比對（使用者拍板）：快照含摘要措辭/信心值，任一欄漂移即視為結果變化；
-    僅 judged_at 時戳先天不入快照。排序鍵 (l1.code, l2.code, l3.code, finding_id) 消除
+    僅 judged_at 時戳先天不入快照。排序鍵 (l1.code, l2.code, finding_id) 消除
     多歸因列序差異；default=str 兜底非 JSON 原生型別（Decimal 等）。
     """
     ordered = sorted(
@@ -63,7 +65,6 @@ def result_digest(attributions: list[dict]) -> str:
         key=lambda a: (
             (a.get("l1") or {}).get("code") or "",
             (a.get("l2") or {}).get("code") or "",
-            (a.get("l3") or {}).get("code") or "",
             a.get("finding_id") or "",
         ),
     )
@@ -77,7 +78,6 @@ def insert_judgment_event(
     source_id: str,
     *,
     model: str,
-    model_votes: list | None,
     params: dict | None,
     attributions: list[dict],
     job_id: str | None,
@@ -114,7 +114,6 @@ def insert_judgment_event(
             source_id=source_id,
             kind="judgment",
             model=model,
-            model_votes=model_votes or None,
             params=params or {},
             attributions=attributions,
             result_digest=digest,
@@ -147,6 +146,39 @@ def insert_status_event(
             author=author or "",
         )
     )
+
+
+def insert_failure_event(
+    source: str,
+    source_id: str,
+    *,
+    error: str,
+    job_id: str | None = None,
+    triggered_by: str | None = None,
+) -> None:
+    """寫入一筆 kind='failure' 事件（判決失敗留痕；獨立交易、best-effort、絕不阻斷批次）。
+
+    失敗筆不落 judgments（to_findings 拋錯前 replace_source_findings 未被呼叫），本表補其唯一持久痕跡：
+    ① 供前端查「為何失敗」；② 供 prejudge_targets 依「最新成功後連續失敗數」設隱式重撈上限，防系統性
+    失敗（壞 prompt / 失效 key）在 scope=all+unjudged 批次無限重撈。kind 是 Text 欄、新增邏輯值免 migration。
+    寫入失敗僅 debug log 不拋（比照 llm_usage 落庫「輔助不阻斷判決」慣例）。
+    """
+    try:
+        with T.get_engine().begin() as c:
+            c.execute(
+                sa_insert(T.judgment_history).values(
+                    source=source,
+                    source_id=source_id,
+                    kind="failure",
+                    params={"error": error},
+                    job_id=job_id or "",
+                    triggered_by=triggered_by or "",
+                )
+            )
+    except Exception:  # noqa: BLE001  失敗留痕是輔助，寫不進去也不能拖垮判決批次
+        _log.debug(
+            "insert_failure_event 落庫失敗 source=%s id=%s", source, source_id, exc_info=True
+        )
 
 
 def _history_row(r: dict) -> dict:

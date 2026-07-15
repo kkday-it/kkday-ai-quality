@@ -69,8 +69,6 @@ class SettingsIn(BaseModel):
     # QC DB 多 config
     qc_configs: list[QcConfigIn] | None = None
     active_qc_config_id: str | None = None
-    # 規整
-    taxonomy_overrides: dict | None = None  # L1/L2/L3 啟用/停用 sparse map
     # 概覽自訂看板（非機密）
     overview_boards: list[dict] | None = None  # [{id,label,chartIds[]}]
     active_overview_board_id: str | None = None
@@ -93,7 +91,7 @@ def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -
     from app.core import settings as app_settings
 
     data = app_settings.save_settings(user["user_id"], body.model_dump(exclude_none=True))
-    _activate_settings(user["user_id"])  # 反映新 token（stub_mode）+ 新 taxonomy_overrides
+    _activate_settings(user["user_id"])  # 反映新 token（stub_mode）
     data["stub_mode"] = llm_client.is_stub()
     return data
 
@@ -118,6 +116,8 @@ class TestLlmIn(BaseModel):
     base_url: str | None = None
     model: str | None = None
     temperature: float | None = None
+    # default | on | off（per-provider 傳遞邏輯見 client._reasoning_kwargs）
+    thinking: str | None = None
     reasoning_effort: str | None = None
     provider_tokens: dict | None = None  # { provider_id: token }
 
@@ -142,6 +142,7 @@ def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
         "base_url": base_url,
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
+        "thinking": body.thinking or "default",
         "reasoning_effort": body.reasoning_effort or "default",
     }
     return llm_client.ping(cfg=cfg)

@@ -6,4 +6,4 @@ export { default as LoopFlow } from './LoopFlow.vue';
 export { default as SourceTable } from './SourceTable.vue';
 export { default as ExternalMetricCard } from './ExternalMetricCard.vue';
 export { default as ChartCard } from './ChartCard.vue';
-export { default as ChartModal } from './ChartModal.vue';
+export { default as ChartDrawer } from './ChartDrawer.vue';

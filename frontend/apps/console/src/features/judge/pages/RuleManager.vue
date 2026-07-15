@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
  * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
- * 選單置頂特殊項（純 JSON 編輯）：schema 結構規格 / global 判決總規範 / judgment 判決配置
- *   （信心閾值 · 顯示 label · prejudge 旋鈕含 G1 auto_confirm.audit_sample_rate，QC 免改碼調）
- *   / source_mapping 上傳表頭校驗（required_headers 指紋 + field_map，存檔即生效於資料上傳頁）；
- *   其後為歸因分類 C-N（面板 / JSON 雙編 + active schema 驗證）。歷史對比恢復 + 單項/整批恢復默認。
+ * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
+ * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
+ * Prompt 測試（對單列/勾選多筆跑選定 prompt 子集）於歸因列表工具列與列操作區提供，
+ * 本頁不重複提供。
+ * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
+ * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
+ * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
  */
-import { computed, onMounted, ref, shallowRef } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
@@ -14,13 +17,16 @@ import { IconDownload } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { ExportProgressBar } from '@/components';
-import { getRule, startRulesExport } from '@/api/judgeRules.api';
+import { startRulesExport } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { useVerticalFilterStore } from '@/stores';
-import RuleTreePanel from '../components/RuleTreePanel.vue';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
+import PromptHistoryPanel from '../components/PromptHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
 import { useExportJob } from '../composables';
+
+// 初判 Prompt 編輯器懶載入：md-editor-v3 較重，只在編輯 prompt_* 時才載入該 chunk，不壓首屏 bundle。
+const PromptEditor = defineAsyncComponent(() => import('../components/PromptEditor.vue'));
 
 // 權限：無 judge-rule.version.manage 者唯讀（後端 403 為權威，前端 disable + 提示避免做白工）
 const { can } = usePermission();
@@ -29,25 +35,21 @@ const canManage = computed(() => can(PERM.judgeRuleManage));
 const store = useJudgeRulesStore();
 // 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
 const verticalFilter = useVerticalFilterStore();
-// 歸因分類（C-N，schema/global 另置頂）；code 與顯示名皆來自後端 meta（label SSOT），不讀前端靜態表。
-// 非 L1-L3 歸因樹者一律排除出 C-N 迴圈（product_vertical 已移「配置」抽屜；schema/global 為置頂特殊項）。
-// judgment 已降為專案靜態設定檔（config/ai_judge/judgment.json）、移出 RULE_CODES、不列規則頁——
-// 仍列於此 Set 是**防禦性**：即使前端 metas 有殘留 judgment（頁面快取未刷新），也排除出歸因域清單，
-// 不會誤渲染成 C-N 域（它無置頂 menu-item，故最終哪都不顯示）。
-const _NON_DOMAIN_CODES = new Set([
-  'schema',
-  'product_vertical',
-  'global_rule',
-  'judgment',
-  'source_mapping',
-]);
-const domainCodes = computed(() =>
-  store.metas.filter((m) => !_NON_DOMAIN_CODES.has(m.rule_code)).map((m) => m.rule_code),
+/** 初判 Prompt（Prompt-as-Source）：rule_code 前綴 prompt_（prompt_polarity + prompt_C-1~6）。
+ * content 形態＝{_meta, text: md}——獨立成群、走 md 編輯器 + md 歷史 diff，不套 JSON 編輯器。 */
+const isPromptCode = (code: string): boolean => code.startsWith('prompt_');
+// 初判 Prompt 群（左選單第二組）：polarity 置頂、C-1~6 依序。
+const promptCodes = computed(() =>
+  store.metas
+    .filter((m) => isPromptCode(m.rule_code))
+    .map((m) => m.rule_code)
+    .sort((a, b) =>
+      a === 'prompt_polarity' ? -1 : b === 'prompt_polarity' ? 1 : a.localeCompare(b),
+    ),
 );
-// 純 JSON 編輯（無 L1-L3 樹）的置頂特殊項：一律 JSON 模式、不走 RuleTreePanel、不套 schema 驗證。
-const _NON_TREE_CODES = new Set(['schema', 'global_rule', 'judgment', 'source_mapping']);
-// 編輯/檢視模式：panel 面板編輯 / json 原始編輯 / history 歷史對比（頁內展示，取代原彈窗）。
-const mode = ref<'panel' | 'json' | 'history'>('panel');
+const isPrompt = computed(() => isPromptCode(store.activeCode));
+// 編輯/檢視模式：panel（prompt_* md 編輯）/ json（整體配置原始編輯）/ history 歷史對比（頁內展示）。
+const mode = ref<'panel' | 'json' | 'history'>('json');
 const saveOpen = ref(false);
 const saveNote = ref('');
 const saving = ref(false);
@@ -61,19 +63,6 @@ const {
   cancel: cancelExport,
 } = useExportJob();
 
-// schema content（給 JSON 模式即時驗證；編輯 schema 自身時不套）
-const schemaContent = shallowRef<Record<string, unknown> | null>(null);
-
-const isSchema = computed(() => store.activeCode === 'schema');
-// 是否為真正的 C-N 歸因分類（有 L1-L3 樹）。面板模式 / RuleTreePanel / 歸因 schema 驗證只對這些 code 生效——
-// 防禦：商品垂直分類（product_vertical）由「配置」抽屜的 ProductVerticalSettingsPanel 共用同一 store，其
-// selectRule('product_vertical') 會改共用 activeCode；以 domainCodes 精準判斷（非 !_NON_TREE_CODES）即免把
-// product_vertical 的 {groups}（非 L1-L3 樹）誤餵 RuleTreePanel 成空白錯亂樹。schema/global/judgment 亦非樹。
-const isDomainTree = computed(() => domainCodes.value.includes(store.activeCode));
-// schema 無 L1›L2›L3 樹，「面板」改用 JsonEditor 結構化 tree 模式；JSON＝text 模式
-const jsonEditorMode = computed<'tree' | 'text'>(() =>
-  isSchema.value && mode.value === 'panel' ? 'tree' : 'text',
-);
 // 重掛 key：rule + active 版本 + 模式 → 切換時 editor 以新內容重置
 const editorKey = computed(
   () => `${store.activeCode}-${store.currentMeta?.version ?? 0}-${mode.value}`,
@@ -82,12 +71,7 @@ const editorKey = computed(
 onMounted(async () => {
   verticalFilter.loadOptions();
   await store.loadList();
-  await store.selectRule('C-1');
-  try {
-    schemaContent.value = (await getRule('schema')).content;
-  } catch {
-    schemaContent.value = null; // 無 schema 仍可編輯（後端為真閘）
-  }
+  await store.selectRule('source_mapping');
 });
 
 async function pick(code: string) {
@@ -95,8 +79,7 @@ async function pick(code: string) {
     Message.warning('有未儲存變更，請先儲存或切換版本');
     return;
   }
-  // schema / global_rule / judgment 無 L1-L3 樹 → 只用 JSON；C-N 預設面板
-  mode.value = _NON_TREE_CODES.has(code) ? 'json' : 'panel';
+  mode.value = isPromptCode(code) ? 'panel' : 'json'; // prompt_* → md 編輯器；其餘（整體配置）→ JSON
   await store.selectRule(code);
 }
 
@@ -138,17 +121,17 @@ function doReset() {
   });
 }
 
-/** 導出全部判決規則為 Excel（C-N 各一分頁 + global 判決總規範；DB active 版本）→ 背景 job + 實時進度下載。 */
+/** 打包 prompts 判決 prompt 目錄（7 支 md ＋ README ＋ BASELINE）為 zip → 背景 job + 實時進度下載。 */
 function doExport() {
-  return runExport(startRulesExport, exportName('判決規則', 'xlsx'));
+  return runExport(startRulesExport, exportName('判決 Prompt 包', 'zip'), '已導出 Prompt 包');
 }
 
-/** 恢復規則配置頁所有規則（schema + 整體規則 + C-N）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
+/** 恢復整體配置（source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
 function doResetAll() {
   Modal.confirm({
     title: '恢復所有規則為默認',
     content:
-      '確定將規則配置頁所有規則（schema / 整體規則 / 歸因分類 C-N）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
+      '確定將整體配置（source_mapping 上傳表頭校驗）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {
@@ -171,32 +154,28 @@ function doResetAll() {
       403 兜底）。
     </a-alert>
     <div class="flex min-h-0 flex-1 gap-4">
-      <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示 judgment 判決配置，不截字）-->
-      <!-- 面板標題移除：頂部 tab 已是「規則配置」，此處不再重複；全部恢復默認移至右側工具列 -->
-      <div class="flex h-full w-52 shrink-0 flex-col gap-3">
-        <!-- 兩組：整體配置（schema/global/judgment 純 JSON）+ 歸因分類（C-N 判準樹）-->
+      <!-- 左：子規則選單 + 全局商品垂直分類篩選（w-52：容 group indent 後仍完整顯示，不截字）
+           高度不用 h-full（父列由 flex-1 撐出、對百分比屬不確定高度，height:100% 會退回 auto 而收邊）；
+           改交給父列 align-items:stretch 自動拉滿（同右欄），min-h-0 讓內部選單可正確壓縮/滾動 -->
+      <div class="flex min-h-0 w-52 shrink-0 flex-col gap-3">
+        <!-- 兩組：整體配置（source_mapping 純 JSON）+ 初判 Prompt（polarity + C-1~6 md） -->
         <a-menu
           :selected-keys="[store.activeCode]"
           class="min-h-0 flex-1 overflow-auto rounded-lg border"
           @menu-item-click="pick"
         >
           <a-menu-item-group title="整體配置">
-            <a-menu-item key="schema">
-              <span class="font-mono text-xs text-[var(--color-text-3)]">schema</span>
-              <span class="ml-2">{{ store.labelFor('schema') }}</span>
-            </a-menu-item>
-            <a-menu-item key="global_rule">
-              <span class="font-mono text-xs text-[var(--color-text-3)]">global</span>
-              <span class="ml-2">{{ store.labelFor('global_rule') }}</span>
-            </a-menu-item>
             <a-menu-item key="source_mapping">
               <span class="font-mono text-xs text-[var(--color-text-3)]">upload</span>
               <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
             </a-menu-item>
           </a-menu-item-group>
-          <a-menu-item-group title="歸因分類">
-            <a-menu-item v-for="c in domainCodes" :key="c">
-              <span class="font-mono text-xs text-[var(--color-text-3)]">{{ c }}</span>
+          <!-- 初判 Prompt（判決 prompt 唯一真相源）：md 編輯 + md 歷史 diff，無 JSON -->
+          <a-menu-item-group title="初判 Prompt">
+            <a-menu-item v-for="c in promptCodes" :key="c">
+              <span class="font-mono text-xs text-[var(--color-text-3)]">{{
+                c.replace('prompt_', '')
+              }}</span>
               <span class="ml-2">{{ store.labelFor(c) }}</span>
             </a-menu-item>
           </a-menu-item-group>
@@ -226,11 +205,11 @@ function doResetAll() {
       <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->
       <div class="flex min-w-0 flex-1 flex-col">
         <div class="mb-3 flex flex-none items-center gap-3">
-          <!-- 當前規則的檢視/編輯模式（面板編輯 / JSON 原始 / 歷史對比——歷史改頁內展示，不再彈窗）；
-             面板僅 C-N 歸因樹有（schema/global/judgment 純 JSON），歷史所有規則皆可看 -->
+          <!-- 當前規則的檢視/編輯模式：prompt_*＝編輯（md）+ 歷史（md diff），無 JSON；
+             其餘（整體配置）＝JSON + 歷史 -->
           <a-radio-group v-model="mode" type="button" size="small">
-            <a-radio v-if="isDomainTree" value="panel">面板</a-radio>
-            <a-radio value="json">JSON</a-radio>
+            <a-radio v-if="isPrompt" value="panel">編輯</a-radio>
+            <a-radio v-else value="json">JSON</a-radio>
             <a-radio value="history">歷史</a-radio>
           </a-radio-group>
           <span v-if="store.currentMeta" class="text-xs text-[var(--color-text-3)]">
@@ -249,7 +228,7 @@ function doResetAll() {
           >
           <a-button size="small" type="outline" :loading="exporting" @click="doExport">
             <template #icon><icon-download /></template>
-            導出規則
+            導出 Prompt 包
           </a-button>
         </div>
 
@@ -257,7 +236,7 @@ function doResetAll() {
         <ExportProgressBar
           v-if="exporting"
           class="mb-3 flex-none"
-          label="導出規則"
+          label="導出 Prompt 包"
           :status="exportStatus"
           :processed="exportProgress.processed"
           :total="exportProgress.total"
@@ -296,29 +275,33 @@ function doResetAll() {
         <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
         <div class="min-h-0 flex-1">
           <StateGuard :loading="store.loading" :error="store.error">
-            <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
-            <RuleHistoryPanel
-              v-if="mode === 'history'"
-              :key="`hist-${store.activeCode}`"
+            <!-- 初判 Prompt（prompt_*）：md 歷史 diff / md 編輯器（優先於下方 JSON 分支）-->
+            <PromptHistoryPanel
+              v-if="isPrompt && mode === 'history'"
+              :key="`phist-${store.activeCode}`"
               class="h-full"
             />
-            <!-- 只有真正的 C-N 歸因分類（isDomainTree）＋面板模式才走 RuleTreePanel；其餘（schema/global/
-               judgment，及被抽屜共用 store 帶入的 product_vertical）一律 JsonEditor，歸因 schema 也僅對 C-N 套用 -->
-            <RuleTreePanel
-              v-else-if="mode === 'panel' && isDomainTree && store.edited"
+            <PromptEditor
+              v-else-if="isPrompt && store.edited"
               :key="editorKey"
               class="h-full"
               :content="store.edited"
               @change="onChange"
             />
+            <!-- 歷史模式：頁內對比恢復面板（依 activeCode 重掛，切規則即重載該規則歷史）-->
+            <RuleHistoryPanel
+              v-else-if="mode === 'history'"
+              :key="`hist-${store.activeCode}`"
+              class="h-full"
+            />
+            <!-- 整體配置（source_mapping）：純 JSON 編輯，無面板/schema 驗證 -->
             <JsonEditor
               v-else-if="store.edited"
               :key="editorKey"
               class="h-full"
               fill
               :json="store.edited"
-              :schema="isDomainTree ? (schemaContent ?? undefined) : undefined"
-              :mode="jsonEditorMode"
+              mode="text"
               @change="onChange"
             />
           </StateGuard>
@@ -341,3 +324,27 @@ function doResetAll() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/**
+ * 左選單長 label 換行不截字（如「polarity 情緒傾向（Step 1）」在 w-52 內超寬）。
+ * Arco 在「item 本身（.arco-menu-item:not(.has-icon)）」與「內層 .arco-menu-item-inner」
+ * 兩處都設 nowrap + text-overflow:ellipsis（皆 specificity 0,3,0），故須：
+ *   1. 同時覆寫兩層（只改 item 外層無效，文字在 inner 內仍被 nowrap 截）
+ *   2. 疊 .arco-menu.arco-menu-vertical 拉高 specificity 蓋過 Arco，免用 !important
+ * 無對應 prop / utility 可觸及此第三方內部 DOM，故 :deep（frontend-vue 樣式鐵律 #3）。
+ * 改為自動換行 + 行高 1.5 + 高度自適應；短項（C-1~C-6）單行不受影響。
+ */
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item),
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item .arco-menu-item-inner) {
+  height: auto;
+  line-height: 1.5;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+:deep(.arco-menu.arco-menu-vertical .arco-menu-item) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+</style>

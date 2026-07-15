@@ -1,11 +1,10 @@
-"""判決核心（prejudge）確定性行為測試——建立引擎行為基準線（此前 659 行零測試）。
+"""判決核心（prejudge）確定性行為測試——Prompt-as-Source 唯一引擎路徑（legacy 已全數退役）。
 
 分兩層，皆不需 LLM key（stub）/ 不碰 DB：
 - **純 helper**：信心分層邊界、階段派生、證據封頂、寬鬆 float 解析。
 - **stub 管線**：`to_findings` 在 stub 模式的確定性啟發式（純好評略過 / 極性閘門 / 負向未歸因 pending_data）。
 
 config 相關讀取（閾值 / 旋鈕 / 負向詞）一律 monkeypatch 固定，使斷言與 config 漂移解耦。
-此基準線亦為未來換 DSPy 引擎（Phase 3）的行為對照。
 """
 
 from __future__ import annotations
@@ -23,16 +22,19 @@ _FIXED_CFG = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _decouple_taxonomy(monkeypatch):
+    """evidence_gated / 域 action 固定（與 `## Taxonomy`/ai_judge/DB 解耦；派生正確性見
+    test_prompt_source.test_structure_from_taxonomy）——避免單元測經 ai_judge 轉載全部 prompt。"""
+    monkeypatch.setattr(prejudge, "_evidence_gated_domains", lambda: frozenset({"supplier"}))
+    monkeypatch.setattr(prejudge, "_action_for", lambda dom: "escalate_ux")
+
+
 @pytest.fixture
 def fixed_config(monkeypatch):
-    """固定閾值 + prejudge 旋鈕（與 config 漂移解耦）。
-
-    prejudge_depth 亦 pin 在 l3：本檔基準線鎖 cascade/flat 完整路徑行為；
-    DB active 切 l2（初判只判 L1+L2）不應改變這批測試的走向。
-    """
+    """固定閾值 + prejudge 旋鈕（與 config 漂移解耦）。"""
     monkeypatch.setattr(prejudge, "_tiers", lambda: dict(_FIXED_TIERS))
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: dict(_FIXED_CFG))
-    monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
 
 
 # ── 純 helper ──────────────────────────────────────────────────────────
@@ -61,28 +63,24 @@ def test_derive_stage_all_branches() -> None:
 
 def test_attribute_when_parses_config(monkeypatch) -> None:
     """極性閘門 config 解析：清單/legacy 字串皆收；只認 negative/neutral；缺失回退 {negative}。"""
-    from app.core import global_rule
-
     monkeypatch.setattr(
-        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+        prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     assert prejudge._attribute_when() == frozenset({"negative", "neutral"})
     # legacy 單值字串（attribute_only_when）
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_only_when": "negative"})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_only_when": "negative"})
     assert prejudge._attribute_when() == frozenset({"negative"})
     # 誤填 positive → 過濾；全無效回退保守舊行為
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["positive"]})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["positive"]})
     assert prejudge._attribute_when() == frozenset({"negative"})
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {})
     assert prejudge._attribute_when() == frozenset({"negative"})
 
 
 def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> None:
     """gate 含 neutral 時：混合中性評論進歸因；有問題點→歸因列帶 polarity=neutral，無→non_issue。"""
-    from app.core import global_rule
-
     monkeypatch.setattr(
-        global_rule, "polarity_gate", lambda: {"attribute_when": ["negative", "neutral"]}
+        prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
@@ -92,8 +90,8 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         "l1_label": "供應商履約",
         "l2_code": "C-3-2",
         "l2_label": "成團履約",
-        "l3_code": "C-3-2-1",
-        "l3_label": "行程縮水",
+        "l3_code": "",
+        "l3_label": "",
         "confidence": 0.85,
         "raw_confidence": 0.85,
         "evidence_quote": "船沒搭到",
@@ -105,7 +103,7 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         model="m",
     )
     assert len(fs) == 1 and fs[0].polarity == "neutral" and fs[0].l1_domain_code == "supplier"
-    assert fs[0].judgment_stage == "judged"  # 有 L3+高信心：與負向同規則派生
+    assert fs[0].judgment_stage == "judged"  # 有 L2+高信心：與負向同規則派生
     # 混合中性但找不到具體問題點 → 純 non_issue（judged，非 pending_data）
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [])
     fs = prejudge.to_findings(
@@ -114,126 +112,11 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].judgment_stage == "judged"
 
 
-def test_resolve_attrs_min_confidence_gate(monkeypatch, fixed_config) -> None:
-    """attr 級最低信心閘門：低於 evidence_policy.attr_min_confidence 整條丟棄（湊數殭屍列）；0=關閉。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
-    low = {
-        "l1_domain_code": "product_quality",
-        "l2_code": "C-2-1",
-        "l3_code": "",
-        "confidence": 0.09,
-    }
-    ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
-    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(low), dict(ok)])
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.09 湊數列被殺
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0})
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert len(out) == 2  # 閘門關閉 → 保留（向後相容）
-
-
-def test_resolve_attrs_low_conf_reroute(monkeypatch, fixed_config) -> None:
-    """低信心負反饋重路由：Stage B 低於閘門的域排除後重跑 Stage A 改判他域；重判結果同過閘門。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(
-        global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": True}
-    )
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
-    calls: list[frozenset] = []
-
-    def fake_stage_a(text, model, max_n, polarity="negative", exclude=frozenset()):
-        calls.append(exclude)
-        return ["customer"] if exclude else ["product_quality"]  # 首輪選錯域；重路由改判 customer
-
-    def fake_stage_b(item, text, domain, model):
-        conf = 0.09 if domain == "product_quality" else 0.8  # 錯域湊數低信心；正確域正常
-        return {"l1_domain_code": domain, "l2_code": "", "l3_code": "", "confidence": conf}
-
-    monkeypatch.setattr(prejudge, "_stage_a_domains_multi", fake_stage_a)
-    monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert [a["l1_domain_code"] for a in out] == ["customer"]  # 錯域被殺、重路由域成立
-    assert len(calls) == 2 and "product_quality" in calls[1]  # 第二輪帶排除集
-    # Stage B 棄權（空回）同樣觸發重路由（棄權=域選錯最常見訊號）
-    calls.clear()
-    monkeypatch.setattr(
-        prejudge,
-        "_stage_b",
-        lambda item, text, d, model: (
-            {
-                "l1_domain_code": "",
-                "l2_code": "",
-                "l3_code": "",
-                "confidence": 0.5,
-            }
-            if d == "product_quality"
-            else {"l1_domain_code": d, "l2_code": "", "l3_code": "", "confidence": 0.8}
-        ),
-    )
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert [a["l1_domain_code"] for a in out] == ["customer"] and len(calls) == 2
-    # 重路由關閉 → 只跑一輪，低信心域被閘門殺掉、不重試
-    calls.clear()
-    monkeypatch.setattr(
-        global_rule, "cascade", lambda: {"enabled": True, "reroute_on_low_conf": False}
-    )
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert out == [] and len(calls) == 1
-
-
-def test_resolve_attrs_stage_a_l1l2(monkeypatch, fixed_config) -> None:
-    """stage_a_level=l1l2：Stage A 直選 L2 面向 → Stage B 以 (域, l2_code) 聚焦；重路由排除集=L2 顆粒度。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(
-        global_rule,
-        "cascade",
-        lambda: {"enabled": True, "stage_a_level": "l1l2", "reroute_on_low_conf": True},
-    )
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
-    monkeypatch.setattr(
-        prejudge, "_l2_domain_map", lambda: {"C-3-4": "supplier", "C-6-1": "customer"}
-    )
-    calls: list[frozenset] = []
-
-    def fake_l2s(text, model, max_n, polarity="negative", exclude=frozenset()):
-        calls.append(exclude)
-        return ["C-6-1"] if exclude else ["C-3-4"]  # 首輪選錯面向；重路由改判 C-6-1
-
-    seen_b: list[tuple[str, str]] = []
-
-    def fake_stage_b(item, text, domain, model, l2_code=""):
-        seen_b.append((domain, l2_code))
-        conf = 0.1 if l2_code == "C-3-4" else 0.85
-        return {
-            "l1_domain_code": domain if conf >= 0.2 else "",
-            "l2_code": l2_code,
-            "l3_code": "",
-            "confidence": conf,
-        }
-
-    monkeypatch.setattr(prejudge, "_stage_a_l2s_multi", fake_l2s)
-    monkeypatch.setattr(prejudge, "_stage_b", fake_stage_b)
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert [a["l1_domain_code"] for a in out] == ["customer"]
-    assert seen_b == [("supplier", "C-3-4"), ("customer", "C-6-1")]  # Stage B 收到面向聚焦
-    assert len(calls) == 2 and "C-3-4" in calls[1]  # 重路由排除集為 L2 code
-
-
 def test_to_findings_gate_excludes_neutral_when_config_negative_only(
     monkeypatch, fixed_config
 ) -> None:
     """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(global_rule, "polarity_gate", lambda: {"attribute_when": ["negative"]})
+    monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative"]})
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
@@ -322,7 +205,6 @@ def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "positive"
     assert f.judgment_stage == "judged"
-    assert f.dimension == "non_content"
     assert f.finding_id == "fd_product_reviews_R1"
 
 
@@ -353,49 +235,24 @@ def test_to_findings_middling_review_neutral_judged(stub_engine) -> None:
     assert f.judgment_stage == "judged"
 
 
-# ── 歸因處理正確性（_evidence_grounded / _finalize_attr）───────────────────
-# 這批鎖「LLM 原始輸出 → 淨化 attr」的確定性邏輯——證據接地防編造、abstain 回填、證據封頂——
-# 是判決核心的正確性關鍵，也是未來換 DSPy 引擎須逐位對齊的行為。
+# ── 歸因處理正確性（_evidence_grounded / _finalize_attr_l2）─────────────────
+# 這批鎖「LLM 原始輸出 → 淨化 attr」的確定性邏輯——證據接地防編造、白名單校驗、證據封頂——
+# 是判決核心（_attrs_pack 六域並行的合流前處理）的正確性關鍵。
 
-# 假 L3 節點解析（避開 ai_judge config 依賴，使斷言確定）。
-_L3_NODES = {
-    "L3-content": {
-        "l1_domain_code": "content",
-        "l1_label": "商品內容",
-        "l2_code": "L2c",
-        "l2_label": "描述",
-        "l3_code": "L3-content",
-        "l3_label": "不符",
-    },
-    "L3-supplier": {
-        "l1_domain_code": "supplier",
-        "l1_label": "供應商",
-        "l2_code": "L2s",
-        "l2_label": "履約",
-        "l3_code": "L3-supplier",
-        "l3_label": "遲到",
-    },
+# 面向白名單（_sanitize_l2 用；code → (l1_domain, l1_label, l2_label)）。
+_L2_VALID = {
+    "C-1-3": ("content", "商品內容", "描述"),
+    "C-3-2": ("supplier", "供應商履約", "履約"),
 }
-_EMPTY_NODE = {
-    k: "" for k in ("l1_domain_code", "l1_label", "l2_code", "l2_label", "l3_code", "l3_label")
-}
-
-
-def _fake_sanitize(code: str, _cands) -> dict:
-    return _L3_NODES.get(code, dict(_EMPTY_NODE))
 
 
 @pytest.fixture
-def finalize_env(monkeypatch, fixed_config):
-    """固定 _finalize_attr 的 config 依賴（L3 解析 / 證據・abstain 政策），使斷言與 config 解耦。"""
-    monkeypatch.setattr(prejudge, "_sanitize_l3", _fake_sanitize)
+def finalize_l2_env(monkeypatch, fixed_config):
+    """固定 _finalize_attr_l2 的 config 依賴（證據政策），使斷言與 config 解耦。"""
     monkeypatch.setattr(
-        prejudge.global_rule,
-        "evidence_policy",
-        lambda: {"require_quote_grounded": True, "l3_min_confidence": 0.5},
-    )
-    monkeypatch.setattr(
-        prejudge.global_rule, "abstain_policy", lambda: {"l3": "allow_empty_low_evidence"}
+        prejudge,
+        "_evidence_policy",
+        lambda: {"require_quote_grounded": True},
     )
 
 
@@ -409,72 +266,49 @@ def test_evidence_grounded() -> None:
     assert g("任何文字", "") is False  # 空 quote
 
 
-def test_finalize_attr_grounded_high_conf_keeps_l3(finalize_env) -> None:
-    """證據接地 + 高信心 + content 域（不封頂）→ 保留 L3、信心不變。"""
-    attr = prejudge._finalize_attr(
+def test_finalize_attr_l2_grounded_keeps_confidence(finalize_l2_env) -> None:
+    """證據接地 + content 域（不封頂）→ 保留 l2_code、信心不變。"""
+    attr = prejudge._finalize_attr_l2(
         {"source": "pr", "source_id": "R1"},
         "商品頁描述與實際完全不符很誤導",
-        {
-            "l3_code": "L3-content",
-            "confidence": 0.9,
-            "evidence_quote": "描述與實際完全不符",
-            "candidates": [],
-        },
-        frozenset({"L3-content"}),
+        {"l2_code": "C-1-3", "confidence": 0.9, "evidence_quote": "描述與實際完全不符"},
+        _L2_VALID,
     )
     assert attr["l1_domain_code"] == "content"
-    assert attr["l3_code"] == "L3-content"
+    assert attr["l2_code"] == "C-1-3"
     assert attr["confidence"] == pytest.approx(0.9)
 
 
-def test_finalize_attr_ungrounded_drops_l3_and_presses_conf(finalize_env) -> None:
-    """證據非原文（疑編造）→ L3 降階留空、保留 L1/L2、信心壓至 l3_min-0.01 交人審。"""
-    attr = prejudge._finalize_attr(
+def test_finalize_attr_l2_ungrounded_presses_confidence(finalize_l2_env) -> None:
+    """證據非原文（疑編造）→ 信心壓至 jury_low-0.01 交人審；l2_code 仍保留（非 L3 abstain 機制）。"""
+    attr = prejudge._finalize_attr_l2(
         {"source": "pr", "source_id": "R1"},
         "完全不同的評論內容跟證據無關",
-        {
-            "l3_code": "L3-content",
-            "confidence": 0.9,
-            "evidence_quote": "這是編造的假證據",
-            "candidates": [],
-        },
-        frozenset({"L3-content"}),
+        {"l2_code": "C-1-3", "confidence": 0.9, "evidence_quote": "這是編造的假證據"},
+        _L2_VALID,
     )
-    assert attr["l1_domain_code"] == "content"  # L1/L2 保留
-    assert attr["l3_code"] == ""  # L3 降階
-    assert attr["confidence"] == pytest.approx(0.49)  # 壓至 l3_min(0.5)-0.01
+    assert attr["l2_code"] == "C-1-3"
+    assert attr["confidence"] == pytest.approx(0.49)  # 壓至 jury_low(0.5)-0.01
 
 
-def test_finalize_attr_abstain_backfills_from_candidate(finalize_env) -> None:
-    """模型 abstain（l3_code 空）但有候選 → 取 top 候選回填 L1/L2/L3。"""
-    attr = prejudge._finalize_attr(
+def test_finalize_attr_l2_unknown_code_returns_empty(finalize_l2_env) -> None:
+    """l2_code 不在白名單（幻覺 code）→ 全空（未歸類，視同棄權）。"""
+    attr = prejudge._finalize_attr_l2(
         {"source": "pr", "source_id": "R1"},
-        "商品描述與實際不符誤導消費",
-        {
-            "l3_code": "",
-            "confidence": 0.7,
-            "evidence_quote": "描述與實際不符",
-            "candidates": [{"code": "L3-content", "score": 0.8}],
-        },
-        frozenset({"L3-content"}),
+        "某評論文字",
+        {"l2_code": "C-9-9", "confidence": 0.9, "evidence_quote": "某評論文字"},
+        _L2_VALID,
     )
-    assert attr["l1_domain_code"] == "content"  # 從候選回填
-    assert attr["l3_code"] == "L3-content"  # grounded + conf≥min → 保留
-    assert attr["confidence"] == pytest.approx(0.7)
+    assert attr["l1_domain_code"] == "" and attr["l2_code"] == ""
 
 
-def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
+def test_finalize_attr_l2_supplier_without_order_capped(finalize_l2_env) -> None:
     """供應商域缺 order_oid → 證據封頂至 jury_high-0.01、標記 evidence_capped。"""
-    attr = prejudge._finalize_attr(
+    attr = prejudge._finalize_attr_l2(
         {"source": "pr", "source_id": "R1"},  # 無 order_oid
         "供應商臨時取消還遲到接送",
-        {
-            "l3_code": "L3-supplier",
-            "confidence": 0.95,
-            "evidence_quote": "臨時取消還遲到",
-            "candidates": [],
-        },
-        frozenset({"L3-supplier"}),
+        {"l2_code": "C-3-2", "confidence": 0.95, "evidence_quote": "臨時取消還遲到"},
+        _L2_VALID,
     )
     assert attr["l1_domain_code"] == "supplier"
     assert attr["confidence"] == pytest.approx(0.69)  # 封頂 jury_high(0.7)-0.01
@@ -482,16 +316,14 @@ def test_finalize_attr_supplier_without_order_capped(finalize_env) -> None:
 
 
 # ── 多歸因去重 / 排序 / 上限（_resolve_attrs_multi 的防過度歸因邏輯）──────────
-# 鎖：同 L1 域保信心最高（action/owner 為域級）+ 濾全 abstain（無域）+ 依 confidence 降冪 + cap max_n。
-# mock 掉 LLM 產出階段（_stage2_attribute_multi），只測其後的確定性去重/排序。
+# 鎖：同(域,面向)去重保信心最高（同 L1 不同 L2 面向並列）+ 濾全 abstain（無域）+ 依 confidence 降冪 + cap max_n。
+# mock 掉 LLM 產出階段（_attrs_pack），只測其後的確定性去重/排序（六域並行的合流尾段）。
 
 
 @pytest.fixture
 def non_stub(monkeypatch):
-    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）+ 關 cascade（走單次多歸因）+ pin l3 深度。"""
+    """離開 stub 模式（使 _resolve_attrs_multi 走真歸因分支）。"""
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(prejudge.global_rule, "cascade", lambda: {"enabled": False})
-    monkeypatch.setattr(prejudge.global_rule, "prejudge_depth", lambda: "l3")
 
 
 def test_resolve_attrs_multi_dedup_keeps_highest_and_drops_abstain(non_stub, monkeypatch) -> None:
@@ -502,7 +334,7 @@ def test_resolve_attrs_multi_dedup_keeps_highest_and_drops_abstain(non_stub, mon
         {"l1_domain_code": "supplier", "confidence": 0.7},
         {"l1_domain_code": "", "confidence": 0.95},  # 空域（全 abstain）→ 濾除
     ]
-    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: synthetic)
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
     out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 3)
     assert [a["l1_domain_code"] for a in out] == ["content", "supplier"]  # 0.9 > 0.7 降冪
     assert out[0]["confidence"] == 0.9
@@ -515,15 +347,80 @@ def test_resolve_attrs_multi_caps_at_max_n(non_stub, monkeypatch) -> None:
         {"l1_domain_code": "supplier", "confidence": 0.8},
         {"l1_domain_code": "service", "confidence": 0.7},
     ]
-    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: synthetic)
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
     out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["content", "supplier"]  # 取前 2 高信心
+
+
+def test_resolve_attrs_multi_same_domain_multi_l2_coexist(non_stub, monkeypatch) -> None:
+    """同一 L1 域下多個 L2 面向並列（不再塌成一條）；僅同(域,面向)重複才去重取信心最高。"""
+    monkeypatch.setattr(
+        prejudge, "_evidence_policy", lambda: {}
+    )  # 關閉 secondary/attr 閘門，純測去重粒度
+    synthetic = [
+        {"l1_domain_code": "service", "l2_code": "C-5-1", "l3_code": "", "confidence": 0.9},
+        {
+            "l1_domain_code": "service",
+            "l2_code": "C-5-2",
+            "l3_code": "",
+            "confidence": 0.6,
+        },  # 同域異面向 → 並列
+        {
+            "l1_domain_code": "service",
+            "l2_code": "C-5-1",
+            "l3_code": "",
+            "confidence": 0.4,
+        },  # 同(域,面向) → 被 0.9 覆蓋
+    ]
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 6)
+    assert [(a["l1_domain_code"], a["l2_code"]) for a in out] == [
+        ("service", "C-5-1"),  # 0.9 主
+        ("service", "C-5-2"),  # 0.6 同域第二面向並列
+    ]
 
 
 def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:
     """stub 模式無法真歸因 → 回空（負向但無違規線 → 上層轉 pending_data）。"""
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: True)
     assert prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 2) == []
+
+
+def test_resolve_attrs_min_confidence_gate(non_stub, monkeypatch) -> None:
+    """attr 級最低信心閘門：低於 evidence_policy.attr_min_confidence 整條丟棄（湊數殭屍列）；0=關閉。"""
+    low = {"l1_domain_code": "quality", "l2_code": "C-2-1", "l3_code": "", "confidence": 0.09}
+    ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(low), dict(ok)])
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.09 湊數列被殺
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0})
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 2  # 閘門關閉 → 保留（向後相容）
+
+
+def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> None:
+    """次要歸因信心閘門：非 primary 條目低於 secondary_min_confidence 丟棄只留主因；primary 不受影響；缺鍵=關閉。"""
+    primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
+    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.55}
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(primary), dict(weak2nd)])
+    monkeypatch.setattr(
+        prejudge,
+        "_evidence_policy",
+        lambda: {"attr_min_confidence": 0.2, "secondary_min_confidence": 0.6},
+    )
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.55 次要歸因被殺、主因保留
+    # 單條 primary 信心 0.4（低於 secondary 閘門、高於 attr 閘門）→ 不受影響（閘門只管非 primary）
+    lone = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.4}
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(lone)])
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 1
+    # 閘門關閉（缺鍵=0）→ 兩條都保留（向後相容）
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0.2})
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(primary), dict(weak2nd)])
+    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
+    assert len(out) == 2
 
 
 # ── G1 自動確認路由（_route_status / to_findings status）──────────────────────
@@ -569,35 +466,3 @@ def test_to_findings_negative_pending_stays_new(stub_engine) -> None:
     """負向未歸因（needs_review+pending_data）→ status=new（需人工）。"""
     out = prejudge.to_findings(_item(1, "服務很差要退款"), model="gpt-5-nano")
     assert out[0].status == "new"
-
-
-def test_resolve_attrs_secondary_min_confidence_gate(monkeypatch, fixed_config) -> None:
-    """次要歸因信心閘門：非 primary 條目低於 secondary_min_confidence 丟棄只留主因；primary 不受影響；缺鍵=關閉。"""
-    from app.core import global_rule
-
-    monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(global_rule, "cascade", lambda: {"enabled": False})
-    primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
-    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.55}
-    monkeypatch.setattr(
-        prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(primary), dict(weak2nd)]
-    )
-    monkeypatch.setattr(
-        global_rule,
-        "evidence_policy",
-        lambda: {"attr_min_confidence": 0.2, "secondary_min_confidence": 0.6},
-    )
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.55 次要歸因被殺、主因保留
-    # 單條 primary 信心 0.4（低於 secondary 閘門、高於 attr 閘門）→ 不受影響（閘門只管非 primary）
-    lone = {"l1_domain_code": "customer", "l2_code": "C-6-1", "l3_code": "", "confidence": 0.4}
-    monkeypatch.setattr(prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(lone)])
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert len(out) == 1
-    # 閘門關閉（缺鍵=0）→ 兩條都保留（向後相容）
-    monkeypatch.setattr(global_rule, "evidence_policy", lambda: {"attr_min_confidence": 0.2})
-    monkeypatch.setattr(
-        prejudge, "_stage2_attribute_multi", lambda *a, **k: [dict(primary), dict(weak2nd)]
-    )
-    out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
-    assert len(out) == 2

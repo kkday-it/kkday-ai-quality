@@ -6,40 +6,9 @@
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from typing import Literal
 
 from pydantic import BaseModel, Field
-
-# 8 大內容治理 dimension label 的單一真相源（legacy 相容欄；roster.DIM_CODE / prejudge 關鍵詞映射皆引用此，
-# 不再各自手打中文，杜絕三處副本漂移）。順序即語義順序。
-CONTENT_DIMENSIONS: tuple[str, ...] = (
-    "商品定位",
-    "行程流程",
-    "費用資訊",
-    "集合資訊",
-    "使用兌換",
-    "成團條件",
-    "限制與風險",
-    "承諾與SLA",
-)
-
-# Dimension 型別（compile-time Literal 無法由 tuple 展開，故字面重列；下方 assert 保證與 CONTENT_DIMENSIONS 一致）。
-Dimension = Literal[
-    "商品定位",
-    "行程流程",
-    "費用資訊",
-    "集合資訊",
-    "使用兌換",
-    "成團條件",
-    "限制與風險",
-    "承諾與SLA",
-    "non_content",  # 出貨/退款/系統/服務等非內容
-]
-
-# import 期守衛：Literal 與 tuple 兩份字面若漂移即炸，強制同檔內同步（取代跨檔三副本的隱性 drift）。
-assert set(CONTENT_DIMENSIONS) | {"non_content"} == set(get_args(Dimension)), (
-    "CONTENT_DIMENSIONS 與 Dimension Literal 不一致，請同步"
-)
 
 RecommendedAction = Literal[
     "rewrite_field",
@@ -77,8 +46,6 @@ class TicketFinding(BaseModel):
     ticket_id: str = ""
     prod_oid: str = ""
     pkg_oid: str = ""
-    # L2 問題理解
-    dimension: Dimension
     # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
     summary: dict[str, str] = Field(default_factory=dict)
     # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
@@ -122,16 +89,11 @@ class TicketFinding(BaseModel):
     severity: Severity = "P3"  # 嚴重度（本期不判斷，保留預設供既有 pipeline 相容）
     responsible_party: str = ""  # 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）
     judgment_tier: int | None = None  # v3 判定層（1/2/3A/3B）
-    # ── config/ai_judge L3 歸因（prejudge 產出；歸因分類後新增的數據）──
+    # ── config/ai_judge L2 歸因（prejudge 產出；歸因分類後新增的數據）──
     l1_domain_code: str = ""  # L1 域機器碼（content/supplier…；root_cause_domain 為其圈號）
     l1_label: str = ""  # L1 域中文名
     l2_code: str = ""  # L2 面向 C-code（C-x-y）
     l2_label: str = ""  # L2 面向中文名
-    l3_code: str = ""  # L3 細項 C-code（C-x-y-z；config/ai_judge 白名單）
-    l3_label: str = ""  # L3 細項中文名
-    l3_candidates: list[dict] = Field(
-        default_factory=list
-    )  # top-3 符合度 [{code,label,score}]（透明檢視）
     polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral(中立)
     # 情緒分 1-5（LLM 讀原文細分，夾進 polarity 區間：負面 1-2 / 中立 3 / 正面 4-5）；0＝未判。
     # 與外部評論 sentiment 同尺度，供評論對比表逐則比對。
@@ -140,20 +102,16 @@ class TicketFinding(BaseModel):
     # 判決階段（prejudge 派生；未判＝無 finding 於 enrich 層補）：
     # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充
     judgment_stage: str = ""
-    model_used: str = (
-        ""  # 判決使用的 LLM 模型（stub 時為 "stub"；ensemble 聯合判決時為 "ensemble"）
-    )
+    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
     judged_at: str = ""  # 判決時間（ISO）
-    # 多 model 聯合判決（ensemble）各 voter 攤平票 [{model,l1_code,l2_code,l3_code,conf}]；單模型判決為空
-    model_votes: list[dict] = Field(default_factory=list)
 
     def to_columns(self) -> dict:
         """判決 payload → judgments typed 欄位 dict（落庫形狀 SSOT）。
 
-        攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取 14 個真訊號欄；
-        殘留 / legacy / 恆空欄（verdict 軸、symptom_tag、severity、evidence_level、
-        l3_candidates… 見 plans/1-peaceful-wirth.md）一律不入庫。finding_id / source /
-        source_id / prod_oid / dimension / status / created_at / needs_review / true_label
+        攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
+        殘留 / legacy 欄（verdict 軸、symptom_tag、severity、evidence_level…
+        見 plans/1-peaceful-wirth.md）一律不入庫。finding_id / source /
+        source_id / prod_oid / status / created_at / needs_review
         由 db.findings._finding_values 補齊（來源關聯 + 人工覆核軸）。
 
         Returns:
@@ -167,8 +125,6 @@ class TicketFinding(BaseModel):
             "l1_label": self.l1_label,
             "l2_code": self.l2_code,
             "l2_label": self.l2_label,
-            "l3_code": self.l3_code,
-            "l3_label": self.l3_label,
             "conf_value": self.confidence,
             "conf_raw": self.raw_confidence,
             "conf_tier": self.confidence_tier,
@@ -178,6 +134,4 @@ class TicketFinding(BaseModel):
             "model": self.model_used,
             "is_primary": self.is_primary,
             "judged_at": self.judged_at,
-            "model_votes": self.model_votes
-            or None,  # 單模型判決為空 → 存 NULL（僅 ensemble 落非空）
         }

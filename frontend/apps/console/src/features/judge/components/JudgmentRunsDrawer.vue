@@ -129,7 +129,6 @@ const paramsSummary = (r: JudgmentRun) => {
   if (p.max_confidence != null) parts.push(`信心上限：${String(p.max_confidence)}`);
   if (Array.isArray(p.item_ids) && p.item_ids.length)
     parts.push(`標的：${(p.item_ids as string[]).join('、')}`);
-  if (r.ensemble_voters) parts.push(`ensemble voters：${r.ensemble_voters}`);
   if (p.backfilled) parts.push('（歷史回填自 llm_usage：成功/失敗數當時未記）');
   return parts.join('　');
 };

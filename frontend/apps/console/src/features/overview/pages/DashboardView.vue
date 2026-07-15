@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { ChartCard, ChartModal, SectionTitle } from '../components';
+import { ChartCard, ChartDrawer, SectionTitle } from '../components';
 import { useAiJudgeOverview } from '../composables';
 import { resolveChartData } from '../utils';
 import dashboard from '@config/overview/dashboard.json';
@@ -47,13 +47,13 @@ const specsOf = (section: SectionSpec): ChartSpec[] =>
 const resolveData = (spec: ChartSpec): unknown => resolveChartData(spec, data.value);
 
 // 單圖放大（Feature 1）
-const modalOpen = ref(false);
+const zoomOpen = ref(false);
 const zoomSpec = ref<ChartSpec | null>(null);
 const zoomData = ref<unknown>(null);
 const onZoom = (spec: ChartSpec) => {
   zoomSpec.value = spec;
   zoomData.value = resolveData(spec);
-  modalOpen.value = true;
+  zoomOpen.value = true;
 };
 </script>
 
@@ -86,6 +86,6 @@ const onZoom = (spec: ChartSpec) => {
 
     <p class="mt-2 text-center text-xs text-[#c9cdd4]">{{ data.meta.note }}</p>
 
-    <ChartModal v-model:visible="modalOpen" :spec="zoomSpec" :data="zoomData" />
+    <ChartDrawer v-model:visible="zoomOpen" :spec="zoomSpec" :data="zoomData" />
   </div>
 </template>

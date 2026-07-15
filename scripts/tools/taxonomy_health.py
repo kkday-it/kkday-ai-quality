@@ -10,8 +10,10 @@
   B 邊界模糊：純 L1 爭議（各判單一域卻不同）的類別對熱點
   C 粒度失衡：L2 使用分佈（零/極低觸發、過度集中）
   D 層級效度：L1 一致時 L2 是否也一致（按域）
-  E 覆蓋率：外部獨立標籤 free_tag 映射殘差（盲區候選）
-  F 結構觀察：跨域粒度不一致 + L3 深度限制
+  E 結構觀察：跨域粒度不一致 + L3 深度限制
+
+（原 F 覆蓋率維度讀 config/ai_judge/free_tag_mapping.json 反查外部標籤映射殘差，該檔已於
+2026-07-13 隨相關邏輯一併退役，本工具不再提供此維度。）
 
 ⚠️ 侷限（報告內明確聲明）：這是「一致性/合理性」非「準確度」；樣本為負向歸因子集（正向/中立
 不歸因）；L3 層因判決深度=l2 不判故不評；多模型皆封閉式判（被餵當前樹），能診斷「現有類好不好用」
@@ -150,60 +152,6 @@ def _hierarchy_validity(models, snaps, common, l1lab):
     return {l1lab.get(d, d): tuple(v) for d, v in by.items()}
 
 
-def _free_tag_coverage():
-    """外部 free_tag（獨立標籤體系）映射殘差＝覆蓋盲區候選。回 (全覆蓋率, 問題面向覆蓋率, 盲區Top)。"""
-    import json
-
-    from sqlalchemy import select
-
-    from app.core.db import tables as T
-    from app.core.paths import AI_JUDGE_DIR
-
-    mapped = set(
-        json.loads((AI_JUDGE_DIR / "free_tag_mapping.json").read_text())["mapping"]
-    )
-    pr = T.product_reviews
-    freq: Counter = Counter()
-    negfreq: Counter = Counter()
-    with T.get_engine().connect() as c:
-        rows = c.execute(
-            select(pr.c.free_tag).where(pr.c.free_tag.isnot(None), pr.c.free_tag != "")
-        ).all()
-    for (ft,) in rows:
-        try:
-            arr = json.loads(ft)
-        except (ValueError, TypeError):
-            continue
-        if not isinstance(arr, list):
-            continue
-        seen = set()
-        for t in arr:
-            name = t.get("tag_name") if isinstance(t, dict) else None
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            freq[name] += 1
-            v = t.get("tag_value")
-            try:
-                if v is not None and float(v) <= 2:
-                    negfreq[name] += 1
-            except (ValueError, TypeError):
-                pass
-    tot = sum(freq.values())
-    cov = sum(f for n, f in freq.items() if n in mapped)
-    negtot = sum(negfreq.values())
-    negcov = sum(f for n, f in negfreq.items() if n in mapped)
-    blind = sorted(
-        [(n, negfreq[n], freq[n]) for n in freq if n not in mapped and negfreq.get(n, 0) > 0],
-        key=lambda x: -x[1],
-    )[:12]
-    return (
-        (cov, tot, cov / tot if tot else 0),
-        (negcov, negtot, negcov / negtot if negtot else 0),
-        blind,
-    )
-
-
 def build_report(models: list[str], source: str) -> str:
     """跑全診斷並組出 markdown 報告字串。"""
     from app.core import db
@@ -219,7 +167,6 @@ def build_report(models: list[str], source: str) -> str:
     ndisp, conf = _boundary_disputes(present, snaps, common, l1lab)
     zero, low, top = _l2_granularity(present, snaps, common, l2lab)
     hv = _hierarchy_validity(present, snaps, common, l1lab)
-    (cov, tot, covr), (negcov, negtot, negr), blind = _free_tag_coverage()
 
     ts = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
     L = []
@@ -273,22 +220,11 @@ def build_report(models: list[str], source: str) -> str:
     L.append(f"- **極低觸發 1-3 則**（{len(low)} 類）：{'、'.join(f'{n}({c})' for n, c in low) or '無'}")
     L.append(f"- **過度集中 Top5**：{'、'.join(f'{n}({c})' for n, c in top)}　→ 高頻類可能太粗、內部該再分")
 
-    L.append("\n## 五、覆蓋率（外部獨立標籤 free_tag 驗證）")
-    L.append(
-        f"\n用外部評論系統的 free_tag（**完全獨立於當前分類**的面向標籤）反查：\n\n"
-        f"| 口徑 | 覆蓋率 |\n|---|---|\n"
-        f"| 全部面向（加權） | **{covr:.1%}**（{cov}/{tot}）|\n"
-        f"| 僅問題面向（低分，加權） | **{negr:.1%}**（{negcov}/{negtot}）|"
-    )
-    L.append("\n**盲區候選**（外部標了問題面向、當前樹未映射；量小，需人工確認是真缺類或 mapping 沒配全）\n\n| 面向 | 低分則數 | 總則數 |\n|---|---|---|")
-    for n, nf, f in blind:
-        L.append(f"| {n} | {nf} | {f} |")
-
-    L.append("\n## 六、結構觀察")
+    L.append("\n## 五、結構觀察")
     L.append(
         "\n- **跨域粒度不一致**：C-1 商品內容域細到「頁面欄位」級（60 個 L3：商品主圖/集合地點…），"
-        "其他域只到「問題類型」級（期待落差/不可抗力）。同一棵樹兩種粒度標準，屬體系設計的不對稱。\n"
-        "- **L3 深度**：當前判決深度=l2，79 個 L3 節點全未觸發——非分類缺陷，是判決設定；"
+        "其他域只到「問題類型」級（內容期待落差/天候與自然因素）。同一棵樹兩種粒度標準，屬體系設計的不對稱。\n"
+        "- **L3 深度**：當前判決深度=l2，L3 節點全未觸發——非分類缺陷，是判決設定；"
         "若要評 L3 品質需先開 l3 深判。"
     )
     L.append(f"\n---\n\n*本報告由 `scripts/tools/taxonomy_health.py` 產出（純 DB 查詢，零 LLM 成本）；改規則後重跑同指令即可對比。*")

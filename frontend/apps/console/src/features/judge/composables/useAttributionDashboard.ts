@@ -97,10 +97,8 @@ export function useAttributionDashboard(
   const drillL1 = ref<{ code: string; label: string } | null>(null);
   const breakdown = ref<AttributionBreakdown | null>(null);
   const drillLoading = ref(false);
-  // ── 商品內容細化（常載·各檢視都有）：l1='content' 的 L2/L3 多指標，供左 L2 / 右 L3 互動圖 ──
+  // ── 商品內容細化（常載·各檢視都有）：l1='content' 的 L2 面向多指標長條 ──
   const contentBreakdown = ref<AttributionBreakdown | null>(null);
-  // 左側點選的 L2 面向（null＝未載入 / 無資料）；切檢視重載時預設回筆數最多的 L2。
-  const selectedL2 = ref<{ code: string; label: string } | null>(null);
 
   /** 載入縱覽聚合（切來源 / 重新整理共用）；同時清空下鑽狀態、常載商品內容細化。 */
   const reload = async () => {
@@ -120,13 +118,11 @@ export function useAttributionDashboard(
         ...q,
         granularity: toValue(query.granularity),
       })) as AttributionOverview;
-      // 商品內容細化圖所需（失敗不阻斷縱覽主體）；預設選中筆數最多的 L2 讓右側 L3 有初值。
+      // 商品內容細化圖所需（失敗不阻斷縱覽主體）。
       contentBreakdown.value = (await getAttributionBreakdown(
         'content',
         q,
       )) as AttributionBreakdown;
-      const top = contentBreakdown.value?.by_l2?.[0];
-      selectedL2.value = top ? { code: top.code, label: top.label } : null;
     } catch (e: unknown) {
       error.value = '載入失敗：' + (e instanceof Error ? e.message : String(e));
     } finally {
@@ -151,20 +147,7 @@ export function useAttributionDashboard(
     buildContentBarOption(toContentItems(contentBreakdown.value?.by_l2 ?? [])),
   );
 
-  /** 右側 L3 細項長條：僅選中 L2 底下的 L3（占比＝該 L3 / 選中 L2 內 L3 總數，非全域）。 */
-  const contentL3Bar = computed(() => {
-    const code = selectedL2.value?.code;
-    const rows = (contentBreakdown.value?.by_l3 ?? []).filter((r) => !code || r.l2_code === code);
-    return buildContentBarOption(toContentItems(rows));
-  });
-
-  /** 點左側 L2 長條 → 以 category 名反查 L2 code，切換右側 L3（by_l2 label 唯一）。 */
-  const onContentL2Click = (p: { name: string }) => {
-    const hit = contentBreakdown.value?.by_l2.find((d) => d.label === p.name);
-    if (hit) selectedL2.value = { code: hit.code, label: hit.label };
-  };
-
-  /** 點 L1 長條 → 載該域 L2/L3 細項分布（以當前 source 過濾）。 */
+  /** 點 L1 長條 → 載該域 L2 面向分布（以當前 source 過濾）。 */
   const openDrill = async (code: string, label: string) => {
     drillL1.value = { code, label };
     drillLoading.value = true;
@@ -278,7 +261,6 @@ export function useAttributionDashboard(
 
   const l1Bar = computed(() => rankBar('L1 歸因域分布', data.value?.by_l1 ?? [], '#165dff'));
   const l2Bar = computed(() => rankBar('L2 細項', breakdown.value?.by_l2 ?? [], '#4080ff'));
-  const l3Bar = computed(() => rankBar('L3 細項', breakdown.value?.by_l3 ?? [], '#6aa1ff'));
 
   const tierDonut = computed(() =>
     buildDonutOption({
@@ -316,11 +298,8 @@ export function useAttributionDashboard(
     openDrill,
     onL1Click,
     reload,
-    // 商品內容細化互動圖（常載·各檢視都有）：左 L2 可點 → 右 L3 即時更新
-    selectedL2,
+    // 商品內容細化互動圖（常載·各檢視都有）：L2 面向問題分布
     contentL2Bar,
-    contentL3Bar,
-    onContentL2Click,
     // 全局垂直分類篩選（縱覽工具列）
     verticalOptions,
     verticalGroups,
@@ -336,7 +315,6 @@ export function useAttributionDashboard(
     funnel,
     l1Bar,
     l2Bar,
-    l3Bar,
     tierDonut,
     trend,
   };

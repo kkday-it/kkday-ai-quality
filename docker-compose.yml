@@ -1,7 +1,8 @@
 # 生產編排示範：postgres + backend（FastAPI）+ frontend（nginx 靜態 + /api 反代）。完整命令見 docker/README.md。
 # 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
 #
-#   啟動：   POSTGRES_PASSWORD=... AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
+#   啟動：   ./start.sh prod    （零配置：首次自動生成機密寫入 .env，冪等永不覆蓋既有值）
+#   或手動： POSTGRES_PASSWORD=... AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
 #   停止：   docker compose down                    （資料保留於 pgdata volume）
 #   看 log： docker compose logs -f backend
 #

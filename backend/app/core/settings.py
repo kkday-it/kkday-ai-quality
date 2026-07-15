@@ -6,7 +6,6 @@
   `provider_models`（各供應商自訂 model 清單）。
 - QC DB：`qc_configs[]`（每套 {id,label,env,host,port,user,names[],schemas[]}）+ `active_qc_config_id`；
   password 不入 config，存 `qc_passwords`（per-config 機密，key=config_id）。
-- `taxonomy_overrides`（規整 L1/L2/L3，不變）。
 
 機密絕不明文回前端：masked() 逐 key 遮罩 provider_tokens / qc_passwords；raw() 供「眼睛顯示全文」與編輯回填。
 空/遮罩值 save 不覆蓋既有機密。舊單一 active flat 格式由 load_settings 偵測並自動遷移 + 持久化（穩定 uuid）。
@@ -108,7 +107,6 @@ _NEW_DEFAULT: dict = {
     "qc_configs": [],
     "active_qc_config_id": None,
     "qc_passwords": {},  # { config_id: password } per-config 機密
-    "taxonomy_overrides": {},  # 規整 L1/L2/L3 sparse map（不變）
     "overview_boards": [],  # 概覽自訂組合看板 [{id,label,chartIds[]}]（非機密）
     "active_overview_board_id": None,
 }
@@ -135,7 +133,6 @@ def _blank_settings() -> dict:
         "qc_configs": [],
         "active_qc_config_id": None,
         "qc_passwords": {},
-        "taxonomy_overrides": {},
         "overview_boards": [],
         "active_overview_board_id": None,
     }
@@ -206,7 +203,6 @@ def _migrate_legacy(data: dict) -> dict:
         if old_pw:
             new["qc_passwords"] = {qc_id: old_pw}
 
-    new["taxonomy_overrides"] = data.get("taxonomy_overrides") or {}
     return new
 
 
@@ -230,7 +226,6 @@ def load_settings(user_id: str) -> dict:
     cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
     cur["llm_configs"] = [dict(c) for c in (cur.get("llm_configs") or [])]
     cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
-    cur["taxonomy_overrides"] = dict(cur.get("taxonomy_overrides") or {})
     cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
     _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
     return cur
@@ -259,7 +254,6 @@ def effective_llm_dict(s: dict, config_id: str | None = None) -> dict:
         "reasoning_effort": cfg.get("reasoning_effort", "default"),
         "provider_tokens": dict(s.get("provider_tokens") or {}),
         "provider_models": dict(s.get("provider_models") or {}),
-        "taxonomy_overrides": s.get("taxonomy_overrides") or {},
     }
 
 
@@ -321,9 +315,6 @@ def save_settings(user_id: str, patch: dict) -> dict:
         cur["qc_passwords"] = merged_pw
     if "active_qc_config_id" in patch:
         cur["active_qc_config_id"] = patch["active_qc_config_id"]
-
-    if "taxonomy_overrides" in patch:
-        cur["taxonomy_overrides"] = patch.get("taxonomy_overrides") or {}
 
     # ── 概覽自訂看板（非機密，整包替換 + 補 id）──
     if "overview_boards" in patch:

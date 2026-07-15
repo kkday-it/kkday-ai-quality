@@ -66,12 +66,32 @@ paths:
 |---|---|---|
 | **主行為**（該區唯一最重要、確認/提交） | `type="primary"` | 儲存、確認、送出 |
 | **次要行為**（並列可選動作） | `type="outline"` | 導出、匯入、複製 |
+| **試驗性 / dry-run**（模擬執行、不落庫） | `type="dashed"` | 測試、測試 Prompt |
 | **破壞性/需謹慎**（重置、刪除、清空） | `type="outline" status="warning"`（刪除用 `status="danger"`） | 恢復默認、刪除 |
-| **純檢視/輕量**（開彈窗看、切換） | `type="text"` | 歷史、詳情 |
+| **純檢視/輕量**（開抽屜看、切換） | `type="text"` | 歷史、詳情 |
 
 - 主行為**每區至多一顆** primary；其餘不得搶佔主色。
+- **相鄰按鈕禁止「同 type 且同 status」**；同層級多顆 text 檢視鈕以不同 icon 區分。
+- 列操作欄範本（AttributionList）：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 判決歷史 `text`+icon——四鈕四樣式，掃一眼即分級。
 - 有明確語義的動作**配對應 icon**（導出→`icon-download`、新增→`icon-plus`、刷新→`icon-refresh`），icon 從 `@arco-design/web-vue/es/icon` 具名 import。
-- 破壞性操作除變色外，仍須二次確認（`a-modal` / `Modal.confirm`），顏色不替代確認。
+- 破壞性操作除變色外，仍須二次確認（`Modal.confirm` / `a-popconfirm`），顏色不替代確認。
+
+## 彈窗 vs 抽屜（Drawer-first · 強制）
+
+**除「確認窗口」外，一切彈出層一律用 `a-drawer`（右側滑出），禁止新增內容型 `a-modal`**；需求觸碰到既有內容型 modal 時順帶替換為 drawer。
+
+| 場景 | 用什麼 |
+|---|---|
+| 二次確認（刪除/覆蓋/送出：純文案＋確定/取消，至多附一個備註輸入欄） | `Modal.confirm` / `a-popconfirm` / 輕量 `a-modal` |
+| 表單 / 參數配置（新增、編輯、初判目標、導出設定） | `a-drawer` |
+| 詳情 / 歷史 / 時間軸 / 測試面板 / 預覽 | `a-drawer` |
+
+- 一律右側滑出（不指定 `placement`、不混向）；寬度依內容：640 單欄詳情 / 680–760 輕表單 / 820–900 並排對比、時間軸 / 1040 多欄配置表單
+- **內部滾動高度撐滿（強制）**：抽屜主內容為單一長列表 / 時間軸 / 表格時，`:body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"` 打通高度鏈，滾動區塊 `flex-1 min-h-0 overflow-auto`（表格走 TableLayout 傳 `full-height`）。**禁止 `max-h-[NNNpx]` 寫死滾動高**——那是 modal 時代殘留，抽屜滿高後會變成「上面一小塊滾動、下面大片留白」。例外：多段文檔流內容（表單＋說明＋子表混排）維持 drawer body 預設整體捲動即可。
+- 純檢視 `:footer="false"`；有提交動作沿用 `ok-text` / `cancel-text` / `:ok-loading` / `@ok`——drawer 與 modal 同名同義 API，替換可直接平移
+- 重內容加 `unmount-on-close`（配 `defineAsyncComponent` 點開才載，見下方懶加載）
+- 不可中斷流程（匯入中）：`:mask-closable="false"` + `:closable` 動態控制
+- 元件檔名以 `*Drawer.vue` 結尾；禁止 drawer 內容元件命名 `*Modal`
 
 ## 懶加載 / Code-splitting（預設機制）
 

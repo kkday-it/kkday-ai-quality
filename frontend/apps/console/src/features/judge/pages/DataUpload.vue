@@ -235,8 +235,8 @@ const exportBatch = (batch: any) => {
       </a-upload>
     </CardSection>
 
-    <!-- 校驗預覽彈窗：每工作表偵測來源 + 可否上傳 + 勾選確認 -->
-    <a-modal
+    <!-- 校驗預覽抽屜：每工作表偵測來源 + 可否上傳 + 勾選確認 -->
+    <a-drawer
       v-model:visible="modalVisible"
       :title="uploadJob ? '匯入進度' : '上傳預覽 · 表頭校驗結果'"
       :width="760"
@@ -335,7 +335,7 @@ const exportBatch = (batch: any) => {
           {{ importing ? '匯入中…' : '完成' }}
         </a-button>
       </template>
-    </a-modal>
+    </a-drawer>
 
     <CardSection title="上傳批次" :hint="`共 ${batches.length} 批 · 新到舊 · 點「查看」展開明細`">
       <StateGuard

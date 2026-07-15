@@ -7,7 +7,7 @@
 
 | feature | 內容 |
 |---|---|
-| `judge/` | **AI 法官主模組**：規則配置（RuleManager 版本化編輯：schema 結構規格 / global 判決總規範 / judgment 判決配置（信心閾值·label·G1 auto_confirm 旋鈕）/ C-N 歸因分類 + 歷史對比）、資料上傳、歸因列表（一列一 review + 多歸因堆疊 + 伺服器分頁 + 初判歸因批次 + 單筆/批量覆核〔確認/忽略/再點撤銷〕+ 覆核狀態/判決模型篩選 + xlsx 導出（可選「輸出結果版本」＝指定模型的歷史快照，多模型對比）+ `JudgmentHistoryModal` 評論級判決歷史時間軸〔a-timeline：判決快照/覆核轉移/備註三類事件 + 變更徽章 + 評論級備註〕）、歸因概覽（縱覽 + 各來源專屬概覽·KPI+漏斗+L1-L3 下鑽+趨勢+PDF 報表導出+判決模型篩選〔當前判決維度·KPI 文案揭露口徑〕）。 |
+| `judge/` | **AI 法官主模組**：規則配置（RuleManager 版本化編輯：schema 結構規格 / global 判決總規範 / judgment 判決配置（信心閾值·label·G1 auto_confirm 旋鈕）/ C-N 歸因分類 + 歷史對比）、資料上傳、歸因列表（一列一 review + 多歸因堆疊 + 伺服器分頁 + 初判歸因批次 + 單筆/批量覆核〔確認/忽略/再點撤銷〕+ 覆核狀態/判決模型篩選 + xlsx 導出（可選「輸出結果版本」＝指定模型的歷史快照，多模型對比）+ `JudgmentHistoryModal` 評論級判決歷史時間軸〔a-timeline：判決快照/覆核轉移/備註三類事件 + 變更徽章 + 評論級備註〕）、歸因概覽（縱覽 + 各來源專屬概覽·KPI+漏斗+L1-L2 下鑽+趨勢+PDF 報表導出+判決模型篩選〔當前判決維度·KPI 文案揭露口徑〕）。 |
 | `settings/` | 設定抽屜：LLM 模型連線 / QC DB 連線（profiles 多套 + 啟用切換）。 |
 | `overview/` | 總覽儀表板（config-驅動 DashboardView + chartRegistry；三業務目標 config/presale/postsale）。 |
 | `usage/` | 💰 AI 消耗 dashboard（llm_usage per-call 紀錄聚合：成本/token/模型/階段趨勢）。 |

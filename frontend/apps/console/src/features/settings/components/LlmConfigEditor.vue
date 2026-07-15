@@ -34,6 +34,22 @@ const form = ref({
 });
 const selectedProvider = ref(deriveProviderId(props.modelValue.base_url));
 const useTemp = ref(!isNil(props.modelValue.temperature));
+/** 思考模式開啟時 temperature 鎖定為 1、不可修改（OpenAI reasoning model 僅接受預設 1，其他值回 400）。
+ *  僅 OpenAI 有此限制；Gemini / ByteDance 開啟 thinking 仍可自訂 temperature，不強制鎖定。 */
+const tempLocked = computed(
+  () => form.value.thinking === 'on' && selectedProvider.value === 'openai',
+);
+// 鎖定成立即強制 temperature=1 並啟用自訂（送出 1）；immediate 讓載入既有 config／切換配置時也一併校正。
+watch(
+  tempLocked,
+  (locked) => {
+    if (locked) {
+      useTemp.value = true;
+      form.value.temperature = 1;
+    }
+  },
+  { immediate: true },
+);
 const tokenDirty = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -71,6 +87,7 @@ const buildConfig = (): LlmConfig => ({
     provider: selectedProvider.value,
     model: form.value.model,
     reasoning_effort: form.value.reasoning_effort,
+    thinking: form.value.thinking,
   }),
   provider: selectedProvider.value,
   base_url: form.value.base_url,
@@ -108,6 +125,8 @@ interface PingResult {
   latency_ms?: number;
   tokens?: number;
   error?: string;
+  /** 後端自動降級參數時的說明（如 reasoning_effort 不被該 model 接受、已改送較低檔）。 */
+  note?: string;
 }
 const testResult = ref<PingResult | null>(null);
 const termRef = ref<InstanceType<typeof Terminal>>();
@@ -119,6 +138,7 @@ const onTest = async () => {
       base_url: form.value.base_url,
       model: form.value.model,
       temperature: useTemp.value ? form.value.temperature : null,
+      thinking: form.value.thinking,
       reasoning_effort: form.value.reasoning_effort,
       provider_tokens:
         tokenDirty.value && form.value.api_token
@@ -142,6 +162,7 @@ const ANSI = {
   red: '\x1b[31m',
   cyan: '\x1b[36m',
   magenta: '\x1b[35m',
+  yellow: '\x1b[33m',
   dim: '\x1b[90m',
 } as const;
 watch(testResult, async (r) => {
@@ -157,6 +178,7 @@ watch(testResult, async (r) => {
   if (r.sent) t.writeln(`${ANSI.green}➜${ANSI.reset} ${ANSI.cyan}send${ANSI.reset} ${r.sent}`);
   if (r.reply) t.writeln(`${ANSI.magenta}←${ANSI.reset} ${r.reply}`);
   if (r.tokens) t.writeln(`${ANSI.dim}tokens: ${r.tokens}${ANSI.reset}`);
+  if (r.note) t.writeln(`${ANSI.yellow}⚠ ${r.note}${ANSI.reset}`);
   if (r.error) t.writeln(`${ANSI.red}✗ ${r.error}${ANSI.reset}`);
 });
 </script>
@@ -209,19 +231,19 @@ watch(testResult, async (r) => {
       <a-col :span="16">
         <a-form-item field="temperature" label="Temperature">
           <a-space>
-            <a-switch v-model="useTemp" />
+            <a-switch v-model="useTemp" :disabled="tempLocked" />
             <span class="text-xs text-[#86909c]">{{
-              useTemp ? '自訂' : 'API 預設（gpt-5 系列鎖定）'
+              tempLocked ? '鎖定 1（Thinking 開啟）' : useTemp ? '自訂' : 'API 預設（gpt-5 系列鎖定）'
             }}</span>
             <a-slider
-              v-if="useTemp"
+              v-if="useTemp && !tempLocked"
               v-model="form.temperature"
               :min="0"
               :max="2"
               :step="0.1"
               class="w-[180px]"
             />
-            <span v-if="useTemp">{{ form.temperature ?? 0 }}</span>
+            <span v-if="useTemp">{{ tempLocked ? 1 : form.temperature ?? 0 }}</span>
           </a-space>
         </a-form-item>
       </a-col>
@@ -236,9 +258,19 @@ watch(testResult, async (r) => {
     </a-row>
 
     <a-form-item field="reasoning_effort" label="Reasoning effort">
-      <a-radio-group v-model="form.reasoning_effort" type="button" size="small">
-        <a-radio v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-radio>
-      </a-radio-group>
+      <a-space>
+        <a-radio-group
+          v-model="form.reasoning_effort"
+          type="button"
+          size="small"
+          :disabled="form.thinking === 'off'"
+        >
+          <a-radio v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-radio>
+        </a-radio-group>
+        <span v-if="form.thinking === 'off'" class="text-xs text-[#86909c]">
+          Thinking 關閉：不送推理參數（不支援完全關閉的模型自動降為最低檔）
+        </span>
+      </a-space>
     </a-form-item>
 
     <a-space align="center" :size="8">

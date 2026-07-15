@@ -21,12 +21,12 @@ export const judgeRoutes: RouteRecordRaw = {
       path: 'list',
       component: () => import('../pages/AttributionList.vue'),
       meta: { text: '歸因列表' },
-    }, // 初判歸因：選來源+模型+數量 → L1~L3 列表 + 導出
+    }, // 初判歸因：選來源+模型+數量 → L1~L2 列表 + 導出
     {
       path: 'attribution',
       component: () => import('../pages/AttributionOverview.vue'),
       meta: { text: '歸因概覽' },
-    }, // 聚合儀表板：縱覽 + 各來源專屬概覽（KPI + 漏斗 + L1~L3 + 趨勢 + PDF 導出）
+    }, // 聚合儀表板：縱覽 + 各來源專屬概覽（KPI + 漏斗 + L1~L2 + 趨勢 + PDF 導出）
   ],
 };
 

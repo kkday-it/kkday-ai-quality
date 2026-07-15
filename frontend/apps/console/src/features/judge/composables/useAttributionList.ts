@@ -54,7 +54,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   // ── 篩選狀態（單一 reactive 物件＝SSOT；工具列/導出/初判共用 AttributionFilterBar 綁定此形狀）──
   // 各來源 schema 決定哪些欄位生效；切來源時一併清空殘留值（見下方 watch）。
   const filters = reactive(emptyFilters());
-  const cascadeOptions = ref<CascadeNode[]>([]); // 歸因分類級聯選項（全局 L1→L3 樹，載一次共用）
+  const cascadeOptions = ref<CascadeNode[]>([]); // 歸因分類級聯選項（全局 L1→L2 樹，載一次共用）
   /** 載入歸因分類級聯樹（初始一次；全局分類與來源無關）；失敗回空不阻斷列表。 */
   const loadCascadeOptions = async () => {
     if (cascadeOptions.value.length) return;
@@ -325,6 +325,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     modelOptions,
     verticalOptions,
     verticalGroups,
+    effVerticals,
+    listFilters,
     onVerticalChange,
     onSortChange,
     onFilterChange,

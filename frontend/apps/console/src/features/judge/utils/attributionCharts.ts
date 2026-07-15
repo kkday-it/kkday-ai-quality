@@ -6,7 +6,7 @@
  * label 寫死「%」，無法呈現絕對筆數）。配色與 shared/charts builders 的品牌色一致。
  */
 
-/** L1/L2/L3 等帶 code 的計數項（歸因域 / 細項分布）。 */
+/** L1/L2 等帶 code 的計數項（歸因域 / 細項分布）。 */
 export interface CountItem {
   code: string;
   label: string;
@@ -53,7 +53,7 @@ export interface AttributionOverview {
   trend: TrendPayload;
 }
 
-/** L2/L3 細化列（下鑽 + 商品內容細化圖用）：筆數 + 多指標。 */
+/** L2 細化列（下鑽 + 商品內容細化圖用）：筆數 + 多指標。 */
 export interface BreakdownRow extends CountItem {
   /** 負向筆數 */
   neg: number;
@@ -61,8 +61,6 @@ export interface BreakdownRow extends CountItem {
   avg_conf: number | null;
   /** 自動採信筆數（auto_accept tier；自動採信率＝auto/n） */
   auto: number;
-  /** 父層 L2 code（僅 by_l3 帶；供前端點 L2 即時篩該 L2 下的 L3） */
-  l2_code?: string;
 }
 
 /** L1 下鑽回應（GET /api/problems/attribution_breakdown）。 */
@@ -70,7 +68,6 @@ export interface AttributionBreakdown {
   l1_code: string;
   l1_label: string;
   by_l2: BreakdownRow[];
-  by_l3: BreakdownRow[];
 }
 
 /** 漏斗單一階段（絕對筆數語義）。 */
@@ -135,7 +132,7 @@ export function buildAttrFunnelOption(stages: FunnelStage[]) {
 
 /** 商品內容細化橫向長條的單筆資料（含全維度：筆數 / 占比 / 平均信心 / 自動採信率）。 */
 export interface ContentBarItem {
-  /** 細項顯示名（L2 面向 / L3 細項） */
+  /** 細項顯示名（L2 面向） */
   label: string;
   /** 筆數（＝負向筆數：僅負向才歸類，故不再拆負向/非負向） */
   n: number;
@@ -148,13 +145,13 @@ export interface ContentBarItem {
 }
 
 /**
- * 商品內容細化橫向長條（L2 面向 / L3 細項共用）：單序列筆數，tooltip 展全維度
+ * 商品內容細化橫向長條（L2 面向）：單序列筆數，tooltip 展全維度
  * （筆數 / 占比 / 平均信心 / 自動採信率）。因「僅負向才歸類」，筆數即負向數，
  * 不再拆負向/非負向堆疊（非負向恆 0，無意義）。
  *
  * 不複用 overview 的 buildBarOption——後者 tooltip 僅顯單值，無法一次帶多指標。
  * 橫向（category 在 y 軸）利於長中文細項名不截斷；資料量少故不做 dataZoom。
- * click 事件由呼叫端綁 `@click`（params.name＝category label）→ 反查 code 切換右側 L3。
+ * 橫向 category 名為 L2 面向 label。
  *
  * @param items 依筆數降序的細項（呼叫端已排序）；空陣列回空圖（呼叫端另顯 empty）
  * @returns ECharts option

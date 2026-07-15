@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 版本對比區塊（頁內面板 / 彈窗共用）：選兩版 → 並排唯讀 JSON 檢視，變動處標紅、
+ * 版本對比區塊（頁內面板 / 抽屜共用）：選兩版 → 並排唯讀 JSON 檢視，變動處標紅、
  * 展開至變動節點的祖先、雙欄捲動對齊首個變動，方便逐處比對。
  *
- * 抽出動機：RuleHistoryPanel（頁內）與 RuleHistoryModal（彈窗）原各持一份幾乎相同的對比邏輯，
+ * 抽出動機：RuleHistoryPanel（頁內）與 RuleHistoryDrawer（抽屜）原各持一份幾乎相同的對比邏輯，
  * 「修 bug / 加 diff」需兩處同步改 → 抽為單一元件消除漂移。版本清單 + 恢復仍留在各消費端。
  */
 import { computed, nextTick, ref, shallowRef, watch } from 'vue';

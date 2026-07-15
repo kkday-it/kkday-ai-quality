@@ -17,7 +17,7 @@ from app.core import auth, db
 from app.core import settings as app_settings
 from app.core.config import env, is_production
 from app.core.permissions import permission_keys, require_permission
-from app.judge import prejudge_batch
+from app.judge import prejudge_batch, run_log
 
 router = APIRouter(prefix="/judgment", tags=["judgment"])
 
@@ -47,12 +47,6 @@ class PrejudgeIn(BaseModel):
     source: str | None = None
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
-    voter_config_ids: list[str] | None = (
-        None  # 跨廠 ensemble voter 模型集（低信心才複判投票；空/缺＝不 ensemble）
-    )
-    ensemble_sample_rate: float | None = (
-        None  # ④抽樣稽核：高信心筆按此比例也跑 ensemble（0/缺＝純 confidence-gate）
-    )
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
@@ -98,6 +92,126 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
     return []
 
 
+class ClassifyOneIn(BaseModel):
+    """單條評論 dry-run 分類（歸因列表「測試」）：來源 + 業務 id。"""
+
+    source: str
+    source_id: str
+    llm_config_id: str | None = None
+
+
+@router.post("/classify-one")
+async def classify_one(
+    body: ClassifyOneIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
+    """單條評論 dry-run 分類:跑 prompts 判這一則 → 結果,**不落庫**（預覽「改 prompt 後怎麼判」）。
+
+    effective LLM + guard not stub + asyncio.to_thread（不阻塞單 worker,contextvar 隨 copy_context
+    傳遞）。與列級「初判分類」（重判並覆寫落庫）區隔——本端點只讀不寫。
+    """
+    from app.judge import prompt_eval as pe
+    from app.judge.llm import client
+
+    eff = app_settings.effective_llm_dict(
+        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+    )
+    _guard_not_stub_in_production(eff)
+    app_settings.set_current(eff)
+    client.set_llm_cache_read(False)  # 量測真實行為
+    client.set_usage_context({"job_id": f"classify_one_{body.source_id}"})
+    try:
+        return await asyncio.to_thread(pe.classify_one, body.source, body.source_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+class PromptSandboxIn(PrejudgeIn):
+    """Prompt 測試沙盒啟動請求：對 item_ids（或依條件解析出的目標集合）逐筆跑 prompt_ids 子集
+    （不受正式歸因閘門限制）。
+
+    繼承 `PrejudgeIn` 全部目標選取欄位（item_ids 顯式優先；否則 scope="all" 依 stages 目標選取，
+    可 within_ids 交集勾選範圍，語義與初判分類「依條件批量選取」完全一致，零改動重用
+    `_resolve_target_ids`）。scope 由前端依觸發入口顯式帶入：single（單列按鈕）/ selection（工具列
+    對勾選多筆，item_ids 顯式）/ all（工具列「依條件批量」）——不由 len(item_ids) 反推，即使選取
+    剛好 1 筆走 selection 入口，語意仍是「選取批次」而非單列。
+    """
+
+    source: str  # 覆寫父類 Optional：沙盒必須指定來源
+    prompt_ids: list[str]
+    scope: str = "single"
+
+
+@router.post("/prompt-sandbox")
+async def start_prompt_sandbox(
+    body: PromptSandboxIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
+    """啟動 Prompt 測試沙盒背景 job → 立即回 {job_id}（前端輪詢 `/prompt-sandbox/status`）。
+
+    與 `/classify-one`（同步、單筆、production 閘門）的差異：本端點 ungated（勾了域 prompt 即跑，
+    不受正向評論擋六域的正式閘門限制）、可對多筆並行（含依條件批量選取）、結果落獨立的
+    `prompt_sandbox_runs` 歷史（與 judgments/judgment_history 完全分離），且捕捉完整 LLM log 供事後
+    回看（見 `prompt_sandbox.py`）。
+    """
+    from app.judge import prompt_sandbox
+
+    item_ids = _resolve_target_ids(body)
+    eff = app_settings.effective_llm_dict(
+        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+    )
+    try:
+        job_id = await asyncio.to_thread(
+            prompt_sandbox.start,
+            body.source,
+            item_ids,
+            body.prompt_ids,
+            eff,
+            scope=body.scope,
+            triggered_by=user.get("email") or user.get("user_id", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return {"job_id": job_id}
+
+
+@router.post("/prompt-sandbox/count")
+def prompt_sandbox_count(body: PromptSandboxIn, _: dict = Depends(auth.get_current_user)) -> dict:
+    """預覽 Prompt 測試沙盒「將測試 N 筆」（與 `/prompt-sandbox` 同一套標的解析；不派工、不消耗 token）。"""
+    return {"total": len(_resolve_target_ids(body))}
+
+
+@router.get("/prompt-sandbox/status")
+def prompt_sandbox_status(job_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """沙盒測試 job 進度輪詢 → {status: running/done/error, total, done, run_id}。"""
+    from app.judge import prompt_sandbox
+
+    snap = prompt_sandbox.get_job(job_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="找不到此測試任務")
+    return snap
+
+
+@router.get("/prompt-sandbox/runs")
+def list_prompt_sandbox_runs(
+    limit: int = 20, offset: int = 0, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """沙盒測試歷史列表（created_at 降冪分頁）→ {total, items}——與正式初判歷史完全分離。
+
+    items 不含 results/log（體積可觀，只列摘要）；詳情走 `/prompt-sandbox/runs/{run_id}`。
+    """
+    return db.list_sandbox_runs(limit=limit, offset=offset)
+
+
+@router.get("/prompt-sandbox/runs/{run_id}")
+def get_prompt_sandbox_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。"""
+    row = db.sandbox_run_detail(run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+    return row
+
+
 @router.post("/prejudge/count")
 def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
     """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""
@@ -119,12 +233,6 @@ def start_prejudge(
     eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
     _guard_not_stub_in_production(eff)
     model = eff.get("model", "")
-    # 跨廠 ensemble voter：勾選的其他 config 各組整套 effective dict（排除與主判決同一 config；空→None＝不 ensemble）
-    voter_cfgs = [
-        app_settings.effective_llm_dict(s, config_id=cid)
-        for cid in (body.voter_config_ids or [])
-        if cid and cid != body.llm_config_id
-    ] or None
 
     item_ids = _resolve_target_ids(body)
 
@@ -151,8 +259,6 @@ def start_prejudge(
         eff,
         model,
         source=body.source,
-        voter_cfgs=voter_cfgs,
-        sample_rate=body.ensemble_sample_rate or 0.0,
         triggered_by=user.get("email") or uid,
         kind=kind,
         rejudge=rejudge,
@@ -164,7 +270,6 @@ def start_prejudge(
         "job_id": job_id,
         "total": len(item_ids),
         "model": model,
-        "ensemble_voters": len(voter_cfgs or []),
     }
 
 
@@ -273,6 +378,45 @@ async def prejudge_stream(job_id: str) -> StreamingResponse:
             if snap["status"] in ("done", "error", "cancelled"):
                 return
             await asyncio.sleep(0.8)
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/prejudge/log-stream")
+async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse:
+    """SSE 推送單次初判 job 的執行日誌（各階段 + LLM 輸入參數/prompt/輸出）——供前端抽屜即時檢視。
+
+    僅小批量 job 收集日誌（run_log.LOG_JOB_MAX_ITEMS）；每筆 entry 一個 event 增量推送
+    （offset 支援續讀），日誌收集結束且讀盡即推 done 關閉。不加 auth Depends：同 /prejudge/stream
+    （原生 EventSource 帶不了 Authorization header，job_id 為不可猜的 capability token）。
+    """
+
+    async def _events():
+        """增量 entry → SSE event 產生器；job 無日誌推 error、done 且讀盡推 done 後結束。"""
+        idx = max(0, offset)
+        while True:
+            batch, done, exists = run_log.read(job_id, idx)
+            if not exists:
+                msg = json.dumps(
+                    {"detail": "此任務無執行日誌（僅小批量任務收集）"}, ensure_ascii=False
+                )
+                yield f"event: error\ndata: {msg}\n\n"
+                return
+            for e in batch:
+                yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
+            idx += len(batch)
+            if done and not batch:
+                yield "event: done\ndata: {}\n\n"
+                return
+            await asyncio.sleep(0.4)
 
     return StreamingResponse(
         _events(),

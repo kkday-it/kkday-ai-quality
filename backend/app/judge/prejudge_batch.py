@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextvars import copy_context
@@ -22,7 +23,7 @@ from contextvars import copy_context
 from app.core import db, pricing
 from app.core import settings as app_settings
 from app.core.config import env, is_production
-from app.judge import prejudge
+from app.judge import prejudge, run_log
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
@@ -43,6 +44,64 @@ _sem = threading.BoundedSemaphore(env.prejudge_max_workers)
 
 # 撈 intake item 的分塊大小：避免 scope=all（~8 萬 item_id）一次塞進 IN 子句撐爆 SQL。
 _FETCH_CHUNK = 500
+# 失敗筆明細清單上限：大規模系統性失敗時只計數、不再細列，避免撐爆 SSE payload / 記憶體。
+_MAX_FAILED_ITEMS = 200
+
+
+class _ConcurrencyGovernor:
+    """AIMD 自適應併發：樂觀起於 ceiling，遇 429 失敗乘性收縮、清空後加性回升，收斂到 API 可持續的最大併發。
+
+    ceiling＝該 model 靜態上限（max_workers_for ∩ env 硬天花板），永不超過；只在其下自適應。信號＝item 因
+    429 失敗（SDK 內建退避 + 單域重試全耗盡仍 429＝真過載）；SDK 能吸收的暫時 429（item 仍成功）不觸發——
+    恰好在「429 開始造成失敗」時降速，零星失敗筆由 P2 重判補回。thread-safe（worker 併發呼叫 on_429）。
+    """
+
+    def __init__(
+        self,
+        ceiling: int,
+        *,
+        floor: int = 2,
+        backoff: float = 0.5,
+        probe_interval_s: float = 3.0,
+        cooldown_s: float = 5.0,
+    ) -> None:
+        self._ceiling = max(1, ceiling)
+        self._floor = max(1, min(floor, self._ceiling))
+        self._backoff = backoff
+        self._probe_interval = probe_interval_s
+        self._cooldown = cooldown_s
+        self._limit = self._ceiling  # 樂觀起步（config 值已是保守估計）
+        self._last_429 = 0.0
+        self._cooldown_until = 0.0
+        self._lock = threading.Lock()
+
+    def current(self) -> int:
+        """當前允許併發（供提交迴圈背壓）；順帶時間驅動加性回升——僅提交執行緒呼叫（單執行緒讀）。"""
+        with self._lock:
+            now = time.monotonic()
+            if self._limit < self._ceiling and (now - self._last_429) >= self._probe_interval:
+                self._limit = min(self._ceiling, self._limit + 1)
+                self._last_429 = now  # 重置探測時鐘：每 interval 回升一階（漸進不暴衝）
+            return self._limit
+
+    def on_429(self) -> None:
+        """worker 遇 429 失敗時呼叫：乘性收縮（cooldown 內只反應一次，避免一波 429 過度收縮）。"""
+        with self._lock:
+            now = time.monotonic()
+            self._last_429 = now
+            if now < self._cooldown_until:
+                return
+            self._limit = max(self._floor, int(self._limit * self._backoff))
+            self._cooldown_until = now + self._cooldown
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    """例外是否為 OpenAI 429 RateLimitError（自適應併發的收縮信號）；SDK 未安裝時回 False。"""
+    try:
+        from openai import RateLimitError
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(exc, RateLimitError)
 
 
 def _new_snapshot(total: int, model: str) -> dict:
@@ -58,17 +117,36 @@ def _new_snapshot(total: int, model: str) -> dict:
         "model": model,
         "total_tokens": 0,
         "cost_usd": 0.0,
+        # 失敗筆明細 [{item_id, source_id, error}]（上限 _MAX_FAILED_ITEMS）：供前端顯示「哪幾筆/為何失敗」
+        # 與「重判本批失敗筆」（收 item_id 走既有 item_ids 顯式重判路徑）。超上限只計數並設 truncated。
+        "failed_items": [],
+        "failed_items_truncated": False,
     }
 
 
-def _bump(job_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0) -> None:
-    """單筆判決完成後累加進度（thread-safe；processed / ok|failed）。"""
+def _bump(
+    job_id: str,
+    *,
+    ok: bool,
+    tokens: int = 0,
+    cost: float = 0.0,
+    item_id: str = "",
+    source_id: str = "",
+    error: str = "",
+) -> None:
+    """單筆判決完成後累加進度（thread-safe；processed / ok|failed；失敗附 item 明細供前端清單）。"""
     with _jobs_lock:
         snap = _jobs.get(job_id)
         if snap is None:
             return
         snap["processed"] += 1
         snap["ok" if ok else "failed"] += 1
+        if not ok:
+            fi = snap["failed_items"]
+            if len(fi) < _MAX_FAILED_ITEMS:
+                fi.append({"item_id": item_id, "source_id": source_id, "error": error})
+            else:
+                snap["failed_items_truncated"] = True
 
 
 def _work_one(
@@ -76,20 +154,21 @@ def _work_one(
     item: dict,
     model: str,
     source: str | None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     triggered_by: str = "",
+    governor: _ConcurrencyGovernor | None = None,
 ) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
     item 為來源表列（源欄名）。先注入 canonical content + source_id + source（供 prejudge 引擎），
     全 5 來源統一走 to_findings（1:N 多歸因），以 replace_source_findings 整組替換 (source, source_id)
-    舊列（重判冪等、保留 true_label）。
+    舊列（重判冪等、保留人工覆核 status）。
     """
     from app.core import source_mapping as _srcmap
+    from app.core.db import judgment_history
     from app.core.db import source_registry as _reg
 
     with _sem:
+        source_id = ""  # 於 try 內更新；先置空供 except 分支安全引用（早期失敗時 source_id 未算出）
         try:
             src = source or ""
             spec = _reg.spec_for(src)
@@ -104,15 +183,16 @@ def _work_one(
             norm["prod_oid"] = canon.get("prod_oid") or ""
             norm["order_oid"] = canon.get("order_oid") or ""
             norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
-            findings = prejudge.to_findings(
-                norm, model=model, voter_cfgs=voter_cfgs, ensemble_sample_rate=sample_rate
+            run_log.emit(
+                "stage",
+                "item",
+                f"開始判決 {source_id or item.get('item_id', '')}",
+                {"source": src, "source_id": source_id, "content": (norm["content"] or "")[:400]},
             )
+            findings = prejudge.to_findings(norm, model=model)
+            run_log.emit("stage", "item", f"判決完成 {source_id}：{len(findings)} 筆歸因")
             # 判決參數精餾快照（評論級歷史去重比對鍵之一；勿塞 job 級大清單）
-            history_params = {
-                "model": model,
-                "voter_models": [v.get("model") or "" for v in (voter_cfgs or [])],
-                "ensemble_sample_rate": sample_rate,
-            }
+            history_params = {"model": model}
             db.replace_source_findings(
                 src,
                 source_id,
@@ -121,27 +201,37 @@ def _work_one(
                 job_id=job_id,
                 triggered_by=triggered_by,
             )
+            run_log.emit("stage", "db", f"落庫完成 {source_id}")
             _bump(job_id, ok=True)
-        except Exception:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
-            _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item.get("item_id"))
-            _bump(job_id, ok=False)
+        except Exception as e:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
+            item_id = str(item.get("item_id") or "")
+            err = str(e).splitlines()[0][:200] if str(e).strip() else type(e).__name__
+            run_log.emit("error", "item", f"單筆判決失敗 {source_id or item_id}：{err}")
+            _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item_id)
+            _bump(job_id, ok=False, item_id=item_id, source_id=source_id, error=err)
+            if governor is not None and _is_rate_limit(e):
+                governor.on_429()  # 429 造成的失敗＝真過載 → 自適應收縮併發（下波提交降速）
+            # 失敗留痕（best-effort）：有 source_id（可歸戶）才寫，供前端查因 + 隱式重撈上限
+            if source_id:
+                judgment_history.insert_failure_event(
+                    source or "", source_id, error=err, job_id=job_id, triggered_by=triggered_by
+                )
 
 
 def _reload_judge_rules() -> None:
-    """批次判決啟動前強制 reload 各判準 loader（ai_judge 規則樹 / global_rule 整體規則 + 判官提示詞 /
-    judgment 旋鈕 / flags 閾值），保證本批每筆判決都採用『當前 DB active 版規則』。
+    """批次判決啟動前強制 reload 各判準 loader（ai_judge 分類結構 / judgment 極性閘門+證據政策+旋鈕 /
+    flags 閾值 / prompt_source），保證本批每筆判決都採用『當前 DB active 版規則』。
 
     根因：判決 server 把規則快取在 process 記憶體，規則經 UI 存檔雖由 rules._reload_judge_cache 熱重載
     「該台 server」，但 out-of-band 改動（腳本 / migration / 別台 server 發布）不會通知本 process → 快取
     stale → LLM 判到舊規則。批次入口再 reload 一次即成硬保證，與『每次判決用最新規則』的預期一致。
     """
-    from app.core import ai_judge, flags, global_rule
+    from app.core import ai_judge, flags
     from app.core.db import _shared
     from app.judge import prejudge
 
     for fn in (
-        ai_judge.reload,
-        global_rule.reload,
+        ai_judge.reload,  # 連動清 prompt_source md 快取（見 ai_judge.reload docstring）
         _shared.reload_judgment_cfg,
         prejudge.reload,
         flags.reload,
@@ -158,8 +248,6 @@ def _run(
     eff: dict,
     model: str,
     source: str | None = None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     cache_read: bool = True,
     triggered_by: str = "",
 ) -> None:
@@ -180,6 +268,23 @@ def _run(
     app_settings.set_current(eff)
     # LLM exact-cache 讀取閘：批次開（重用規則未變部分·零 token）；顯式重判關（使用者要求真的重打）
     client.set_llm_cache_read(cache_read)
+    # 小批量 job 收集執行日誌（前端抽屜 SSE 即時檢視）；bind 後 copy_context 快照自動攜帶歸屬
+    if len(item_ids) <= run_log.LOG_JOB_MAX_ITEMS:
+        run_log.bind(job_id)
+        run_log.emit(
+            "stage",
+            "job",
+            f"初判任務啟動：{len(item_ids)} 筆",
+            {
+                "model": model,
+                "base_url": eff.get("base_url"),
+                "temperature": eff.get("temperature"),
+                "thinking": eff.get("thinking"),
+                "reasoning_effort": eff.get("reasoning_effort"),
+                "service_tier": tier,
+                "cache_read": cache_read,
+            },
+        )
 
     def _sink(m: str, prompt: int, completion: int, cached: int = 0) -> None:
         """token 用量回報：累計 total_tokens 並依模型單價加總 cost_usd（cached 折扣＋job 級 tier 折扣）。
@@ -205,7 +310,22 @@ def _run(
     usage_buf = client.open_usage_buffer()
     ctrl = _controls.get(job_id, {})
     gate, cancel = ctrl.get("gate"), ctrl.get("cancel")
-    max_workers = env.prejudge_max_workers
+    # 併發上限：依生效 model 的軟上限（judgment.json prejudge.max_workers_by_model）與製程級硬天花板
+    # env.prejudge_max_workers 取 min——per-model 只能往下收斂，不會超過全域 _sem 容量造成隱性排隊。
+    max_workers = min(prejudge.max_workers_for(model), env.prejudge_max_workers)
+    # 自適應併發（AIMD）：max_workers 作 ceiling，governor 在其下依 429 失敗自動收縮/回升（保證有能力
+    # 時爬回 ceiling、過載時才降）；關閉則固定 max_workers。
+    _ac = prejudge.adaptive_concurrency()
+    governor = (
+        _ConcurrencyGovernor(
+            max_workers,
+            floor=_ac["floor"],
+            backoff=_ac["backoff"],
+            probe_interval_s=_ac["probe_interval_s"],
+        )
+        if _ac["enabled"]
+        else None
+    )
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             in_flight: set[Future] = set()
@@ -221,20 +341,12 @@ def _run(
                         break
                     # 背壓：in-flight future 維持 ≤ max_workers（避免 scope=all 一次塞數萬 future 撐爆記憶體；
                     # 也讓暫停時 processed 於已提交批收斂後即停增，符合「暫停即停」語義）
-                    while len(in_flight) >= max_workers:
+                    while len(in_flight) >= (governor.current() if governor else max_workers):
                         _, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
                     in_flight.add(
                         ex.submit(
-                            c.run,
-                            _work_one,
-                            job_id,
-                            item,
-                            model,
-                            source,
-                            voter_cfgs,
-                            sample_rate,
-                            triggered_by,
+                            c.run, _work_one, job_id, item, model, source, triggered_by, governor
                         )
                     )
                 if cancel and cancel.is_set():
@@ -259,6 +371,7 @@ def _run(
                 db.finish_judgment_run(job_id, snap)
         except Exception:  # noqa: BLE001
             _log.exception("歸因歷史終態回寫失敗 job=%s", job_id)
+        run_log.finish(job_id)  # 日誌收尾（未 bind 的大批量 job 為 no-op）；SSE 讀盡即關閉
         _drop_controls(job_id)
 
 
@@ -339,8 +452,6 @@ def start_job(
     eff: dict,
     model: str,
     source: str | None = None,
-    voter_cfgs: list[dict] | None = None,
-    sample_rate: float = 0.0,
     *,
     triggered_by: str = "",
     kind: str = "batch",
@@ -356,9 +467,6 @@ def start_job(
         model: 主判決模型名（Stage2/2b；stub 模式引擎自走啟發式）。
         source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
             None＝沿用 intake_items 舊行為）。
-        voter_cfgs: 跨廠 ensemble voter 的 effective LLM config 清單（None＝不 ensemble）；穿透至
-            to_findings，主判決有低信心 attr 才對各 voter 複判投票（confidence-gated，見 prejudge._ensemble_attrs）。
-        sample_rate: 高信心筆的 ensemble 抽樣稽核比例（0＝純 confidence-gate）。
         triggered_by: 觸發人（user email；歸因歷史落庫）。
         kind: 觸發型態（batch/selected/single；歸因歷史落庫，端點解析）。
         rejudge: 標的先前已有判決（本次為重判；端點判定）。
@@ -382,7 +490,6 @@ def start_job(
                 "rejudge": rejudge,
                 "source": source or "",
                 "model": model,
-                "ensemble_voters": len(voter_cfgs or []),
                 "params": params or {},
                 "status": "running",
                 "total": len(item_ids),
@@ -393,17 +500,7 @@ def start_job(
         _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(
-            job_id,
-            item_ids,
-            eff,
-            model,
-            source,
-            voter_cfgs,
-            sample_rate,
-            cache_read,
-            triggered_by,
-        ),
+        args=(job_id, item_ids, eff, model, source, cache_read, triggered_by),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()

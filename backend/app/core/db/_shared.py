@@ -17,7 +17,7 @@ from app.core.db import tables as T
 from app.core.judge_config.ai_judge import domain_owner as _domain_owner
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
-# ── 判決顯示標籤 + 信心閾值（judgment.json；取代已移除的 taxonomy）───────────────
+# ── 判決顯示標籤 + 信心閾值（judgment.json）───────────────
 # 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
 # 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
@@ -59,17 +59,19 @@ def _read_judgment_file() -> dict:
 
 
 def read_judgment_config() -> dict:
-    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕）。
+    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕 +
+    極性閘門 polarity_gate + 證據政策 evidence_policy）。
 
     2026-07-13 起 judgment 降為**專案靜態設定檔**（移出 RULE_CODES、不再 DB 版本化 / 不列規則頁）——
     直讀檔案即單一真相源，不再走 DB active。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。
+    同日原 global_rule.json（polarity_gate/evidence_policy）併入本檔，減少判決 config 檔案數。
     保留此函式為 judgment 讀取的**單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
     """
     return _read_judgment_file()
 
 
 def reload_judgment_cfg() -> None:
-    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge/global_rule）。
+    """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge）。
 
     就地更新 label / 閾值 dict（DB active 優先，見 read_judgment_config），使 import 引用免改碼即反映新值。
     """
@@ -107,7 +109,7 @@ def attribution_dto(r: dict) -> dict:
     """judgments 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
     r 為含判決欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
-    或直接傳 judgments 列 mapping）。人工覆核軸（status/true_label）與 finding_id 亦在其中。
+    或直接傳 judgments 列 mapping）。人工覆核軸（status）與 finding_id 亦在其中。
 
     Args:
         r: 判決欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
@@ -115,7 +117,7 @@ def attribution_dto(r: dict) -> dict:
     Returns:
         巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
         confidence:{value,raw,tier}, content:{summary,evidence,action},
-        owner, model, notes_count, is_primary, status, true_label}。
+        owner, model, notes_count, is_primary, status}。
     """
     l1_code = r.get("l1_code")
     summary_langs = _summary_langs(r.get("summary"))
@@ -128,7 +130,6 @@ def attribution_dto(r: dict) -> dict:
         "stage": r.get("stage"),
         "l1": {"code": l1_code, "label": r.get("l1_label")},
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
-        "l3": {"code": r.get("l3_code"), "label": r.get("l3_label")},
         "confidence": {
             "value": r.get("conf_value"),
             "raw": r.get("conf_raw"),
@@ -147,7 +148,6 @@ def attribution_dto(r: dict) -> dict:
         "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
         "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
-        "true_label": r.get("true_label"),  # 人工標註真值分類
     }
 
 

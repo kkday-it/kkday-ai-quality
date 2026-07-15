@@ -20,6 +20,16 @@ from app.core import auth, export_jobs
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# 依下載檔名副檔名決定 media_type（各領域 builder 產不同格式：xlsx 結構表 / zip prompt 包 / csv）。
+_MIME_BY_EXT = {".xlsx": _XLSX_MIME, ".zip": "application/zip", ".csv": "text/csv"}
+
+
+def _mime_for(name: str) -> str:
+    """由下載檔名副檔名取對應 MIME；未知副檔名回 xlsx（歷史預設，最常見）。"""
+    for ext, mime in _MIME_BY_EXT.items():
+        if name.lower().endswith(ext):
+            return mime
+    return _XLSX_MIME
 
 
 @router.get("/stream")
@@ -65,7 +75,8 @@ def export_cancel(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict
 def export_download(
     job_id: str, filename: str | None = None, _: dict = Depends(auth.get_current_user)
 ) -> Response:
-    """取回已完成導出 job 的 xlsx 位元組（attachment）；一次性，取後即清 job 與結果。
+    """取回已完成導出 job 的位元組（attachment，media_type 依檔名副檔名判定：xlsx/zip/csv）；
+    一次性，取後即清 job 與結果。
 
     Args:
         filename: 覆寫下載檔名（前端以本地時間戳命名）；缺省用 job 快照登記的檔名。
@@ -83,6 +94,6 @@ def export_download(
     name = filename or snap.get("filename") or "export.xlsx"
     return Response(
         content=data,
-        media_type=_XLSX_MIME,
+        media_type=_mime_for(name),
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )

@@ -1,4 +1,4 @@
-// 判決規則狀態（7 rule + schema 的 active content / dirty / 歷史 / 存檔恢復）。
+// 判決規則狀態（product_vertical/source_mapping + prompt_* 的 active content / dirty / 歷史 / 存檔恢復）。
 // 檔案＝默認 seed，DB＝live+歷史；所有寫操作走後端版本化，store 只持有當前選中 rule 的編輯態。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
@@ -15,24 +15,19 @@ import {
   type RuleVersionMeta,
 } from '@/api/judgeRules.api';
 
-/** 非域偽 rule 的顯示名 fallback。域規則（C-N）的中文名一律由後端 meta.label（content._meta.label，SSOT）
- * 提供，見 store.labelFor——不再於前端各寫一份而漂移。schema 為結構規格、無 _meta.label，故在此補。 */
+/** 顯示名 fallback（各 rule 中文名一律優先後端 meta.label，content._meta.label，SSOT，見 store.labelFor
+ * ——不再於前端各寫一份而漂移；此處僅補既有 DB 若在補 _meta 前即 seed 過導致 label 為 null 的情況）。 */
 export const RULE_LABELS_FALLBACK: Record<string, string> = {
-  schema: '結構規格',
-  // 整體規則：seed 檔含 _meta.label，DB 未 seed 時由此 fallback，避免選單顯示原始 code。
-  global_rule: '整體規則',
   // 商品垂直分類：seed 檔已含 _meta.label，但既有 DB 若在補 _meta 前即 seed 過（label 為 None）時，
   // 由此 fallback 補顯示名，避免選單顯示原始 code。
   product_vertical: '商品垂直分類',
-  // 判決配置：judgment.json 無 _meta.label（純旋鈕 config），選單顯示名一律由此 fallback 提供。
-  judgment: '判決配置',
   // 上傳表頭校驗：seed 檔含 _meta.label，DB 未 seed 時由此 fallback。
   source_mapping: '上傳表頭校驗',
 };
 
 export const useJudgeRulesStore = defineStore('judgeRules', () => {
   const metas = ref<RuleMeta[]>([]); // 各 rule active 版 meta
-  const activeCode = ref<RuleCode>('C-1'); // 當前選中子規則
+  const activeCode = ref<RuleCode>('source_mapping'); // 當前選中子規則
   const baseline = ref<Record<string, unknown> | null>(null); // 載入時的 content（dirty 比對基準）
   const edited = ref<Record<string, unknown> | null>(null); // 編輯中 content（合法時更新）
   const editValid = ref(true); // JSON 模式語法/結構合法
@@ -107,7 +102,7 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     await Promise.all([loadList(), selectRule(activeCode.value)]);
   }
 
-  /** 恢復所有歸因分類（C-N）為檔案默認，各新增版本；重載清單與當前選中，回傳 {reset, skipped}。 */
+  /** 恢復整體配置（source_mapping）為檔案默認，各新增版本；重載清單與當前選中，回傳 {reset, skipped}。 */
   async function resetAllDefault() {
     const res = await resetAllRuleDefaults();
     await Promise.all([loadList(), selectRule(activeCode.value)]);
