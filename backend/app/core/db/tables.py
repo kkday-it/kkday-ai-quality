@@ -397,6 +397,28 @@ prompt_eval_runs = Table(
     Index("idx_prompt_eval_runs_prompt_created", "prompt_id", "created_at"),
 )
 
+# 歸因列表 Prompt 測試沙盒歷史（與 judgments/judgment_history/judgment_runs 完全分離——沙盒測試
+# 不落正式判決，只落此表）。一 run＝對 item_ids 逐筆跑 prompt_ids 子集的一次沙盒測試，results 含
+# 逐筆逐 prompt 結果，log 為該次 run_log 快照（供事後回看完整 LLM log；run_log 本身純記憶體不落庫）。
+prompt_sandbox_runs = Table(
+    "prompt_sandbox_runs",
+    metadata,
+    Column("run_id", Text, primary_key=True),  # psbx_* uuid4 hex
+    Column("source", Text, nullable=False),  # 來源 code（product_reviews…）
+    Column("scope", Text, nullable=False),  # single（單列）/ selection（勾選多筆）
+    Column("item_ids", JSONB, nullable=False),  # 受測 source_id 清單
+    Column("prompt_ids", JSONB, nullable=False),  # 勾選的 prompt（polarity / C-1..C-6）
+    Column("item_count", Integer, nullable=False),
+    Column("results", JSONB, nullable=False),  # 逐筆 × 各 prompt 結果（sandbox_classify 輸出集合）
+    Column("log", JSONB, nullable=False),  # run_log.read(job_id) 快照（entries 陣列）
+    Column("model", Text),  # 判決模型
+    Column("triggered_by", Text),  # 觸發人（user email）
+    Column("job_id", Text),  # 對應 run_log job_id（供除錯追溯；log 已快照，非用於即時查詢）
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 歷史列表熱路徑：依時間倒序
+    Index("idx_prompt_sandbox_runs_created", "created_at"),
+)
+
 
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────
 _engine: Engine | None = None

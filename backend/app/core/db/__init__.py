@@ -55,6 +55,11 @@ from app.core.db.prompt_eval_runs import (
     list_prompt_eval_runs,
     prompt_eval_run_detail,
 )
+from app.core.db.prompt_sandbox_runs import (
+    insert_sandbox_run,
+    list_sandbox_runs,
+    sandbox_run_detail,
+)
 from app.core.db.rule_versions import (
     RULE_CODES,
     default_rule_content,
@@ -128,6 +133,9 @@ __all__ = [
     "insert_prompt_eval_run",
     "list_prompt_eval_runs",
     "prompt_eval_run_detail",
+    "insert_sandbox_run",
+    "list_sandbox_runs",
+    "sandbox_run_detail",
     "update_batch_inserted",
     "update_finding_status",
 ]
