@@ -325,6 +325,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     modelOptions,
     verticalOptions,
     verticalGroups,
+    effVerticals,
+    listFilters,
     onVerticalChange,
     onSortChange,
     onFilterChange,

@@ -9,7 +9,10 @@
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
  * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
  */
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
+import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
+import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
+import { usePermission } from '@/composables/usePermission';
+import { composeLlmLabel } from '@/features/settings/utils';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
@@ -18,14 +21,9 @@ import {
   IconHistory,
   IconMessage,
 } from '@arco-design/web-vue/es/icon';
-import { addFindingNote, getFindingNotes, type FindingNote } from '@/api';
-import { PERM } from '@/api';
-import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
-import { usePermission } from '@/composables/usePermission';
-import { composeLlmLabel } from '@/features/settings/utils';
-import type { PrejudgeBody } from '@/api/judgment.api';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import { AttributionDetailDrawer, AttributionFilterBar, PromptSandboxDrawer } from '../components';
-import PromptEvalDrawer from '../components/PromptEvalDrawer.vue';
+import { useAttributionList } from '../composables';
 import {
   POLARITY_LABELS,
   SOURCES,
@@ -37,7 +35,6 @@ import {
   type FilterField,
   type ProblemRow,
 } from '../constants';
-import { useAttributionList } from '../composables';
 import { fmtDt } from '../utils';
 
 /** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰）。 */
@@ -70,9 +67,7 @@ const JudgmentRunsDrawer = defineAsyncComponent(
 const runsDrawerVisible = ref(false);
 
 // 初判執行日誌抽屜（點「初判分類」即開；SSE 流式顯示各階段與 LLM 輸入參數/prompt/輸出；點開才載）
-const PrejudgeLogDrawer = defineAsyncComponent(
-  () => import('../components/PrejudgeLogDrawer.vue'),
-);
+const PrejudgeLogDrawer = defineAsyncComponent(() => import('../components/PrejudgeLogDrawer.vue'));
 const logDrawerVisible = ref(false);
 const logDrawerJobId = ref('');
 
@@ -97,6 +92,8 @@ const {
   modelOptions,
   verticalOptions,
   verticalGroups,
+  effVerticals,
+  listFilters,
   onVerticalChange,
   onSortChange,
   onFilterChange,
@@ -184,10 +181,12 @@ const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
 };
-// Prompt 測試沙盒：單列（列操作區）與勾選多筆（工具列）共用同一 Drawer，靠 scope 分辨語意
-// （即使 selection 剛好勾 1 筆，仍走 selection 語意——供沙盒歷史列表正確分辨觸發來源）。
+// Prompt 測試沙盒：單列（列操作區）/ 勾選多筆 / 依條件批量選取（工具列兩顆）共用同一 Drawer，
+// 靠 scope 分辨語意（即使 selection 剛好勾 1 筆，仍走 selection 語意——供沙盒歷史列表正確分辨
+// 觸發來源）。scope='all' 時 Drawer 內部委派 usePromptSandboxTargets 比照初判分類做目標選取，
+// 此處需把 effVerticals/selectedRowKeys/listFilters/cascadeOptions 一併傳入供其取用。
 const sandboxVisible = ref(false);
-const sandboxScope = ref<'single' | 'selection'>('single');
+const sandboxScope = ref<'single' | 'selection' | 'all'>('single');
 const sandboxSourceIds = ref<string[]>([]);
 const sandboxRow = ref<ProblemRow | null>(null);
 /** 開單列 Prompt 測試沙盒。 */
@@ -197,7 +196,7 @@ const openRowTest = (record: ProblemRow) => {
   sandboxScope.value = 'single';
   sandboxVisible.value = true;
 };
-/** 開勾選多筆 Prompt 測試沙盒（工具列入口）。 */
+/** 開勾選多筆 Prompt 測試沙盒（工具列「已選 N」入口；無勾選則提示）。 */
 const openSelectionTest = () => {
   if (!selectedRowKeys.value.length) {
     Message.warning('請先勾選要測試的列');
@@ -208,26 +207,14 @@ const openSelectionTest = () => {
   sandboxScope.value = 'selection';
   sandboxVisible.value = true;
 };
+/** 開依條件批量選取 Prompt 測試沙盒（工具列入口；比照初判分類，無勾選亦可開，預設測全部未判）。 */
+const openBatchTest = () => {
+  sandboxRow.value = null;
+  sandboxSourceIds.value = [];
+  sandboxScope.value = 'all';
+  sandboxVisible.value = true;
+};
 
-// 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
-// 樣本＝篩選子集（見 PromptEvalDrawer + 後端 run_eval filter_ids）。
-const promptTestOpen = ref(false);
-const promptEvalFilters = computed<PrejudgeBody>(() => ({
-  source: source.value,
-  scope: 'all',
-  product_verticals: verticalGroups.value,
-  // 未指定判決階段時預設鎖定「已判」三態——測試需要現有判決當參照，未判列無 ground truth 可比對。
-  stages: filters.stage.length ? filters.stage : ['judged', 'pending_review', 'pending_data'],
-  target_polarity: filters.polarity.length ? filters.polarity : undefined,
-  confidence_tier: filters.tier || undefined,
-  taxonomy: filters.taxonomy.length ? filters.taxonomy : undefined,
-  date_from: filters.dateRange?.[0] || undefined,
-  date_to: filters.dateRange?.[1] || undefined,
-  rec_oid: filters.recOid.trim() || undefined,
-  prod_oid: filters.prodOid.trim() || undefined,
-  order_oid: filters.orderOid.trim() || undefined,
-  has_external: filters.hasExternal === '' ? undefined : filters.hasExternal === 'true',
-}));
 /**
  * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
  * auto_accept(≥0.8) 綠＝可採信 / jury(0.5–0.8) 琥珀＝需覆核 / needs_review(<0.5) 紅＝必人工。
@@ -450,22 +437,17 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- 測試 Prompt 指標評測（B1）：帶當前列表篩選，選一支 prompt 對篩選子集測試（不落庫）-->
-      <a-button size="small" type="dashed" @click="promptTestOpen = true">
-        Prompt 指標評測
-      </a-button>
       <!-- Prompt 測試沙盒（勾選多筆）：對勾選的列跑選定 prompt 子集，ungated、不落正式判決 -->
       <a-button size="small" type="dashed" @click="openSelectionTest">
         Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
+      <!-- Prompt 測試沙盒（依條件批量選取）：比照初判分類 stage/篩選目標選取，無需先勾選 -->
+      <a-button size="small" type="dashed" @click="openBatchTest"> Prompt 測試（依條件） </a-button>
     </div>
   </Teleport>
 
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
-
-  <!-- Prompt 指標評測抽屜（B1：filters=帶當前列表篩選，對篩選子集測試） -->
-  <PromptEvalDrawer v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
 
   <!-- 判決歷史抽屜（評論級時間軸；懶載）-->
   <JudgmentHistoryDrawer v-model:visible="historyOpen" :source="source" :row="historyRow" />
@@ -477,18 +459,23 @@ onMounted(init);
         本批 {{ failedItems.length }}{{ failedTruncated ? '+' : '' }} 筆判決失敗（未落庫、等同未判）
       </template>
       <div class="flex flex-wrap items-center gap-3">
-        <span class="text-xs text-[#86909c]">失敗筆可重判補上；系統性失敗連續多次後會停止隱式重撈，需在此手動重判。</span>
+        <span class="text-xs text-[#86909c]"
+          >失敗筆可重判補上；系統性失敗連續多次後會停止隱式重撈，需在此手動重判。</span
+        >
         <a-popover position="bl">
           <a-button size="mini" type="text">查看原因</a-button>
           <template #content>
             <div class="max-h-64 w-96 overflow-auto text-xs">
               <div v-for="f in failedItems" :key="f.item_id" class="mb-1 break-all">
-                <span class="text-[#86909c]">{{ f.source_id || f.item_id }}</span>：{{ f.error }}
+                <span class="text-[#86909c]">{{ f.source_id || f.item_id }}</span
+                >：{{ f.error }}
               </div>
             </div>
           </template>
         </a-popover>
-        <a-button size="mini" type="primary" status="warning" @click="retryFailed">重判本批失敗筆</a-button>
+        <a-button size="mini" type="primary" status="warning" @click="retryFailed"
+          >重判本批失敗筆</a-button
+        >
       </div>
     </a-alert>
     <!-- 初判歸因進度：批量判決進行中才顯示（控制列已移入工具列橫帶）-->
@@ -1148,6 +1135,10 @@ onMounted(init);
       :scope="sandboxScope"
       :source-ids="sandboxSourceIds"
       :row="sandboxRow"
+      :eff-verticals="effVerticals"
+      :selected-keys="selectedRowKeys as string[]"
+      :list-filters="listFilters"
+      :cascade-options="cascadeOptions"
     />
 
     <!-- 歸因備註抽屜：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史抽屜同比例）-->

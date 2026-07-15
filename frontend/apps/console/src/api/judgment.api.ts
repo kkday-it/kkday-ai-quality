@@ -164,78 +164,6 @@ export const previewPrejudgeCount = (body: PrejudgeBody): Promise<{ total: numbe
     body: JSON.stringify(body),
   });
 
-/** 單支 Prompt 測試結果（Prompt-as-Source 調適閉環）：指標 + 分歧清單。域指標與極性指標依 prompt 別填。 */
-export interface PromptEvalResult {
-  prompt: string;
-  source: string;
-  model: string;
-  n: number;
-  /** 樣本是否來自 B1 篩選子集（true＝filters 給定，抽樣＝篩選結果；false＝md5 全表抽樣）。 */
-  filtered?: boolean;
-  /** 域 prompt 指標。 */
-  primary_match_rate?: number | null;
-  abstain_correct_rate?: number | null;
-  hit_rate?: number | null;
-  over_report_rate?: number | null;
-  /** 極性 prompt 指標。 */
-  polarity_match_rate?: number | null;
-  sentiment_match_rate?: number | null;
-  counts?: Record<string, number>;
-  /** 與參照分歧的逐案清單（reason＝診斷理由：命中取首條歸因理由、棄權取 abstain_reason）。 */
-  mismatches: Array<{
-    id: string;
-    ref: unknown;
-    pack: unknown;
-    ref_primary?: string | null;
-    text: string;
-    reason?: string;
-  }>;
-}
-
-/** 單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標 + 分歧（消耗 LLM 額度）。
- * @param prompt "polarity" 或 "C-1".."C-6"（呼叫端由 rule_code 去 prompt_ 前綴）。
- * @param filters B1：給定時樣本＝歸因列表當前篩選子集（`PrejudgeBody` 同形，取代 md5 全表抽樣）。 */
-export const evalPrompt = (
-  prompt: string,
-  n: number,
-  filters?: PrejudgeBody,
-): Promise<PromptEvalResult> =>
-  j<PromptEvalResult>(`${BASE}/v1/judgment/prompt-eval`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, n, filters }),
-  });
-
-/** 測試歷史列表單筆（B2；不含 mismatches，指標摘要走 metrics）。 */
-export interface PromptEvalRunSummary {
-  run_id: string;
-  prompt_id: string;
-  prompt_version: number | null;
-  source: string;
-  n: number;
-  metrics: Record<string, unknown>;
-  model: string;
-  triggered_by: string;
-  created_at: string;
-}
-
-/** 某支 prompt 的測試歷史列表（B2；created_at 降冪分頁）→ {total, items}——供「改 prompt 前後對比」。
- * @param promptArg "polarity" 或 "C-1".."C-6"。 */
-export const listPromptEvalRuns = (
-  promptArg: string,
-  limit = 20,
-  offset = 0,
-): Promise<{ total: number; items: PromptEvalRunSummary[] }> =>
-  j<{ total: number; items: PromptEvalRunSummary[] }>(
-    `${BASE}/v1/judgment/prompt-eval/runs?prompt_id=${encodeURIComponent(promptArg)}&limit=${limit}&offset=${offset}`,
-  );
-
-/** 單一測試 run 完整詳情（含 filters/mismatches 逐案分歧）。 */
-export const getPromptEvalRun = (
-  runId: string,
-): Promise<PromptEvalRunSummary & { filters: PrejudgeBody | null; mismatches: unknown[] }> =>
-  j(`${BASE}/v1/judgment/prompt-eval/runs/${encodeURIComponent(runId)}`);
-
 /** 六域裁決（B0 診斷理由 overlay）：命中域帶歸因+理由，棄權域帶棄權理由——六域皆有交代。 */
 export interface DomainVerdict {
   domain: string;
@@ -407,21 +335,30 @@ export const getJudgmentRun = (jobId: string) =>
 export const getJudgmentModels = (): Promise<string[]> =>
   j<string[]>(`${BASE}/judgment-history/models`);
 
-/** Prompt 測試沙盒啟動請求 body：對 source_ids 逐筆跑 prompt_ids 子集（不受正式歸因閘門限制）。
- * scope 由觸發入口顯式帶入（single＝單列「Prompt 測試」按鈕；selection＝工具列對勾選多筆），
- * 不用筆數反推——供沙盒歷史列表分辨來源。 */
-export interface PromptSandboxStartBody {
+/** Prompt 測試沙盒啟動請求 body：對 item_ids（或依條件解析出的目標集合）逐筆跑 prompt_ids 子集
+ * （不受正式歸因閘門限制）。繼承 `PrejudgeBody` 全部目標選取欄位——item_ids 顯式優先；否則
+ * scope="all" 依 stages 目標選取（可 within_ids 交集勾選範圍），與初判分類「依條件批量選取」
+ * 同一套後端解析（`_resolve_target_ids`），零改動重用。
+ * scope 由觸發入口顯式帶入（single＝單列按鈕；selection＝工具列對勾選多筆，item_ids 顯式；
+ * all＝工具列「依條件批量」），不用筆數反推——供沙盒歷史列表分辨來源。 */
+export interface PromptSandboxStartBody extends PrejudgeBody {
   source: string;
-  source_ids: string[];
   prompt_ids: string[];
-  scope: 'single' | 'selection';
-  llm_config_id?: string;
+  scope: 'single' | 'selection' | 'all';
 }
 
 /** 啟動 Prompt 測試沙盒背景 job → {job_id}（前端輪詢 `getPromptSandboxStatus` 拿進度）。
  * @throws stub 模式（無可用 LLM token）一律拒跑，dev 環境亦不例外——比照 `classify_one` 慣例。 */
 export const startPromptSandbox = (body: PromptSandboxStartBody): Promise<{ job_id: string }> =>
   j<{ job_id: string }>(`${BASE}/v1/judgment/prompt-sandbox`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+/** 預覽 Prompt 測試沙盒「將測試 N 筆」（與 `startPromptSandbox` 同一套標的解析；不派工、不消耗 token）。 */
+export const previewPromptSandboxCount = (body: PromptSandboxStartBody): Promise<{ total: number }> =>
+  j<{ total: number }>(`${BASE}/v1/judgment/prompt-sandbox/count`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -447,7 +384,7 @@ export const getPromptSandboxStatus = (jobId: string): Promise<PromptSandboxJobS
 export interface PromptSandboxRunSummary {
   run_id: string;
   source: string;
-  scope: 'single' | 'selection';
+  scope: 'single' | 'selection' | 'all';
   item_ids: string[];
   prompt_ids: string[];
   item_count: number;

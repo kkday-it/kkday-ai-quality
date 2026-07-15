@@ -3,8 +3,8 @@
  * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
  * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
  * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
- * 測試 Prompt（真實/mock 列表切換 + 測試集管理）已移至歸因列表工具列「測試 Prompt」入口
- * （PromptEvalDrawer），本頁不重複提供。
+ * Prompt 測試（對單列/勾選多筆跑選定 prompt 子集）於歸因列表工具列與列操作區提供，
+ * 本頁不重複提供。
  * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
  * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
  * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
