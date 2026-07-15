@@ -131,20 +131,37 @@ conversations = Table(
     metadata,
     Column("session_oid", Text, primary_key=True),  # 特徵 id
     Column("zendesk_ticket_id", Text),
-    Column("session_create_date", Text),  # canonical occurred_at
-    Column("order_oid", Text),
+    Column("session_date_tw", Text),
+    Column("session_datetime_tw", Text),  # canonical occurred_at
     Column("order_mid", Text),
-    Column("sessionable_type", Text),  # canonical channel
-    Column("sessionable_id", Text),
-    Column("prod_oid", Text),
-    Column("session_direction", Text),
-    Column("supplier_oid", Text),
-    Column("msg_handler", Text),
-    Column("aggregated_messages", Text),  # canonical content
-    Column("prod_bd_tag_note", Text),
-    Column("prod_name_zh_tw", Text),
+    Column("order_oid", Text),
+    Column("order_lang", Text),
+    Column("order_price_pay", Text),
     Column("order_profit", Text),
-    Index("idx_conversations_create_date", "session_create_date"),
+    Column("order_create_source_code", Text),
+    Column("prod_oid", Text),
+    Column("product_name", Text),
+    Column("prod_name_zh_tw", Text),
+    Column("prod_bd_tag_note", Text),
+    Column("product_category", Text),
+    Column("order_go_date", Text),
+    Column("product_timezone", Text),
+    Column("trip_stage", Text),
+    Column("order_status", Text),
+    Column("supplier_oid", Text),
+    Column("supplier_name", Text),
+    Column("msg_handler", Text),
+    Column("review_score", Text),
+    Column("review_content", Text),
+    Column("cs_task_type_name", Text),
+    Column("inbound_session_count", Text),
+    Column("conversation_type", Text),  # canonical channel
+    Column("user_msg_count", Text),
+    Column("agent_msg_count", Text),
+    Column("chatbot_conversation", Text),  # canonical content（併 human_conversation）
+    Column("human_conversation", Text),  # canonical content（併 chatbot_conversation）
+    Column("session_direction", Text),
+    Index("idx_conversations_datetime", "session_datetime_tw"),
     Index("idx_conversations_prod_oid", "prod_oid"),
 )
 

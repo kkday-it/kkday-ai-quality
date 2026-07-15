@@ -10,6 +10,7 @@
  * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
  */
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
+import { useLocalStorage } from '@vueuse/core';
 import { Message, Modal } from '@arco-design/web-vue';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
@@ -68,10 +69,18 @@ const editorKey = computed(
   () => `${store.activeCode}-${store.currentMeta?.version ?? 0}-${mode.value}`,
 );
 
+// 記住上次選中的規則（分頁刷新 / 資料包匯入後重載頁面時回到原本編輯的規則，不強制跳回整體配置）。
+const lastCode = useLocalStorage<string>('aiq.ruleManager.lastCode', 'source_mapping');
+
 onMounted(async () => {
   verticalFilter.loadOptions();
   await store.loadList();
-  await store.selectRule('source_mapping');
+  // 上次選中的 rule_code 若已不存在（規則退役等）→ 回退整體配置，避免選到空規則。
+  const code = store.metas.some((m) => m.rule_code === lastCode.value)
+    ? lastCode.value
+    : 'source_mapping';
+  mode.value = isPromptCode(code) ? 'panel' : 'json';
+  await store.selectRule(code);
 });
 
 async function pick(code: string) {
@@ -80,6 +89,7 @@ async function pick(code: string) {
     return;
   }
   mode.value = isPromptCode(code) ? 'panel' : 'json'; // prompt_* → md 編輯器；其餘（整體配置）→ JSON
+  lastCode.value = code;
   await store.selectRule(code);
 }
 
@@ -274,7 +284,12 @@ function doResetAll() {
 
         <!-- 編輯區：撐滿剩餘高度，內部各自捲動 -->
         <div class="min-h-0 flex-1">
-          <StateGuard :loading="store.loading" :error="store.error">
+          <StateGuard
+            :loading="store.loading"
+            :error="store.error"
+            :empty="!store.loading && !store.error && !store.edited && mode !== 'history'"
+            empty-text="無內容，請重新整理頁面或聯絡管理員"
+          >
             <!-- 初判 Prompt（prompt_*）：md 歷史 diff / md 編輯器（優先於下方 JSON 分支）-->
             <PromptHistoryPanel
               v-if="isPrompt && mode === 'history'"

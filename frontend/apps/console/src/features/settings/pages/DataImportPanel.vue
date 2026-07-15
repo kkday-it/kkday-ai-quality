@@ -101,8 +101,12 @@ const runImport = async () => {
     es.onmessage = (ev) => {
       snapshot.value = JSON.parse(ev.data) as ImportJobSnapshot;
       if (snapshot.value.status === 'done') {
-        Message.success('匯入完成，資料已還原');
+        Message.success('匯入完成，資料已還原，即將重新整理頁面…');
         closeStream();
+        // 匯入為 truncate-then-load 全庫覆蓋，各頁面 Pinia store（判決規則/設定/垂直分類等）
+        // 皆快取自匯入前的資料，不會自動失效；改整頁重載一次性清空全部記憶體狀態，避免逐一
+        // store 補 refetch 邏輯（見 datapack import 全流程稽核：多個 store 各自有無感過期風險）。
+        setTimeout(() => window.location.reload(), 1200);
       } else if (snapshot.value.status === 'error') {
         Message.error(`匯入失敗：${snapshot.value.error}`);
         closeStream();

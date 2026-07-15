@@ -4,7 +4,8 @@
 天差地別；本模組以**外部化 SSOT** 提供三件事，供上傳流程與正規化共用（零硬編碼別名）：
   - detect_source(headers)：依 required_headers 指紋自動辨識上傳工作表屬哪個來源。
   - validate_headers(source, headers)：校驗必備欄是否齊全（缺則不可上傳）。
-  - normalize_row(source, row)：原始列 → 統一問題列表 canonical 欄 + source_metadata(特殊欄)。
+  - normalize_row(source, row)：原始列 → 統一問題列表 canonical 欄 + source_metadata(特殊欄)；
+    支援 merge_fields（多原始欄併成單一 canonical 欄，如多輪對話拆表頭）。
 
 公共欄位共用、特殊欄入 source_metadata、source 欄即「反饋管道」——對齊統一問題列表設計。
 SSOT＝DB judge_rule_versions 的 source_mapping active 版（RuleManager 線上編輯即時生效），
@@ -128,8 +129,10 @@ def _clean(v: Any) -> Any:
 def normalize_row(source: str, row: dict[str, Any]) -> dict[str, Any]:
     """原始列 → 統一問題列表 canonical 欄 + source_metadata（特殊欄兜底）。
 
-    映射規則（讀 config）：field_map 把原始欄映到 canonical；const_fields 補常數；
-    field_map 未涵蓋的非空原始欄一律進 source_metadata。source 欄填來源 code（反饋管道）。
+    映射規則（讀 config）：field_map 把原始欄映到 canonical；merge_fields 把多個原始欄依序
+    串接（換行分隔）成單一 canonical 欄（原始欄本身不再落 source_metadata，避免重複）；
+    const_fields 補常數；field_map/merge_fields 皆未涵蓋的非空原始欄一律進 source_metadata。
+    source 欄填來源 code（反饋管道）。
 
     Args:
         source: 來源 code（須在 source_mapping 內）。
@@ -142,6 +145,8 @@ def normalize_row(source: str, row: dict[str, Any]) -> dict[str, Any]:
     m = _sources.get(source) or {}
     field_map: dict[str, str] = m.get("field_map", {})
     const_fields: dict[str, str] = m.get("const_fields", {})
+    merge_fields: dict[str, list[str]] = m.get("merge_fields", {})
+    merge_raw_keys = {k for keys in merge_fields.values() for k in keys}
 
     out: dict[str, Any] = {"source": source}
     meta: dict[str, Any] = {}
@@ -149,12 +154,18 @@ def normalize_row(source: str, row: dict[str, Any]) -> dict[str, Any]:
         if raw_key is None:
             continue
         key = str(raw_key).strip()
+        if key in merge_raw_keys:
+            continue  # 併入 merge_fields，不進 field_map / source_metadata
         canon = field_map.get(key)
         cv = _clean(value)
         if canon:
             out[canon] = cv
         elif cv is not None:
             meta[key] = cv  # 特殊欄兜底
+    for canon, raw_keys in merge_fields.items():
+        parts = [p for k in raw_keys if (p := _clean(row.get(k))) is not None]
+        if parts:
+            out[canon] = "\n---\n".join(parts)
     for k, v in const_fields.items():
         out.setdefault(k, v)
     out["source_metadata"] = meta

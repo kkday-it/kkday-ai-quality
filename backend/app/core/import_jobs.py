@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Callable
 
@@ -18,6 +19,10 @@ _log = logging.getLogger(__name__)
 # job_id → 進度快照（JSON-safe，供 SSE 直接序列化）。
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
+
+# 已達終態（done/error）的快照，逾此秒數才會被下一次 start_import 清掃——單機記憶體無界累積防護
+# （匯入無下載步驟可掛清除時機，不同於 export_jobs 靠 pop_result 順帶回收，故需獨立 TTL 機制）。
+_STALE_TTL_SECONDS = 1800
 
 
 class ImportCtx:
@@ -47,7 +52,20 @@ def _new_snapshot() -> dict:
         "total_tables": 0,
         "inserted": {},  # {table: 已灌列數}
         "error": "",
+        "_created_at": time.time(),  # 內部欄位，不對前端序列化（get_job 回傳前需濾除）
     }
+
+
+def _prune_stale() -> None:
+    """清掃已達終態且逾 TTL 的快照（呼叫端須持有 _lock）。"""
+    cutoff = time.time() - _STALE_TTL_SECONDS
+    stale = [
+        jid
+        for jid, snap in _jobs.items()
+        if snap["status"] in ("done", "error") and snap.get("_created_at", cutoff) < cutoff
+    ]
+    for jid in stale:
+        del _jobs[jid]
 
 
 # runner 契約：接 ImportCtx → 回結果 dict（過程 report_table 上報進度）。
@@ -79,6 +97,7 @@ def start_import(runner: Runner) -> str:
     """註冊並背景啟動一個匯入 job；立即回 job_id（不阻塞請求）。"""
     job_id = f"im_{uuid.uuid4().hex[:12]}"
     with _lock:
+        _prune_stale()
         _jobs[job_id] = _new_snapshot()
     threading.Thread(
         target=_run, args=(job_id, runner), name=f"import-{job_id}", daemon=True
@@ -87,7 +106,9 @@ def start_import(runner: Runner) -> str:
 
 
 def get_job(job_id: str) -> dict | None:
-    """取 job 進度快照複本（thread-safe）；不存在回 None。"""
+    """取 job 進度快照複本（thread-safe，濾除內部欄位）；不存在回 None。"""
     with _lock:
         snap = _jobs.get(job_id)
-        return dict(snap) if snap else None
+        if snap is None:
+            return None
+        return {k: v for k, v in snap.items() if not k.startswith("_")}

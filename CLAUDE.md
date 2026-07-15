@@ -62,5 +62,6 @@
 | `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` `start.sh` `docker-compose*.yml` | 禁硬編碼配置化完整規範 + start.sh 一鍵啟動引導鐵律 |
 | `docs-sync.md` | `**/*.py` `**/*.ts` `**/*.vue` `config/**` `constants/**` | 改邏輯/結構/契約 → 同步更新所有相關文檔（寫前先核實 code）|
 | `feature-retirement.md` | `**/alembic/versions/**` `**/tables.py` `**/migrations/**` | 功能退場機制：盤點消費點 → 全棧清退（代碼/DB/前端/config/文件/註釋/測試零殘留）→ 驗證清單（呼應核心原則 4）|
+| `datapack-consistency.md` | `**/tables.py` `**/alembic/versions/**` `**/migrations/**` `**/datapack.py` `**/dump_datapack.py` `**/import_jobs.py` | 資料包匯出/匯入數據一致性：改 DB 表/欄/JSONB 內容形狀時同步檢查 `TABLE_LOAD_ORDER`/`_SEQUENCE_TABLES`/前端消費端顯性防禦，避免匯入後靜默空白 |
 
 > 冷啟動問「有什麼規則」時，只答本檔常駐部分；rules/ 條件規則不列為常駐。

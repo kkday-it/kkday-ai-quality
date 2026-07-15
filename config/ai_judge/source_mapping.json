@@ -1,7 +1,7 @@
 {
  "_meta": {
   "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。",
-  "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。",
+  "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值；merge_fields（canonical 欄→[原始欄,...]）將多個原始欄依序串接（換行分隔）成單一 canonical 欄，用於單一原始欄無法承載全部內容的來源（如 conversations 的 chatbot_conversation+human_conversation→content）。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。",
   "version": "1.0",
   "canonical_fields": [
    "source",
@@ -42,14 +42,17 @@
     "order_oid": "order_oid",
     "session_oid": "source_record_id",
     "supplier_oid": "supplier_oid",
-    "sessionable_type": "channel",
-    "aggregated_messages": "content",
-    "session_create_date": "occurred_at"
+    "conversation_type": "channel",
+    "session_datetime_tw": "occurred_at"
+   },
+   "merge_fields": {
+    "content": ["chatbot_conversation", "human_conversation"]
    },
    "const_fields": {},
    "required_headers": [
     "session_oid",
-    "aggregated_messages"
+    "chatbot_conversation",
+    "human_conversation"
    ]
   },
   "product_reviews": {
