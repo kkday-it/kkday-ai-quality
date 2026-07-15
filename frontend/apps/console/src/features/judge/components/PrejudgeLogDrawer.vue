@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { IconLoading } from '@arco-design/web-vue/es/icon';
-import { prejudgeLogStreamUrl } from '@/api';
+import { getJudgmentRunLog, prejudgeLogStreamUrl } from '@/api';
 import PrejudgeLogView from './PrejudgeLogView.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 
-// 初判執行日誌抽屜：SSE 增量接收單次 job 的執行日誌並即時渲染（流式，逐 event 追加）。
-// 逐條渲染委派 PrejudgeLogView（與 Prompt 測試沙盒共用同一份渲染，見該元件檔頂註）；
-// 本檔只負責 SSE 連線生命週期 + drawer 外殼。
+// 「LLM 執行日誌」抽屜：兩種模式共用同一份渲染（PrejudgeLogView）——
+// live（預設，「初判分類」點擊時開）：SSE 增量接收單次 job 的執行日誌，即時渲染。
+// history（判決歷史「查看 LLM 日誌」入口開）：GET 落庫快照一次性載入，靜態渲染（無 SSE）。
 
 const props = defineProps<{
   visible: boolean;
-  /** startPrejudge 回傳的 job_id；抽屜開啟且非空時建立 SSE 串流。 */
+  /** startPrejudge 回傳的 job_id；抽屜開啟且非空時依 mode 建立 SSE 串流或讀落庫快照。 */
   jobId: string;
+  /** live＝即時串流（預設）；history＝讀落庫快照（判決歷史回看，僅小批量 job 有收集內容）。 */
+  mode?: 'live' | 'history';
 }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 
 const entries = ref<LogEntry[]>([]);
 const streaming = ref(false);
+const loadingHistory = ref(false);
 const streamError = ref('');
-const scrollRef = ref<HTMLElement>();
 let es: EventSource | null = null;
 
 const _close = () => {
@@ -28,25 +30,16 @@ const _close = () => {
   streaming.value = false;
 };
 
-const _scrollToBottom = () => {
-  requestAnimationFrame(() => {
-    scrollRef.value?.scrollTo({ top: scrollRef.value.scrollHeight });
-  });
-};
-
-const _open = (jid: string) => {
-  _close();
-  entries.value = [];
-  streamError.value = '';
+const _openLive = (jid: string) => {
   streaming.value = true;
   es = new EventSource(prejudgeLogStreamUrl(jid));
   // EventSource 自動重連會從 offset=0 整批重放 → 每次連上先清空，避免條目重複
   es.onopen = () => {
     entries.value = [];
   };
+  // 自動捲到底改由 PrejudgeLogView 內部處理（捲動容器已下沉至 tab 內的 .arco-tabs-content）
   es.onmessage = (ev) => {
     entries.value.push(JSON.parse(ev.data));
-    _scrollToBottom();
   };
   es.addEventListener('done', () => _close());
   es.addEventListener('error', (ev) => {
@@ -61,6 +54,26 @@ const _open = (jid: string) => {
       _close();
     }
   });
+};
+
+const _openHistory = async (jid: string) => {
+  loadingHistory.value = true;
+  try {
+    const r = await getJudgmentRunLog(jid);
+    entries.value = r.entries;
+  } catch (e: any) {
+    streamError.value = e?.message || '此任務無執行日誌快照（可能為大批量任務或啟用日誌前的舊判決）';
+  } finally {
+    loadingHistory.value = false;
+  }
+};
+
+const _open = (jid: string) => {
+  _close();
+  entries.value = [];
+  streamError.value = '';
+  if (props.mode === 'history') void _openHistory(jid);
+  else _openLive(jid);
 };
 
 watch(
@@ -80,22 +93,32 @@ onBeforeUnmount(_close);
     :width="880"
     :footer="false"
     unmount-on-close
-    :body-style="{ display: 'flex', flexDirection: 'column', padding: '12px 16px' }"
+    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px 16px' }"
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
     <template #title>
-      <span>初判執行日誌</span>
+      <span>LLM 執行日誌</span>
       <a-tag size="small" class="ml-2 font-mono">{{ jobId }}</a-tag>
-      <a-tag v-if="streaming" color="arcoblue" size="small" class="ml-1">
-        <template #icon><icon-loading /></template>
-        串流中
-      </a-tag>
-      <a-tag v-else color="green" size="small" class="ml-1">已結束</a-tag>
+      <template v-if="mode === 'history'">
+        <a-tag color="gray" size="small" class="ml-1">歷史快照</a-tag>
+      </template>
+      <template v-else>
+        <a-tag v-if="streaming" color="arcoblue" size="small" class="ml-1">
+          <template #icon><icon-loading /></template>
+          串流中
+        </a-tag>
+        <a-tag v-else color="green" size="small" class="ml-1">已結束</a-tag>
+      </template>
     </template>
 
     <a-alert v-if="streamError" type="warning" class="mb-2">{{ streamError }}</a-alert>
 
-    <div ref="scrollRef" class="flex-1 overflow-auto pr-1">
+    <div v-if="loadingHistory" class="flex items-center gap-2 py-6 text-xs text-[#86909c]">
+      <icon-loading /> 載入歷史日誌快照…
+    </div>
+    <!-- min-h-0 讓子層 PrejudgeLogView 的 flex:1 高度鏈成立；捲動交給其內部 .arco-tabs-content
+         （tab 固定 + 內容捲動，見 .claude/rules/frontend-vue.md），此處不可再套 overflow-auto -->
+    <div v-else class="min-h-0 flex-1 pr-1">
       <PrejudgeLogView :entries="entries" :streaming="streaming" />
     </div>
   </a-drawer>

@@ -403,7 +403,9 @@ watch(
           執行日誌
           <a-tag v-if="logStreaming" size="small" color="arcoblue" class="ml-1">串流中</a-tag>
         </template>
-        <div class="h-full overflow-auto pr-1">
+        <!-- overflow-hidden（非 auto）：捲動已下沉至 PrejudgeLogView 內部 tab 固定 + 內容捲動
+             機制（見 .claude/rules/frontend-vue.md），此處若仍 overflow-auto 會產生雙層捲軸 -->
+        <div class="h-full overflow-hidden pr-1">
           <PrejudgeLogView :entries="logEntries" :streaming="logStreaming" />
         </div>
       </a-tab-pane>

@@ -196,6 +196,22 @@ export const prejudgeStreamUrl = (jobId: string): string =>
 export const prejudgeLogStreamUrl = (jobId: string): string =>
   `${BASE}/v1/judgment/prejudge/log-stream?job_id=${encodeURIComponent(jobId)}`;
 
+/** run_log 快照條目（供判決歷史回看當時的完整 LLM 日誌；形狀同 `PrejudgeLogDrawer` 的即時日誌）。 */
+export interface JudgmentRunLogEntry {
+  ts: number;
+  kind: 'stage' | 'llm_request' | 'llm_prompt' | 'llm_response' | 'llm_note' | 'error';
+  stage: string;
+  message: string;
+  /** 同一次 LLM 調用的分組鍵（polarity / C-1..C-6）；供前端聚合成單一 tab。 */
+  label?: string;
+  data?: Record<string, unknown>;
+}
+
+/** 讀某次判決落庫的完整執行日誌快照（判決歷史「查看 LLM 日誌」入口）；
+ * 僅小批量 job 有收集內容，無日誌時 404。 */
+export const getJudgmentRunLog = (jobId: string): Promise<{ entries: JudgmentRunLogEntry[] }> =>
+  j(`${BASE}/v1/judgment/runs/${encodeURIComponent(jobId)}/log`);
+
 /** 暫停初判歸因任務（提交迴圈阻塞，已在跑的收斂後 processed 停增）→ 更新後快照。 */
 export const pausePrejudge = (jobId: string) =>
   j(`${BASE}/v1/judgment/prejudge/pause?job_id=${encodeURIComponent(jobId)}`, { method: 'POST' });

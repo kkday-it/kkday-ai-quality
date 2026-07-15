@@ -1,18 +1,28 @@
 <script setup lang="ts">
 /**
  * 判決歷史抽屜（評論級時間軸）：某則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註
- * 三類事件混排（新到舊，Arco a-timeline）。判決事件附「與前一次判決的變更」徽章
- * （模型/歸因數/分類/內容——client-side 對比，無需後端 diff 端點）；右側可新增評論級備註
- * （與 finding 級「歸因備註」並存，兩個入口不同層級）。
+ * 三類事件混排（舊到新，時間遞增，Arco a-timeline）。判決事件附「與前一次判決的變更」徽章
+ * （模型/歸因數/分類/內容——client-side 對比，無需後端 diff 端點）+「查看 LLM 日誌」入口
+ * （job_id 存在時，開 `PrejudgeLogDrawer` 歷史模式回看當時完整 LLM 執行日誌）；右側可新增
+ * 評論級備註（與 finding 級「歸因備註」並存，兩個入口不同層級）。
  *
  * 資料源＝GET /api/judgment-history（append-only judgment_history 表；重判結果與前次完全
  * 相同時後端去重不落新列，時間軸只呈現真正的變化）。
  */
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { addJudgmentHistoryNote, getJudgmentHistory, type JudgmentHistoryEntry } from '@/api';
 import { StateGuard } from '@/components';
 import { POLARITY_LABELS, STATUS_LABEL, type ProblemRow } from '../constants';
+
+// 「查看 LLM 日誌」入口目標（點開才載；與初判分類即時抽屜共用同一元件，此處走 history 模式）
+const PrejudgeLogDrawer = defineAsyncComponent(() => import('./PrejudgeLogDrawer.vue'));
+const logDrawerVisible = ref(false);
+const logDrawerJobId = ref('');
+const openRunLog = (jobId: string) => {
+  logDrawerJobId.value = jobId;
+  logDrawerVisible.value = true;
+};
 
 const props = defineProps<{
   visible: boolean;
@@ -65,7 +75,7 @@ const submitNote = async () => {
   saving.value = true;
   try {
     const created = await addJudgmentHistoryNote(props.source, sourceId.value, content);
-    list.value = [created, ...list.value];
+    list.value = [...list.value, created]; // 舊到新：新備註為最新事件，附加於尾端
     draft.value = '';
     Message.success('已新增備註');
   } catch (e: any) {
@@ -126,7 +136,7 @@ const structKey = (snaps: Snap[]): string =>
  * 後端去重保證相鄰判決必有差異：模型/歸因數/分類 逐項報，僅措辭信心漂移歸「內容微調」。
  */
 const changesById = computed<Record<number, string[]>>(() => {
-  const judgments = [...list.value].filter((e) => e.kind === 'judgment').reverse(); // oldest→newest
+  const judgments = list.value.filter((e) => e.kind === 'judgment'); // 已是 oldest→newest（後端 ASC）
   const out: Record<number, string[]> = {};
   judgments.forEach((e, i) => {
     if (i === 0) {
@@ -192,6 +202,14 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                       {{ c }}
                     </a-tag>
                     <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
+                    <a-button
+                      v-if="e.job_id"
+                      size="mini"
+                      type="text"
+                      @click="openRunLog(e.job_id!)"
+                    >
+                      查看 LLM 日誌
+                    </a-button>
                   </template>
                   <template v-else-if="e.kind === 'status'">
                     <a-tag size="small" color="orange">人工覆核</a-tag>
@@ -270,5 +288,12 @@ const statusText = (e: JudgmentHistoryEntry): string => {
         </div>
       </div>
     </div>
+
+    <!-- 「查看 LLM 日誌」：讀落庫快照的歷史回看模式（與初判分類即時抽屜共用同一元件）-->
+    <PrejudgeLogDrawer
+      v-model:visible="logDrawerVisible"
+      :job-id="logDrawerJobId"
+      mode="history"
+    />
   </a-drawer>
 </template>

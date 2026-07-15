@@ -260,14 +260,14 @@ const openNotes = async (findingId: string) => {
   }
 };
 
-/** 送出一則備註（備註人由後端登入身分帶入），成功後置頂插入歷史。 */
+/** 送出一則備註（備註人由後端登入身分帶入），成功後附加於時間軸尾端（舊到新）。 */
 const submitNote = async () => {
   const content = noteDraft.value.trim();
   if (!content) return;
   noteSaving.value = true;
   try {
     const created = await addFindingNote(noteFindingId.value, content);
-    noteList.value = [created, ...noteList.value];
+    noteList.value = [...noteList.value, created]; // 舊到新：新備註為最新，附加於尾端
     noteDraft.value = '';
     Message.success('已新增備註');
   } catch (e: any) {
@@ -1141,7 +1141,7 @@ onMounted(init);
       :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
     >
       <div class="flex min-h-0 flex-1 gap-5">
-        <!-- 左：append-only 歷史時間軸（新到舊；佔 7/10）-->
+        <!-- 左：append-only 歷史時間軸（舊到新，時間遞增；佔 7/10）-->
         <div class="flex min-w-0 flex-[7] flex-col">
           <StateGuard :loading="noteLoading" error="">
             <!-- 滾動容器包在 a-timeline 外層（同 JudgmentHistoryDrawer）：timeline 是 flex column、

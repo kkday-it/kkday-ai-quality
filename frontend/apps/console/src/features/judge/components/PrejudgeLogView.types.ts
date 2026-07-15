@@ -6,5 +6,7 @@ export interface LogEntry {
   kind: string;
   stage: string;
   message: string;
+  /** 同一次 LLM 調用的分組鍵（polarity / C-1..C-6）；前端據此把 request/prompt/response 聚合成一個 tab。 */
+  label?: string;
   data?: Record<string, unknown>;
 }

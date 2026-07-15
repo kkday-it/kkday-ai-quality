@@ -93,6 +93,31 @@ paths:
 - 不可中斷流程（匯入中）：`:mask-closable="false"` + `:closable` 動態控制
 - 元件檔名以 `*Drawer.vue` 結尾；禁止 drawer 內容元件命名 `*Modal`
 
+## Tabs 切換展示（固定 Tab · 內容捲動 · 強制用公共元件）
+
+任何用 tabs 做切換展示的場景（多路 LLM 調用、多分頁資料檢視等），**tab 列必須恆常可見固定，只有內容區塊捲動**——內容過長時使用者仍要能一眼看到全部 tab、隨時點擊切換，禁止 tab 列隨內容一起被捲走（使用者要滾回頂部才找得到切換入口）。
+
+**一律用公共元件 `StickyTabs`（`@/components`）取代裸 `a-tabs`，禁止各處手抄 `:deep()` CSS：**
+
+```vue
+<script setup lang="ts">
+import { StickyTabs } from '@/components';
+</script>
+
+<template>
+  <StickyTabs v-model:active-key="activeTab" type="card-gutter" size="small" :lazy-load="true">
+    <a-tab-pane key="foo" title="Foo">…</a-tab-pane>
+  </StickyTabs>
+</template>
+```
+
+- **透明轉發**：`StickyTabs` 不宣告 props，`v-model:active-key` / `type` / `size` / `:lazy-load` 等一切 `a-tabs` 原生 API 直接生效，`<a-tab-pane>` 寫法零改動——與裸 `a-tabs` 替換零學習成本。
+- **消費端前提**：根元素需在有實際高度的容器內（drawer 走 `:body-style` 撐滿、頁面走 `h-full`）才能 `flex:1` 撐滿並讓內容區正確捲動。
+- **消費端不得再套 `overflow-auto` 包住整個 `<StickyTabs>`**——捲動容器已下沉到元件內部，外層若疊加 `overflow-auto` 會產生雙層捲軸；消費端改用 `overflow-hidden` 讓內部機制接管。
+- **串流新增條目要自動捲到底**：用 `ref` 拿 `StickyTabs` 實例，呼叫其 `scrollActiveToBottom()`（`:lazy-load="true"` 下同時只有 active pane 掛載，元件內部自動抓對容器，消費端不需得知 Arco 內部 class 名稱）。
+
+> Canonical 用例：`features/judge/components/PrejudgeLogView.vue`（7 路 LLM 調用 tab，`polarity`/`C-1`~`C-6`）。`StickyTabs` 內部實作（`:deep()` 覆寫 `.arco-tabs`/`.arco-tabs-nav`/`.arco-tabs-content`，水平 overflow 維持 hidden 不動 Arco 原生 clip 機制）見 `components/StickyTabs.vue` 本身，除非要擴充該元件本身，否則消費端不需要、也不應該知道這些內部細節。
+
 ## 懶加載 / Code-splitting（預設機制）
 
 首屏不需要的一律延遲載入，縮小初始 bundle（呼應 06 quality-targets：單路由 JS < 200KB gzip）：
