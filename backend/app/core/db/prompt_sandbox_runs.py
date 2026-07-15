@@ -1,9 +1,9 @@
 """歸因列表 Prompt 測試沙盒歷史（prompt_sandbox_runs）：每次沙盒測試完成落一列結果快照。
 
 與 judgments/judgment_history/judgment_runs（正式初判管線）完全分離——沙盒測試不落正式判決，
-只落此表，確保「測試歷史」與「正式歸因」互不干擾。與 prompt_eval_runs（單支 prompt × N 樣本
-指標評測）語意不同：本表是「M 筆 item × 勾選 prompt 子集」的逐筆結果 + 完整 LLM log 快照，
-供事後回看當時測試跑了什麼、LLM 說了什麼。只有 insert + 列表/詳情查詢，無狀態回寫。
+只落此表，確保「測試歷史」與「正式歸因」互不干擾。本表是「M 筆 item × 勾選 prompt 子集」的
+逐筆結果 + 完整 LLM log 快照，供事後回看當時測試跑了什麼、LLM 說了什麼。只有 insert + 列表/
+詳情查詢，無狀態回寫。
 """
 
 from __future__ import annotations

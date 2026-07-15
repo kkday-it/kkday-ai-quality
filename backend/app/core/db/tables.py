@@ -370,33 +370,6 @@ judgment_history = Table(
     Index("idx_judgment_history_created_at", "created_at"),
 )
 
-# Prompt 測試歷史（B2：Prompt-as-Source 調適閉環——每次 `prompt_eval.run_eval` 完成落一列，
-# 供「改 prompt 前後對比」）。與 judgment_runs 不同生命週期：judgment_runs 綁批次任務執行狀態
-# （running/paused/…終態），本表是單次同步評測的**結果快照**，落表即完成、無執行中狀態。
-prompt_eval_runs = Table(
-    "prompt_eval_runs",
-    metadata,
-    Column("run_id", Text, primary_key=True),  # peval_* uuid4 hex
-    Column(
-        "prompt_id", Text, nullable=False
-    ),  # polarity / C-1..C-6（prompt_eval.prompt_id_of 值域）
-    Column("prompt_version", Integer),  # 觸發當下 judge_rule_versions(prompt_*) 的 active 版本號
-    Column(
-        "source", Text, nullable=False
-    ),  # production（現行判決參照）/ filtered（B1 篩選子集）/ mock（B3 測試集，未來）
-    Column("n", Integer, nullable=False),  # 樣本數
-    Column("filters", JSONB),  # B1 篩選條件快照（PrejudgeIn 同形；source=production 時為 NULL）
-    Column(
-        "metrics", JSONB, nullable=False
-    ),  # compute_domain_metrics/compute_polarity_metrics 輸出
-    Column("mismatches", JSONB, nullable=False),  # 逐案分歧清單（含診斷理由 reason）
-    Column("model", Text),  # 判決模型
-    Column("triggered_by", Text),  # 觸發人（user email）
-    Column("created_at", DateTime(timezone=True), server_default=func.now()),
-    # 歷史列表熱路徑：同一 prompt_id 依時間倒序（「改 prompt 前後對比」逐支查歷史）
-    Index("idx_prompt_eval_runs_prompt_created", "prompt_id", "created_at"),
-)
-
 # 歸因列表 Prompt 測試沙盒歷史（與 judgments/judgment_history/judgment_runs 完全分離——沙盒測試
 # 不落正式判決，只落此表）。一 run＝對 item_ids 逐筆跑 prompt_ids 子集的一次沙盒測試，results 含
 # 逐筆逐 prompt 結果，log 為該次 run_log 快照（供事後回看完整 LLM log；run_log 本身純記憶體不落庫）。

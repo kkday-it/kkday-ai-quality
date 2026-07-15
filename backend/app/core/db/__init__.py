@@ -50,11 +50,6 @@ from app.core.db.llm_usage import (
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_problems
-from app.core.db.prompt_eval_runs import (
-    insert_prompt_eval_run,
-    list_prompt_eval_runs,
-    prompt_eval_run_detail,
-)
 from app.core.db.prompt_sandbox_runs import (
     insert_sandbox_run,
     list_sandbox_runs,
@@ -130,9 +125,6 @@ __all__ = [
     "judgment_run_detail",
     "list_judgment_runs",
     "update_judgment_run_status",
-    "insert_prompt_eval_run",
-    "list_prompt_eval_runs",
-    "prompt_eval_run_detail",
     "insert_sandbox_run",
     "list_sandbox_runs",
     "sandbox_run_detail",
