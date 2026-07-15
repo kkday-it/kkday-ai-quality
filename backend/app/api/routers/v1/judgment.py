@@ -217,6 +217,82 @@ async def classify_one(
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
+class PromptSandboxIn(BaseModel):
+    """Prompt 測試沙盒啟動請求：對 source_ids 逐筆跑 prompt_ids 子集（不受正式歸因閘門限制）。
+
+    scope 由前端依觸發入口顯式帶入（單列「Prompt 測試」按鈕＝single；工具列對勾選多筆＝selection），
+    不由 len(source_ids) 反推——即使選取剛好 1 筆走 selection 入口，語意仍是「選取批次」而非單列。
+    """
+
+    source: str
+    source_ids: list[str]
+    prompt_ids: list[str]
+    scope: str = "single"
+    llm_config_id: str | None = None
+
+
+@router.post("/prompt-sandbox")
+async def start_prompt_sandbox(
+    body: PromptSandboxIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> dict:
+    """啟動 Prompt 測試沙盒背景 job → 立即回 {job_id}（前端輪詢 `/prompt-sandbox/status`）。
+
+    與 `/classify-one`（同步、單筆、production 閘門）的差異：本端點 ungated（勾了域 prompt 即跑，
+    不受正向評論擋六域的正式閘門限制）、可對多筆並行、結果落獨立的 `prompt_sandbox_runs` 歷史
+    （與 judgments/judgment_history 完全分離），且捕捉完整 LLM log 供事後回看（見 `prompt_sandbox.py`）。
+    """
+    from app.judge import prompt_sandbox
+
+    eff = app_settings.effective_llm_dict(
+        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+    )
+    try:
+        job_id = await asyncio.to_thread(
+            prompt_sandbox.start,
+            body.source,
+            body.source_ids,
+            body.prompt_ids,
+            eff,
+            scope=body.scope,
+            triggered_by=user.get("email") or user.get("user_id", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    return {"job_id": job_id}
+
+
+@router.get("/prompt-sandbox/status")
+def prompt_sandbox_status(job_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """沙盒測試 job 進度輪詢 → {status: running/done/error, total, done, run_id}。"""
+    from app.judge import prompt_sandbox
+
+    snap = prompt_sandbox.get_job(job_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="找不到此測試任務")
+    return snap
+
+
+@router.get("/prompt-sandbox/runs")
+def list_prompt_sandbox_runs(
+    limit: int = 20, offset: int = 0, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """沙盒測試歷史列表（created_at 降冪分頁）→ {total, items}——與正式初判歷史完全分離。
+
+    items 不含 results/log（體積可觀，只列摘要）；詳情走 `/prompt-sandbox/runs/{run_id}`。
+    """
+    return db.list_sandbox_runs(limit=limit, offset=offset)
+
+
+@router.get("/prompt-sandbox/runs/{run_id}")
+def get_prompt_sandbox_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。"""
+    row = db.sandbox_run_detail(run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+    return row
+
+
 @router.post("/prejudge/count")
 def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
     """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""

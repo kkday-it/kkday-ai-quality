@@ -274,3 +274,68 @@ def test_judgment_history_endpoints(client, auth_headers) -> None:
         "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
     ).json()
     assert [e["kind"] for e in events] == ["note", "judgment"]
+
+
+# ── prompt-sandbox（歸因列表 Prompt 測試沙盒）────────────────────────
+def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers, monkeypatch):
+    """dev 零 key 時仍拒跑（無條件，非僅正式環境）——測試工具刻意比 /prejudge 嚴格，避免假結果。"""
+    from app.core import config
+
+    monkeypatch.setattr(config.env, "openai_api_key", "")
+    r = client.post(
+        "/api/v1/judgment/prompt-sandbox",
+        json={"source": "product_reviews", "source_ids": ["R1"], "prompt_ids": ["polarity"]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400
+    assert "stub" in r.json()["detail"]
+
+
+def test_prompt_sandbox_start_requires_auth(client):
+    r = client.post(
+        "/api/v1/judgment/prompt-sandbox",
+        json={"source": "product_reviews", "source_ids": ["R1"], "prompt_ids": ["polarity"]},
+    )
+    assert r.status_code == 401
+
+
+def test_prompt_sandbox_status_unknown_job_404(client, auth_headers):
+    r = client.get(
+        "/api/v1/judgment/prompt-sandbox/status?job_id=psbxjob_不存在", headers=auth_headers
+    )
+    assert r.status_code == 404
+
+
+def test_prompt_sandbox_runs_list_and_detail(client, auth_headers):
+    """歷史列表/詳情端點直接讀已落庫的沙盒 run（不重跑 job，隔離驗證 GET 端點契約）。"""
+    run_id = db.insert_sandbox_run(
+        {
+            "source": "product_reviews",
+            "scope": "single",
+            "item_ids": ["R1"],
+            "prompt_ids": ["polarity", "C-1"],
+            "item_count": 1,
+            "results": [{"source_id": "R1", "polarity": "negative", "prompts": []}],
+            "log": [{"ts": 1.0, "kind": "stage", "stage": "job", "message": "測試"}],
+            "model": "gpt-5-mini",
+            "triggered_by": "qc@kkday.com",
+            "job_id": "psbxjob_seed",
+        }
+    )
+
+    r_list = client.get("/api/v1/judgment/prompt-sandbox/runs", headers=auth_headers)
+    assert r_list.status_code == 200
+    body = r_list.json()
+    assert body["total"] == 1
+    assert "results" not in body["items"][0] and "log" not in body["items"][0]
+
+    r_detail = client.get(f"/api/v1/judgment/prompt-sandbox/runs/{run_id}", headers=auth_headers)
+    assert r_detail.status_code == 200
+    detail = r_detail.json()
+    assert detail["results"][0]["source_id"] == "R1"
+    assert detail["log"][0]["message"] == "測試"
+
+
+def test_prompt_sandbox_run_detail_unknown_404(client, auth_headers):
+    r = client.get("/api/v1/judgment/prompt-sandbox/runs/psbx_不存在", headers=auth_headers)
+    assert r.status_code == 404
