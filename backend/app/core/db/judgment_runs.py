@@ -59,6 +59,25 @@ def finish_judgment_run(job_id: str, snap: dict) -> None:
         )
 
 
+def save_run_log(job_id: str, entries: list[dict]) -> None:
+    """落存單次判決的完整執行日誌快照（run_log.read 產出）；僅小批量 job 有收集內容。
+
+    供判決歷史「查看 LLM 日誌」入口事後回看（run_log 本身純記憶體、重啟即清）。
+    """
+    with T.get_engine().begin() as c:
+        c.execute(
+            update(T.judgment_runs).where(T.judgment_runs.c.job_id == job_id).values(log=entries)
+        )
+
+
+def get_run_log(job_id: str) -> list[dict] | None:
+    """讀某 job 落庫的執行日誌快照；job 不存在或未收集日誌（大批量 / 舊資料）回 None。"""
+    r = T.judgment_runs
+    with T.get_engine().connect() as c:
+        row = c.execute(select(r.c.log).where(r.c.job_id == job_id)).first()
+    return row[0] if row and row[0] else None
+
+
 def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) -> bool:
     """標的中是否已有判決（判定本次為「重判」）；超大清單只抽前 sample_cap 筆探測（夠準且省查詢）。"""
     ids = [str(i) for i in item_ids[:sample_cap] if i]
@@ -125,8 +144,10 @@ def judgment_run_detail(job_id: str) -> dict | None:
 
 
 def _serialize(row: dict) -> dict:
-    """datetime 欄 → ISO 字串（對齊專案時間欄以字串出 API 的慣例）。"""
+    """datetime 欄 → ISO 字串；剔除 log（潛在較大的快照，此處 run 摘要/詳情不需要，
+    專用 get_run_log 才讀）（對齊專案時間欄以字串出 API 的慣例）。"""
     for k in ("started_at", "finished_at"):
         v = row.get(k)
         row[k] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+    row.pop("log", None)
     return row

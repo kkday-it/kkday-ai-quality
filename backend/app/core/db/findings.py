@@ -216,11 +216,11 @@ def add_finding_note(finding_id: str, author: str, content: str) -> dict:
 
 
 def list_finding_notes(finding_id: str) -> list[dict]:
-    """列某條歸因的備註歷史（新到舊：備註人 / 時間 / 內容）。"""
+    """列某條歸因的備註歷史（舊到新，時間遞增：備註人 / 時間 / 內容）。"""
     stmt = (
         select(T.finding_notes)
         .where(T.finding_notes.c.finding_id == finding_id)
-        .order_by(T.finding_notes.c.created_at.desc(), T.finding_notes.c.id.desc())
+        .order_by(T.finding_notes.c.created_at.asc(), T.finding_notes.c.id.asc())
     )
     with T.get_engine().connect() as c:
         return [_note_row(r) for r in c.execute(stmt).mappings()]

@@ -358,6 +358,18 @@ def run_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
     return _overlay_live(run)
 
 
+@router.get("/runs/{job_id}/log")
+def run_log_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
+    """讀某次判決落庫的完整執行日誌快照（判決歷史「查看 LLM 日誌」入口）。
+
+    僅小批量 job（run_log.LOG_JOB_MAX_ITEMS 內）有收集內容；大批量 / 啟用日誌前的舊判決回 404。
+    """
+    entries = db.get_run_log(job_id)
+    if entries is None:
+        raise HTTPException(status_code=404, detail=f"此任務無執行日誌快照：{job_id}")
+    return {"entries": entries}
+
+
 @router.get("/prejudge/stream")
 async def prejudge_stream(job_id: str) -> StreamingResponse:
     """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job done/error/cancelled 即關閉。

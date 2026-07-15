@@ -149,7 +149,7 @@ def _text_of(item: dict) -> str:
             raw = json.loads(raw)
         except (ValueError, TypeError):
             raw = {}
-    for k in ("content", "comment", "aggregated_messages", "feedback"):
+    for k in ("content", "comment", "chatbot_conversation", "human_conversation", "feedback"):
         v = raw.get(k)
         if isinstance(v, str) and v.strip():
             return v.strip()
@@ -242,6 +242,7 @@ def _call(
     *,
     schema: dict | None = None,
     effort: str | None = None,
+    label: str | None = None,
 ) -> dict:
     """呼叫 LLM；暫時覆寫 contextvar 的 model（及可選 reasoning_effort）為本階段值，呼叫後還原（thread-local 安全）。
 
@@ -260,10 +261,12 @@ def _call(
     if override:
         app_settings.set_current({**cur, **override})
         try:
-            return client.chat_json(system, user, stage, schema=schema, cache_key=stage)
+            return client.chat_json(
+                system, user, stage, schema=schema, cache_key=stage, label=label
+            )
         finally:
             app_settings.set_current(cur)
-    return client.chat_json(system, user, stage, schema=schema, cache_key=stage)
+    return client.chat_json(system, user, stage, schema=schema, cache_key=stage, label=label)
 
 
 def _evidence_grounded(text: str, quote: str) -> bool:
@@ -764,6 +767,7 @@ def _attrs_pack(
 
     def _one(pid: str) -> list[dict]:
         p = prompt_source.load(pid)
+        dom = pid.split("_")[1] if "_" in pid else pid  # "01_C-1_content" → "C-1"（日誌分組鍵）
         last_exc: Exception | None = None
         for attempt in range(
             dom_retry + 1
@@ -776,6 +780,7 @@ def _attrs_pack(
                     model,
                     schema=p["schema"],
                     effort=effort,
+                    label=dom,
                 )
                 return [
                     _finalize_attr_l2(item, text, a, valid)

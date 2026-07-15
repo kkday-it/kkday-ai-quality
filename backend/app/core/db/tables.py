@@ -354,6 +354,9 @@ judgment_runs = Table(
     Column("triggered_by", Text),  # 觸發人（user email）
     Column("started_at", DateTime(timezone=True), server_default=func.now()),
     Column("finished_at", DateTime(timezone=True)),  # 終態時間（執行中為空）
+    # run_log.read(job_id) 快照（entries 陣列）：僅小批量 job 有收集（見 run_log.LOG_JOB_MAX_ITEMS），
+    # job 結束落庫供判決歷史「查看 LLM 日誌」事後回看；仿 prompt_sandbox_runs.log 同一模式。
+    Column("log", JSONB),
     Index("idx_judgment_runs_started_at", "started_at"),
 )
 

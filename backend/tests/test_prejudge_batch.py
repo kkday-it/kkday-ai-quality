@@ -69,7 +69,7 @@ def batch_env(monkeypatch):
     return state
 
 
-_EFF = {"provider": "openai", "base_url": "", "model": "gpt-5-mini", "provider_tokens": {}}
+_EFF = {"provider": "openai", "base_url": "", "model": "gpt-5-mini", "api_token": ""}
 
 
 def test_start_job_runs_to_done(batch_env):
@@ -173,7 +173,7 @@ def test_copy_context_carries_settings_into_worker(batch_env, monkeypatch):
     """copy_context 快照：worker 內 settings.current() 須等於 _run 注入的 effective dict。
 
     這是本模組最脆弱的機制——快照若在 set_current 之前產生（或 worker 未經 ctx.run），
-    worker 會拿到 stub 空設定、真判默默變 stub 判。鎖住 model 與 provider_tokens 傳遞。
+    worker 會拿到 stub 空設定、真判默默變 stub 判。鎖住 model 與 api_token（per-config）傳遞。
     """
     seen: list[dict] = []
 
@@ -182,13 +182,13 @@ def test_copy_context_carries_settings_into_worker(batch_env, monkeypatch):
         return []
 
     monkeypatch.setattr(prejudge, "to_findings", capture)
-    eff = {**_EFF, "model": "gpt-5.4", "provider_tokens": {"openai": "sk-ctx-test"}}
+    eff = {**_EFF, "model": "gpt-5.4", "api_token": "sk-ctx-test"}
     job_id = pb.start_job(["r1", "r2"], eff, "gpt-5.4", source="product_reviews")
     _wait_status(job_id, {"done"})
     assert len(seen) == 2
     for cur in seen:
         assert cur.get("model") == "gpt-5.4"
-        assert cur.get("provider_tokens", {}).get("openai") == "sk-ctx-test"
+        assert cur.get("api_token") == "sk-ctx-test"
 
 
 def test_run_second_gate_blocks_stub_in_production(batch_env, monkeypatch):
@@ -207,9 +207,9 @@ def test_run_second_gate_blocks_stub_in_production(batch_env, monkeypatch):
 
 
 def test_run_second_gate_passes_with_token_in_production(batch_env, monkeypatch):
-    """正式環境有真 token（provider_tokens 命中當前 provider）→ 防線放行、整批照跑。"""
+    """正式環境有真 token（該配置自身 api_token）→ 防線放行、整批照跑。"""
     monkeypatch.setattr(pb, "is_production", lambda: True)
-    eff = {**_EFF, "provider_tokens": {"openai": "sk-real"}}
+    eff = {**_EFF, "api_token": "sk-real"}
     job_id = pb.start_job(["r1", "r2"], eff, "gpt-5-mini", source="product_reviews")
     snap = _wait_status(job_id, {"done"})
     assert snap["processed"] == 2

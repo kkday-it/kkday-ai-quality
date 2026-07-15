@@ -38,9 +38,11 @@ from app.core.db.judgment_history import (
 from app.core.db.judgment_runs import (
     any_judged,
     finish_judgment_run,
+    get_run_log,
     insert_judgment_run,
     judgment_run_detail,
     list_judgment_runs,
+    save_run_log,
     update_judgment_run_status,
 )
 from app.core.db.llm_usage import (
@@ -121,9 +123,11 @@ __all__ = [
     "llm_usage_overview",
     "any_judged",
     "finish_judgment_run",
+    "get_run_log",
     "insert_judgment_run",
     "judgment_run_detail",
     "list_judgment_runs",
+    "save_run_log",
     "update_judgment_run_status",
     "insert_sandbox_run",
     "list_sandbox_runs",

@@ -33,10 +33,14 @@ def bind(job_id: str) -> None:
     _job.set(job_id)
 
 
-def emit(kind: str, stage: str, message: str, data: dict | None = None) -> None:
+def emit(
+    kind: str, stage: str, message: str, data: dict | None = None, *, label: str | None = None
+) -> None:
     """追加一筆日誌（未 bind＝no-op；任何失敗不阻斷判決）。
 
     kind：stage（一般階段）｜llm_request｜llm_prompt｜llm_response｜llm_note｜error。
+    label：同一次 LLM 調用的分組鍵（前端據此把 request/prompt/response 聚合成一個 tab；
+        polarity / C-1..C-6 各為一組）；未給則前端回退用 stage。
     """
     job_id = _job.get()
     if not job_id:
@@ -48,6 +52,8 @@ def emit(kind: str, stage: str, message: str, data: dict | None = None) -> None:
             "stage": stage,
             "message": message,
         }
+        if label:
+            entry["label"] = label
         if data:
             entry["data"] = data
         with _lock:

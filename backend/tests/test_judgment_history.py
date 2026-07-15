@@ -50,7 +50,7 @@ def _finding(
 
 
 def _history(rec_oid: str, kind: str | None = None) -> list[dict]:
-    """讀某評論的判決歷史（可按 kind 過濾；新到舊）。"""
+    """讀某評論的判決歷史（可按 kind 過濾；舊到新，最新一筆在最後）。"""
     rows = db.list_judgment_history("product_reviews", rec_oid)
     return [r for r in rows if kind is None or r["kind"] == kind]
 
@@ -99,7 +99,7 @@ def test_model_change_records_history(temp_db) -> None:
     _replace("H3", [_finding("H3", model="gpt-5")], model="gpt-5")
     events = _history("H3", "judgment")
     assert len(events) == 2
-    assert events[0]["model"] == "gpt-5"  # 新到舊
+    assert events[-1]["model"] == "gpt-5"  # 舊到新：最新一筆在最後
 
 
 def test_result_change_records_history(temp_db) -> None:
@@ -125,7 +125,7 @@ def test_attribution_count_change_records_history(temp_db) -> None:
     _replace("H6", [_finding("H6"), _finding("H6", domain="supplier", l1_code="supplier")])
     events = _history("H6", "judgment")
     assert len(events) == 2
-    assert len(events[0]["attributions"]) == 2
+    assert len(events[-1]["attributions"]) == 2  # 舊到新：最新一筆在最後
 
 
 def test_human_review_does_not_pollute_judgment_dedup(temp_db) -> None:
@@ -147,9 +147,9 @@ def test_status_transition_recorded(temp_db) -> None:
     db.update_finding_status(fid, "new", actor="qa@kkday.com")  # 撤銷覆核
     events = _history("S1", "status")
     assert len(events) == 2
-    assert events[0]["params"]["to"] == "new"  # 新到舊：撤銷在前
-    assert events[0]["params"]["changes"] == [{"finding_id": fid, "from": "confirmed"}]
-    assert events[0]["author"] == "qa@kkday.com"
+    assert events[-1]["params"]["to"] == "new"  # 舊到新：撤銷在最後
+    assert events[-1]["params"]["changes"] == [{"finding_id": fid, "from": "confirmed"}]
+    assert events[-1]["author"] == "qa@kkday.com"
 
 
 def test_status_same_value_idempotent_no_history(temp_db) -> None:
@@ -180,7 +180,7 @@ def test_batch_status_mixed_current_values(temp_db) -> None:
 
 # ── kind='note'：評論級備註 ───────────────────────────────────────────
 def test_history_note_append_and_order(temp_db) -> None:
-    """評論級備註 append-only；時間軸新到舊、與判決事件混排。"""
+    """評論級備註 append-only；時間軸舊到新、與判決事件混排。"""
     db.insert_source_batch("product_reviews", [_pr_row("N1")])
     _replace("N1", [_finding("N1")])
     created = db.add_history_note(
@@ -188,8 +188,8 @@ def test_history_note_append_and_order(temp_db) -> None:
     )
     assert created["kind"] == "note" and created["id"]
     rows = _history("N1")
-    assert [r["kind"] for r in rows] == ["note", "judgment"]  # 新到舊
-    assert rows[0]["content"] == "已與供應商核對"
+    assert [r["kind"] for r in rows] == ["judgment", "note"]  # 舊到新：判決先發生
+    assert rows[-1]["content"] == "已與供應商核對"
 
 
 # ── latest_snapshots / list_judgment_models（多模型對比導出）─────────────────

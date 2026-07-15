@@ -372,6 +372,12 @@ def _run(
         except Exception:  # noqa: BLE001
             _log.exception("歸因歷史終態回寫失敗 job=%s", job_id)
         run_log.finish(job_id)  # 日誌收尾（未 bind 的大批量 job 為 no-op）；SSE 讀盡即關閉
+        try:  # 落存執行日誌快照（僅小批量 job 有收集內容）供判決歷史「查看 LLM 日誌」事後回看
+            entries, _done, exists = run_log.read(job_id)
+            if exists:
+                db.save_run_log(job_id, entries)
+        except Exception:  # noqa: BLE001
+            _log.exception("執行日誌落庫失敗 job=%s", job_id)
         _drop_controls(job_id)
 
 

@@ -75,7 +75,7 @@ def test_attrs_pack_merges_six_domains_and_dedups(monkeypatch):
     _pack_env(monkeypatch)
     text = "現場導遊態度很差全程臭臉"
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         # 僅供應商域 prompt 回一條；其餘五域回空陣列
         if "SYS::03_C-3_supplier" in system:
             return {
@@ -104,7 +104,7 @@ def test_attrs_pack_ranks_and_caps(monkeypatch):
     _pack_env(monkeypatch, amin=0.2)
     text = "導遊態度差而且行程表寫得不清楚"
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         if "SYS::03_C-3_supplier" in system:
             return {
                 "attributions": [

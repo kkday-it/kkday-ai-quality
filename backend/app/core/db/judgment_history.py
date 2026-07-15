@@ -189,12 +189,12 @@ def _history_row(r: dict) -> dict:
 
 
 def list_judgment_history(source: str, source_id: str) -> list[dict]:
-    """列某則評論的判決歷史時間軸（新到舊；判決快照 / 覆核轉移 / 備註三類事件混排）。"""
+    """列某則評論的判決歷史時間軸（舊到新，時間遞增；判決快照 / 覆核轉移 / 備註三類事件混排）。"""
     h = T.judgment_history
     stmt = (
         select(h)
         .where(and_(h.c.source == source, h.c.source_id == source_id))
-        .order_by(h.c.created_at.desc(), h.c.id.desc())
+        .order_by(h.c.created_at.asc(), h.c.id.asc())
     )
     with T.get_engine().connect() as c:
         return [_history_row(dict(r)) for r in c.execute(stmt).mappings()]

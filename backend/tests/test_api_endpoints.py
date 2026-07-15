@@ -273,7 +273,7 @@ def test_judgment_history_endpoints(client, auth_headers) -> None:
     events = client.get(
         "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
     ).json()
-    assert [e["kind"] for e in events] == ["note", "judgment"]
+    assert [e["kind"] for e in events] == ["judgment", "note"]  # 舊到新：判決先發生
 
 
 # ── prompt-sandbox（歸因列表 Prompt 測試沙盒）────────────────────────

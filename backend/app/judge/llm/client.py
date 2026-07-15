@@ -239,7 +239,9 @@ def _degrade_reasoning_effort(kwargs: dict, emsg: str) -> bool:
     return True
 
 
-def _complete_effort_safe(cfg: dict, kwargs: dict, cache_key: str | None, stage: str = ""):
+def _complete_effort_safe(
+    cfg: dict, kwargs: dict, cache_key: str | None, stage: str = "", label: str | None = None
+):
     """_complete 外掛 reasoning_effort 自動降級：至多降兩級（映射一次 + 移除一次），其餘 400 原樣拋。
 
     kwargs 就地改寫——呼叫端可事後比對 reasoning_effort 是否被降級（ping 據此回報 note）。
@@ -264,6 +266,7 @@ def _complete_effort_safe(cfg: dict, kwargs: dict, cache_key: str | None, stage:
                 stage,
                 f"reasoning_effort 不被接受，降級為 {kwargs.get('reasoning_effort') or 'API 預設'} 重試",
                 {"error": emsg.splitlines()[0][:200]},
+                label=label,
             )
     return _complete(cfg, kwargs, cache_key)
 
@@ -332,6 +335,7 @@ def chat_json(
     *,
     schema: dict | None = None,
     cache_key: str | None = None,
+    label: str | None = None,
 ) -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
     stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。
@@ -372,22 +376,16 @@ def chat_json(
         kwargs["service_tier"] = tier
     # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
     ck = cache_key if (cache_key and is_openai) else None
-    # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄
+    # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄。
+    # label＝同一調用分組鍵（polarity / C-1..C-6）→ 前端把 request/prompt/response 聚合成一個 tab。
+    log_label = label or stage
+    # 100% 對齊：直接記「實際送 API 的完整 kwargs」（去 messages，另存 prompt 全文；token 不在 kwargs，無洩漏）
+    req_params = {k: v for k, v in kwargs.items() if k != "messages"}
+    req_params["base_url"] = cfg["base_url"] or "https://api.openai.com/v1"
+    run_log.emit("llm_request", stage, f"LLM 請求 {cfg['model']}", req_params, label=log_label)
     run_log.emit(
-        "llm_request",
-        stage,
-        f"LLM 請求 {cfg['model']}",
-        {
-            "model": cfg["model"],
-            "base_url": cfg["base_url"] or "https://api.openai.com/v1",
-            "temperature": kwargs.get("temperature"),
-            "reasoning_effort": kwargs.get("reasoning_effort"),
-            "thinking": (kwargs.get("extra_body") or {}).get("thinking"),
-            "response_format": (kwargs.get("response_format") or {}).get("type"),
-            "service_tier": kwargs.get("service_tier"),
-        },
+        "llm_prompt", stage, "Prompt 全文", {"system": system, "user": user}, label=log_label
     )
-    run_log.emit("llm_prompt", stage, "Prompt 全文", {"system": system, "user": user})
     # exact-match 結果快取：讀取閘開啟才查（單筆顯式重判關讀取）；命中＝重用先前判決，
     # 零 API 呼叫、零 token、不落 llm_usage（無花費即無紀錄）。
     use_cache = env.llm_exact_cache
@@ -404,6 +402,7 @@ def chat_json(
                 stage,
                 "exact-cache 命中（重用先前判決，零 API 呼叫）",
                 {"parsed": hit},
+                label=log_label,
             )
             return hit
     # typed exceptions 精準分流 SDK 錯誤（取代脆弱的 str(e) 比對）：只有真正的 schema/response_format
@@ -420,7 +419,7 @@ def chat_json(
     t0 = time.monotonic()
     try:
         # OpenAI SDK 呼叫（內建 max_retries 指數退避）；reasoning_effort 值不被該 model 接受時自動降級
-        resp = _complete_effort_safe(cfg, kwargs, ck, stage)
+        resp = _complete_effort_safe(cfg, kwargs, ck, stage, log_label)
     except RateLimitError as e:
         # flex 容量不足（429 resource_unavailable，該次不計費）＝唯一該重試的 429：回退標準 tier 重打一次
         # （官方建議策略；批次不因 flex 缺容量失敗，僅該筆回原價。cfg 同步改寫使計價按實際 tier）。
@@ -509,13 +508,20 @@ def chat_json(
                 int(getattr(comp_d, "reasoning_tokens", 0) or 0) if comp_d else None
             ),
         },
+        label=log_label,
     )
     parsed = _loads_lenient(raw)
     if parsed is None:
         # LLM 回非 JSON（空字串 / prompt 漂移）→ 記錄並降級為空 dict，由上層 _sanitize 補位
         # （不靜默吞：留 log 供 monitoring 偵測模型輸出退化）。
         _log.warning("LLM JSON parse 失敗 stage=%s model=%s raw=%r", stage, cfg["model"], raw[:200])
-        run_log.emit("error", stage, "LLM 回非 JSON，降級空 dict 由上層補位", {"raw": raw[:500]})
+        run_log.emit(
+            "error",
+            stage,
+            "LLM 回非 JSON，降級空 dict 由上層補位",
+            {"raw": raw[:500]},
+            label=log_label,
+        )
         return {}
     if use_cache and parsed:  # 寫入恆開（顯式重判的新結果也回填供後續批次重用）；空 dict 不快取
         try:
