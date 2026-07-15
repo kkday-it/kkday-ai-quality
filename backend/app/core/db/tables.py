@@ -408,6 +408,9 @@ prompt_sandbox_runs = Table(
     Column("triggered_by", Text),  # 觸發人（user email）
     Column("job_id", Text),  # 對應 run_log job_id（供除錯追溯；log 已快照，非用於即時查詢）
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 版本選擇功能（見 app.judge.prompt_source.load 的 versions 參數）：本次測試 7 條 prompt 各自
+    # 用哪個版本，非 active 才需記（active 沿用 judge_rule_versions 當下狀態，事後可回推）。
+    Column("versions", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     # 歷史列表熱路徑：依時間倒序
     Index("idx_prompt_sandbox_runs_created", "created_at"),
 )

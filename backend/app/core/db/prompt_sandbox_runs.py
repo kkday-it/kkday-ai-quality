@@ -21,7 +21,8 @@ def insert_sandbox_run(row: dict) -> str:
 
     Args:
         row: {source, scope, item_ids, prompt_ids, item_count, results, log, model,
-              triggered_by, job_id}。
+              triggered_by, job_id, versions}（versions＝版本選擇功能，{rule_code: 版本號}，
+              見 app.judge.prompt_source.load）。
 
     Returns:
         新建列的 run_id。
@@ -41,6 +42,7 @@ def insert_sandbox_run(row: dict) -> str:
                 model=row.get("model", ""),
                 triggered_by=row.get("triggered_by", ""),
                 job_id=row.get("job_id"),
+                versions=row.get("versions") or {},
             )
         )
     return run_id
@@ -48,7 +50,7 @@ def insert_sandbox_run(row: dict) -> str:
 
 def list_sandbox_runs(limit: int = 20, offset: int = 0) -> dict:
     """沙盒測試歷史列表（created_at 降冪分頁）→ {total, items}；items 不含 results/log
-    （逐筆結果與 log 快照體積可觀，列表只列摘要，詳情走 `sandbox_run_detail`）。
+    （體積可觀，詳情走 `sandbox_run_detail`）。
     """
     r = T.prompt_sandbox_runs
     cols = (
@@ -61,6 +63,7 @@ def list_sandbox_runs(limit: int = 20, offset: int = 0) -> dict:
         r.c.model,
         r.c.triggered_by,
         r.c.created_at,
+        r.c.versions,
     )
     stmt = select(*cols).order_by(r.c.created_at.desc())
     cnt = select(func.count()).select_from(r)

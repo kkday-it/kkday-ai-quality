@@ -34,7 +34,7 @@ def _pack_env(monkeypatch, *, amin: float = 0.2):
     monkeypatch.setattr(prejudge, "_polarity_effort", lambda: None)
     monkeypatch.setattr(prejudge, "_stage1_model", lambda m: m)
 
-    def _fake_load(pid: str) -> dict:
+    def _fake_load(pid: str, versions=None) -> dict:
         # user_template 帶兩槽；system 內嵌 pid 供 _fake_call 分辨是哪支域 prompt。
         # taxonomy 為 dict（供 structure()/evidence_gated 派生；supplier 標 evidence_gated）。
         dom = prompt_source._domain_of(pid) or "content"

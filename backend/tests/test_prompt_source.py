@@ -222,6 +222,47 @@ def test_seed_and_load_prefers_db(temp_db):
     assert ps.load("00_polarity")["title"].startswith("[DB版]")
 
 
+# ─────────────────────────── versions（版本選擇：初判分類 + 沙盒）───────────────────────────
+def test_load_with_versions_reads_pinned_historical_version(temp_db):
+    """versions 指定歷史版本號 → 讀那個特定版本內容，不寫 `_cache`、不影響 active 版判斷。"""
+    ps.reload()
+    db.seed_rules_from_files()
+    active_before = ps.load("00_polarity")["title"]
+    v1_content = copy.deepcopy(db.get_rule_active("prompt_polarity"))
+
+    v2_content = copy.deepcopy(v1_content)
+    v2_content["text"] = v2_content["text"].replace("# ", "# [v2] ", 1)
+    saved = db.save_rule_version("prompt_polarity", v2_content, note="test", author="pytest")
+    ps.reload()
+
+    # 指定舊版本（v1）→ 讀到舊版內容，即使 active 已經是 v2。
+    pinned = ps.load("00_polarity", versions={"prompt_polarity": 1})
+    assert pinned["title"] == active_before
+    # 指定的版本不寫入 `_cache`；一般呼叫仍拿到目前 active（v2）版本。
+    assert ps.load("00_polarity")["title"] == "[v2] " + active_before
+    assert saved["version"] == 2
+
+
+def test_load_versions_unknown_version_raises(temp_db):
+    """指定不存在的版本號 → fail-fast 拋 ValueError（不靜默回退 active）。"""
+    ps.reload()
+    db.seed_rules_from_files()
+    with pytest.raises(ValueError):
+        ps.load("00_polarity", versions={"prompt_polarity": 9999})
+
+
+def test_load_without_versions_behavior_unchanged(temp_db):
+    """無 versions（含 versions=None 與缺對應 rule_code）→ 行為與既有一致，一律走快取。"""
+    ps.reload()
+    db.seed_rules_from_files()
+    p1 = ps.load("00_polarity")
+    p2 = ps.load("00_polarity", versions=None)
+    p3 = ps.load("00_polarity", versions={"prompt_C-1": 1})
+    assert p1 is ps._cache["00_polarity"]
+    assert p2 is ps._cache["00_polarity"]
+    assert p3 is ps._cache["00_polarity"]  # versions 無對應 rule_code → 視同無 versions
+
+
 def test_bulk_reset_excludes_prompts(temp_db):
     """reset_all_rule_defaults（歸因分類 bulk）不掃 prompt_*（各有獨立恢復入口）。"""
     res = db.reset_all_rule_defaults(author="pytest")

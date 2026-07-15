@@ -83,7 +83,7 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative", "neutral"]}
     )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model, **k: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     attr = {
         "l1_domain_code": "supplier",
@@ -118,7 +118,7 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(
     """gate 只列 negative 時：中性評論維持舊行為（non_issue 不歸因）。"""
     monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative"]})
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
-    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model: ("neutral", 3))
+    monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model, **k: ("neutral", 3))
     monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     called = []
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])

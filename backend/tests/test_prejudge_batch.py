@@ -82,6 +82,53 @@ def test_start_job_runs_to_done(batch_env):
     assert all(src == "product_reviews" for src, _ in batch_env["replaced"])
 
 
+def test_resolve_versions_used_merges_pinned_over_active(monkeypatch):
+    """_resolve_versions_used：沒指定的補 active 版本號，指定的（pinned）覆蓋 active。"""
+    monkeypatch.setattr(
+        db,
+        "list_rule_meta",
+        lambda: [
+            {"rule_code": "prompt_polarity", "version": 5},
+            {"rule_code": "prompt_C-1", "version": 3},
+            {"rule_code": "not_a_prompt", "version": 99},  # 非 prompt_* rule_code，應被過濾
+        ],
+    )
+    out = pb._resolve_versions_used({"prompt_C-1": 1})  # 指定 C-1 用舊版 1（覆蓋 active 的 3）
+    assert out == {"prompt_polarity": 5, "prompt_C-1": 1}
+
+
+def test_resolve_versions_used_no_pinned_returns_active_snapshot(monkeypatch):
+    """完全沒指定 → 回純 active 快照（供稽核，即使使用者這次沒選任何版本）。"""
+    monkeypatch.setattr(
+        db, "list_rule_meta", lambda: [{"rule_code": "prompt_polarity", "version": 7}]
+    )
+    assert pb._resolve_versions_used(None) == {"prompt_polarity": 7}
+
+
+def test_start_job_writes_prompt_versions_into_history_params(batch_env, monkeypatch):
+    """指定 prompt_versions 啟動 → history_params（傳給 replace_source_findings 的 params）含
+    完整版本快照（稽核軌跡落地）。"""
+    monkeypatch.setattr(
+        db, "list_rule_meta", lambda: [{"rule_code": "prompt_polarity", "version": 5}]
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        db,
+        "replace_source_findings",
+        lambda src, sid, findings, **kw: captured.append(kw.get("params")) or len(findings),
+    )
+    job_id = pb.start_job(
+        ["r1"],
+        dict(_EFF),
+        "gpt-5-mini",
+        source="product_reviews",
+        prompt_versions={"prompt_C-1": 2},
+    )
+    _wait_status(job_id, {"done"})
+    assert len(captured) == 1
+    assert captured[0]["prompt_versions"] == {"prompt_polarity": 5, "prompt_C-1": 2}
+
+
 def test_single_item_failure_isolated(batch_env, monkeypatch):
     """單筆判決炸掉只計 failed，不中斷整批（其餘筆照常 ok）。"""
 

@@ -98,7 +98,7 @@ def _diag_env(monkeypatch, *, amin: float = 0.0):
     monkeypatch.setattr(prejudge, "_max_attributions", lambda: 2)
     monkeypatch.setattr(prejudge, "_polarity_effort", lambda: None)
 
-    def _fake_load(pid: str) -> dict:
+    def _fake_load(pid: str, versions: dict[str, int] | None = None) -> dict:
         dom = prompt_source._domain_of(pid) or "content"
         return {
             "title": pid,
@@ -121,7 +121,7 @@ def test_domain_verdicts_matched_and_abstained_all_six_present(monkeypatch):
     """六域皆有交代：僅 supplier 命中（帶 reason），其餘五域棄權（帶 abstain_reason）。"""
     _diag_env(monkeypatch)
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         if system.startswith("SYS::03_C-3_supplier"):
             return {
                 "attributions": [
@@ -166,7 +166,7 @@ def test_domain_verdicts_multi_domain_gated_by_confidence(monkeypatch):
     """兩域皆命中：_gate_attrs 依信心降冪排序（複用 production 同一套尾段規則，非另一份實作）。"""
     _diag_env(monkeypatch)
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         if system.startswith("SYS::03_C-3_supplier"):
             return {
                 "attributions": [
@@ -208,7 +208,7 @@ def test_domain_verdicts_stage_labeled_by_domain(monkeypatch):
     _diag_env(monkeypatch)
     seen_stages: list[str] = []
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         seen_stages.append(stage)
         return {"attributions": [], "abstain_reason": "不屬本域"}
 
@@ -226,7 +226,7 @@ def test_domain_verdicts_pids_subset_only_runs_selected_domains(monkeypatch):
     _diag_env(monkeypatch)
     seen_stages: list[str] = []
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         seen_stages.append(stage)
         return {"attributions": [], "abstain_reason": "不屬本域"}
 
@@ -246,7 +246,7 @@ def test_sandbox_classify_polarity_and_domain_subset(monkeypatch):
     _diag_env(monkeypatch)
     calls: list[tuple[str, str]] = []
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         calls.append((stage, user))
         if stage == "polarity":
             return {"polarity": "negative", "sentiment": 2, "reason": "抱怨明顯"}
@@ -283,7 +283,7 @@ def test_sandbox_classify_domain_only_still_computes_polarity_for_slot(monkeypat
     """未勾 polarity、只勾域：內部仍先算一次極性填槽，但不列入 prompts 輸出。"""
     _diag_env(monkeypatch)
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         if stage == "polarity":
             return {"polarity": "neutral", "sentiment": 3, "reason": "普通"}
         return {"attributions": [], "abstain_reason": "不屬本域"}
@@ -301,7 +301,7 @@ def test_sandbox_classify_ungated_positive_polarity_still_runs_domain(monkeypatc
     _diag_env(monkeypatch)
     domain_called = False
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None):
+    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
         nonlocal domain_called
         if stage == "polarity":
             return {"polarity": "positive", "sentiment": 5, "reason": "很滿意"}

@@ -15,7 +15,11 @@ def _mock_pack_env(monkeypatch, fake_call) -> None:
     monkeypatch.setattr(
         ps,
         "load",
-        lambda pid: {"system": f"SYS::{pid}", "user_template": "{POLARITY}{TEXT}", "schema": {}},
+        lambda pid, versions=None: {
+            "system": f"SYS::{pid}",
+            "user_template": "{POLARITY}{TEXT}",
+            "schema": {},
+        },
     )
     monkeypatch.setattr(prejudge, "_l2_label_map", lambda: {})
     monkeypatch.setattr(prejudge, "_attr_effort", lambda: None)

@@ -53,7 +53,13 @@ def _diagnostic_polarity_schema(schema: dict) -> dict:
 
 
 def domain_verdicts(
-    item: dict, text_: str, model: str, polarity: str, *, pids: list[str] | None = None
+    item: dict,
+    text_: str,
+    model: str,
+    polarity: str,
+    *,
+    pids: list[str] | None = None,
+    versions: dict[str, int] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """域並行診斷歸因：回 (gated attrs 含 reason, verdicts 逐域交代)。
 
@@ -72,6 +78,8 @@ def domain_verdicts(
         model: 判決模型。
         polarity: 已判定的整體傾向（negative/neutral，用於填 {POLARITY} 槽）。
         pids: 要跑的域 prompt 子集（預設全六域 `prompt_source.DOMAIN_PROMPT_IDS`，向後相容）。
+        versions: {rule_code: 指定歷史版本號}（版本選擇功能）；貫穿至 `prompt_source.load`。預設
+            None＝沿用 DB active，對既有呼叫端零副作用。
 
     Returns:
         (gated_attrs, verdicts)：gated_attrs 為過閘門後的最終歸因（含 reason）；
@@ -87,13 +95,19 @@ def domain_verdicts(
     pids = pids if pids is not None else prompt_source.DOMAIN_PROMPT_IDS
 
     def _one(pid: str) -> dict:
-        p = prompt_source.load(pid)
+        p = prompt_source.load(pid, versions=versions)
         schema = _diagnostic_domain_schema(p["schema"])
         system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE
         user = prejudge._render_pack_user(p["user_template"], text_, polarity)
         domain = prompt_source._domain_of(pid)
         out = prejudge._call(
-            system, user, f"attribute:{domain}", model, schema=schema, effort=effort
+            system,
+            user,
+            f"attribute:{domain}",
+            model,
+            schema=schema,
+            effort=effort,
+            label=domain,
         )
         from app.core import ai_judge  # lazy：域中文名自 `## Taxonomy` 派生（ai_judge 快取）
 
@@ -121,16 +135,24 @@ def domain_verdicts(
     return gated, verdicts
 
 
-def _sandbox_polarity(text_: str, model: str) -> tuple[str, int, str]:
+def _sandbox_polarity(
+    text_: str,
+    model: str,
+    *,
+    versions: dict[str, int] | None = None,
+) -> tuple[str, int, str]:
     """沙盒極性診斷：跑 00_polarity（附診斷 reason 欄），回 (polarity, sentiment, reason)。
 
     schema/system 疊法同 `_diagnostic_polarity_schema`/`_DIAGNOSTIC_POLARITY_NOTE`，但單筆、且用
     `prejudge._call` 走 model override（沙盒可能指定非目前 config 的模型），而非 `client.chat_json`
     直呼。
+
+    Args:
+        versions: {rule_code: 指定歷史版本號}，貫穿至 `prompt_source.load`；預設 None 零副作用。
     """
     from app.judge import prejudge
 
-    p = prompt_source.load(prompt_source.POLARITY_ID)
+    p = prompt_source.load(prompt_source.POLARITY_ID, versions=versions)
     schema = _diagnostic_polarity_schema(p["schema"])
     system = p["system"] + _DIAGNOSTIC_POLARITY_NOTE
     out = prejudge._call(
@@ -140,6 +162,7 @@ def _sandbox_polarity(text_: str, model: str) -> tuple[str, int, str]:
         model,
         schema=schema,
         effort=prejudge._polarity_effort(),
+        label="polarity",
     )
     pol = str(out.get("polarity", "")).strip().lower()
     pol = pol if pol in ("positive", "negative", "neutral") else "neutral"
@@ -147,7 +170,13 @@ def _sandbox_polarity(text_: str, model: str) -> tuple[str, int, str]:
     return pol, sentiment, str(out.get("reason", ""))[:300]
 
 
-def sandbox_classify(item: dict, prompt_ids: list[str], model: str) -> dict:
+def sandbox_classify(
+    item: dict,
+    prompt_ids: list[str],
+    model: str,
+    *,
+    versions: dict[str, int] | None = None,
+) -> dict:
     """Prompt 測試沙盒：對單筆 item 跑「使用者勾選的」prompt 子集，ungated（不受正式歸因閘門限制）。
 
     與 `classify_one` 的差異：`classify_one` 走 production `to_findings` 管線（受歸因閘門限制，
@@ -159,6 +188,8 @@ def sandbox_classify(item: dict, prompt_ids: list[str], model: str) -> dict:
         item: `_build_sandbox_item` 組裝的判決輸入 item dict。
         prompt_ids: 使用者勾選的 prompt id 子集（`polarity` / `C-1`..`C-6`，`prompt_id_of` 值域）。
         model: 判決模型。
+        versions: {rule_code: 指定歷史版本號}（版本選擇功能；`prompt_sandbox._one` 貫穿呼叫）。
+            預設 None＝沿用 active，對既有呼叫端零副作用。
 
     Returns:
         {source_id, text, polarity, sentiment_score, prompts}：`prompts` 為異質清單——勾了
@@ -177,7 +208,7 @@ def sandbox_classify(item: dict, prompt_ids: list[str], model: str) -> dict:
     prompts: list[dict] = []
 
     if want_polarity or domain_pids:
-        polarity, sentiment, reason = _sandbox_polarity(text_, model)
+        polarity, sentiment, reason = _sandbox_polarity(text_, model, versions=versions)
         if want_polarity:
             prompts.append(
                 {
@@ -190,7 +221,14 @@ def sandbox_classify(item: dict, prompt_ids: list[str], model: str) -> dict:
             )
 
     if domain_pids:
-        _, verdicts = domain_verdicts(item, text_, model, polarity or "neutral", pids=domain_pids)
+        _, verdicts = domain_verdicts(
+            item,
+            text_,
+            model,
+            polarity or "neutral",
+            pids=domain_pids,
+            versions=versions,
+        )
         for pid, v in zip(domain_pids, verdicts, strict=True):
             ext_id = (prompt_source.rule_code_for_prompt(pid) or "").removeprefix("prompt_")
             prompts.append(
@@ -251,6 +289,7 @@ def _build_sandbox_item(source: str, source_id: str) -> dict:
         "source": source,
         "source_id": source_id,
         "content": canon.get("content") or "",
+        "title": canon.get("title") or "",  # 標題（rec_title/subject；_text_of 前置一行）
         "prod_oid": canon.get("prod_oid") or "",
         "order_oid": canon.get("order_oid") or "",
         "raw": items[0],  # 供 _evidence_cap 讀 order_oid

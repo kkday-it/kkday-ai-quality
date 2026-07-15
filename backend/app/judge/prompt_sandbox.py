@@ -8,6 +8,10 @@
 `prompt_sandbox_runs`（見 `core/db/tables.py`），確保測試歷史與正式初判完全分離。job 結束時把
 `run_log` 快照（`run_log.read`）一併存進該筆歷史，供事後回看當時的完整 LLM log（run_log 本身純
 記憶體、job 淘汰後不可回溯，落庫快照是唯一持久化管道）。
+
+版本選擇功能：可為 7 條 prompt 各自指定要用哪個歷史版本（`versions`，見
+`app.judge.prompt_source.load`）；不支援未存檔草稿測試——所有 Prompt 測試都在歸因列表以「選版本」
+進行，沒有草稿雙 pass 對比 / baseline 重用 / 人工判優那套機制（已隨此檔一併移除）。
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from contextvars import copy_context
 
 from app.core import db
 from app.core import settings as app_settings
-from app.judge import prompt_eval, run_log
+from app.judge import prompt_eval, prompt_source, run_log
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
@@ -51,6 +55,7 @@ def start(
     *,
     scope: str,
     triggered_by: str = "",
+    versions: dict[str, int] | None = None,
 ) -> str:
     """啟動沙盒測試背景 job，立即回 job_id（前端輪詢 `get_job` 拿進度）。
 
@@ -63,32 +68,50 @@ def start(
         scope: single（單列觸發）/ selection（工具列勾選多筆觸發）/ all（工具列依條件批量選取觸發）
             ——落庫供歷史列表分辨來源。
         triggered_by: 觸發人 email。
+        versions: {rule_code: 指定歷史版本號}（版本選擇功能，見前端 PromptVersionPickerGroup／
+            usePromptVersionPicker）。非空時逐條 fail-fast 校驗 rule_code 屬
+            `prompt_source.PROMPT_RULE_CODES` 且該版本確實存在。
 
     Returns:
         job_id（`psbxjob_` 前綴；與測試結束落庫的 `run_id` 不同——job_id 供進度輪詢/log 綁定）。
 
     Raises:
-        ValueError: stub 模式（無可用 LLM token）——無條件拒跑，dev 亦不例外。
+        ValueError: stub 模式（無可用 LLM token）——無條件拒跑，dev 亦不例外；或 versions 含未知
+            rule_code / 不存在的版本號（fail-fast，不派工）。
     """
     _guard_stub(eff)
+    if versions:
+        for rule_code, version in versions.items():
+            if rule_code not in prompt_source.PROMPT_RULE_CODES:
+                raise ValueError(f"未知 rule_code：{rule_code}")
+            if db.get_rule_version(rule_code, version) is None:
+                raise ValueError(f"{rule_code} 無版本 {version}")
     job_id = f"psbxjob_{uuid.uuid4().hex}"
     with _jobs_lock:
         _jobs[job_id] = {"status": "running", "total": len(item_ids), "done": 0, "run_id": None}
     threading.Thread(
         target=_run,
         args=(job_id, source, item_ids, prompt_ids, eff, scope, triggered_by),
+        kwargs={"versions": versions},
         daemon=True,
     ).start()
     return job_id
 
 
-def _one(source: str, source_id: str, prompt_ids: list[str], model: str) -> dict:
+def _one(
+    source: str,
+    source_id: str,
+    prompt_ids: list[str],
+    model: str,
+    *,
+    versions: dict[str, int] | None,
+) -> dict:
     """單筆：組 item → `sandbox_classify`。獨立函式供 ThreadPoolExecutor 提交（copy_context 攜帶
     設定 contextvar，見 `_run`）。單筆組裝/判決失敗（如找不到該則評論）讓例外往上拋，由 `_run` 的
     `future.result()` 呼叫端接住記錄，不擋同批其他筆。
     """
     item = prompt_eval._build_sandbox_item(source, source_id)
-    return prompt_eval.sandbox_classify(item, prompt_ids, model)
+    return prompt_eval.sandbox_classify(item, prompt_ids, model, versions=versions)
 
 
 def _run(
@@ -99,6 +122,8 @@ def _run(
     eff: dict,
     scope: str,
     triggered_by: str,
+    *,
+    versions: dict[str, int] | None = None,
 ) -> None:
     """背景執行：bind run_log（不設筆數上限）→ 逐筆並行 `sandbox_classify` → 結束落
     `prompt_sandbox_runs` 快照（含 results + log 完整快照）。
@@ -108,17 +133,18 @@ def _run(
     client.set_usage_context({"job_id": job_id})
     run_log.bind(job_id)  # 決策：沙盒不設 LOG_JOB_MAX_ITEMS 上限，大批量靠既有 dropped 機制截斷
     model = eff.get("model", "")
+
     run_log.emit(
         "stage",
         "job",
         f"Prompt 測試沙盒啟動：{len(item_ids)} 筆 × {len(prompt_ids)} prompt",
-        {"model": model, "prompt_ids": prompt_ids, "scope": scope},
+        {"model": model, "prompt_ids": prompt_ids, "scope": scope, "versions": versions or {}},
     )
     results: list[dict] = []
     try:
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
             futures = {
-                ex.submit(ctx.run, _one, source, sid, prompt_ids, model): sid
+                ex.submit(ctx.run, _one, source, sid, prompt_ids, model, versions=versions): sid
                 for ctx, sid in ((copy_context(), sid) for sid in item_ids)
             }
             for fut, sid in futures.items():
@@ -145,6 +171,7 @@ def _run(
                 "model": model,
                 "triggered_by": triggered_by,
                 "job_id": job_id,
+                "versions": versions or {},
             }
         )
         with _jobs_lock:

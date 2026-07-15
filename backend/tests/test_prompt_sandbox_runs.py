@@ -39,6 +39,7 @@ def test_insert_and_get_detail(temp_db) -> None:
     assert detail["log"][0]["message"] == "測試"
     assert detail["triggered_by"] == "qc@kkday.com"
     assert detail["created_at"]  # server_default now()
+    assert detail["versions"] == {}  # 未帶版本選擇 → server_default 空 dict
 
 
 def test_detail_unknown_run_id_returns_none(temp_db) -> None:
@@ -78,3 +79,14 @@ def test_sandbox_run_isolated_from_judgments_tables(temp_db) -> None:
         h_count = c.execute(select(func.count()).select_from(T.judgment_history)).scalar()
     assert j_count == 0
     assert h_count == 0
+
+
+def test_versions_column_roundtrip(temp_db) -> None:
+    """versions（版本選擇功能，{rule_code: 版本號}）落庫後可完整讀回，且列表摘要也回傳。"""
+    run_id = db.insert_sandbox_run(_row(versions={"prompt_polarity": 3, "prompt_C-1": 1}))
+    detail = db.sandbox_run_detail(run_id)
+    assert detail["versions"] == {"prompt_polarity": 3, "prompt_C-1": 1}
+
+    out = db.list_sandbox_runs()
+    item = next(i for i in out["items"] if i["run_id"] == run_id)
+    assert item["versions"] == {"prompt_polarity": 3, "prompt_C-1": 1}

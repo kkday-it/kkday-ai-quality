@@ -63,6 +63,8 @@ class PrejudgeIn(BaseModel):
     confidence_tier: str | None = None  # 信心分層收斂（已判分支；auto_accept/jury/needs_review）
     taxonomy: list[str] | None = None  # 歸因分類收斂（已判分支；任意層級 code 多選，子樹語義）
     has_external: bool | None = None  # 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews）
+    # 版本選擇功能：正式判決可指定 7 條 prompt 各自要用哪個歷史版本（預設沿用 active）。
+    prompt_versions: dict[str, int] | None = None  # {rule_code: 版本號}
 
 
 def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
@@ -140,6 +142,9 @@ class PromptSandboxIn(PrejudgeIn):
     source: str  # 覆寫父類 Optional：沙盒必須指定來源
     prompt_ids: list[str]
     scope: str = "single"
+    # 版本選擇功能：{rule_code: 指定歷史版本號}（前端 PromptVersionPickerGroup／
+    # usePromptVersionPicker）；不帶時全 7 支沿用 DB active。
+    versions: dict[str, int] | None = None
 
 
 @router.post("/prompt-sandbox")
@@ -169,6 +174,7 @@ async def start_prompt_sandbox(
             eff,
             scope=body.scope,
             triggered_by=user.get("email") or user.get("user_id", ""),
+            versions=body.versions,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -265,6 +271,7 @@ def start_prejudge(
         params=params,
         # exact-cache 讀取閘：批次（scope 目標選取）重用規則未變部分；顯式單筆/選取重判＝使用者要求真的重打
         cache_read=(kind == "batch"),
+        prompt_versions=body.prompt_versions,
     )
     return {
         "job_id": job_id,

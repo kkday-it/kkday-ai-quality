@@ -102,6 +102,17 @@ def test_start_prejudge_stub_allowed_in_development(client, auth_headers, monkey
     assert r.status_code == 200
 
 
+def test_start_prejudge_accepts_prompt_versions(client, auth_headers, monkeypatch) -> None:
+    """prompt_versions（指定歷史版本）允許通過，不觸發草稿的 400 guard。"""
+    monkeypatch.setattr("app.core.config.env.openai_api_key", "")  # dev 走 stub，免真 LLM
+    r = client.post(
+        "/api/v1/judgment/prejudge",
+        json={"item_ids": [], "prompt_versions": {"prompt_C-1": 1}},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+
+
 def test_login_failed_error_code_contract(client) -> None:
     """帳密錯 → 401 且 detail.code = AUTH.LOGIN_FAILED（error-code i18n 框架契約）。"""
     r = client.post("/api/auth/login", json={"email": "nope@kkday.com", "password": "x"})

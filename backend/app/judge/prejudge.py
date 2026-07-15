@@ -139,21 +139,28 @@ def _now_iso() -> str:
 
 
 def _text_of(item: dict) -> str:
-    """取判決主輸入文字：優先 comment（intake_items）/ content（product_reviews 專表頂層欄），回退 raw 內常見文字欄。"""
+    """取判決主輸入文字：優先 comment（intake_items）/ content（canonical 主文），回退 raw 內常見文字欄。
+
+    有 canonical title（product_reviews rec_title / freshdesk subject）時前置「標題：」一行——
+    標題常單獨承載問題點（標題罵、內文短），一併送判並讓 evidence_quote 可自標題落地。
+    """
     txt = (item.get("comment") or item.get("content") or "").strip()
-    if txt:
-        return txt
-    raw = item.get("raw") or {}
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except (ValueError, TypeError):
-            raw = {}
-    for k in ("content", "comment", "chatbot_conversation", "human_conversation", "feedback"):
-        v = raw.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return ""
+    if not txt:
+        raw = item.get("raw") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (ValueError, TypeError):
+                raw = {}
+        for k in ("content", "comment", "chatbot_conversation", "human_conversation", "feedback"):
+            v = raw.get(k)
+            if isinstance(v, str) and v.strip():
+                txt = v.strip()
+                break
+    title = str(item.get("title") or "").strip()
+    if title and title not in txt:
+        return f"標題：{title}\n{txt}" if txt else f"標題：{title}"
+    return txt
 
 
 def _neg_keywords() -> list[str]:
@@ -414,11 +421,17 @@ def _clamp_sentiment(raw: Any, polarity: str) -> int:
     return 3  # neutral（含非法 polarity 兜底：中立恆 3）
 
 
-def _stage1_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
+def _stage1_polarity(
+    item: dict,
+    text: str,
+    main_model: str,
+    *,
+    versions: dict[str, int] | None = None,
+) -> tuple[str, int]:
     """Stage1 極性閘門：回 (polarity, sentiment 1-5)。委派 `_pack_polarity`（吃 00_polarity 的
     System/User/Schema，Prompt-as-Source 唯一真相源）；獨立留名供 to_findings 呼叫與測試 monkeypatch。
     """
-    return _pack_polarity(item, text, main_model)
+    return _pack_polarity(item, text, main_model, versions=versions)
 
 
 def _summary_map(raw) -> dict[str, str]:
@@ -490,16 +503,27 @@ def _gate_attrs(attrs: list[dict], max_n: int) -> list[dict]:
 
 
 def _resolve_attrs_multi(
-    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
+    item: dict,
+    text: str,
+    model: str,
+    max_n: int,
+    polarity: str = "negative",
+    *,
+    versions: dict[str, int] | None = None,
 ) -> list[dict]:
     """負向/混合中性評論 → 多條淨化 attr dict：六域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門（`_gate_attrs`）。"""
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
         return []
-    attrs = _attrs_pack(item, text, model, max_n, polarity)
+    attrs = _attrs_pack(item, text, model, max_n, polarity, versions=versions)
     return _gate_attrs(attrs, max_n)
 
 
-def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
+def to_findings(
+    item: dict,
+    *,
+    model: str,
+    versions: dict[str, int] | None = None,
+) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
     全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、判決階段、
@@ -517,6 +541,8 @@ def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     Args:
         item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
         model: 主判決模型；stub 走啟發式極性、負向回未歸因單筆。
+        versions: 版本選擇功能（{rule_code: 指定版本號}），透傳給 `prompt_source.load`；不帶時
+            行為與既有 production 路徑完全一致（皆讀 DB active）。
 
     Returns:
         TicketFinding 清單（≥1 筆）。
@@ -530,11 +556,13 @@ def to_findings(item: dict, *, model: str) -> list[TicketFinding]:
     if _skip0(item, text):
         # skip0＝高星短好評（rating≥5）→ 正向、情緒分 5
         return _route([_non_issue_finding(item, "positive", "heuristic", sentiment=5)])
-    polarity, sentiment = _stage1_polarity(item, text, model)
+    polarity, sentiment = _stage1_polarity(item, text, model, versions=versions)
     if polarity not in _attribute_when():  # config 驅動（judgment.json polarity_gate）
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
-    attrs = _resolve_attrs_multi(item, text, model, _max_attributions(), polarity)
+    attrs = _resolve_attrs_multi(
+        item, text, model, _max_attributions(), polarity, versions=versions
+    )
     if not attrs:
         if (
             polarity != "negative"
@@ -710,17 +738,26 @@ def _render_pack_user(template: str, text: str, polarity: str) -> str:
     return template.replace("{TEXT}", text).replace("{POLARITY}", polarity)
 
 
-def _pack_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
+def _pack_polarity(
+    item: dict,
+    text: str,
+    main_model: str,
+    *,
+    versions: dict[str, int] | None = None,
+) -> tuple[str, int]:
     """Stage1 極性：吃 00_polarity 的 System/User/Schema（唯一真相源）。
 
     stub 走啟發式；_clamp_sentiment 保留為 code-side 保險（保證 sentiment 與 polarity 區間一致，
     即使 prompt schema 未強約束）。
+
+    Args:
+        versions: 版本選擇功能（初判分類指定歷史版本），透傳給 `prompt_source.load`。
     """
     if client.is_stub():
         return _stub_polarity(item, text)
     from app.judge import prompt_source
 
-    p = prompt_source.load(prompt_source.POLARITY_ID)
+    p = prompt_source.load(prompt_source.POLARITY_ID, versions=versions)
     out = _call(
         p["system"],
         _render_pack_user(p["user_template"], text, ""),  # polarity 無 {POLARITY} 槽
@@ -735,7 +772,13 @@ def _pack_polarity(item: dict, text: str, main_model: str) -> tuple[str, int]:
 
 
 def _attrs_pack(
-    item: dict, text: str, model: str, max_n: int, polarity: str = "negative"
+    item: dict,
+    text: str,
+    model: str,
+    max_n: int,
+    polarity: str = "negative",
+    *,
+    versions: dict[str, int] | None = None,
 ) -> list[dict]:
     """六域並行歸因：各域 prompt 獨立判本域問題 → 合流淨化 attr dict 清單。
 
@@ -766,7 +809,7 @@ def _attrs_pack(
     )
 
     def _one(pid: str) -> list[dict]:
-        p = prompt_source.load(pid)
+        p = prompt_source.load(pid, versions=versions)
         dom = pid.split("_")[1] if "_" in pid else pid  # "01_C-1_content" → "C-1"（日誌分組鍵）
         last_exc: Exception | None = None
         for attempt in range(

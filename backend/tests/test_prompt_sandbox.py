@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from app.core import db as core_db
 from app.core import settings as app_settings
 from app.judge import prompt_eval
 from app.judge import prompt_sandbox as ps
@@ -45,7 +46,7 @@ def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
         prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
     )
 
-    def _fake_classify(item, prompt_ids, model):
+    def _fake_classify(item, prompt_ids, model, *, versions=None):
         return {
             "source_id": item["source_id"],
             "text": "測試文字",
@@ -92,7 +93,7 @@ def test_run_records_per_item_error_without_failing_whole_job(temp_db, monkeypat
         prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
     )
 
-    def _fake_classify(item, prompt_ids, model):
+    def _fake_classify(item, prompt_ids, model, *, versions=None):
         if item["source_id"] == "bad":
             raise ValueError("找不到評論：product_reviews/bad")
         return {"source_id": item["source_id"], "prompts": []}
@@ -110,3 +111,88 @@ def test_run_records_per_item_error_without_failing_whole_job(temp_db, monkeypat
     by_id = {r["source_id"]: r for r in detail["results"]}
     assert "prompts" in by_id["ok"]
     assert "error" in by_id["bad"]
+
+
+# ─────────────────────────── 版本選擇功能：versions fail-fast ───────────────────────────
+def test_start_versions_unknown_rule_code_fails_fast(monkeypatch):
+    """versions 帶未知 rule_code → fail-fast，不派工。"""
+    monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
+    with pytest.raises(ValueError, match="未知 rule_code"):
+        ps.start(
+            "product_reviews",
+            ["r1"],
+            ["polarity"],
+            {"model": "gpt-5-mini"},
+            scope="single",
+            versions={"prompt_not_a_rule": 1},
+        )
+
+
+def test_start_versions_nonexistent_version_fails_fast(temp_db, monkeypatch):
+    """versions 指定不存在的版本號 → fail-fast，不派工。"""
+    monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
+    with pytest.raises(ValueError, match="無版本"):
+        ps.start(
+            "product_reviews",
+            ["r1"],
+            ["polarity"],
+            {"model": "gpt-5-mini"},
+            scope="single",
+            versions={"prompt_polarity": 9999},
+        )
+
+
+def test_start_versions_thread_through_to_sandbox_classify_and_persist(temp_db, monkeypatch):
+    """versions 一路貫穿到 sandbox_classify，且落庫的 versions 欄與請求一致。"""
+    monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
+    monkeypatch.setattr(
+        prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
+    )
+    monkeypatch.setattr(
+        core_db, "get_rule_version", lambda code, version: {"text": "# x\n## System\n```\nx\n```"}
+    )
+
+    seen: list[dict | None] = []
+
+    def _fake_classify(item, prompt_ids, model, *, versions=None):
+        seen.append(versions)
+        return {"source_id": item["source_id"], "prompts": []}
+
+    monkeypatch.setattr(prompt_eval, "sandbox_classify", _fake_classify)
+
+    eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
+    job_id = ps.start(
+        "product_reviews",
+        ["r1"],
+        ["polarity"],
+        eff,
+        scope="single",
+        versions={"prompt_polarity": 2},
+    )
+    snap = _wait_done(job_id)
+    assert snap["status"] == "done"
+    assert seen == [{"prompt_polarity": 2}]
+
+    detail = core_db.sandbox_run_detail(snap["run_id"])
+    assert detail["versions"] == {"prompt_polarity": 2}
+
+
+def test_no_versions_persists_empty_dict(temp_db, monkeypatch):
+    """無 versions → 落庫的 versions 欄為空 dict（server_default），沙盒行為與 v1 一致。"""
+    monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
+    monkeypatch.setattr(
+        prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
+    )
+    monkeypatch.setattr(
+        prompt_eval,
+        "sandbox_classify",
+        lambda item, prompt_ids, model, *, versions=None: {
+            "source_id": item["source_id"],
+            "prompts": [],
+        },
+    )
+    eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
+    job_id = ps.start("product_reviews", ["r1"], ["polarity"], eff, scope="single")
+    snap = _wait_done(job_id)
+    detail = core_db.sandbox_run_detail(snap["run_id"])
+    assert detail["versions"] == {}

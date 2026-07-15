@@ -156,12 +156,19 @@ def _work_one(
     source: str | None,
     triggered_by: str = "",
     governor: _ConcurrencyGovernor | None = None,
+    prompt_versions: dict[str, int] | None = None,
+    versions_used: dict[str, int] | None = None,
 ) -> None:
     """判決單筆 → 落庫；例外計 failed 不中斷整批（全域 Semaphore 收斂併發）。
 
     item 為來源表列（源欄名）。先注入 canonical content + source_id + source（供 prejudge 引擎），
     全 5 來源統一走 to_findings（1:N 多歸因），以 replace_source_findings 整組替換 (source, source_id)
     舊列（重判冪等、保留人工覆核 status）。
+
+    prompt_versions：使用者指定的版本覆蓋（{rule_code: version}，可為 None/部分），僅傳入未被指定的
+    prompt 仍走 DB active（維持既有 `_cache` 快取路徑，不因版本選擇功能拖累整批效能）。
+    versions_used：本次 job 完整 7 條 prompt 版本快照（`_run` 算好傳入，含未指定、沿用 active 的），
+    純供稽核落庫（`judgment_history.params`），不影響判決本身用哪個版本。
     """
     from app.core import source_mapping as _srcmap
     from app.core.db import judgment_history
@@ -180,6 +187,7 @@ def _work_one(
             norm["source"] = src
             norm["source_id"] = source_id
             norm["content"] = canon.get("content") or ""  # 判決主輸入（各來源源欄→canonical）
+            norm["title"] = canon.get("title") or ""  # 標題（rec_title/subject；_text_of 前置一行）
             norm["prod_oid"] = canon.get("prod_oid") or ""
             norm["order_oid"] = canon.get("order_oid") or ""
             norm["raw"] = item  # 供 _evidence_cap 讀 order_oid
@@ -187,12 +195,37 @@ def _work_one(
                 "stage",
                 "item",
                 f"開始判決 {source_id or item.get('item_id', '')}",
-                {"source": src, "source_id": source_id, "content": (norm["content"] or "")[:400]},
+                {
+                    "source": src,
+                    "source_id": source_id,
+                    "title": norm["title"],
+                    "content": (norm["content"] or "")[:400],
+                },
             )
-            findings = prejudge.to_findings(norm, model=model)
-            run_log.emit("stage", "item", f"判決完成 {source_id}：{len(findings)} 筆歸因")
+            findings = prejudge.to_findings(norm, model=model, versions=prompt_versions)
+            # 完成日誌附歸因結果 digest（傾向/L1›L2/信心/摘要），流程 tab 一目瞭然免切詳情
+            digest = [
+                {
+                    "polarity": f.polarity,
+                    "l1": f.l1_label or f.l1_domain_code,
+                    "l2": f.l2_label or f.l2_code,
+                    "confidence": round(f.confidence, 2),
+                    "tier": f.confidence_tier,
+                    "summary": (f.summary or {}).get("zh-tw")
+                    or next(iter((f.summary or {}).values()), ""),
+                }
+                for f in findings
+            ]
+            run_log.emit(
+                "stage",
+                "item",
+                f"歸類完成 {source_id}：{len(findings)} 筆歸因",
+                {"findings": digest},
+            )
             # 判決參數精餾快照（評論級歷史去重比對鍵之一；勿塞 job 級大清單）
             history_params = {"model": model}
+            if versions_used:
+                history_params["prompt_versions"] = versions_used
             db.replace_source_findings(
                 src,
                 source_id,
@@ -242,6 +275,21 @@ def _reload_judge_rules() -> None:
             pass
 
 
+def _resolve_versions_used(pinned: dict[str, int] | None) -> dict[str, int]:
+    """本次 job 完整 7 條 prompt 版本快照（稽核用）：使用者指定的用指定值，沒指定的補當下 active
+    版本號。job 級算一次（非逐筆），寫入 `judgment_history.params.prompt_versions`——沒有這個快照，
+    「這筆判決當初到底用哪個版本判的」在未來 active 版被覆寫後就永久無法回答。
+    """
+    from app.judge import prompt_source
+
+    active = {
+        m["rule_code"]: m["version"]
+        for m in db.list_rule_meta()
+        if m["rule_code"] in prompt_source.PROMPT_RULE_CODES
+    }
+    return {**active, **(pinned or {})}
+
+
 def _run(
     job_id: str,
     item_ids: list[str],
@@ -250,6 +298,7 @@ def _run(
     source: str | None = None,
     cache_read: bool = True,
     triggered_by: str = "",
+    prompt_versions: dict[str, int] | None = None,
 ) -> None:
     """背景執行整批判決：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
     # 正式環境 stub 第二道防線（主閘在 judgment router）：擋繞過 API 直呼 start_job 的路徑
@@ -303,6 +352,9 @@ def _run(
                 6,
             )
 
+    # 版本選擇功能：job 級算一次完整快照（稽核用），逐筆只轉發使用者實際指定的 pinned 子集
+    # （未指定的 prompt 仍走 to_findings 的 DB active 快取路徑，見 _work_one 說明）。
+    versions_used = _resolve_versions_used(prompt_versions)
     client.set_usage_sink(_sink)
     # per-call 用量落庫：base 情境（job/source）+ 共用 buffer（copy_context 前設定→worker 共用同一 list），
     # 各 worker 於 _work_one 覆寫 source_id；job 結束 flush bulk insert 進 llm_usage。
@@ -346,7 +398,16 @@ def _run(
                     c = copy_context()  # 每筆獨立快照（同一 Context 不可並發 run）
                     in_flight.add(
                         ex.submit(
-                            c.run, _work_one, job_id, item, model, source, triggered_by, governor
+                            c.run,
+                            _work_one,
+                            job_id,
+                            item,
+                            model,
+                            source,
+                            triggered_by,
+                            governor,
+                            prompt_versions,
+                            versions_used,
                         )
                     )
                 if cancel and cancel.is_set():
@@ -464,6 +525,7 @@ def start_job(
     rejudge: bool = False,
     params: dict | None = None,
     cache_read: bool = True,
+    prompt_versions: dict[str, int] | None = None,
 ) -> str:
     """註冊並背景啟動一個初判歸因批量任務；立即回 job_id（不阻塞請求）。
 
@@ -478,6 +540,8 @@ def start_job(
         rejudge: 標的先前已有判決（本次為重判；端點判定）。
         params: 發起參數快照（歸因歷史落庫供追溯；勿含大清單）。
         cache_read: LLM exact-cache 讀取閘（批次 True＝重用規則未變部分；顯式單筆/選取重判 False＝真的重打。寫入恆開）。
+        prompt_versions: 使用者指定的 prompt 版本覆蓋（{rule_code: version}；版本選擇功能，正式判決
+            不支援草稿，僅支援指定歷史版本——見 app.judge.prompt_source.load 的 versions 參數）。
 
     Returns:
         job_id（前端據此輪詢 get_job）。
@@ -506,7 +570,7 @@ def start_job(
         _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(job_id, item_ids, eff, model, source, cache_read, triggered_by),
+        args=(job_id, item_ids, eff, model, source, cache_read, triggered_by, prompt_versions),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()
