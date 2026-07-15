@@ -92,97 +92,6 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
     return []
 
 
-class PromptEvalIn(BaseModel):
-    """單支 Prompt 測試（Prompt-as-Source 調適閉環）：prompt（polarity/C-1..C-6）+ N 樣本 + 可選 LLM 配置。
-
-    filters 給定時（B1：按目前歸因列表篩選 × 單一 prompt 測試）：與 `PrejudgeIn` 同形，走
-    `_resolve_target_ids` 解析出目標 id 集合，樣本改為該子集（取代 md5 全表抽樣）；未給沿用
-    現行 production 參照抽樣（預設行為不變）。
-    """
-
-    prompt: str
-    n: int = 8
-    llm_config_id: str | None = None
-    filters: PrejudgeIn | None = None
-
-
-@router.post("/prompt-eval")
-async def prompt_eval(
-    body: PromptEvalIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
-) -> dict:
-    """單支 Prompt 快測：抽 N 則現行判決為參照、只跑該支 prompt → 指標（primary/命中/棄權/多報）+ 分歧清單。
-
-    同步評測以 asyncio.to_thread 卸到執行緒（不阻塞 event loop 單 worker）；set_current 的 contextvar 隨
-    to_thread 的 copy_context 複製，故執行緒內 client 讀得到 effective LLM 設定。N 限 1~30（UI 快測；
-    大樣本 / --compare 用 CLI scripts/tools/eval_prompt_single.py）。
-
-    `body.filters` 給定時（B1）：樣本＝當前歸因列表篩選子集（與 `/prejudge/count` 同一套目標解析），
-    忠實反映使用者在列表上選的範圍，而非全表 md5 抽樣。
-    """
-    from app.judge import prompt_eval as pe
-    from app.judge.llm import client
-
-    n = max(1, min(int(body.n or 8), 30))
-    eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
-    )
-    _guard_not_stub_in_production(eff)
-    app_settings.set_current(eff)
-    client.set_llm_cache_read(False)  # 量測真實行為（寫入照常回填）
-    client.set_usage_context({"job_id": f"prompt_eval_{body.prompt}"})
-    filter_ids = _resolve_target_ids(body.filters) if body.filters else None
-    try:
-        result = await asyncio.to_thread(pe.run_eval, body.prompt, n, filter_ids=filter_ids)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
-    result["model"] = eff.get("model", "")
-
-    # B2：測試歷史（每次完成落一列結果快照；單條 classify-one 是即時預覽，不落——見 prompt_eval.py 模組頂）。
-    rule_code = f"prompt_{body.prompt}"
-    prompt_version = next(
-        (m["version"] for m in db.list_rule_meta() if m["rule_code"] == rule_code), None
-    )
-    history_source = "filtered" if filter_ids is not None else "production"
-    db.insert_prompt_eval_run(
-        {
-            "prompt_id": body.prompt,
-            "prompt_version": prompt_version,
-            "source": history_source,
-            "n": result.get("n", n),
-            "filters": (body.filters.model_dump(exclude_none=True) if body.filters else None),
-            "metrics": {k: v for k, v in result.items() if k != "mismatches"},
-            "mismatches": result.get("mismatches", []),
-            "model": result["model"],
-            "triggered_by": user.get("email") or user.get("user_id", ""),
-        }
-    )
-    return result
-
-
-@router.get("/prompt-eval/runs")
-def list_prompt_eval_runs(
-    prompt_id: str,
-    limit: int = 20,
-    offset: int = 0,
-    user: dict = Depends(auth.get_current_user),
-) -> dict:
-    """某支 prompt 的測試歷史列表（B2；created_at 降冪分頁）→ {total, items}——供「改 prompt 前後對比」。
-
-    items 不含 mismatches（逐案分歧體積可觀），只列指標摘要；詳情走 `/prompt-eval/runs/{run_id}`。
-    """
-    return db.list_prompt_eval_runs(prompt_id, limit=limit, offset=offset)
-
-
-@router.get("/prompt-eval/runs/{run_id}")
-def get_prompt_eval_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
-    """單一測試 run 完整詳情（含 filters/mismatches 逐案分歧）。"""
-    row = db.prompt_eval_run_detail(run_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
-    return row
-
-
 class ClassifyOneIn(BaseModel):
     """單條評論 dry-run 分類（歸因列表「測試」）：來源 + 業務 id。"""
 
@@ -198,8 +107,8 @@ async def classify_one(
 ) -> dict:
     """單條評論 dry-run 分類:跑 prompts 判這一則 → 結果,**不落庫**（預覽「改 prompt 後怎麼判」）。
 
-    比照 /prompt-eval:effective LLM + guard not stub + asyncio.to_thread（不阻塞單 worker,contextvar
-    隨 copy_context 傳遞）。與列級「初判分類」（重判並覆寫落庫）區隔——本端點只讀不寫。
+    effective LLM + guard not stub + asyncio.to_thread（不阻塞單 worker,contextvar 隨 copy_context
+    傳遞）。與列級「初判分類」（重判並覆寫落庫）區隔——本端點只讀不寫。
     """
     from app.judge import prompt_eval as pe
     from app.judge.llm import client
@@ -217,18 +126,20 @@ async def classify_one(
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
-class PromptSandboxIn(BaseModel):
-    """Prompt 測試沙盒啟動請求：對 source_ids 逐筆跑 prompt_ids 子集（不受正式歸因閘門限制）。
+class PromptSandboxIn(PrejudgeIn):
+    """Prompt 測試沙盒啟動請求：對 item_ids（或依條件解析出的目標集合）逐筆跑 prompt_ids 子集
+    （不受正式歸因閘門限制）。
 
-    scope 由前端依觸發入口顯式帶入（單列「Prompt 測試」按鈕＝single；工具列對勾選多筆＝selection），
-    不由 len(source_ids) 反推——即使選取剛好 1 筆走 selection 入口，語意仍是「選取批次」而非單列。
+    繼承 `PrejudgeIn` 全部目標選取欄位（item_ids 顯式優先；否則 scope="all" 依 stages 目標選取，
+    可 within_ids 交集勾選範圍，語義與初判分類「依條件批量選取」完全一致，零改動重用
+    `_resolve_target_ids`）。scope 由前端依觸發入口顯式帶入：single（單列按鈕）/ selection（工具列
+    對勾選多筆，item_ids 顯式）/ all（工具列「依條件批量」）——不由 len(item_ids) 反推，即使選取
+    剛好 1 筆走 selection 入口，語意仍是「選取批次」而非單列。
     """
 
-    source: str
-    source_ids: list[str]
+    source: str  # 覆寫父類 Optional：沙盒必須指定來源
     prompt_ids: list[str]
     scope: str = "single"
-    llm_config_id: str | None = None
 
 
 @router.post("/prompt-sandbox")
@@ -239,11 +150,13 @@ async def start_prompt_sandbox(
     """啟動 Prompt 測試沙盒背景 job → 立即回 {job_id}（前端輪詢 `/prompt-sandbox/status`）。
 
     與 `/classify-one`（同步、單筆、production 閘門）的差異：本端點 ungated（勾了域 prompt 即跑，
-    不受正向評論擋六域的正式閘門限制）、可對多筆並行、結果落獨立的 `prompt_sandbox_runs` 歷史
-    （與 judgments/judgment_history 完全分離），且捕捉完整 LLM log 供事後回看（見 `prompt_sandbox.py`）。
+    不受正向評論擋六域的正式閘門限制）、可對多筆並行（含依條件批量選取）、結果落獨立的
+    `prompt_sandbox_runs` 歷史（與 judgments/judgment_history 完全分離），且捕捉完整 LLM log 供事後
+    回看（見 `prompt_sandbox.py`）。
     """
     from app.judge import prompt_sandbox
 
+    item_ids = _resolve_target_ids(body)
     eff = app_settings.effective_llm_dict(
         app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
     )
@@ -251,7 +164,7 @@ async def start_prompt_sandbox(
         job_id = await asyncio.to_thread(
             prompt_sandbox.start,
             body.source,
-            body.source_ids,
+            item_ids,
             body.prompt_ids,
             eff,
             scope=body.scope,
@@ -260,6 +173,12 @@ async def start_prompt_sandbox(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     return {"job_id": job_id}
+
+
+@router.post("/prompt-sandbox/count")
+def prompt_sandbox_count(body: PromptSandboxIn, _: dict = Depends(auth.get_current_user)) -> dict:
+    """預覽 Prompt 測試沙盒「將測試 N 筆」（與 `/prompt-sandbox` 同一套標的解析；不派工、不消耗 token）。"""
+    return {"total": len(_resolve_target_ids(body))}
 
 
 @router.get("/prompt-sandbox/status")

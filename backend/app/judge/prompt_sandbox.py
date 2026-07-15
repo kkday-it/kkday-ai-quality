@@ -45,7 +45,7 @@ def _guard_stub(eff: dict) -> None:
 
 def start(
     source: str,
-    source_ids: list[str],
+    item_ids: list[str],
     prompt_ids: list[str],
     eff: dict,
     *,
@@ -56,11 +56,12 @@ def start(
 
     Args:
         source: 來源 code（如 product_reviews）。
-        source_ids: 受測 item 清單（scope=single 時長度 1）。選取筆數不設上限（使用者決策：大批量
+        item_ids: 受測 item 清單（scope=single 時長度 1）。選取筆數不設上限（使用者決策：大批量
             靠 `run_log` 既有 dropped 機制截斷 log，結果仍逐筆落庫）。
         prompt_ids: 使用者勾選的 prompt 子集（polarity / C-1..C-6）。
         eff: effective LLM 設定（呼叫端已解析，見 `app_settings.effective_llm_dict`）。
-        scope: single（單列觸發）/ selection（工具列勾選多筆觸發）——落庫供歷史列表分辨來源。
+        scope: single（單列觸發）/ selection（工具列勾選多筆觸發）/ all（工具列依條件批量選取觸發）
+            ——落庫供歷史列表分辨來源。
         triggered_by: 觸發人 email。
 
     Returns:
@@ -72,10 +73,10 @@ def start(
     _guard_stub(eff)
     job_id = f"psbxjob_{uuid.uuid4().hex}"
     with _jobs_lock:
-        _jobs[job_id] = {"status": "running", "total": len(source_ids), "done": 0, "run_id": None}
+        _jobs[job_id] = {"status": "running", "total": len(item_ids), "done": 0, "run_id": None}
     threading.Thread(
         target=_run,
-        args=(job_id, source, source_ids, prompt_ids, eff, scope, triggered_by),
+        args=(job_id, source, item_ids, prompt_ids, eff, scope, triggered_by),
         daemon=True,
     ).start()
     return job_id
@@ -93,7 +94,7 @@ def _one(source: str, source_id: str, prompt_ids: list[str], model: str) -> dict
 def _run(
     job_id: str,
     source: str,
-    source_ids: list[str],
+    item_ids: list[str],
     prompt_ids: list[str],
     eff: dict,
     scope: str,
@@ -103,14 +104,14 @@ def _run(
     `prompt_sandbox_runs` 快照（含 results + log 完整快照）。
     """
     app_settings.set_current(eff)  # 背景 thread set 好 contextvar，供 copy_context 快照攜帶
-    client.set_llm_cache_read(False)  # 沙盒測試量測真實行為（同 classify-one/prompt-eval 既有慣例）
+    client.set_llm_cache_read(False)  # 沙盒測試量測真實行為（同 classify-one 既有慣例）
     client.set_usage_context({"job_id": job_id})
     run_log.bind(job_id)  # 決策：沙盒不設 LOG_JOB_MAX_ITEMS 上限，大批量靠既有 dropped 機制截斷
     model = eff.get("model", "")
     run_log.emit(
         "stage",
         "job",
-        f"Prompt 測試沙盒啟動：{len(source_ids)} 筆 × {len(prompt_ids)} prompt",
+        f"Prompt 測試沙盒啟動：{len(item_ids)} 筆 × {len(prompt_ids)} prompt",
         {"model": model, "prompt_ids": prompt_ids, "scope": scope},
     )
     results: list[dict] = []
@@ -118,7 +119,7 @@ def _run(
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
             futures = {
                 ex.submit(ctx.run, _one, source, sid, prompt_ids, model): sid
-                for ctx, sid in ((copy_context(), sid) for sid in source_ids)
+                for ctx, sid in ((copy_context(), sid) for sid in item_ids)
             }
             for fut, sid in futures.items():
                 try:
@@ -136,9 +137,9 @@ def _run(
             {
                 "source": source,
                 "scope": scope,
-                "item_ids": source_ids,
+                "item_ids": item_ids,
                 "prompt_ids": prompt_ids,
-                "item_count": len(source_ids),
+                "item_count": len(item_ids),
                 "results": results,
                 "log": log_entries,
                 "model": model,

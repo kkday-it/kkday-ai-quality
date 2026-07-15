@@ -284,7 +284,7 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
     monkeypatch.setattr(config.env, "openai_api_key", "")
     r = client.post(
         "/api/v1/judgment/prompt-sandbox",
-        json={"source": "product_reviews", "source_ids": ["R1"], "prompt_ids": ["polarity"]},
+        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
         headers=auth_headers,
     )
     assert r.status_code == 400
@@ -294,7 +294,53 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
 def test_prompt_sandbox_start_requires_auth(client):
     r = client.post(
         "/api/v1/judgment/prompt-sandbox",
-        json={"source": "product_reviews", "source_ids": ["R1"], "prompt_ids": ["polarity"]},
+        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
+    )
+    assert r.status_code == 401
+
+
+def test_prompt_sandbox_count_item_ids_priority(client, auth_headers):
+    """item_ids 顯式給定時優先採用，不論 scope／filters（比照 /prejudge/count 同一套解析）。"""
+    r = client.post(
+        "/api/v1/judgment/prompt-sandbox/count",
+        json={
+            "source": "product_reviews",
+            "item_ids": ["R1", "R2", "R3"],
+            "prompt_ids": ["polarity"],
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json() == {"total": 3}
+
+
+def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
+    """scope=all 時依 stages 目標選取（預設 unjudged）解析——與初判分類同一套 _resolve_target_ids，
+    未落任何 finding 的列即命中，零改動重用 db.prejudge_target_ids。"""
+    db.insert_source_batch(
+        "product_reviews",
+        [
+            {
+                "rec_oid": "SBX1",
+                "create_date": "2026-06-01 10:00:00",
+                "prod_oid": "P1",
+                "order_snap_json": "{}",
+            }
+        ],
+    )
+    r = client.post(
+        "/api/v1/judgment/prompt-sandbox/count",
+        json={"source": "product_reviews", "scope": "all", "prompt_ids": ["polarity"]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["total"] >= 1
+
+
+def test_prompt_sandbox_count_requires_auth(client):
+    r = client.post(
+        "/api/v1/judgment/prompt-sandbox/count",
+        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
     )
     assert r.status_code == 401
 
