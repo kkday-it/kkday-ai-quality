@@ -20,10 +20,11 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def upgrade() -> None:
-    """Upgrade schema."""
-    op.create_table(
+def _prompt_sandbox_runs_table() -> sa.Table:
+    metadata = sa.MetaData()
+    return sa.Table(
         "prompt_sandbox_runs",
+        metadata,
         sa.Column("run_id", sa.Text(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("scope", sa.Text(), nullable=False),
@@ -40,12 +41,18 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("run_id"),
     )
-    op.create_index(
-        "idx_prompt_sandbox_runs_created", "prompt_sandbox_runs", ["created_at"], unique=False
+
+
+def upgrade() -> None:
+    """Upgrade schema."""
+    bind = op.get_bind()
+    table = _prompt_sandbox_runs_table()
+    table.create(bind, checkfirst=True)
+    sa.Index("idx_prompt_sandbox_runs_created", table.c.created_at).create(
+        bind, checkfirst=True
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index("idx_prompt_sandbox_runs_created", table_name="prompt_sandbox_runs")
-    op.drop_table("prompt_sandbox_runs")
+    _prompt_sandbox_runs_table().drop(op.get_bind(), checkfirst=True)
