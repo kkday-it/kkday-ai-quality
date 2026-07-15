@@ -45,6 +45,22 @@ def test_non_retryable_not_retried():
     assert r.status == "api_error" and r.attempts == 1
 
 
+def test_gateway_passes_sampling_and_reasoning_config():
+    client = FakeResponsesClient(lambda *a: {"attributions": []})
+    gw = Gateway(
+        client=client,
+        temperature=1,
+        reasoning_effort="high",
+        sleep=lambda _: None,
+    )
+    r = gw.structured(
+        system="s", user="u", json_schema=_SCHEMA, schema_name="t", model="m"
+    )
+    assert r.ok
+    assert client.responses.last_kwargs["temperature"] == 1
+    assert client.responses.last_kwargs["reasoning"] == {"effort": "high"}
+
+
 def _case(cid, text="頁面沒說明時長問題"):
     return {
         "case_id": cid,

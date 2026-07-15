@@ -1,6 +1,13 @@
 {
-  "note": "baseline C-1 judge prompt 與同伴域 prompt 的 SHA-256；跑完 baseline 前不得修改（PRD §4/§17）。",
-  "domain_under_test": "C-1",
+  "note": "C-1～C-6 Prompt Lab 的 judge、generator、auditor SHA-256；baseline 跑完前不得修改 judge prompt。",
+  "domains_under_test": [
+    "C-1",
+    "C-2",
+    "C-3",
+    "C-4",
+    "C-5",
+    "C-6"
+  ],
   "judges": {
     "00_polarity": {
       "path": "prompts/judges/00_polarity.md",
@@ -21,6 +28,11 @@
       "path": "prompts/judges/02_C-2_quality.md",
       "sha256": "cd9335c5b286af0edefa6ee6afd625042cae3df1f83cf39f03b0755e500c84f6",
       "bytes": 14713
+    },
+    "02_C-2_quality_v2": {
+      "path": "prompts/judges/02_C-2_quality_v2.md",
+      "sha256": "9df2a1fa3d8764abc0e9c6e5017ad2e234cfc7639267c0d2d4581e9127eaca0c",
+      "bytes": 10191
     },
     "03_C-3_supplier": {
       "path": "prompts/judges/03_C-3_supplier.md",
@@ -53,6 +65,56 @@
       "path": "prompts/generators/c1_auditor.md",
       "sha256": "787453dbe2db024e8c816dc897d561dc1c636a182ebf73f20196765303f0ad97",
       "bytes": 3131
+    },
+    "c2_generator": {
+      "path": "prompts/generators/c2_generator.md",
+      "sha256": "c7e57a487164de5a887df91d80fd74eedf5f75e9020687f95c2ae480bd459d27",
+      "bytes": 4480
+    },
+    "c2_auditor": {
+      "path": "prompts/generators/c2_auditor.md",
+      "sha256": "a46976a69b05f95a61197cd13f4ff08ec53671c74dca884f1a531955764324a9",
+      "bytes": 3194
+    },
+    "c3_generator": {
+      "path": "prompts/generators/c3_generator.md",
+      "sha256": "e1f27866a74571547bace200a8bdc552de1cd9fd838541f13997cb4af9855a0f",
+      "bytes": 2189
+    },
+    "c3_auditor": {
+      "path": "prompts/generators/c3_auditor.md",
+      "sha256": "3d4fce06033f1c8d5abcc3b77c9eacd271fdb69bdc4b511680556ee2d8c35b30",
+      "bytes": 1740
+    },
+    "c4_generator": {
+      "path": "prompts/generators/c4_generator.md",
+      "sha256": "570d75695d1eda91fca51f0552a97492e76acbfb267dc6f5f517e8407be4c7c7",
+      "bytes": 1445
+    },
+    "c4_auditor": {
+      "path": "prompts/generators/c4_auditor.md",
+      "sha256": "59509f0c0464a2a7d4b832d4a676e64d094484a4c18c4263898e3dcac2c48960",
+      "bytes": 1184
+    },
+    "c5_generator": {
+      "path": "prompts/generators/c5_generator.md",
+      "sha256": "657402519c1708451c32dc86e7811f1a09b86f74f2850af14f7eacd1bd699774",
+      "bytes": 1421
+    },
+    "c5_auditor": {
+      "path": "prompts/generators/c5_auditor.md",
+      "sha256": "bc6e6d54e7aeedb5292d0e63ad29d229f18e36866d5e86e556beaa37b2579530",
+      "bytes": 1171
+    },
+    "c6_generator": {
+      "path": "prompts/generators/c6_generator.md",
+      "sha256": "3ba3c664eca7e0bd21df8a8df7d7b54e0e60cd651993675ca47b65919f9b773e",
+      "bytes": 1621
+    },
+    "c6_auditor": {
+      "path": "prompts/generators/c6_auditor.md",
+      "sha256": "5a2d7af8c02ab8a0f5f8b82ac343eb9ac119a73489ef2c4d8f8173a9cd24d5e8",
+      "bytes": 1318
     }
   }
 }

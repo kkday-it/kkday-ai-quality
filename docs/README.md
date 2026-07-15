@@ -10,6 +10,8 @@
 | [C1-PROMPT-LAB-DEV-REPORT.md](./C1-PROMPT-LAB-DEV-REPORT.md) | 上述 Mock 評測實驗室的 Dev 交付報告 + baseline live 實測（§2.5）|
 | [PRD-C1-PROMPT-V2.md](./PRD-C1-PROMPT-V2.md) | C-1 判官 Prompt v2 設計與回歸驗證任務書（修 §17.1/17.2/17.3，主攻棄權）|
 | [C1-PROMPT-V2-CHANGES.md](./C1-PROMPT-V2-CHANGES.md) | v2 變更說明：三處修改、三輪迭代、Path B preliminary 對比結果（被迫歸因 27.5%→0%）|
+| [PRD-C3-C6-MOCK-DATA-WORKFLOW.md](./PRD-C3-C6-MOCK-DATA-WORKFLOW.md) | C-3～C-6 Mock 數據工程：六域泛化、跨域/本域 L2 最小對照、模型隔離、生成審核凍結、Judge 跑批、報告與可交付其他 AI 的任務包 |
+| [HANDOFF-C3-C6-GEMINI-GPT54MINI.md](./HANDOFF-C3-C6-GEMINI-GPT54MINI.md) | 可直接交給執行 AI 的完整主 Prompt：Gemini 五輪 Mock、獨立 Auditor、GPT-5.4-mini high reasoning baseline、四域 Excel 與彙總交付 |
 | `backend/app/**/README.md` | 各模組結構與職責（api / core / core/db / core/judge_config / judge） |
 | `frontend/.../features/README.md` | 前端 feature 模組地圖 |
 | [config/README.md](../config/README.md) / [constants/README.md](../constants/README.md) | 前後端共用配置 / 常數 SSOT 說明 |

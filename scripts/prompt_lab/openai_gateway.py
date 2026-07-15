@@ -84,6 +84,8 @@ class Gateway:
         client: object | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        temperature: float | None = None,
+        reasoning_effort: str | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         timeout: float = 120.0,
         sleep=time.sleep,
@@ -94,6 +96,8 @@ class Gateway:
             client: 注入的 responses client（fake 或真）；None → 依 env 延遲建立真 OpenAI client。
             api_key: 覆寫 API key（預設讀 OPENAI_API_KEY）；只用於建 client，絕不記錄。
             base_url: 覆寫端點（OpenAI-compatible）。
+            temperature: Responses API 取樣溫度；None 表示不覆寫模型預設。
+            reasoning_effort: Responses API `reasoning.effort`；None 表示不覆寫。
             max_retries: 429/5xx 最多重試次數（PRD §10.4：5）。
             timeout: 單次請求逾時秒數。
             sleep: 退避睡眠函式（tests 注入 no-op 以免真等待）。
@@ -101,6 +105,13 @@ class Gateway:
         self._client = client
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self._base_url = base_url or os.environ.get("OPENAI_BASE_URL", "") or None
+        if temperature is not None and not 0 <= temperature <= 2:
+            raise ValueError("temperature 必須介於 0 與 2")
+        allowed_efforts = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+        if reasoning_effort is not None and reasoning_effort not in allowed_efforts:
+            raise ValueError(f"不支援的 reasoning_effort：{reasoning_effort}")
+        self._temperature = temperature
+        self._reasoning_effort = reasoning_effort
         self._max_retries = max_retries
         self._timeout = timeout
         self._sleep = sleep
@@ -166,6 +177,10 @@ class Gateway:
             ],
             "text": text_format,
         }
+        if self._temperature is not None:
+            payload["temperature"] = self._temperature
+        if self._reasoning_effort is not None:
+            payload["reasoning"] = {"effort": self._reasoning_effort}
         t0 = time.monotonic()
         attempt = 0
         last_exc: Exception | None = None

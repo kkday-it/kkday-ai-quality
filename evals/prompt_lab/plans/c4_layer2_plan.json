@@ -1,0 +1,927 @@
+{
+  "plan_id": "c4-layer2-v1",
+  "domain_under_test": "C-4",
+  "layer": 2,
+  "description": "C-4 平台与系统 Layer 2（含 domain_pair/l2_pair）",
+  "total_target": 108,
+  "cells": [
+    {
+      "cell_id": "c4-l2-domainpair-c41-c21-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-2-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-2-1 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c21-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-2-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-2-1 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c21-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-2-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-2-1 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c15-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c15-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c15-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c61-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c61-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c41-c61-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-mixed-c41",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-uncertain-c41",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "underspecified",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "围绕 C-4-1 与近邻责任，但故意缺少决定责任站点的关键事实。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-adversarial-c41",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "购买后尚未成功开通、启用、安装或绑定，无法开始使用。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation",
+        "sarcasm",
+        "mixed_language",
+        "prompt_injection"
+      ]
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c34-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-3-4 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c34-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-3-4 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c34-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-3-4 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c15-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c15-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c15-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c66-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-6 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c66-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-6 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c42-c66-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": "C-6-6",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-6 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-mixed-c42",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-uncertain-c42",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "underspecified",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "围绕 C-4-2 与近邻责任，但故意缺少决定责任站点的关键事实。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-adversarial-c42",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation",
+        "sarcasm",
+        "mixed_language",
+        "prompt_injection"
+      ]
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c53-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-5-3 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c53-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-5-3 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c53-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-5-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-5-3 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c15-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c15-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c15-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-1-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-1-5 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c61-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c61-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-domainpair-c43-c61-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": "C-6-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "domain_pair",
+      "target_count": 2,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变责任站点：C-4 的决定性事实 vs C-6-1 的决定性事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-mixed-c43",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-uncertain-c43",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "underspecified",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "围绕 C-4-3 与近邻责任，但故意缺少决定责任站点的关键事实。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-adversarial-c43",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-4-3",
+      "target_l2_codes": [
+        "C-4-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation",
+        "sarcasm",
+        "mixed_language",
+        "prompt_injection"
+      ]
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c42-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-2"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-2；两侧都属于 C-4",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c42-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-2"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-2；两侧都属于 C-4",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c42-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-2"
+      ],
+      "boundary_with": "C-4-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-2；两侧都属于 C-4",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c43-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c43-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c41-c43-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-1",
+      "target_l2_codes": [
+        "C-4-1",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-1 购买后尚未成功开通、启用、安装或绑定，无法开始使用。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-1 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c42-c43-1",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-2 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c42-c43-2",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-2 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c4-l2-l2pair-c42-c43-3",
+      "domain_under_test": "C-4",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-4-2",
+      "target_l2_codes": [
+        "C-4-2",
+        "C-4-3"
+      ],
+      "boundary_with": "C-4-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "l2_pair",
+      "target_count": 2,
+      "coverage_note": "A=C-4-2 凭证已取得但扫码、核销、入场、资格或实名验证被系统卡住。；B=C-4-3 App 或网页按钮、页面、订单状态、上传或操作功能异常。",
+      "contrast_theme": "只改变决定 L2 的事实：C-4-2 vs C-4-3；两侧都属于 C-4",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    }
+  ]
+}

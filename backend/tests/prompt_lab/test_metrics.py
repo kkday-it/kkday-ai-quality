@@ -127,6 +127,22 @@ def test_l2_over_attribution_detected():
     )
 
 
+def test_l2_catalog_follows_c2_domain():
+    case = _case(
+        "c2",
+        "true",
+        ["C-2-1"],
+        "啟用後一路斷線",
+        "rule_unit",
+        ["一路斷線"],
+    )
+    case["domain_under_test"] = "C-2"
+    result = _run("c2", 0, True, ["C-2-1"], ["一路斷線"])
+    per_l2 = M.compute_all([case], [result])["l2"]["per_l2"]
+    assert set(per_l2) == {"C-2-1", "C-2-2", "C-2-3", "C-2-4", "C-2-5"}
+    assert per_l2["C-2-1"]["f1"] == 1.0
+
+
 def test_stability_flip_and_agreement():
     s = M.compute_all(*_fixture())["stability"]
     assert s["domain_full_agreement"] == 0.4286

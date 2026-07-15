@@ -6,16 +6,15 @@
 本模組為**離線 Prompt Lab 專用**，不 import backend.app，不觸碰生產判決鏈路（PRD §3）。
 
 L2 code 契約說明（SSOT）：
-    C1_L2_CODES 是「C-1 評測合約」的唯一常數（依 PRD §4.2）。被測 judge 能輸出的 code 由
-    prompt 的 `## Schema` enum 決定（prompt_parser.extract_schema_enum 動態取出）——兩者理應一致，
-    以 test_schemas 對 baseline C-1 prompt 斷言吻合，避免寫死第二份而漂移。
+    DOMAIN_L2_CODES 保存 Prompt Lab 已啟用域的合法 L2；被測 judge 能輸出的 code 仍由各自
+    prompt 的 `## Schema` enum 決定。test_schemas 逐域斷言兩者吻合，避免計畫、資料與 prompt 漂移。
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -30,6 +29,26 @@ C1_L2_CODES: tuple[str, ...] = (
     "C-1-7",  # 退改與服務承諾
 )
 C1_L2_SET = frozenset(C1_L2_CODES)
+C2_L2_CODES: tuple[str, ...] = (
+    "C-2-1",  # 網路品質
+    "C-2-2",  # 餐飲品質
+    "C-2-3",  # 車輛設備
+    "C-2-4",  # 住宿品質
+    "C-2-5",  # 設施設備
+)
+C2_L2_SET = frozenset(C2_L2_CODES)
+C3_L2_CODES: tuple[str, ...] = tuple(f"C-3-{i}" for i in range(1, 8))
+C4_L2_CODES: tuple[str, ...] = tuple(f"C-4-{i}" for i in range(1, 4))
+C5_L2_CODES: tuple[str, ...] = tuple(f"C-5-{i}" for i in range(1, 4))
+C6_L2_CODES: tuple[str, ...] = tuple(f"C-6-{i}" for i in range(1, 7))
+DOMAIN_L2_CODES: dict[str, tuple[str, ...]] = {
+    "C-1": C1_L2_CODES,
+    "C-2": C2_L2_CODES,
+    "C-3": C3_L2_CODES,
+    "C-4": C4_L2_CODES,
+    "C-5": C5_L2_CODES,
+    "C-6": C6_L2_CODES,
+}
 
 # 他域 L2 code 泛型格式（負例的 boundary_with / 真實責任標註用，如 C-3-3、C-6-6）
 _L2_CODE_RE = re.compile(r"^C-[1-6]-[0-9]+$")
@@ -69,13 +88,25 @@ def normalize_for_dedup(text: str) -> str:
     return re.sub(r"\s+", " ", nfkc).strip()
 
 
-def _validate_l2_codes(codes: list[str], *, c1_only: bool, field: str) -> list[str]:
-    """校驗 L2 code 清單格式；c1_only=True 時限本域目錄，否則允許他域泛型格式。"""
+def l2_codes_for_domain(domain: str) -> tuple[str, ...]:
+    """回傳已啟用評測域的合法 L2；未知域 fail-loud。"""
+    try:
+        return DOMAIN_L2_CODES[domain]
+    except KeyError as e:
+        raise ValueError(f"Prompt Lab 尚未啟用 domain_under_test={domain!r}") from e
+
+
+def _validate_l2_codes(
+    codes: list[str], *, domain: str | None = None, field: str
+) -> list[str]:
+    """校驗 L2 code；指定 domain 時限該域目錄，否則只驗通用格式。"""
+    allowed = frozenset(l2_codes_for_domain(domain)) if domain else None
     for c in codes:
-        if c1_only:
-            if c not in C1_L2_SET:
-                raise ValueError(f"{field}: '{c}' 不在 C-1 目錄 {C1_L2_CODES}")
-        elif not _L2_CODE_RE.match(c):
+        if allowed is not None and c not in allowed:
+            raise ValueError(
+                f"{field}: '{c}' 不在 {domain} 目錄 {l2_codes_for_domain(domain)}"
+            )
+        if allowed is None and not _L2_CODE_RE.match(c):
             raise ValueError(f"{field}: '{c}' 非合法 L2 code 格式（預期如 C-3-3）")
     return codes
 
@@ -86,7 +117,7 @@ class CandidateCase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     case_id: str = Field(..., min_length=1)  # 全局唯一且穩定
-    domain_under_test: str  # 本期恆為 "C-1"
+    domain_under_test: str
     layer: Literal[1, 2]
     text: str = Field(..., min_length=1)
     input_polarity: Polarity
@@ -111,8 +142,7 @@ class CandidateCase(BaseModel):
     @field_validator("domain_under_test")
     @classmethod
     def _dut(cls, v: str) -> str:
-        if v != "C-1":
-            raise ValueError("本期 domain_under_test 僅支援 'C-1'")
+        l2_codes_for_domain(v)
         return v
 
     @field_validator("boundary_with")
@@ -133,16 +163,24 @@ class CandidateCase(BaseModel):
                     f"expected_domain=true 需 1~2 個 expected_l2_codes，實得 {n}"
                 )
             _validate_l2_codes(
-                self.expected_l2_codes, c1_only=True, field="expected_l2_codes"
+                self.expected_l2_codes,
+                domain=self.domain_under_test,
+                field="expected_l2_codes",
             )
         elif self.expected_l2_codes:
             raise ValueError(
                 f"expected_domain={self.expected_domain} 時 expected_l2_codes 必須為空"
             )
         _validate_l2_codes(
-            self.forbidden_l2_codes, c1_only=True, field="forbidden_l2_codes"
+            self.forbidden_l2_codes,
+            domain=self.domain_under_test,
+            field="forbidden_l2_codes",
         )
-        # evidence 必須逐字存在於 text（空清單允許：false/uncertain 常無本域證據）
+        # true 必须有逐字证据；false/uncertain 必须为空。
+        if self.expected_domain == "true" and not self.expected_evidence_quotes:
+            raise ValueError("expected_domain=true 需至少 1 条逐字 expected_evidence_quote")
+        if self.expected_domain != "true" and self.expected_evidence_quotes:
+            raise ValueError(f"expected_domain={self.expected_domain} 时 evidence 必须为空")
         for q in self.expected_evidence_quotes:
             if not verbatim_grounded(q, self.text):
                 raise ValueError(f"expected_evidence_quote 非 text 逐字子串：{q!r}")
@@ -158,23 +196,47 @@ class AuditResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     case_id: str = Field(..., min_length=1)
+    domain_under_test: str = "C-1"
     label_supported: bool
     ambiguous: bool
     self_contained: bool
-    contains_independent_c1_issue: bool
+    contains_independent_target_issue: bool
     suggested_domain: DomainLabel
     suggested_l2_codes: list[str] = Field(default_factory=list)
     evidence_quotes_valid: bool
     near_duplicate: bool
+    pair_minimality_valid: bool = True
+    review_required: bool = False
     audit_reason: str = ""
     auditor_model: str = ""
     auditor_request_id: str = ""
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    attempts: int = 0
     status: AuditStatus = "review_required"
 
-    @field_validator("suggested_l2_codes")
+    @model_validator(mode="before")
     @classmethod
-    def _sugg(cls, v: list[str]) -> list[str]:
-        return _validate_l2_codes(v, c1_only=True, field="suggested_l2_codes")
+    def _legacy_issue_field(cls, data: Any) -> Any:
+        """读取旧 C1/C2 JSONL 时统一映射到 contains_independent_target_issue。"""
+        if isinstance(data, dict) and "contains_independent_target_issue" not in data:
+            data = dict(data)
+            for legacy in ("contains_independent_c1_issue", "contains_independent_c2_issue"):
+                if legacy in data:
+                    data["contains_independent_target_issue"] = data.pop(legacy)
+                    break
+        return data
+
+    @model_validator(mode="after")
+    def _domain_l2(self) -> AuditResult:
+        l2_codes_for_domain(self.domain_under_test)
+        _validate_l2_codes(
+            self.suggested_l2_codes,
+            domain=self.domain_under_test,
+            field="suggested_l2_codes",
+        )
+        return self
 
 
 class FrozenCase(BaseModel):
@@ -214,14 +276,21 @@ class FrozenCase(BaseModel):
     @model_validator(mode="after")
     def _cross_field(self) -> FrozenCase:
         """與 CandidateCase 相同的核心不變式（冻結後仍須自洽）。"""
+        l2_codes_for_domain(self.domain_under_test)
         if self.expected_domain == "true":
             if not (1 <= len(self.expected_l2_codes) <= 2):
                 raise ValueError("expected_domain=true 需 1~2 個 expected_l2_codes")
             _validate_l2_codes(
-                self.expected_l2_codes, c1_only=True, field="expected_l2_codes"
+                self.expected_l2_codes,
+                domain=self.domain_under_test,
+                field="expected_l2_codes",
             )
         elif self.expected_l2_codes:
             raise ValueError("非 true 時 expected_l2_codes 必須為空")
+        if self.expected_domain == "true" and not self.expected_evidence_quotes:
+            raise ValueError("expected_domain=true 需至少 1 条逐字 expected_evidence_quote")
+        if self.expected_domain != "true" and self.expected_evidence_quotes:
+            raise ValueError(f"expected_domain={self.expected_domain} 时 evidence 必须为空")
         for q in self.expected_evidence_quotes:
             if not verbatim_grounded(q, self.text):
                 raise ValueError(f"expected_evidence_quote 非 text 逐字子串：{q!r}")
@@ -281,9 +350,7 @@ class PlanCell(BaseModel):
     domain_under_test: str
     layer: Literal[1, 2]
     expected_domain: PlanExpected
-    focus_l2: (
-        str  # 本格圍繞的 C-1 L2（正例=命中碼；負/對照=責任邊界所繫的 C-1 面向），供切片
-    )
+    focus_l2: str  # 本格圍繞的受測域 L2，供切片
     target_l2_codes: list[str] = Field(default_factory=list)  # true 格填 1~2；其餘空
     boundary_with: str | None = None
     expression_variant: str
@@ -296,20 +363,18 @@ class PlanCell(BaseModel):
     pair_group: int | None = None
     adversarial_techniques: list[str] = Field(default_factory=list)
 
-    @field_validator("focus_l2")
-    @classmethod
-    def _focus(cls, v: str) -> str:
-        if v not in C1_L2_SET:
-            raise ValueError(f"focus_l2 '{v}' 不在 C-1 目錄")
-        return v
-
     @model_validator(mode="after")
     def _check(self) -> PlanCell:
+        _validate_l2_codes(
+            [self.focus_l2], domain=self.domain_under_test, field="focus_l2"
+        )
         if self.expected_domain == "true":
             if not (1 <= len(self.target_l2_codes) <= 2):
                 raise ValueError(f"{self.cell_id}: true 格需 1~2 target_l2_codes")
             _validate_l2_codes(
-                self.target_l2_codes, c1_only=True, field="target_l2_codes"
+                self.target_l2_codes,
+                domain=self.domain_under_test,
+                field="target_l2_codes",
             )
         elif self.expected_domain != "pair" and self.target_l2_codes:
             raise ValueError(
@@ -321,7 +386,9 @@ class PlanCell(BaseModel):
                     f"{self.cell_id}: pair 格需 pair_group 與 contrast_theme"
                 )
             _validate_l2_codes(
-                self.target_l2_codes, c1_only=True, field="target_l2_codes"
+                self.target_l2_codes,
+                domain=self.domain_under_test,
+                field="target_l2_codes",
             )
         if self.boundary_with is not None and not _valid_boundary(self.boundary_with):
             raise ValueError(
@@ -376,7 +443,51 @@ class AuditorOutput(BaseModel):
     @field_validator("suggested_l2_codes")
     @classmethod
     def _sugg(cls, v: list[str]) -> list[str]:
-        return _validate_l2_codes(v, c1_only=True, field="suggested_l2_codes")
+        return _validate_l2_codes(v, domain="C-1", field="suggested_l2_codes")
+
+
+class C2AuditorOutput(BaseModel):
+    """C-2 Auditor 結構化輸出；欄位名維持可讀的 contains_independent_c2_issue。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label_supported: bool
+    ambiguous: bool
+    self_contained: bool
+    contains_independent_c2_issue: bool
+    suggested_domain: DomainLabel
+    suggested_l2_codes: list[str] = Field(default_factory=list)
+    evidence_quotes_valid: bool
+    near_duplicate: bool
+    audit_reason: str = ""
+
+    @field_validator("suggested_l2_codes")
+    @classmethod
+    def _sugg(cls, v: list[str]) -> list[str]:
+        return _validate_l2_codes(v, domain="C-2", field="suggested_l2_codes")
+
+
+class TargetAuditorOutput(BaseModel):
+    """C3～C6 统一 Auditor 输出；域内 enum 由 auditor_contract 动态 schema 约束。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label_supported: bool
+    ambiguous: bool
+    self_contained: bool
+    contains_independent_target_issue: bool
+    suggested_domain: DomainLabel
+    suggested_l2_codes: list[str] = Field(default_factory=list)
+    evidence_quotes_valid: bool
+    near_duplicate: bool
+    pair_minimality_valid: bool
+    review_required: bool
+    audit_reason: str = ""
+
+    @field_validator("suggested_l2_codes")
+    @classmethod
+    def _sugg(cls, v: list[str]) -> list[str]:
+        return _validate_l2_codes(v, field="suggested_l2_codes")
 
 
 # 手寫 strict JSON Schema（送 Responses API text.format 用）──────────────────────
@@ -439,6 +550,63 @@ AUDITOR_OUTPUT_SCHEMA: dict = {
     },
 }
 
+C2_AUDITOR_OUTPUT_SCHEMA: dict = {
+    **AUDITOR_OUTPUT_SCHEMA,
+    "required": [
+        "contains_independent_c2_issue"
+        if x == "contains_independent_c1_issue"
+        else x
+        for x in AUDITOR_OUTPUT_SCHEMA["required"]
+    ],
+    "properties": {
+        **{
+            k: v
+            for k, v in AUDITOR_OUTPUT_SCHEMA["properties"].items()
+            if k not in {"contains_independent_c1_issue", "suggested_l2_codes"}
+        },
+        "contains_independent_c2_issue": {"type": "boolean"},
+        "suggested_l2_codes": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(C2_L2_CODES)},
+        },
+    },
+}
+
+
+def _target_auditor_schema(domain: str) -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(TargetAuditorOutput.model_fields),
+        "properties": {
+            "label_supported": {"type": "boolean"},
+            "ambiguous": {"type": "boolean"},
+            "self_contained": {"type": "boolean"},
+            "contains_independent_target_issue": {"type": "boolean"},
+            "suggested_domain": {"type": "string", "enum": ["true", "false", "uncertain"]},
+            "suggested_l2_codes": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(l2_codes_for_domain(domain))},
+            },
+            "evidence_quotes_valid": {"type": "boolean"},
+            "near_duplicate": {"type": "boolean"},
+            "pair_minimality_valid": {"type": "boolean"},
+            "review_required": {"type": "boolean"},
+            "audit_reason": {"type": "string"},
+        },
+    }
+
+
+def auditor_contract(domain: str) -> tuple[type[BaseModel], dict, str]:
+    """取得各域 Auditor 的 Pydantic 模型、strict schema、独立问题字段名。"""
+    if domain == "C-1":
+        return AuditorOutput, AUDITOR_OUTPUT_SCHEMA, "contains_independent_c1_issue"
+    if domain == "C-2":
+        return C2AuditorOutput, C2_AUDITOR_OUTPUT_SCHEMA, "contains_independent_c2_issue"
+    if domain in {"C-3", "C-4", "C-5", "C-6"}:
+        return TargetAuditorOutput, _target_auditor_schema(domain), "contains_independent_target_issue"
+    raise ValueError(f"Prompt Lab 尚未启用 Auditor domain={domain!r}")
+
 
 class Plan(BaseModel):
     """一層的完整生成計畫；total_target 必須嚴格等於各格 target_count 之和（Phase 0 DoD）。"""
@@ -454,6 +622,14 @@ class Plan(BaseModel):
 
     @model_validator(mode="after")
     def _sum(self) -> Plan:
+        l2_codes_for_domain(self.domain_under_test)
+        mismatched = [
+            c.cell_id for c in self.cells if c.domain_under_test != self.domain_under_test
+        ]
+        if mismatched:
+            raise ValueError(
+                f"{self.plan_id}: cell domain 与 plan 不一致：{mismatched[:5]}"
+            )
         actual = sum(c.target_count for c in self.cells)
         if actual != self.total_target:
             raise ValueError(

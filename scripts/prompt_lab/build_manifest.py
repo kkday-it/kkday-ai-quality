@@ -20,12 +20,17 @@ JUDGES = [
     "01_C-1_content",
     "01_C-1_content_v2",  # C-1 候選 v2（PRD-C1-PROMPT-V2）：修 §17.1/17.2/17.3，主攻棄權
     "02_C-2_quality",
+    "02_C-2_quality_v2",  # C-2 候選 v2：根因優先、最低證據門檻、唯一 L2、逐字連續證據
     "03_C-3_supplier",
     "04_C-4_platform",
     "05_C-5_service",
     "06_C-6_customer",
 ]
-GENERATORS = ["c1_generator", "c1_auditor"]
+GENERATORS = [
+    f"c{i}_{role}"
+    for i in range(1, 7)
+    for role in ("generator", "auditor")
+]
 
 
 def build() -> dict:
@@ -40,8 +45,8 @@ def build() -> dict:
         }
 
     return {
-        "note": "baseline C-1 judge prompt 與同伴域 prompt 的 SHA-256；跑完 baseline 前不得修改（PRD §4/§17）。",
-        "domain_under_test": "C-1",
+        "note": "C-1～C-6 Prompt Lab 的 judge、generator、auditor SHA-256；baseline 跑完前不得修改 judge prompt。",
+        "domains_under_test": [f"C-{i}" for i in range(1, 7)],
         "judges": {name: entry(f"judges/{name}.md") for name in JUDGES},
         "generators": {name: entry(f"generators/{name}.md") for name in GENERATORS},
     }

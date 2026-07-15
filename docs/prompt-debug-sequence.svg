@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1260" viewBox="0 0 1600 1260" role="img" aria-labelledby="title desc">
+  <title id="title">Prompt 判决与调试时序图</title>
+  <desc id="desc">展示固定评测集、active 规则加载、极性判断、L2 和 L3 分类、后处理以及评测报告的调用顺序。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <marker id="returnArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 30px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; }
+      .actor { font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; text-anchor: middle; }
+      .message { font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1e293b; }
+      .step { font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #ffffff; text-anchor: middle; dominant-baseline: central; }
+      .phase { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; letter-spacing: 0.05em; }
+      .lifeline { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 6 7; }
+      .call { stroke: #334155; stroke-width: 2; marker-end: url(#arrow); }
+      .return { stroke: #64748b; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#returnArrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1260" fill="#f8fafc"/>
+  <text x="60" y="55" class="title">Prompt 判决与调试时序图</text>
+  <text x="60" y="84" class="subtitle">kkday-ai-quality · active 规则 → 分阶段判决 → 后处理 → A/B 指标</text>
+
+  <!-- Phase backgrounds -->
+  <rect x="35" y="196" width="1530" height="202" rx="16" fill="#eff6ff"/>
+  <rect x="35" y="408" width="1530" height="494" rx="16" fill="#f5f3ff"/>
+  <rect x="35" y="912" width="1530" height="256" rx="16" fill="#f0fdf4"/>
+  <text x="55" y="222" class="phase">准备与规则快照</text>
+  <text x="55" y="434" class="phase">在线判决流水线</text>
+  <text x="55" y="938" class="phase">后处理与评测</text>
+
+  <!-- Participants -->
+  <g filter="url(#shadow)">
+    <rect x="45" y="108" width="150" height="54" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="265" y="108" width="170" height="54" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="505" y="108" width="170" height="54" rx="10" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <rect x="745" y="108" width="160" height="54" rx="10" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <rect x="975" y="108" width="180" height="54" rx="10" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <rect x="1225" y="108" width="170" height="54" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+    <rect x="1440" y="108" width="120" height="54" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  </g>
+  <text x="120" y="141" class="actor">QC / 开发者</text>
+  <text x="350" y="141" class="actor">Eval Script</text>
+  <text x="590" y="141" class="actor">Rule Loader</text>
+  <text x="825" y="141" class="actor">Prejudge</text>
+  <text x="1065" y="141" class="actor">LLM Gateway</text>
+  <text x="1310" y="141" class="actor">Post Process</text>
+  <text x="1500" y="141" class="actor">Report</text>
+
+  <!-- Lifelines -->
+  <line x1="120" y1="162" x2="120" y2="1195" class="lifeline"/>
+  <line x1="350" y1="162" x2="350" y2="1195" class="lifeline"/>
+  <line x1="590" y1="162" x2="590" y2="1195" class="lifeline"/>
+  <line x1="825" y1="162" x2="825" y2="1195" class="lifeline"/>
+  <line x1="1065" y1="162" x2="1065" y2="1195" class="lifeline"/>
+  <line x1="1310" y1="162" x2="1310" y2="1195" class="lifeline"/>
+  <line x1="1500" y1="162" x2="1500" y2="1195" class="lifeline"/>
+
+  <!-- 1 -->
+  <circle cx="145" cy="260" r="14" fill="#2563eb"/><text x="145" y="260" class="step">1</text>
+  <line x1="120" y1="260" x2="350" y2="260" class="call"/>
+  <text x="165" y="249" class="message">启动固定评测集</text>
+
+  <!-- 2 -->
+  <circle cx="375" cy="310" r="14" fill="#2563eb"/><text x="375" y="310" class="step">2</text>
+  <line x1="350" y1="310" x2="590" y2="310" class="call"/>
+  <text x="398" y="299" class="message">读取 active 规则快照</text>
+
+  <!-- 3 -->
+  <circle cx="565" cy="360" r="14" fill="#64748b"/><text x="565" y="360" class="step">3</text>
+  <line x1="590" y1="360" x2="350" y2="360" class="return"/>
+  <text x="392" y="349" class="message">global + judgment + rule tree</text>
+
+  <!-- 4 -->
+  <circle cx="375" cy="470" r="14" fill="#7c3aed"/><text x="375" y="470" class="step">4</text>
+  <line x1="350" y1="470" x2="825" y2="470" class="call"/>
+  <text x="443" y="459" class="message">提交单条样本</text>
+
+  <!-- 5 -->
+  <circle cx="800" cy="520" r="14" fill="#7c3aed"/><text x="800" y="520" class="step">5</text>
+  <line x1="825" y1="520" x2="590" y2="520" class="call"/>
+  <text x="625" y="509" class="message">获取生效 guidance 与 canon</text>
+
+  <!-- 6 -->
+  <circle cx="615" cy="570" r="14" fill="#64748b"/><text x="615" y="570" class="step">6</text>
+  <line x1="590" y1="570" x2="825" y2="570" class="return"/>
+  <text x="624" y="559" class="message">canon + forbid + cases</text>
+
+  <!-- 7 -->
+  <circle cx="850" cy="630" r="14" fill="#7c3aed"/><text x="850" y="630" class="step">7</text>
+  <line x1="825" y1="630" x2="1065" y2="630" class="call"/>
+  <text x="874" y="619" class="message">Stage 1：极性判断</text>
+
+  <!-- 8 -->
+  <circle cx="1040" cy="680" r="14" fill="#64748b"/><text x="1040" y="680" class="step">8</text>
+  <line x1="1065" y1="680" x2="825" y2="680" class="return"/>
+  <text x="858" y="669" class="message">polarity + sentiment</text>
+
+  <!-- 9 -->
+  <circle cx="850" cy="740" r="14" fill="#7c3aed"/><text x="850" y="740" class="step">9</text>
+  <line x1="825" y1="740" x2="1065" y2="740" class="call"/>
+  <text x="868" y="729" class="message">Stage A：选择 L2 面向</text>
+
+  <!-- 10 -->
+  <circle cx="1040" cy="790" r="14" fill="#64748b"/><text x="1040" y="790" class="step">10</text>
+  <line x1="1065" y1="790" x2="825" y2="790" class="return"/>
+  <text x="875" y="779" class="message">L2 候选集合</text>
+
+  <!-- 11 -->
+  <circle cx="850" cy="850" r="14" fill="#7c3aed"/><text x="850" y="850" class="step">11</text>
+  <line x1="825" y1="850" x2="1065" y2="850" class="call"/>
+  <text x="868" y="839" class="message">Stage B：选择 L3 细项</text>
+
+  <!-- 12 -->
+  <circle cx="1040" cy="890" r="14" fill="#64748b"/><text x="1040" y="890" class="step">12</text>
+  <line x1="1065" y1="890" x2="825" y2="890" class="return"/>
+  <text x="855" y="879" class="message">code + confidence + evidence</text>
+
+  <!-- 13 -->
+  <circle cx="850" cy="980" r="14" fill="#16a34a"/><text x="850" y="980" class="step">13</text>
+  <line x1="825" y1="980" x2="1310" y2="980" class="call"/>
+  <text x="934" y="969" class="message">白名单、证据与阈值校验</text>
+
+  <!-- 14 -->
+  <circle cx="1285" cy="1040" r="14" fill="#64748b"/><text x="1285" y="1040" class="step">14</text>
+  <line x1="1310" y1="1040" x2="350" y2="1040" class="return"/>
+  <text x="720" y="1029" class="message">TicketFinding：L1 / L2 / L3 / 状态</text>
+
+  <!-- 15 -->
+  <circle cx="375" cy="1110" r="14" fill="#16a34a"/><text x="375" y="1110" class="step">15</text>
+  <line x1="350" y1="1110" x2="1500" y2="1110" class="call"/>
+  <text x="790" y="1099" class="message">汇总 macro-F1、FP/FN、abstain、token 与成本</text>
+
+  <!-- Footer -->
+  <rect x="60" y="1205" width="1480" height="34" rx="8" fill="#e2e8f0"/>
+  <text x="800" y="1227" class="subtitle" text-anchor="middle">调试原则：固定评测集与规则快照，一次只修改一个变量，再比较 baseline 与 candidate</text>
+</svg>

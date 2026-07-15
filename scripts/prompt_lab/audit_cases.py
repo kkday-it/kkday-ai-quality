@@ -15,25 +15,45 @@ import csv
 import math
 import os
 import random
+import json
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common  # noqa: E402
 from openai_gateway import Gateway  # noqa: E402
 from prompt_parser import parse_gen_prompt_file  # noqa: E402
-from schemas import AUDITOR_OUTPUT_SCHEMA, AuditorOutput, CandidateCase  # noqa: E402
+from schemas import AuditResult, CandidateCase, auditor_contract  # noqa: E402
 
-_AUDIT_PROMPT = (
-    Path(__file__).resolve().parents[2]
-    / "evals/prompt_lab/prompts/generators/c1_auditor.md"
+_PROMPT_ROOT = (
+    Path(__file__).resolve().parents[2] / "evals/prompt_lab/prompts/generators"
 )
+_AUDIT_PROMPTS = {
+    "C-1": _PROMPT_ROOT / "c1_auditor.md",
+    "C-2": _PROMPT_ROOT / "c2_auditor.md",
+    "C-3": _PROMPT_ROOT / "c3_auditor.md",
+    "C-4": _PROMPT_ROOT / "c4_auditor.md",
+    "C-5": _PROMPT_ROOT / "c5_auditor.md",
+    "C-6": _PROMPT_ROOT / "c6_auditor.md",
+}
 _REVIEW_SAMPLE_RATE = 0.20  # §8：自動通過樣本的分層抽檢比例
 _REVIEW_SEED = 42  # 固定 seed → 抽檢可複現
 
 
-def build_audit_spec(cand: CandidateCase) -> str:
+def auditor_prompt_path(domain: str, override: str = "") -> Path:
+    """依候選資料的 domain 自動選 Auditor prompt；可显式覆盖。"""
+    if override:
+        return Path(override)
+    try:
+        return _AUDIT_PROMPTS[domain]
+    except KeyError as e:
+        raise ValueError(f"尚未配置 {domain} Auditor prompt") from e
+
+
+def build_audit_spec(cand: CandidateCase, pair_partner: CandidateCase | None = None) -> str:
     """把候選樣本 + 其被賦予標籤組成給 Auditor 的審核規格。"""
     lines = [
         f"候選 case_id：{cand.case_id}",
@@ -47,11 +67,29 @@ def build_audit_spec(cand: CandidateCase) -> str:
         lines.append(
             f"對照組：contrast_pair_id={cand.contrast_pair_id}，contrast_key=「{cand.contrast_key}」；本條為該對之一側。"
         )
+        if pair_partner is not None:
+            lines.extend([
+                "配对另一侧（用于检查唯一变量，不改变本条建议标签）：",
+                f"case_id={pair_partner.case_id}｜expected_domain={pair_partner.expected_domain}｜expected_l2_codes={pair_partner.expected_l2_codes}",
+                f"评论文本：「{pair_partner.text}」",
+            ])
     lines.append("請獨立判斷並填寫全部審核欄位。")
     return "\n".join(lines)
 
 
-def decide_status(cand: CandidateCase, audit: AuditorOutput) -> tuple[str, list[str]]:
+def _contains_independent_issue(audit) -> bool:
+    """兼容 C1/C2 Auditor 输出与规范化后的 AuditResult。"""
+    for field in (
+        "contains_independent_target_issue",
+        "contains_independent_c1_issue",
+        "contains_independent_c2_issue",
+    ):
+        if hasattr(audit, field):
+            return bool(getattr(audit, field))
+    return False
+
+
+def decide_status(cand: CandidateCase, audit) -> tuple[str, list[str]]:
     """依 §6.2 規則計算審核 status 與觸發原因清單。"""
     reasons: list[str] = []
     if audit.suggested_domain != cand.expected_domain:
@@ -72,47 +110,58 @@ def decide_status(cand: CandidateCase, audit: AuditorOutput) -> tuple[str, list[
         reasons.append("label_unsupported")
     if not audit.evidence_quotes_valid:
         reasons.append("evidence_invalid")
-    if cand.expected_domain == "false" and audit.contains_independent_c1_issue:
-        reasons.append("negative_hides_c1")
+    if cand.expected_domain == "false" and _contains_independent_issue(audit):
+        reasons.append(f"negative_hides_{cand.domain_under_test.lower().replace('-', '')}")
     if audit.near_duplicate:
         reasons.append("near_duplicate")
+    if hasattr(audit, "pair_minimality_valid") and not audit.pair_minimality_valid:
+        reasons.append("pair_not_minimal")
+    if hasattr(audit, "review_required") and audit.review_required:
+        reasons.append("auditor_review_required")
     return ("review_required" if reasons else "accepted"), reasons
 
 
 def audit_one(
-    gw: Gateway, audit_prompt, cand: CandidateCase, model: str
+    gw: Gateway, audit_prompt, cand: CandidateCase, model: str,
+    pair_partner: CandidateCase | None = None,
 ) -> tuple[dict | None, str | None]:
     """審核單條；回 (audit_result_dict, error)。"""
     res = gw.structured(
         system=audit_prompt.system,
-        user=audit_prompt.render_user(build_audit_spec(cand)),
-        json_schema=AUDITOR_OUTPUT_SCHEMA,
-        schema_name="auditor_output",
+        user=audit_prompt.render_user(build_audit_spec(cand, pair_partner)),
+        json_schema=auditor_contract(cand.domain_under_test)[1],
+        schema_name=f"{cand.domain_under_test.lower().replace('-', '')}_auditor_output",
         model=model,
         meta={"case_id": cand.case_id, "prompt_sha256": audit_prompt.sha256},
     )
     if not res.ok:
         return None, res.error
     try:
-        out = AuditorOutput(**res.parsed)
+        output_model, _schema, issue_field = auditor_contract(cand.domain_under_test)
+        out = output_model(**res.parsed)
     except Exception as e:  # noqa: BLE001
         return None, f"schema_invalid:{str(e).splitlines()[-1][:60]}"
     status, _reasons = decide_status(cand, out)
-    from schemas import AuditResult
-
     ar = AuditResult(
         case_id=cand.case_id,
+        domain_under_test=cand.domain_under_test,
         label_supported=out.label_supported,
         ambiguous=out.ambiguous,
         self_contained=out.self_contained,
-        contains_independent_c1_issue=out.contains_independent_c1_issue,
+        contains_independent_target_issue=bool(getattr(out, issue_field)),
         suggested_domain=out.suggested_domain,
         suggested_l2_codes=out.suggested_l2_codes,
         evidence_quotes_valid=out.evidence_quotes_valid,
         near_duplicate=out.near_duplicate,
+        pair_minimality_valid=bool(getattr(out, "pair_minimality_valid", True)),
+        review_required=bool(getattr(out, "review_required", False)),
         audit_reason=out.audit_reason,
         auditor_model=res.model,
         auditor_request_id=res.request_id or "",
+        latency_ms=res.latency_ms,
+        input_tokens=res.input_tokens,
+        output_tokens=res.output_tokens,
+        attempts=res.attempts,
         status=status,  # type: ignore[arg-type]
     )
     return ar.model_dump(), None
@@ -131,13 +180,17 @@ def build_review_queue(
             continue
         if au["status"] == "review_required":
             _, reasons = decide_status(
-                cand, AuditorOutput(**{k: au[k] for k in AuditorOutput.model_fields})
+                cand, AuditResult(**au)
             )
             must[cid] = "review_required:" + ",".join(reasons)
         elif cand.expected_domain == "uncertain":
             must[cid] = "uncertain"
         elif cand.contrast_pair_id:
-            must[cid] = "contrast_pair"
+            must[cid] = cand.case_family
+        elif cand.domain_under_test == "C-3" and any(
+            code in {"C-3-5", "C-3-7"} for code in cand.expected_l2_codes
+        ):
+            must[cid] = "c3_high_risk_l2"
         else:
             auto_pass_pool.append(cid)
     # 分層隨機 20%（層＝layer|expected_domain|case_family|boundary_with）
@@ -168,8 +221,10 @@ def build_review_queue(
                 "expected_l2_codes": "|".join(c.expected_l2_codes),
                 "boundary_with": c.boundary_with or "",
                 "contrast_pair_id": c.contrast_pair_id or "",
+                "pair_id": c.contrast_pair_id or "",
                 "contrast_key": c.contrast_key or "",
                 "text": c.text,
+                "expected_evidence_quotes": "|".join(c.expected_evidence_quotes),
                 "auditor_suggested_domain": au.get("suggested_domain", ""),
                 "auditor_suggested_l2": "|".join(au.get("suggested_l2_codes", [])),
                 "audit_status": au.get("status", ""),
@@ -194,8 +249,10 @@ _REVIEW_COLUMNS = [
     "expected_l2_codes",
     "boundary_with",
     "contrast_pair_id",
+    "pair_id",
     "contrast_key",
     "text",
+    "expected_evidence_quotes",
     "auditor_suggested_domain",
     "auditor_suggested_l2",
     "audit_status",
@@ -220,11 +277,16 @@ def write_review_queue(path: str, rows: list[dict]) -> None:
 def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> int:
     """CLI 入口。gateway 可注入（fake client 測試）。"""
     common.load_env()
-    ap = argparse.ArgumentParser(description="C-1 Mock 樣本審核")
+    ap = argparse.ArgumentParser(description="按候選資料 domain 審核 Mock 樣本")
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--review-queue", required=True)
     ap.add_argument("--model", default=os.environ.get("PROMPT_LAB_AUDITOR_MODEL", ""))
+    ap.add_argument(
+        "--auditor-prompt",
+        default="",
+        help="覆盖候选 domain 的 Auditor prompt；默认自动选择 c1/c2_auditor.md",
+    )
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit", type=int, default=5)
     ap.add_argument("--resume", action="store_true")
@@ -232,16 +294,26 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--confirm-cost", action="store_true")
     args = ap.parse_args(argv)
+    started_at = datetime.now().astimezone().isoformat()
 
     cands = {r["case_id"]: CandidateCase(**r) for r in common.read_jsonl(args.input)}
-    audit_prompt = parse_gen_prompt_file(_AUDIT_PROMPT)
+    if not cands:
+        print("⛔ 审核输入为空", file=sys.stderr)
+        return 2
+    domains = {c.domain_under_test for c in cands.values()}
+    if len(domains) != 1:
+        print(f"⛔ 单次审核输入必须只有一个 domain，实得 {sorted(domains)}", file=sys.stderr)
+        return 2
+    domain = next(iter(domains))
+    prompt_path = auditor_prompt_path(domain, args.auditor_prompt)
+    audit_prompt = parse_gen_prompt_file(prompt_path)
     existing = (
         {r["case_id"]: r for r in common.read_jsonl(args.out)} if args.resume else {}
     )
     todo = [c for cid, c in cands.items() if cid not in existing]
 
     print(
-        f"審核輸入 {len(cands)} 條；待審 {len(todo)}（resume 已跳 {len(cands) - len(todo)}）"
+        f"審核輸入 {len(cands)} 條（{domain}｜{prompt_path.name}）；待審 {len(todo)}（resume 已跳 {len(cands) - len(todo)}）"
     )
     if args.dry_run:
         print(f"🔎 dry-run：將發出 {len(todo)} 次審核呼叫（零 API）。")
@@ -261,8 +333,18 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
 
     audits = dict(existing)
     fails: list[str] = []
+    pair_members: dict[str, list[CandidateCase]] = {}
+    for c in cands.values():
+        if c.contrast_pair_id:
+            pair_members.setdefault(c.contrast_pair_id, []).append(c)
+    def partner_for(c: CandidateCase) -> CandidateCase | None:
+        members = pair_members.get(c.contrast_pair_id or "", [])
+        return next((x for x in members if x.case_id != c.case_id), None)
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
-        futs = {ex.submit(audit_one, gw, audit_prompt, c, args.model): c for c in todo}
+        futs = {
+            ex.submit(audit_one, gw, audit_prompt, c, args.model, partner_for(c)): c
+            for c in todo
+        }
         for fut in futs:
             c = futs[fut]
             ar, err = fut.result()
@@ -270,6 +352,12 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
                 fails.append(f"{c.case_id}:{err}")
             elif ar:
                 audits[c.case_id] = ar
+            # 每条完成即 checkpoint；中断后 --resume 只补未完成/失败项。
+            common.write_jsonl(args.out, [audits[k] for k in sorted(audits)])
+            common.write_jsonl(
+                Path(args.out).with_name(Path(args.out).stem + "-failures.jsonl"),
+                [{"error": item} for item in fails],
+            )
 
     common.write_jsonl(args.out, [audits[k] for k in sorted(audits)])
     # review queue 涵蓋所有有 candidate 者（無論本輪是否重審）
@@ -279,6 +367,32 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
     print(
         f"✅ 審核 {len(audits)} 條；review_required {n_rev}；review_queue {len(rq)} 條 → {args.review_queue}；失敗 {len(fails)}"
     )
+    audit_manifest = {
+        "started_at": started_at,
+        "finished_at": datetime.now().astimezone().isoformat(),
+        "domain": domain,
+        "provider": "openai",
+        "model": args.model,
+        "auditor_prompt_path": str(prompt_path),
+        "auditor_prompt_sha256": audit_prompt.sha256,
+        "input_path": args.input,
+        "input_sha256": common.sha256_file(args.input),
+        "n_candidates": len(cands),
+        "n_audits": len(audits),
+        "n_failures": len(fails),
+        "n_review_required": n_rev,
+        "n_review_queue": len(rq),
+        "total_attempts": sum(a.get("attempts") or 0 for a in audits.values()),
+        "retry_attempts": sum(max(0, (a.get("attempts") or 0) - 1) for a in audits.values()),
+        "total_input_tokens": sum(a.get("input_tokens") or 0 for a in audits.values()),
+        "total_output_tokens": sum(a.get("output_tokens") or 0 for a in audits.values()),
+        "total_latency_ms": sum(a.get("latency_ms") or 0 for a in audits.values()),
+        "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "workspace_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
+    }
+    manifest_path = Path(args.out).with_name(Path(args.out).stem + "-manifest.json")
+    manifest_path.write_text(json.dumps(audit_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    common.write_jsonl(Path(args.out).with_name(Path(args.out).stem + "-failures.jsonl"), [{"error": x} for x in fails])
     if fails:
         print("失敗：" + "; ".join(fails[:10]), file=sys.stderr)
     return 0

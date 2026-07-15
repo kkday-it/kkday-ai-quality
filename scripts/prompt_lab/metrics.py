@@ -1,4 +1,4 @@
-"""C-1 評測指標（PRD §11）——純函式，可對 fixture 精確斷言（Phase 3 DoD）。
+"""Prompt Lab 单域评测指标（PRD §11）——纯函数，可对 fixture 精确断言。
 
 輸入 = FrozenCase gold + 每 case 多個 JudgeRunResult（repeats）。指標在「所有 (case,repeat) run」
 上池化計算，不做多數投票掩蓋不穩定（§10.4）；穩定性另以 repeat 間一致率衡量（§11.4）。
@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+import random
 
-from schemas import C1_L2_CODES, verbatim_grounded
+from schemas import l2_codes_for_domain, verbatim_grounded
 
 # 可切片維度（§11.6）
 SLICE_DIMS = [
@@ -40,6 +41,7 @@ class EvalRow:
 
     case_id: str
     repeat_index: int
+    domain_under_test: str
     expected_domain: str
     gold_hit: bool  # expected_domain == "true"
     expected_l2: list[str]
@@ -86,6 +88,7 @@ def build_rows(cases: list[dict], results: list[dict]) -> list[EvalRow]:
             EvalRow(
                 case_id=r["case_id"],
                 repeat_index=r.get("repeat_index", 0),
+                domain_under_test=c.get("domain_under_test", "C-1"),
                 expected_domain=c["expected_domain"],
                 gold_hit=(c["expected_domain"] == "true"),
                 expected_l2=exp_l2,
@@ -169,13 +172,17 @@ def l2_metrics(rows: list[EvalRow]) -> dict:
     tr = [r for r in rows if r.gold_hit]
     if not tr:
         return {"n": 0}
+    domains = {r.domain_under_test for r in rows}
+    if len(domains) != 1:
+        raise ValueError(f"单次评测只能包含一个 domain_under_test，实际为 {sorted(domains)}")
+    catalog = l2_codes_for_domain(next(iter(domains)))
     exact = sum(1 for r in tr if set(r.pred_l2) == set(r.expected_l2))
     anyhit = sum(1 for r in tr if set(r.pred_l2) & set(r.expected_l2))
     over = sum(1 for r in tr if set(r.pred_l2) - set(r.expected_l2))
     under = sum(1 for r in tr if set(r.expected_l2) - set(r.pred_l2))
     dup = sum(1 for r in tr if len(r.pred_l2) != len(set(r.pred_l2)))
     per_l2: dict[str, dict] = {}
-    for code in C1_L2_CODES:
+    for code in catalog:
         c_tp = sum(1 for r in tr if code in r.pred_l2 and code in r.expected_l2)
         c_fp = sum(1 for r in tr if code in r.pred_l2 and code not in r.expected_l2)
         c_fn = sum(1 for r in tr if code not in r.pred_l2 and code in r.expected_l2)
@@ -319,7 +326,7 @@ def contrast_metrics(rows: list[EvalRow]) -> dict:
         lambda: {"true": [], "false": []}
     )
     for r in rows:
-        if r.contrast_pair_id:
+        if r.contrast_pair_id and r.case_family in {"contrast_pair", "domain_pair"}:
             pairs[r.contrast_pair_id]["true" if r.gold_hit else "false"].append(r)
     if not pairs:
         return {"n_pairs": 0}
@@ -359,6 +366,64 @@ def contrast_metrics(rows: list[EvalRow]) -> dict:
     }
 
 
+def l2_pair_metrics(rows: list[EvalRow]) -> dict:
+    """本域 L2 最小对照：两侧都应命中本域，且各自 L2 exact 才算整对正确。"""
+    pairs: dict[str, dict[str, list[EvalRow]]] = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        if r.contrast_pair_id and r.case_family == "l2_pair":
+            pairs[r.contrast_pair_id][r.case_id].append(r)
+    both = 0
+    failures: dict[str, int] = defaultdict(int)
+    complete = 0
+    for _pid, cases in pairs.items():
+        if len(cases) != 2:
+            continue
+        complete += 1
+        side_ok = []
+        for side_rows in cases.values():
+            correct = sum(
+                1 for r in side_rows
+                if r.pred_hit and set(r.pred_l2) == set(r.expected_l2)
+            )
+            side_ok.append(correct >= (len(side_rows) + 1) // 2)
+        if all(side_ok):
+            both += 1
+        else:
+            key = next(iter(cases.values()))[0].contrast_key or "(unknown)"
+            failures[key] += 1
+    return {
+        "n_pairs": complete,
+        "pair_both_correct_rate": _safe(both, complete),
+        "failure_by_contrast_key": dict(sorted(failures.items(), key=lambda kv: -kv[1])),
+    }
+
+
+def bootstrap_ci(rows: list[EvalRow], *, iterations: int = 1000, seed: int = 42) -> dict:
+    """按 run 行做非参数 bootstrap；仅反映当前候选集统计波动。"""
+    eligible = [r for r in rows if r.expected_domain != "uncertain" and r.case_family != "defensive_positive"]
+    if not eligible:
+        return {"iterations": iterations}
+    rng = random.Random(seed)
+    vals = {"precision": [], "recall": [], "f1": [], "l2_exact": []}
+    n = len(eligible)
+    for _ in range(iterations):
+        sample = [eligible[rng.randrange(n)] for _ in range(n)]
+        dm = domain_metrics(sample)
+        true_rows = [r for r in sample if r.gold_hit]
+        exact = _safe(sum(1 for r in true_rows if set(r.pred_l2) == set(r.expected_l2)), len(true_rows))
+        for key in ("precision", "recall", "f1"):
+            if dm[key] is not None:
+                vals[key].append(dm[key])
+        if exact is not None:
+            vals["l2_exact"].append(exact)
+    def interval(xs: list[float]) -> list[float] | None:
+        if not xs:
+            return None
+        xs = sorted(xs)
+        return [xs[int(0.025 * (len(xs) - 1))], xs[int(0.975 * (len(xs) - 1))]]
+    return {"iterations": iterations, **{k: interval(v) for k, v in vals.items()}}
+
+
 # ── §11.6 切片 ─────────────────────────────────────────────────────────────────
 def sliced(rows: list[EvalRow], dim: str, metric_fn) -> dict:
     """把 rows 按某維度分組，各組套用 metric_fn（如 domain_metrics）。"""
@@ -385,5 +450,8 @@ def compute_all(cases: list[dict], results: list[dict]) -> dict:
         "stability": stability_metrics(rows),
         "uncertain": uncertain_metrics(rows),
         "contrast": contrast_metrics(rows),
+        "domain_pair": contrast_metrics(rows),
+        "l2_pair": l2_pair_metrics(rows),
+        "bootstrap_95ci": bootstrap_ci(rows),
         "slices": {dim: sliced(rows, dim, domain_metrics) for dim in SLICE_DIMS},
     }

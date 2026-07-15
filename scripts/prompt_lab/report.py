@@ -29,6 +29,7 @@ THRESHOLDS = {
         "domain_precision": (">=", 0.90),
         "domain_recall": (">=", 0.90),
         "pair_both_correct": (">=", 0.85),
+        "l2_pair_both_correct": (">=", 0.85),
         "max_boundary_fpr": ("<=", 0.15),
         "uncertain_forced_attribution": ("<=", 0.30),
         "domain_full_agreement": (">=", 0.90),
@@ -92,6 +93,7 @@ def evaluate_gates(cases: list[dict], results: list[dict], full: dict) -> dict:
             }
         else:
             ct = M.contrast_metrics(lr)
+            l2p = M.l2_pair_metrics(lr)
             unc = M.uncertain_metrics(lr)
             bslice = M.sliced(
                 [r for r in lr if r.boundary_with], "boundary_with", M.domain_metrics
@@ -103,6 +105,9 @@ def evaluate_gates(cases: list[dict], results: list[dict], full: dict) -> dict:
                 "domain_recall": _mk(dm["recall"], *g["domain_recall"]),
                 "pair_both_correct": _mk(
                     ct.get("pair_both_correct_rate"), *g["pair_both_correct"]
+                ),
+                "l2_pair_both_correct": _mk(
+                    l2p.get("pair_both_correct_rate"), *g["l2_pair_both_correct"]
                 ),
                 "max_boundary_fpr": _mk(
                     max(fprs) if fprs else None, *g["max_boundary_fpr"]
@@ -318,7 +323,7 @@ def _fmt(v) -> str:
 def _summary_md(full: dict, gates: dict, man: dict) -> str:
     """組 summary.md（含 hash/model/用量/各層/各 L2/邊界/不確定/穩定/Top 錯誤/門檻）。"""
     L = []
-    L.append(f"# C-1 Prompt 評測報告：{man.get('run_id', '')}\n")
+    L.append(f"# {man.get('domain', '单域')} Prompt 评测报告：{man.get('run_id', '')}\n")
     L.append("## 追溯")
     L.append(
         f"- Prompt：`{man.get('prompt_version', '')}` sha256=`{man.get('prompt_sha256', '')}`"
@@ -364,13 +369,23 @@ def _summary_md(full: dict, gates: dict, man: dict) -> str:
             f"- n={unc['n']} Abstain={_fmt(unc['abstain_rate'])} ForcedAttribution={_fmt(unc['forced_attribution_rate'])} forced_L2={unc['forced_l2_distribution']}\n"
         )
     ct = full["contrast"]
-    L.append("## 對照組")
+    L.append("## 跨域对照组")
     if ct.get("n_pairs"):
         L.append(
             f"- pairs={ct['n_pairs']} BothCorrect={_fmt(ct['pair_both_correct_rate'])} PosAcc={_fmt(ct['positive_side_accuracy'])} NegAcc={_fmt(ct['negative_side_accuracy'])}"
         )
         if ct.get("failure_by_contrast_key"):
             L.append(f"- 失敗 contrast_key：{ct['failure_by_contrast_key']}")
+    L.append("")
+    l2p = full.get("l2_pair", {})
+    L.append("## 本域 L2 对照组")
+    if l2p.get("n_pairs"):
+        L.append(f"- pairs={l2p['n_pairs']} BothCorrect={_fmt(l2p['pair_both_correct_rate'])}")
+        if l2p.get("failure_by_contrast_key"):
+            L.append(f"- 失败 contrast_key：{l2p['failure_by_contrast_key']}")
+    ci = full.get("bootstrap_95ci", {})
+    L.append("\n## 95% Bootstrap CI")
+    L.append(f"- Precision={ci.get('precision')} Recall={ci.get('recall')} F1={ci.get('f1')} L2Exact={ci.get('l2_exact')}（{ci.get('iterations', 0)} 次）")
     L.append("")
     L.append("## 門檻判定（§12 Mock 工程目標，非上線門檻）")
     L.append(f"- **overall: {'✅ PASS' if gates.get('overall_pass') else '❌ FAIL'}**")

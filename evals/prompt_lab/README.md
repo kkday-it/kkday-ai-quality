@@ -1,6 +1,6 @@
-# C-1 Prompt Mock 評測實驗室（Prompt Lab）
+# C-1 / C-2 Prompt Mock 評測實驗室（Prompt Lab）
 
-離線評測 `01_C-1_content.md`（商品內容單域判官）的隔離工具。**不修改生產 prejudge 鏈路、資料庫或前端**（PRD §3）。
+离线生成与评测 `01_C-1_content.md`、`02_C-2_quality.md` 单域判官的隔离工具。**不修改生产 prejudge 链路、数据库或前端**（PRD §3）。
 完整規格見 [`docs/PRD-C1-PROMPT-MOCK-EVAL.md`](../../docs/PRD-C1-PROMPT-MOCK-EVAL.md)。
 
 ## 它回答什麼
@@ -15,13 +15,13 @@
 ```
 evals/prompt_lab/
   prompts/judges/00_polarity.md … 06_C-6_customer.md   # 7 份使用者提供 prompt，原樣導入（勿改）
-  prompts/generators/c1_generator.md  c1_auditor.md     # 生成/審核 prompt（獨立於被測 judge）
+  prompts/generators/c{1,2}_generator.md / c{1,2}_auditor.md # 各域独立生成/审核 prompt
   prompts/prompts_manifest.json                          # 全 prompt SHA-256（追溯 + 防竄改）
-  plans/c1_layer1_plan.json  c1_layer2_plan.json         # 生成計畫（嚴格 130 / 210）
+  plans/c1_layer{1,2}_plan.json  c2_layer{1,2}_plan.json  # 各域覆盖计划
   datasets/c1/                                           # 冻結資料集 + manifest（見該目錄 README）
 scripts/prompt_lab/
   schemas.py prompt_parser.py openai_gateway.py fake_client.py common.py
-  build_plans.py build_manifest.py                       # 計畫/manifest 建構器（純函式）
+  build_plans.py build_c2_plans.py build_manifest.py     # 計畫/manifest 建構器（純函式）
   generate_cases.py audit_cases.py build_dataset.py      # 生成 → 審核 → 冻結
   evaluate_prompt.py metrics.py report.py compare_runs.py# 評測 → 指標 → 報告 → 對比
 backend/tests/prompt_lab/                                # pytest（隔離 venv 執行）
@@ -31,7 +31,8 @@ backend/tests/prompt_lab/                                # pytest（隔離 venv 
 
 ## 環境（隔離 venv）
 
-Prompt Lab 用 **Responses API + strict Structured Outputs**，與生產 Chat Completions gateway 分離，故用獨立 venv（不動 `backend/.venv`）：
+Prompt Lab 的 OpenAI 角色使用 **Responses API + strict Structured Outputs**；Gemini Generator 使用官方
+OpenAI compatibility endpoint 的 Chat Completions + JSON Schema。两者都与生产 gateway 分离，故用独立 venv（不动 `backend/.venv`）：
 
 ```bash
 python3.12 -m venv .venv-promptlab
@@ -47,6 +48,37 @@ export PROMPT_LAB_GENERATOR_MODEL=... PROMPT_LAB_AUDITOR_MODEL=... PROMPT_LAB_JU
 
 Generator 與 Judge 預設不得用同一 snapshot；Auditor 建議另一模型（PRD §8）。
 
+### Gemini 3.5 独立出题模型
+
+使用 Gemini 3.5 Flash 生成题目，保留 OpenAI 模型负责 Auditor/Judge：
+
+```bash
+export GEMINI_API_KEY=...
+export PROMPT_LAB_GENERATOR_PROVIDER=gemini
+export PROMPT_LAB_GENERATOR_MODEL=gemini-3.5-flash
+export PROMPT_LAB_AUDITOR_MODEL=gpt-5.5-2026-04-23
+export PROMPT_LAB_JUDGE_MODEL=gpt-5.5-2026-04-23
+```
+
+`--provider auto`（默认）会将 `gemini-*` 模型自动路由到 Gemini API；也可显式传
+`--provider gemini --model gemini-3.5-flash`。Generator 仍使用原本的 plan、C2 Generator prompt、
+JSON Schema、逐字证据校验与成本护栏，只有模型供应商改变。
+
+批量生成 C2 数据可直接使用封装脚本。默认一轮为 114 次 Gemini 调用、目标 260 条；支持断点续跑：
+
+```bash
+# 零 API 检查
+DRY_RUN=1 bash scripts/prompt_lab/generate_c2_gemini_mock.sh
+
+# 1 轮，目标 260 条
+CONFIRM_COST=1 bash scripts/prompt_lab/generate_c2_gemini_mock.sh
+
+# 5 轮，目标 1,300 条；跨轮添加 case_id 前缀并去重
+CONFIRM_COST=1 ROUNDS=5 WORKERS=4 \
+  OUT_DIR=tmp/prompt_lab/c2-gemini35-1300 \
+  bash scripts/prompt_lab/generate_c2_gemini_mock.sh
+```
+
 ## 工作流
 
 ```
@@ -56,6 +88,7 @@ plan → 生成候選 → 獨立審核 → 人工複核佇列 → 冻結 Dev/Hol
 ```bash
 # 0. 計畫與 manifest（純函式，零 API；已入庫，改規格才需重跑）
 .venv-promptlab/bin/python scripts/prompt_lab/build_plans.py
+.venv-promptlab/bin/python scripts/prompt_lab/build_c2_plans.py
 .venv-promptlab/bin/python scripts/prompt_lab/build_manifest.py
 
 # 1. 生成（先 dry-run 看請求數；預設 limit=5，全量需 --all + --confirm-cost）
@@ -93,10 +126,84 @@ plan → 生成候選 → 獨立審核 → 人工複核佇列 → 冻結 Dev/Hol
 
 成本護欄：預設 `--limit 5`；`--dry-run` 印請求數且零 API；全量需 `--all`（真打再加 `--confirm-cost`）。
 
+### C-2 批次生成
+
+`generate_cases.py` 会读取 plan 的 `domain_under_test`，自动加载对应 Generator prompt 和 L2 schema；模型仍由独立的
+`PROMPT_LAB_GENERATOR_MODEL` 或 `--model` 指定。无需复制脚本或把 C2 judge prompt 交给生成模型。
+
+```bash
+# 先看请求规模（54 个生成格，目标 110 条；零 API）
+.venv-promptlab/bin/python scripts/prompt_lab/generate_cases.py \
+  --plan evals/prompt_lab/plans/c2_layer1_plan.json \
+  --out tmp/prompt_lab/c2-layer1-candidates.jsonl --dry-run
+
+# Smoke：只跑前 2 格；正常应得到 5 条（3 + 2）
+.venv-promptlab/bin/python scripts/prompt_lab/generate_cases.py \
+  --plan evals/prompt_lab/plans/c2_layer1_plan.json \
+  --provider gemini --model gemini-3.5-flash \
+  --out tmp/prompt_lab/c2-smoke5.jsonl --limit 2
+
+# 全量：显式确认成本，可断点续跑
+.venv-promptlab/bin/python scripts/prompt_lab/generate_cases.py \
+  --plan evals/prompt_lab/plans/c2_layer1_plan.json \
+  --out tmp/prompt_lab/c2-layer1-candidates.jsonl \
+  --workers 4 --resume --all --confirm-cost
+
+# C-2 Auditor 同样依输入数据自动路由
+.venv-promptlab/bin/python scripts/prompt_lab/audit_cases.py \
+  --input tmp/prompt_lab/c2-layer1-candidates.jsonl \
+  --out tmp/prompt_lab/c2-layer1-audits.jsonl \
+  --review-queue tmp/prompt_lab/c2-layer1-review.csv --resume
+```
+
+C-2 Layer 2 为 60 个生成格、目标 150 条：最小对照 90、混合 20、存疑 20、对抗 20。
+以上命令会自动读取 `evals/prompt_lab/.env`；临时覆盖时再加 `--model <独立模型 snapshot>`。
+
 ## 每次評測輸出（`--out` 目錄，PRD §13）
 
 `run_manifest.json`、`raw_results.jsonl`、`metrics.json`（含 §12 門檻判定）、`summary.md`、
 `errors.csv`、`unstable_cases.csv`、`boundary_matrix.csv`、`contrast_pairs.csv`。
+
+## C3～C6 五轮 audited-candidate baseline
+
+C3～C6 使用 `evals/prompt_lab/domains/*.json` 作为生成政策与覆盖矩阵的单一事实源。以下流程不会把 AI 合成候选冒充人工 Gold；所有 uncertain、domain pair、l2 pair、Auditor review_required、C3-5/C3-7 以及其余 accepted 的分层 20% 都会进入人工队列。
+
+```bash
+# 计划与 Prompt hash（零 API）
+for d in 3 4 5 6; do
+  .venv-promptlab/bin/python scripts/prompt_lab/build_domain_plans.py --domain "C-$d"
+done
+.venv-promptlab/bin/python scripts/prompt_lab/build_manifest.py
+
+# 每域 dry-run（零 API）
+DOMAIN=C-3 ROUNDS=5 DRY_RUN=1 \
+  OUT_DIR=tmp/prompt_lab/c3-gemini35-5rounds \
+  bash scripts/prompt_lab/generate_domain_gemini_mock.sh
+
+# 五轮真实生成；C4/C5/C6 只替换 DOMAIN 与目录
+CONFIRM_COST=1 DOMAIN=C-3 ROUNDS=5 WORKERS=4 \
+  OUT_DIR=tmp/prompt_lab/c3-gemini35-5rounds \
+  bash scripts/prompt_lab/generate_domain_gemini_mock.sh
+
+# 全量独立 Auditor
+.venv-promptlab/bin/python scripts/prompt_lab/audit_cases.py \
+  --input tmp/prompt_lab/c3-gemini35-5rounds/c3-all-candidates.jsonl \
+  --model gpt-5.5-2026-04-23 \
+  --out tmp/prompt_lab/c3-gemini35-5rounds/c3-all-audits.jsonl \
+  --review-queue tmp/prompt_lab/c3-gemini35-5rounds/c3-review.csv \
+  --workers 8 --resume --all --confirm-cost
+
+# 未修改 Judge Prompt 的 audited-candidate baseline
+.venv-promptlab/bin/python scripts/prompt_lab/evaluate_prompt.py \
+  --prompt evals/prompt_lab/prompts/judges/03_C-3_supplier.md \
+  --dataset tmp/prompt_lab/c3-gemini35-5rounds/c3-all-candidates.jsonl \
+  --model gpt-5.4-mini-2026-03-17 \
+  --temperature 1 --reasoning-effort high --thinking --repeats 1 \
+  --out tmp/prompt_lab/c3-gemini35-5rounds/judge-run-gpt54mini-high \
+  --workers 8 --no-cache --resume --all --confirm-cost
+```
+
+四域计划每轮分别为 376／198／198／318 条，合计 1,090；五轮目标 5,450。批处理脚本支持 resume、每轮 ID 前缀、NFKC＋空白正规化去重、失败格重试、generation manifest、slice counts 与失败记录。
 
 ## 測試（fake client，零 API）
 

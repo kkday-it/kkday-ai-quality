@@ -1,0 +1,1224 @@
+{
+  "plan_id": "c2-layer2",
+  "domain_under_test": "C-2",
+  "layer": 2,
+  "description": "C-2 Layer 2：最小对照 90 + 混合 20 + 不确定 20 + 对抗 20 = 150",
+  "total_target": 150,
+  "cells": [
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-4-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-4-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-4-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-4-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-4-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-4-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-4-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-4-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-4-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-4-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-C-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs C-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-no_issue-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs no_issue 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 no_issue；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-no_issue-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs no_issue 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 no_issue；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-1-no_issue-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": "no_issue",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-1 vs no_issue 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【已成功启用并开始使用后的讯号微弱、网速慢、频繁断线或完全无网路】的可观察品质瑕疵——A 侧命中 C-2-1；B 侧交付物本身正常、真实责任在 no_issue；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-6-3-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-6-3 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-6-3；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-6-3-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-6-3 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-6-3；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-6-3-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-6-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-6-3 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-6-3；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-3-5-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-3-5 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-3-5-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-3-5 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-3-5-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-3-5 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-2-C-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-2 vs C-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【餐点温度、味道、食材新鲜度、选择数量或用餐区卫生存在具体瑕疵】的可观察品质瑕疵——A 侧命中 C-2-2；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-2-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-2 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-2；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-2-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-2 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-2；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-2-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-2",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-2 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-2；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-5-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-5 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-5-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-5 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-3-5-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-3-5 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-3-C-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-3 vs C-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【车辆本身老旧、异音、故障、冷气或座椅等一般乘坐设备状态不佳；避免安全配备题】的可观察品质瑕疵——A 侧命中 C-2-3；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-4-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-4 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-4；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-4-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-4 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-4；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-4-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-4",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-4 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-4；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-5-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-5 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-5-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-5 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-4-C-3-5-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": "C-3-5",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-4 vs C-3-5 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【住宿房内脏污、异味、虫害、冷气热水故障、隔音或备品清洁问题】的可观察品质瑕疵——A 侧命中 C-2-4；B 侧交付物本身正常、真实责任在 C-3-5；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-1-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-1 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-1-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-1 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-1-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-1",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-1 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-1；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-3-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-3",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-3 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-3；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-3-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-3",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-3 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-3；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-3-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-3",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-3 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-3；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-6-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-6",
+      "expression_variant": "direct",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-6 最小对照（pair 1）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-6；仅改变这一项责任事实",
+      "pair_group": 1,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-6-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-6",
+      "expression_variant": "colloquial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-6 最小对照（pair 2）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-6；仅改变这一项责任事实",
+      "pair_group": 2,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-pair-C-2-5-C-6-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "pair",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": "C-6",
+      "expression_variant": "euphemistic",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "contrast_pair",
+      "target_count": 2,
+      "coverage_note": "C-2-5 vs C-6 最小对照（pair 3）",
+      "contrast_theme": "交付物是否存在【活动器材、游具、展馆或场地设备老旧、故障、不洁或维护不良；避免人身安全风险题】的可观察品质瑕疵——A 侧命中 C-2-5；B 侧交付物本身正常、真实责任在 C-6；仅改变这一项责任事实",
+      "pair_group": 3,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-mixed-C-2-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-2-1 混合：整体满意，但包含一个可逐字引用的客观品质瑕疵",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-unc-C-2-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-2-1 相关但只写很差/不能用等结论，无法区分品质、系统、执行或主观期待",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-mixed-C-2-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-2-2 混合：整体满意，但包含一个可逐字引用的客观品质瑕疵",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-unc-C-2-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-2-2 相关但只写很差/不能用等结论，无法区分品质、系统、执行或主观期待",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-mixed-C-2-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-2-3 混合：整体满意，但包含一个可逐字引用的客观品质瑕疵",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-unc-C-2-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-2-3 相关但只写很差/不能用等结论，无法区分品质、系统、执行或主观期待",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-mixed-C-2-4",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-2-4 混合：整体满意，但包含一个可逐字引用的客观品质瑕疵",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-unc-C-2-4",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-2-4 相关但只写很差/不能用等结论，无法区分品质、系统、执行或主观期待",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-mixed-C-2-5",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": null,
+      "expression_variant": "neutral_mixed",
+      "difficulty": "hard",
+      "input_polarity": "neutral",
+      "case_family": "mixed",
+      "target_count": 4,
+      "coverage_note": "C-2-5 混合：整体满意，但包含一个可逐字引用的客观品质瑕疵",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-unc-C-2-5",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "uncertain",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [],
+      "boundary_with": null,
+      "expression_variant": "ambiguous",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "uncertain",
+      "target_count": 4,
+      "coverage_note": "C-2-5 相关但只写很差/不能用等结论，无法区分品质、系统、执行或主观期待",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": []
+    },
+    {
+      "cell_id": "c2-l2-adv-C-2-1",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-1",
+      "target_l2_codes": [
+        "C-2-1"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-2-1 客观品质事实以 negation_reversal, complain_then_clarify, rhetorical, sarcasm 包装，标签仍成立",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "negation_reversal",
+        "complain_then_clarify",
+        "rhetorical",
+        "sarcasm"
+      ]
+    },
+    {
+      "cell_id": "c2-l2-adv-C-2-2",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-2",
+      "target_l2_codes": [
+        "C-2-2"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-2-2 客观品质事实以 simplified_traditional_mix, multilingual, emoji, typo 包装，标签仍成立",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "simplified_traditional_mix",
+        "multilingual",
+        "emoji",
+        "typo"
+      ]
+    },
+    {
+      "cell_id": "c2-l2-adv-C-2-3",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-3",
+      "target_l2_codes": [
+        "C-2-3"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-2-3 客观品质事实以 length_extreme, prompt_injection, negation_reversal, complain_then_clarify 包装，标签仍成立",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "length_extreme",
+        "prompt_injection",
+        "negation_reversal",
+        "complain_then_clarify"
+      ]
+    },
+    {
+      "cell_id": "c2-l2-adv-C-2-4",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-4",
+      "target_l2_codes": [
+        "C-2-4"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-2-4 客观品质事实以 rhetorical, sarcasm, simplified_traditional_mix, multilingual 包装，标签仍成立",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "rhetorical",
+        "sarcasm",
+        "simplified_traditional_mix",
+        "multilingual"
+      ]
+    },
+    {
+      "cell_id": "c2-l2-adv-C-2-5",
+      "domain_under_test": "C-2",
+      "layer": 2,
+      "expected_domain": "true",
+      "focus_l2": "C-2-5",
+      "target_l2_codes": [
+        "C-2-5"
+      ],
+      "boundary_with": null,
+      "expression_variant": "adversarial",
+      "difficulty": "hard",
+      "input_polarity": "negative",
+      "case_family": "adversarial",
+      "target_count": 4,
+      "coverage_note": "C-2-5 客观品质事实以 emoji, typo, length_extreme, prompt_injection 包装，标签仍成立",
+      "contrast_theme": null,
+      "pair_group": null,
+      "adversarial_techniques": [
+        "emoji",
+        "typo",
+        "length_extreme",
+        "prompt_injection"
+      ]
+    }
+  ]
+}

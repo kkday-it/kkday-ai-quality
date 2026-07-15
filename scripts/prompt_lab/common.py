@@ -22,7 +22,7 @@ def load_env(path: str | Path | None = None) -> None:
     """把 `evals/prompt_lab/.env` 的 KEY=VALUE 載入 os.environ（僅補未設者，不覆蓋既有）。
 
     無第三方依賴的極簡 .env 解析：忽略空行與 `#` 註解，去除值兩端引號。CLI 於 main() 開頭呼叫，
-    使 OPENAI_API_KEY / OPENAI_BASE_URL / PROMPT_LAB_*_MODEL 可從本機 .env 提供（.env 已 gitignore）。
+    使 OPENAI/Gemini 金钥、端点与 PROMPT_LAB_* 配置可从本机 .env 提供（.env 已 gitignore）。
     真實環境變數（export 或 CLI）優先，故已設者不覆蓋。
     """
     p = Path(path) if path else _ENV_PATH
@@ -78,7 +78,7 @@ def slot_case_ids(cell_id: str, case_family: str, target_count: int) -> list[str
 
     contrast_pair：cell_id-a（true 側）/ cell_id-b（false 側）。其餘：cell_id-01…-NN。
     """
-    if case_family == "contrast_pair":
+    if case_family in {"contrast_pair", "domain_pair", "l2_pair"}:
         return [f"{cell_id}-a", f"{cell_id}-b"]
     return [f"{cell_id}-{i:02d}" for i in range(1, target_count + 1)]
 

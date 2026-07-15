@@ -60,6 +60,8 @@ def test_candidate_non_true_forbids_l2():
 def test_candidate_evidence_must_be_verbatim():
     with pytest.raises(ValidationError):
         _cand(expected_evidence_quotes=["不存在於原文的字串"])
+    with pytest.raises(ValidationError):
+        _cand(expected_evidence_quotes=[])
 
 
 def test_candidate_bad_l2_code_rejected():

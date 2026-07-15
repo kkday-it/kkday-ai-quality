@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -43,7 +45,7 @@ def judge_once(
         system=parsed.system,
         user=user,
         json_schema=parsed.schema,
-        schema_name="c1_attribution",
+        schema_name=f"{case.get('domain_under_test', 'C-1').lower().replace('-', '')}_attribution",
         model=model,
         meta={
             "case_id": case["case_id"],
@@ -118,13 +120,24 @@ def _filter_cases(cases: list[dict], args) -> list[dict]:
 def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> int:
     """CLI 入口。gateway 可注入（fake client 測試）。"""
     common.load_env()
-    ap = argparse.ArgumentParser(description="C-1 Judge Runner")
+    ap = argparse.ArgumentParser(description="Prompt Lab 通用单域 Judge Runner")
     ap.add_argument("--prompt", default=str(_DEFAULT_PROMPT))
     ap.add_argument("--dataset", required=True)
     ap.add_argument("--model", default=os.environ.get("PROMPT_LAB_JUDGE_MODEL", ""))
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--out", required=True, help="輸出目錄")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--temperature", type=float, default=None)
+    ap.add_argument(
+        "--reasoning-effort",
+        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        default=None,
+    )
+    ap.add_argument(
+        "--thinking",
+        action="store_true",
+        help="實驗配置標記；Responses API 實際由 --reasoning-effort 控制推理",
+    )
     ap.add_argument("--layer", type=int, default=0)
     ap.add_argument("--case-id", default="")
     ap.add_argument("--slice", action="append", help="field=value 過濾（可多次）")
@@ -151,6 +164,18 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
 
     parsed = parse_prompt_file(args.prompt)  # 缺段/schema 非法/占位符缺失 → 立即失敗
     cases = _filter_cases(common.read_jsonl(args.dataset), args)
+    if not cases:
+        print("⛔ dataset 为空", file=sys.stderr)
+        return 2
+    domains = {c.get("domain_under_test") for c in cases}
+    if len(domains) != 1:
+        print(f"⛔ 单次 Judge 只能包含一个 domain，实得 {sorted(domains)}", file=sys.stderr)
+        return 2
+    domain = next(iter(domains))
+    from schemas import l2_codes_for_domain
+    if tuple(parsed.schema_l2_enum()) != l2_codes_for_domain(domain):
+        print(f"⛔ Prompt schema 与 dataset domain={domain} L2 目录不一致", file=sys.stderr)
+        return 2
     out_dir = Path(args.out)
     raw_path = out_dir / "raw_results.jsonl"
 
@@ -189,13 +214,24 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
     )
     jobs = jobs[:allowed]
 
-    gw = gateway or Gateway()
+    if args.thinking and args.reasoning_effort is None:
+        print(
+            "⛔ --thinking 需同時指定 --reasoning-effort，Responses API 沒有獨立 thinking 欄位",
+            file=sys.stderr,
+        )
+        return 2
+    gw = gateway or Gateway(
+        temperature=args.temperature,
+        reasoning_effort=args.reasoning_effort,
+    )
     if not gw.has_key:
         print("⛔ 無 OPENAI_API_KEY（且未注入 client）", file=sys.stderr)
         return 2
 
-    run_id = f"{parsed.version}-{parsed.sha256[:8]}"
+    started_at = datetime.now().astimezone().isoformat()
+    run_id = f"{domain.lower().replace('-', '')}-{parsed.version}-{parsed.sha256[:8]}"
     results = dict(existing)  # key -> result dict
+    completed_since_checkpoint = 0
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
         futs = {
             ex.submit(judge_once, gw, parsed, c, rep, args.model, run_id): (c, rep)
@@ -206,25 +242,54 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
             results[_run_key(r.case_id, r.repeat_index, r.prompt_sha256, r.model)] = (
                 r.model_dump()
             )
+            completed_since_checkpoint += 1
+            if completed_since_checkpoint >= 20:
+                common.write_jsonl(raw_path, [results[k] for k in sorted(results)])
+                completed_since_checkpoint = 0
 
     all_results = [results[k] for k in sorted(results)]
     common.write_jsonl(raw_path, all_results)
 
     n_err = sum(1 for r in all_results if r.get("error"))
+    finished_at = datetime.now().astimezone().isoformat()
     manifest = {
         "run_id": run_id,
+        "domain": domain,
+        "provider": "openai",
         "prompt_path": str(args.prompt),
         "prompt_version": parsed.version,
         "prompt_sha256": parsed.sha256,
         "dataset": args.dataset,
+        "dataset_sha256": common.sha256_file(args.dataset),
         "model": args.model,
         "repeats": args.repeats,
         "n_cases": len(cases),
         "n_runs": len(all_results),
         "n_errors": n_err,
+        "n_success": len(all_results) - n_err,
+        "n_schema_invalid": sum(1 for r in all_results if r.get("error") == "schema_invalid"),
+        "total_attempts": sum(r.get("attempts") or 0 for r in all_results),
+        "retry_attempts": sum(max(0, (r.get("attempts") or 0) - 1) for r in all_results),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "workspace_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
         "total_input_tokens": sum(r.get("input_tokens") or 0 for r in all_results),
         "total_output_tokens": sum(r.get("output_tokens") or 0 for r in all_results),
         "total_latency_ms": sum(r.get("latency_ms") or 0 for r in all_results),
+        "request_config": {
+            "temperature": args.temperature,
+            "reasoning_effort": args.reasoning_effort,
+            "thinking": args.thinking,
+            "responses_api_payload": {
+                "temperature": args.temperature,
+                "reasoning": (
+                    {"effort": args.reasoning_effort}
+                    if args.reasoning_effort is not None
+                    else None
+                ),
+            },
+        },
         "filters": {
             "layer": args.layer,
             "case_id": args.case_id,

@@ -54,10 +54,12 @@ class _Responses:
     def __init__(self, responder: Callable):
         self._responder = responder
         self._n = 0
+        self.last_kwargs: dict = {}
 
     def create(self, *, model: str, input: list, text: dict, **_kw):  # noqa: A002  對齊 SDK 參數名
         """模擬 responses.create；依 responder 回傳決定輸出/例外/refusal/incomplete。"""
         self._n += 1
+        self.last_kwargs = dict(_kw)
         system = next((m["content"] for m in input if m["role"] == "system"), "")
         user = next((m["content"] for m in input if m["role"] == "user"), "")
         fmt = text.get("format", {})
