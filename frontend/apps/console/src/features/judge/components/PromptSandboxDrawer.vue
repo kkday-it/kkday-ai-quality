@@ -3,18 +3,20 @@
  * 歸因列表「Prompt 測試」沙盒抽屜：對單列、勾選多筆、或依條件批量選取，跑使用者勾選的 7 條
  * prompt 子集（polarity + C-1..C-6）→ 逐筆逐 prompt 結果。**ungated**（不受正式歸因閘門限制，
  * 即使整體判正向也能測域 prompt）；測試歷史與正式初判完全分離（獨立 `prompt_sandbox_runs` 表），
- * 且捕捉完整 LLM log 供歷史回看（見 `sandbox_classify`/`prompt_sandbox.py`）。實時 log 串流為
- * Phase 2（此版本先留歷史回看，不做即時分頁）。
+ * 且捕捉完整 LLM log 供即時觀看與歷史回看（見 `sandbox_classify`/`prompt_sandbox.py`）——「執行
+ * 日誌」分頁在測試跑動時走 SSE 即時串流，完成後改顯示落庫的權威快照；查看歷史紀錄時同一分頁
+ * 顯示當時的完整 log，複用 `PrejudgeLogView`（與 `PrejudgeLogDrawer` 共用同一份渲染）。
  *
  * scope='all'（工具列「依條件批量」入口）時的目標選取比照初判分類（`usePrejudgeJob`），委派
  * `usePromptSandboxTargets` 復用同一套 stage 驅動 + 篩選草稿 + 即時筆數預覽 pattern。
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   getPromptSandboxRun,
   getPromptSandboxStatus,
   listPromptSandboxRuns,
+  prejudgeLogStreamUrl,
   startPromptSandbox,
   type PromptSandboxItemResult,
   type PromptSandboxRunSummary,
@@ -26,6 +28,8 @@ import type { CascadeNode } from '@/api';
 // 相對路徑 import（非走 barrel）：本檔自身即為 components barrel 的一員，經 barrel 迴繞 import
 // 同資料夾元件會觸發 circular dep（見 barrel-exports 規則）。
 import AttributionFilterBar from './AttributionFilterBar.vue';
+import PrejudgeLogView from './PrejudgeLogView.vue';
+import type { LogEntry } from './PrejudgeLogView.types';
 import { STAGE_LABELS, type FilterField } from '../constants';
 import { usePromptSandboxTargets } from '../composables/usePromptSandboxTargets';
 import type { PrejudgeListFilters } from '../composables/usePrejudgeJob';
@@ -100,13 +104,37 @@ const onTargetChange = () => {
 };
 watch(promptArgs, onTargetChange);
 
-const activeTab = ref<'results' | 'history'>('results');
+const activeTab = ref<'results' | 'log' | 'history'>('results');
 const running = ref(false);
 type RunDetail = PromptSandboxRunSummary & {
   results: PromptSandboxItemResult[];
-  log: unknown[];
+  log: LogEntry[];
 };
 const activeRun = ref<RunDetail | null>(null);
+
+// ── 執行日誌（跑測試時 SSE 即時串流；完成/回看歷史時改顯示落庫的權威 log 快照）──
+// SSE 連線生命週期比照 PrejudgeLogDrawer._open/_close，逐條渲染委派同一份 PrejudgeLogView。
+const logEntries = ref<LogEntry[]>([]);
+const logStreaming = ref(false);
+let logEs: EventSource | null = null;
+const _closeLogStream = () => {
+  logEs?.close();
+  logEs = null;
+  logStreaming.value = false;
+};
+const _openLogStream = (jobId: string) => {
+  _closeLogStream();
+  logEntries.value = [];
+  logStreaming.value = true;
+  logEs = new EventSource(prejudgeLogStreamUrl(jobId));
+  logEs.onopen = () => {
+    logEntries.value = []; // 自動重連會整批重放 → 先清空避免重複
+  };
+  logEs.onmessage = (ev) => logEntries.value.push(JSON.parse(ev.data));
+  logEs.addEventListener('done', () => _closeLogStream());
+  logEs.addEventListener('error', () => _closeLogStream());
+};
+onBeforeUnmount(_closeLogStream);
 
 /** 評論原文預覽（僅 scope=single 有意義）。 */
 const reviewText = computed(() => String(props.row?.content ?? props.row?.title ?? ''));
@@ -140,16 +168,20 @@ async function run() {
             scope: props.scope,
           };
     const { job_id } = await startPromptSandbox(body);
+    _openLogStream(job_id); // 執行日誌分頁即時串流（與輪詢並行，互不影響）
     // 輪詢至終態（done/error）；沙盒非長批次，短間隔即可即時反映進度。
     while (true) {
       await new Promise((r) => setTimeout(r, 700));
       const snap = await getPromptSandboxStatus(job_id);
       if (snap.status === 'done' && snap.run_id) {
         activeRun.value = await getPromptSandboxRun(snap.run_id);
+        _closeLogStream();
+        logEntries.value = activeRun.value.log; // 改顯示落庫的權威快照（避免 SSE 重連/漏幀差異）
         await loadHistory();
         break;
       }
       if (snap.status === 'error') {
+        _closeLogStream();
         Message.error('測試任務失敗');
         break;
       }
@@ -175,10 +207,13 @@ async function loadHistory() {
     historyLoading.value = false;
   }
 }
-/** 查看某次歷史測試：拉完整詳情（含 results + log 快照）並切到結果分頁。 */
+/** 查看某次歷史測試：拉完整詳情（含 results + log 快照）並切到結果分頁；log 分頁同步顯示
+ * 當時的完整快照（靜態，非串流）——需求「透過測試歷史回看當時的完整 log」的落地點。 */
 async function viewHistoryRun(runId: string) {
   try {
+    _closeLogStream(); // 回看歷史時若有正在跑的即時串流先關閉，避免與靜態快照混淆
     activeRun.value = await getPromptSandboxRun(runId);
+    logEntries.value = activeRun.value.log;
     activeTab.value = 'results';
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '載入測試紀錄失敗');
@@ -198,6 +233,8 @@ watch(
   (v) => {
     if (!v) {
       activeRun.value = null;
+      _closeLogStream();
+      logEntries.value = [];
       return;
     }
     activeTab.value = 'results';
@@ -358,6 +395,15 @@ watch(
           <div v-else class="py-8 text-center text-xs text-[var(--color-text-3)]">
             勾選 Prompt 後點「執行測試」
           </div>
+        </div>
+      </a-tab-pane>
+      <a-tab-pane key="log">
+        <template #title>
+          執行日誌
+          <a-tag v-if="logStreaming" size="small" color="arcoblue" class="ml-1">串流中</a-tag>
+        </template>
+        <div class="h-full overflow-auto pr-1">
+          <PrejudgeLogView :entries="logEntries" :streaming="logStreaming" />
         </div>
       </a-tab-pane>
       <a-tab-pane key="history" title="測試歷史">
