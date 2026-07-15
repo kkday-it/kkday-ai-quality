@@ -1,35 +1,21 @@
-"""單支 Prompt 評測核心（後端 SSOT）：抽樣 + 跑單支 prompt + 指標——供 UI「測試」端點與 CLI 共用。
+"""Prompt 評測共用核心：診斷理由 overlay + 單筆/沙盒 dry-run 分類 + 純函式指標。
 
-定位：Prompt-as-Source 調適閉環的量測核心。給定一支 prompt（polarity / C-1~C-6）與 N，抽 N 則現行
-判決為參照、只跑該支 prompt（不跑其他六支、不動 production 判決管線），出該支指標。指標計算為純函式
-（與 LLM/DB I/O 解耦→可單元測）；抽樣 + 跑 LLM 為 I/O 段。CLI（scripts/tools/eval_prompt_single.py）
-與 UI 端點（api/routers/v1/judgment.prompt_eval）皆 import 本模組，避免判準邏輯平行兩份。
+`domain_verdicts()`（六域並行診斷，動態附 reason/abstain_reason schema，B0 overlay，不改 md
+本身、production 判決路徑零影響）為 `classify_one`（production 閘門單筆 dry-run，歸因列表「Prompt
+測試」單列沿用其 ungated 版本前身）與 `sandbox_classify`（Prompt 測試沙盒，使用者可任意勾選
+prompt 子集、不受正式歸因閘門限制）共用，避免評測/生產/沙盒三份平行實作。
 
-指標：
-    域 prompt：primary 一致率 / 棄權正確率 / 命中率 / 多報率。
-    極性 prompt：polarity 一致率 + sentiment 一致率。
-
-診斷理由 overlay（B0）：`_diagnostic_schema`/`_diagnostic_system` 在**評測期**動態於 7 支 prompt 的
-schema/system 上附加 reason/abstain_reason 欄位（不改 md 檔本身、production 判決路徑零影響）。
-`domain_verdicts()` 對六域各自單獨呼叫診斷版 schema，回「六域裁決」：命中的域帶 l2_code+理由，
-棄權的域帶棄權理由——無論匹配與否都有交代，供調適者定位「邊界寫糊」或「例句缺」。
-
-抽樣兩源：production（現行判決參照，md5 穩定抽樣，預設）/ filtered（B1，`filter_ids` 給定時＝
-歸因列表當前篩選子集）。
+`compute_domain_metrics`/`compute_polarity_metrics` 為純函式（與 LLM/DB I/O 解耦，可單元測），
+供 CLI（`scripts/tools/eval_prompt_single.py`）獨立引用計算指標。
 """
 
 from __future__ import annotations
 
 import copy
 
-from sqlalchemy import text
-
 from app.core import db
-from app.core.db import tables as T
 from app.judge import prompt_source
 from app.judge.llm import client
-
-_SOURCE = "product_reviews"
 
 # ─────────────────────────── 診斷理由 overlay（B0，code-side 動態注入，不改 md）───────────────────────────
 _DIAGNOSTIC_DOMAIN_NOTE = (
@@ -59,7 +45,7 @@ def _diagnostic_domain_schema(schema: dict) -> dict:
 
 
 def _diagnostic_polarity_schema(schema: dict) -> dict:
-    """極性 prompt schema 動態加 reason（必填一句話理由）。"""
+    """極性 schema：reason 必填；原 schema 不受影響。"""
     out = copy.deepcopy(schema)
     out["properties"]["reason"] = {"type": "string"}
     out["required"] = [*out["required"], "reason"]
@@ -138,8 +124,9 @@ def domain_verdicts(
 def _sandbox_polarity(text_: str, model: str) -> tuple[str, int, str]:
     """沙盒極性診斷：跑 00_polarity（附診斷 reason 欄），回 (polarity, sentiment, reason)。
 
-    比照 `_run_polarity`（B0 診斷 overlay 同一套 schema/system 疊法）但單筆、且用 `prejudge._call`
-    走 model override（沙盒可能指定非目前 config 的模型），而非 `client.chat_json` 直呼。
+    schema/system 疊法同 `_diagnostic_polarity_schema`/`_DIAGNOSTIC_POLARITY_NOTE`，但單筆、且用
+    `prejudge._call` 走 model override（沙盒可能指定非目前 config 的模型），而非 `client.chat_json`
+    直呼。
     """
     from app.judge import prejudge
 
@@ -234,299 +221,6 @@ def prompt_id_of(arg: str) -> str:
     if not pid:
         raise ValueError(f"未知 prompt：{arg}（須為 polarity 或 C-1..C-6）")
     return pid
-
-
-def domain_of(arg: str) -> str:
-    """C-N → 對應歸因分類域機器值（自 prompt_source 檔名尾綴派生，如 C-3→supplier）；未知回空字串。"""
-    return prompt_source._domain_of(prompt_id_of(arg))
-
-
-# ─────────────────────────── 取文字 ───────────────────────────
-def _review_texts(ids: list[str]) -> dict[str, str]:
-    """rec_oid → 評論文字（title + desc，對齊判決輸入）。"""
-    if not ids:
-        return {}
-    with T.get_engine().connect() as c:
-        rows = c.execute(
-            text(
-                "SELECT rec_oid::text AS sid, coalesce(rec_title,'') AS t, coalesce(rec_desc,'') AS d "
-                "FROM product_reviews WHERE rec_oid::text = ANY(:ids)"
-            ),
-            {"ids": ids},
-        ).all()
-    return {sid: (f"{t}\n{d}".strip()) for sid, t, d in rows}
-
-
-# ─────────────────────────── 抽樣（production 現行判決為參照）───────────────────────────
-def sample_domain(dom_machine: str, n: int) -> list[dict]:
-    """域參照集：judgments 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
-
-    回統一參照記錄：{id, text, polarity, ref_l2s, ref_primary}。dom_machine＝l1_code 機器值。
-    """
-    half = n // 2
-    with T.get_engine().connect() as c:
-        pos = c.execute(
-            text(
-                "SELECT source_id, min(polarity) AS polarity FROM judgments "
-                "WHERE source=:s AND l1_code=:d AND polarity IN ('negative','neutral') "
-                "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "k": n - half},
-        ).all()
-        neg = c.execute(
-            text(
-                "SELECT j.source_id, min(j.polarity) AS polarity FROM judgments j "
-                "WHERE j.source=:s AND j.polarity IN ('negative','neutral') "
-                "AND j.l1_code IS NOT NULL AND j.l1_code <> '' AND j.l1_code <> :d "
-                "AND NOT EXISTS (SELECT 1 FROM judgments x WHERE x.source=:s "
-                "  AND x.source_id=j.source_id AND x.l1_code=:d) "
-                "GROUP BY j.source_id ORDER BY md5(j.source_id) LIMIT :k"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "k": half},
-        ).all()
-        prod = c.execute(
-            text(
-                "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
-                "FROM judgments WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "ids": [r[0] for r in pos] + [r[0] for r in neg]},
-        ).all()
-    by_rec: dict[str, dict] = {}
-    for sid, pol in list(pos) + list(neg):
-        by_rec[sid] = {"id": sid, "polarity": pol, "ref_l2s": [], "ref_primary": None}
-    for sid, l2, is_primary in prod:
-        by_rec[sid]["ref_l2s"].append(l2)
-        if is_primary:
-            by_rec[sid]["ref_primary"] = l2
-    texts = _review_texts(list(by_rec))
-    return [dict(v, text=texts.get(k, "")) for k, v in by_rec.items() if texts.get(k, "").strip()]
-
-
-def sample_polarity(n: int) -> list[dict]:
-    """極性參照集：三態各 n/3（md5 穩定），帶 production polarity/sentiment 真值。"""
-    per = max(1, n // 3)
-    out: list[dict] = []
-    with T.get_engine().connect() as c:
-        for pol in ("negative", "neutral", "positive"):
-            rows = c.execute(
-                text(
-                    "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
-                    "FROM judgments WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
-                    "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
-                ),
-                {"s": _SOURCE, "p": pol, "k": per},
-            ).all()
-            out += [{"id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows]
-    texts = _review_texts([r["id"] for r in out])
-    return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
-
-
-# ─────────────────────────── 抽樣（B1：按目前歸因列表篩選子集，非 md5 全表抽樣）───────────────────────────
-def sample_domain_by_ids(dom_machine: str, ids: list[str]) -> list[dict]:
-    """域參照集（按指定 id 清單；不做 pos/neg 平衡——樣本即篩選結果，忠實反映使用者選的子集）。
-
-    Args:
-        dom_machine: 域機器值（l1_code）。
-        ids: 目標特徵 id 清單（已由呼叫端截到 N 筆）。
-    """
-    if not ids:
-        return []
-    with T.get_engine().connect() as c:
-        pol = c.execute(
-            text(
-                "SELECT source_id, min(polarity) AS polarity FROM judgments "
-                "WHERE source=:s AND source_id = ANY(:ids) GROUP BY source_id"
-            ),
-            {"s": _SOURCE, "ids": ids},
-        ).all()
-        prod = c.execute(
-            text(
-                "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
-                "FROM judgments WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "ids": ids},
-        ).all()
-    by_rec: dict[str, dict] = {
-        sid: {"id": sid, "polarity": pol_ or "negative", "ref_l2s": [], "ref_primary": None}
-        for sid, pol_ in pol
-    }
-    for sid, l2, is_primary in prod:
-        if sid in by_rec:
-            by_rec[sid]["ref_l2s"].append(l2)
-            if is_primary:
-                by_rec[sid]["ref_primary"] = l2
-    texts = _review_texts(list(by_rec))
-    return [dict(v, text=texts.get(k, "")) for k, v in by_rec.items() if texts.get(k, "").strip()]
-
-
-def sample_polarity_by_ids(ids: list[str]) -> list[dict]:
-    """極性參照集（按指定 id 清單；不做三態平衡——樣本即篩選結果）。"""
-    if not ids:
-        return []
-    with T.get_engine().connect() as c:
-        rows = c.execute(
-            text(
-                "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
-                "FROM judgments WHERE source=:s AND source_id = ANY(:ids) "
-                "AND sentiment_score IS NOT NULL GROUP BY source_id"
-            ),
-            {"s": _SOURCE, "ids": ids},
-        ).all()
-    out = [{"id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows]
-    texts = _review_texts([r["id"] for r in out])
-    return [dict(r, text=texts.get(r["id"], "")) for r in out if texts.get(r["id"], "").strip()]
-
-
-# ─────────────────────────── 指標（純函式，與 I/O 解耦→可單元測）───────────────────────────
-def compute_domain_metrics(records: list[dict]) -> dict:
-    """逐筆 {ref_l2s, ref_primary, pack_l2s} → 域指標（純函式，不觸 LLM/DB）。
-
-    primary 一致率＝ref 有本域 primary 者 pack 最高信心 l2 同碼比例；棄權正確率＝ref 無本域歸因者
-    pack 亦回空比例；命中率＝ref 有本域歸因者 pack 非空比例；多報率＝pack 條數 > ref 條數比例。
-    """
-    st = {
-        "primary_total": 0,
-        "primary_match": 0,
-        "abstain_total": 0,
-        "abstain_ok": 0,
-        "hit_total": 0,
-        "hit_ok": 0,
-        "over_report": 0,
-    }
-    for r in records:
-        ref_l2s, ref_primary, pack_l2s = r["ref_l2s"], r["ref_primary"], r["pack_l2s"]
-        if ref_l2s:
-            st["hit_total"] += 1
-            if pack_l2s:
-                st["hit_ok"] += 1
-        else:
-            st["abstain_total"] += 1
-            if not pack_l2s:
-                st["abstain_ok"] += 1
-        if ref_primary:
-            st["primary_total"] += 1
-            if pack_l2s and pack_l2s[0] == ref_primary:
-                st["primary_match"] += 1
-        if len(pack_l2s) > len(ref_l2s):
-            st["over_report"] += 1
-    n = len(records)
-
-    def _rate(a: int, b: int) -> float | None:
-        return round(a / b, 3) if b else None
-
-    return {
-        "n": n,
-        "primary_match_rate": _rate(st["primary_match"], st["primary_total"]),
-        "abstain_correct_rate": _rate(st["abstain_ok"], st["abstain_total"]),
-        "hit_rate": _rate(st["hit_ok"], st["hit_total"]),
-        "over_report_rate": _rate(st["over_report"], n),
-        "counts": st,
-    }
-
-
-def compute_polarity_metrics(records: list[dict]) -> dict:
-    """逐筆 {polarity, sentiment, pack_polarity, pack_sentiment} → 極性指標（純函式）。
-
-    sentiment 為 None 之筆不計入 sentiment_match_rate 分母（B3 mock 測試集只填 expected_polarity、
-    無 sentiment 真值時，該欄自然回 None 而非誤導性的低分）。
-    """
-    n = len(records)
-    pol_ok = sum(1 for r in records if r["pack_polarity"] == r["polarity"])
-    sent_records = [r for r in records if r.get("sentiment") is not None]
-    sent_ok = sum(1 for r in sent_records if r["pack_sentiment"] == r["sentiment"])
-    return {
-        "n": n,
-        "polarity_match_rate": round(pol_ok / n, 3) if n else None,
-        "sentiment_match_rate": round(sent_ok / len(sent_records), 3) if sent_records else None,
-    }
-
-
-# ─────────────────────────── 跑單支（I/O：呼叫 LLM 產 records → 純函式算指標）───────────────────────────
-def _run_domain(pid: str, dom_code: str, samples: list[dict], *, diagnostic: bool = True) -> dict:
-    """跑單域 prompt → records → 指標 + 分歧清單。
-
-    diagnostic=True（預設）：schema/system 動態附診斷欄位（見模組頂 B0 overlay），mismatches 每案
-    附 `reason`（命中取首條歸因理由、棄權取 abstain_reason）——批量分歧的原因分佈直接可讀。
-    """
-    p = prompt_source.load(pid)
-    schema = _diagnostic_domain_schema(p["schema"]) if diagnostic else p["schema"]
-    system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE if diagnostic else p["system"]
-    records: list[dict] = []
-    for s in samples:
-        user = (
-            p["user_template"]
-            .replace("{POLARITY}", s["polarity"])
-            .replace("{TEXT}", s["text"][:2000])
-        )
-        resp = client.chat_json(system, user, stage=f"eval_{dom_code}", schema=schema)
-        attrs = sorted(
-            resp.get("attributions") or [], key=lambda a: -float(a.get("confidence") or 0)
-        )
-        records.append(
-            {
-                "id": s["id"],
-                "ref_l2s": s["ref_l2s"],
-                "ref_primary": s["ref_primary"],
-                "pack_l2s": [a.get("l2_code") for a in attrs],
-                "pack_reasons": [str(a.get("reason", "")) for a in attrs],
-                "abstain_reason": str(resp.get("abstain_reason", "")),
-                "text": s["text"][:120],
-            }
-        )
-    m = compute_domain_metrics(records)
-    mismatches = [
-        {
-            "id": r["id"],
-            "ref": r["ref_l2s"],
-            "ref_primary": r["ref_primary"],
-            "pack": r["pack_l2s"],
-            "text": r["text"],
-            **(
-                {"reason": r["pack_reasons"][0] if r["pack_reasons"] else r["abstain_reason"]}
-                if diagnostic
-                else {}
-            ),
-        }
-        for r in records
-        if (bool(r["pack_l2s"]) != bool(r["ref_l2s"]))
-        or (r["ref_primary"] and not (r["pack_l2s"] and r["pack_l2s"][0] == r["ref_primary"]))
-    ]
-    return {"prompt": dom_code, **m, "mismatches": mismatches}
-
-
-def _run_polarity(pid: str, samples: list[dict], *, diagnostic: bool = True) -> dict:
-    """跑極性 prompt → records → 指標 + 分歧清單。diagnostic=True：mismatches 每案附一句話 reason。"""
-    p = prompt_source.load(pid)
-    schema = _diagnostic_polarity_schema(p["schema"]) if diagnostic else p["schema"]
-    system = p["system"] + _DIAGNOSTIC_POLARITY_NOTE if diagnostic else p["system"]
-    records: list[dict] = []
-    for s in samples:
-        user = p["user_template"].replace("{TEXT}", s["text"][:2000])
-        resp = client.chat_json(system, user, stage="eval_polarity", schema=schema)
-        records.append(
-            {
-                "id": s["id"],
-                "polarity": s["polarity"],
-                "sentiment": s["sentiment"],
-                "pack_polarity": resp.get("polarity"),
-                "pack_sentiment": resp.get("sentiment"),
-                "reason": str(resp.get("reason", "")),
-                "text": s["text"][:120],
-            }
-        )
-    m = compute_polarity_metrics(records)
-    mismatches = [
-        {
-            "id": r["id"],
-            "ref": r["polarity"],
-            "pack": r["pack_polarity"],
-            "text": r["text"],
-            **({"reason": r["reason"]} if diagnostic else {}),
-        }
-        for r in records
-        if r["pack_polarity"] != r["polarity"]
-    ]
-    return {"prompt": "polarity", **m, "mismatches": mismatches}
 
 
 def _build_sandbox_item(source: str, source_id: str) -> dict:
@@ -630,46 +324,65 @@ def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dic
     }
 
 
-def run_eval(
-    prompt_arg: str,
-    n: int,
-    *,
-    diagnostic: bool = True,
-    filter_ids: list[str] | None = None,
-) -> dict:
-    """單支 prompt 評測：抽樣 → 跑 → 指標。同步 I/O，供 UI「測試」與 CLI 共用。
+# ─────────────────────────── 指標（純函式，與 I/O 解耦→可單元測；CLI SSOT）───────────────────────────
+def compute_domain_metrics(records: list[dict]) -> dict:
+    """逐筆 {ref_l2s, ref_primary, pack_l2s} → 域指標（純函式，不觸 LLM/DB）。
 
-    Args:
-        prompt_arg: "polarity" 或 "C-1".."C-6"。
-        n: 樣本數（UI 快測建議 ≤20；抽樣 md5 穩定、跨 run 可比）。
-        diagnostic: 是否開診斷理由（mismatches 每案附 reason；預設開）。
-        filter_ids: 給定時樣本＝此特徵 id 清單截前 n 筆（B1：按目前歸因列表篩選抽樣，取代
-            md5 全表抽樣，忠實反映使用者選的子集）。
-
-    Returns:
-        {prompt, source, model, n, <指標>, mismatches, filtered}。
-
-    Raises:
-        ValueError: 未知 prompt / 域；stub 模式（無 token）拒跑避免假結果。
+    primary 一致率＝ref 有本域 primary 者 pack 最高信心 l2 同碼比例；棄權正確率＝ref 無本域歸因者
+    pack 亦回空比例；命中率＝ref 有本域歸因者 pack 非空比例；多報率＝pack 條數 > ref 條數比例。
     """
-    if client.is_stub():
-        raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
-    pid = prompt_id_of(prompt_arg)
-    if prompt_arg == "polarity":
-        samples = (
-            sample_polarity_by_ids(filter_ids[:n]) if filter_ids is not None else sample_polarity(n)
-        )
-        result = _run_polarity(pid, samples, diagnostic=diagnostic)
-    else:
-        dom = domain_of(prompt_arg)
-        if not dom:
-            raise ValueError(f"未知域：{prompt_arg}")
-        samples = (
-            sample_domain_by_ids(dom, filter_ids[:n])
-            if filter_ids is not None
-            else sample_domain(dom, n)
-        )
-        result = _run_domain(pid, prompt_arg, samples, diagnostic=diagnostic)
-    result["source"] = "production"
-    result["filtered"] = filter_ids is not None
-    return result
+    st = {
+        "primary_total": 0,
+        "primary_match": 0,
+        "abstain_total": 0,
+        "abstain_ok": 0,
+        "hit_total": 0,
+        "hit_ok": 0,
+        "over_report": 0,
+    }
+    for r in records:
+        ref_l2s, ref_primary, pack_l2s = r["ref_l2s"], r["ref_primary"], r["pack_l2s"]
+        if ref_l2s:
+            st["hit_total"] += 1
+            if pack_l2s:
+                st["hit_ok"] += 1
+        else:
+            st["abstain_total"] += 1
+            if not pack_l2s:
+                st["abstain_ok"] += 1
+        if ref_primary:
+            st["primary_total"] += 1
+            if pack_l2s and pack_l2s[0] == ref_primary:
+                st["primary_match"] += 1
+        if len(pack_l2s) > len(ref_l2s):
+            st["over_report"] += 1
+    n = len(records)
+
+    def _rate(a: int, b: int) -> float | None:
+        return round(a / b, 3) if b else None
+
+    return {
+        "n": n,
+        "primary_match_rate": _rate(st["primary_match"], st["primary_total"]),
+        "abstain_correct_rate": _rate(st["abstain_ok"], st["abstain_total"]),
+        "hit_rate": _rate(st["hit_ok"], st["hit_total"]),
+        "over_report_rate": _rate(st["over_report"], n),
+        "counts": st,
+    }
+
+
+def compute_polarity_metrics(records: list[dict]) -> dict:
+    """逐筆 {polarity, sentiment, pack_polarity, pack_sentiment} → 極性指標（純函式）。
+
+    sentiment 為 None 之筆不計入 sentiment_match_rate 分母（B3 mock 測試集只填 expected_polarity、
+    無 sentiment 真值時，該欄自然回 None 而非誤導性的低分）。
+    """
+    n = len(records)
+    pol_ok = sum(1 for r in records if r["pack_polarity"] == r["polarity"])
+    sent_records = [r for r in records if r.get("sentiment") is not None]
+    sent_ok = sum(1 for r in sent_records if r["pack_sentiment"] == r["sentiment"])
+    return {
+        "n": n,
+        "polarity_match_rate": round(pol_ok / n, 3) if n else None,
+        "sentiment_match_rate": round(sent_ok / len(sent_records), 3) if sent_records else None,
+    }

@@ -1,7 +1,6 @@
 """Prompt 測試沙盒歷史（prompt_sandbox_runs）：落庫 + 列表分頁 + 詳情查詢。
 
-與 prompt_eval_runs 完全分離的表（測試沙盒 vs 單支 prompt 指標評測），CRUD 形狀比照
-test_prompt_eval_runs.py，額外驗證與正式 judgments/judgment_history 互不干擾（分離語意）。
+額外驗證與正式 judgments/judgment_history 互不干擾（分離語意）。
 """
 
 from __future__ import annotations
