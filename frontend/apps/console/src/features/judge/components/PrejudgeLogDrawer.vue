@@ -116,9 +116,9 @@ onBeforeUnmount(_close);
     <div v-if="loadingHistory" class="flex items-center gap-2 py-6 text-xs text-[#86909c]">
       <icon-loading /> 載入歷史日誌快照…
     </div>
-    <!-- min-h-0 讓子層 PrejudgeLogView 的 flex:1 高度鏈成立；捲動交給其內部 .arco-tabs-content
-         （tab 固定 + 內容捲動，見 .claude/rules/frontend-vue.md），此處不可再套 overflow-auto -->
-    <div v-else class="min-h-0 flex-1 pr-1">
+    <!-- 捲動已下沉至 PrejudgeLogView 內部（StickyTabs 的 .arco-tabs-content 為唯一捲動容器，
+         tab 列固定、左側掛錨點導航與其並排）；本層僅需給出 bounded 高度，不再自行 overflow-auto。 -->
+    <div v-else class="min-h-0 flex-1 overflow-hidden">
       <PrejudgeLogView :entries="entries" :streaming="streaming" />
     </div>
   </a-drawer>

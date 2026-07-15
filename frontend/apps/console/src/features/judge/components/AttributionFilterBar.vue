@@ -29,10 +29,17 @@ const props = withDefaults(
     cascadeOptions?: CascadeNode[];
     /** 判決模型選項（有 model 欄時必給，來自 getJudgmentModels；注入模式，元件不發請求）。 */
     modelOptions?: { value: string; label: string }[];
+    /** recOid 精確查詢 placeholder（依來源業務名詞 + natural_key 客製，見 idPlaceholderFor；未給用泛稱）。 */
+    idPlaceholder?: string;
     /** 控制項尺寸。 */
     size?: 'mini' | 'small' | 'medium' | 'large';
   }>(),
-  { cascadeOptions: () => [], modelOptions: () => [], size: 'small' },
+  {
+    cascadeOptions: () => [],
+    modelOptions: () => [],
+    idPlaceholder: 'ID 如 1,2,3',
+    size: 'small',
+  },
 );
 
 const emit = defineEmits<{ change: [] }>();
@@ -139,7 +146,7 @@ function applyRecentDays(n: number): void {
           :size="size"
           allow-clear
           class="w-full"
-          placeholder="評論 rec_oid 如 1,2,3"
+          :placeholder="idPlaceholder"
           @press-enter="onChange"
           @clear="onChange"
         />

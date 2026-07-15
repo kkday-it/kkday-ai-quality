@@ -27,10 +27,20 @@ const props = withDefaults(
     schema?: Record<string, unknown>;
     /** 撐滿父容器高度（height:100%）取代預設 60vh 上限；用於整頁編輯（如判決規則頁）。 */
     fill?: boolean;
+    /** 高度隨內容自然撐開（取代固定 60vh + 內部捲動）：tree 模式逐節點皆為實體 DOM（非虛擬滾動），
+     * 撐開安全；用於外層已提供整體捲動容器、不want 巢狀雙捲軸的情境（如日誌執行流全展開）。 */
+    autoHeight?: boolean;
     /** 選填節點 class 回呼：依 path/value 回傳 class 名（如版本對比標紅）；變更即時套用（read-only 情境）。 */
     onClassName?: OnClassName;
   }>(),
-  { readOnly: false, mode: 'tree', fill: false, schema: undefined, onClassName: undefined },
+  {
+    readOnly: false,
+    mode: 'tree',
+    fill: false,
+    autoHeight: false,
+    schema: undefined,
+    onClassName: undefined,
+  },
 );
 
 // jsoneditor API 於掛載時動態載入；型別走 import type（編譯期擦除，不進 bundle）
@@ -125,7 +135,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="el" class="jse-theme-default json-editor-host" :class="{ 'json-editor-fill': fill }" />
+  <div
+    ref="el"
+    class="jse-theme-default json-editor-host"
+    :class="{ 'json-editor-fill': fill, 'json-editor-auto': autoHeight }"
+  />
 </template>
 
 <style scoped>
@@ -139,6 +153,18 @@ onBeforeUnmount(() => {
 /* fill：整頁編輯時撐滿父容器（父須有定高），取代 60vh；仍由 editor 內部捲 contents（工具列固定） */
 .json-editor-fill {
   height: 100%;
+}
+/* autoHeight：不設高度上限、交還捲動給外層容器（呼應「內容區域不再內捲，完整展示」需求）；
+   tree 模式節點為實體 DOM 逐一渲染，非虛擬滾動，撐開不影響渲染正確性。 */
+.json-editor-auto {
+  height: auto;
+  overflow: visible;
+}
+.json-editor-auto :deep(.jse-main) {
+  height: auto;
+}
+.json-editor-auto :deep(.jse-contents) {
+  overflow: visible;
 }
 /* 版本對比：onClassName 標記的變動節點染紅（淡底 + 紅值），用 :deep 穿透 editor 內部 DOM。
    顏色取 Arco 全域 token（arco.css 已於 main.ts 全域載入），亮 / 暗主題一致。 */

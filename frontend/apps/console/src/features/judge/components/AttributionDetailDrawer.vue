@@ -7,6 +7,7 @@
  */
 import {
   ACTION_LABEL,
+  POLARITY_COLOR,
   POLARITY_LABELS,
   STAGE_LABELS,
   STATUS_COLOR,
@@ -20,13 +21,6 @@ import { fmtDt } from '../utils';
 
 const visible = defineModel<boolean>('visible', { default: false });
 defineProps<{ row: ProblemRow | null }>();
-
-/** 傾向語義色（與列表一致；小常數各處自帶，未達 Rule of Three 不抽 SSOT）。 */
-const POLARITY_COLOR: Record<string, string> = {
-  positive: 'green',
-  negative: 'red',
-  neutral: 'gray',
-};
 
 /** 判決階段語義色（同列表：已判決綠 / 待覆核橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
@@ -84,7 +78,7 @@ const otherLangs = (a: Attribution): [string, string][] =>
           </span>
         </div>
         <div class="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text-1)]">
-          {{ row.content || '（無評論內容）' }}
+          {{ row.content || '（無內容）' }}
         </div>
         <div class="mt-1.5 text-[11px] text-[var(--color-text-3)]">
           #{{ row.source_record_id || row.source_id || '—' }} ·

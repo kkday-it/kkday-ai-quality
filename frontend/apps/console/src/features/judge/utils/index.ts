@@ -6,3 +6,5 @@ export * from './ruleVersion.util';
 export * from './exportName.util';
 export * from './pageSpec.util';
 export * from './jsonDiff.util';
+export * from './dialogue.util';
+export * from './logView.util';

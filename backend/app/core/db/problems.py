@@ -177,6 +177,11 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
             "order_mid"
         ),  # 同名源欄（pr/conv/mixpanel 有；freshdesk/appf 無→None）
         "supplier_oid": canon.get("supplier_oid"),
+        "supplier_name": canon.get("supplier_name"),
+        # 進線特有欄（conversations field_map 升 canonical；其他來源無此欄 → None，前端有值才顯示）
+        "trip_stage": canon.get("trip_stage"),
+        "msg_handler": canon.get("msg_handler"),
+        "cs_task_type": canon.get("cs_task_type"),
         "go_date": canon.get("go_date"),
         "member_uuid": canon.get("member_uuid"),
         "traveller_type": canon.get("traveller_type"),

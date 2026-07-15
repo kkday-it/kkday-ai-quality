@@ -10,3 +10,10 @@ export const POLARITY_LABELS: Record<string, string> = judgment.polarity_labels;
 
 /** 判決階段 code → 繁中 label（unjudged / judged / pending_review / pending_data）。 */
 export const STAGE_LABELS: Record<string, string> = judgment.stage_labels;
+
+/** 傾向類別 Arco tag 色（正向綠 / 負向紅 / 中性灰）——列表 / 詳情抽屜 / 執行日誌三處共用（純前端 UI 常數）。 */
+export const POLARITY_COLOR: Record<string, string> = {
+  positive: 'green',
+  negative: 'red',
+  neutral: 'gray',
+};

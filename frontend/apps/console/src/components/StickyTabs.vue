@@ -9,17 +9,53 @@
  * 與直接用 `a-tabs` 完全一致，替換零學習成本。
  *
  * 消費端前提：根元素需在有實際高度的容器內（drawer 走 `:body-style` 撐滿、頁面走 `h-full`），
- * 本元件才能 `flex:1` 撐滿並讓內容區正確捲動。
+ * 本元件才能 `flex:1` 撐滿並讓內容區正確捲動——內容區（`.arco-tabs-content`）恆為**唯一**捲動
+ * 容器，tab 列固定不動。消費端若需要「內容旁再掛一份跟這個捲動容器同步的導航」（如 LLM 執行
+ * 日誌的左側錨點導航），用 `getScrollEl()` 取得該捲動元素本身餵給 `a-anchor` 的
+ * `scroll-container`，不要另外包一層外層捲動容器（見 `PrejudgeLogView`）。
+ *
+ * 每 tab 獨立捲動位置：`.arco-tabs-content` 在 `:lazy-load="true"` 下是**同一個** DOM 節點被
+ * 所有 tab 共用（切 tab 只換內部子節點），若不介入，切走再切回會維持舊 scrollTop、切到「沒捲過
+ * 的新 tab」也會沿用上一個 tab 的捲動位置——不是使用者預期的「每個 tab 各自獨立記住自己的捲動
+ * 位置，沒捲過的預設在頂部」。本元件內部用 `active-key`（消費端必走 `v-model:active-key`）記錄
+ * 每個 key 最後的 scrollTop：切走前存舊 tab 位置、切入後（等 lazy-load 掛載新內容）還原新 tab
+ * 位置（未存過則回頂部），消費端不需要、也不應該自己處理。
  */
-import { ref } from 'vue';
+import { nextTick, ref, useAttrs, watch } from 'vue';
 
+const attrs = useAttrs();
 const root = ref<HTMLElement>();
 
+/** `.arco-tabs-content`：:lazy-load 下同時只有 active pane 掛載，容器內僅一個此節點存在，
+ * 免消費端自行得知 Arco 內部 class 名稱。 */
+const getScrollEl = (): HTMLElement | null =>
+  root.value?.querySelector<HTMLElement>('.arco-tabs-content') ?? null;
+
+// key → 最後捲動位置；plain Map 即可（不需響應式，只在 tab 切換這個明確時間點讀寫）。
+const scrollPositions = new Map<string, number>();
+
+watch(
+  () => attrs.activeKey as string | number | undefined,
+  async (newKey, oldKey) => {
+    // watch 預設 pre-flush：此刻 DOM 尚未因 activeKey 變更而重繪，getScrollEl() 抓到的仍是切走前
+    // 那個 tab 的內容，此時讀到的 scrollTop 正是該 tab 離開當下的捲動位置。
+    if (oldKey !== undefined) {
+      const el = getScrollEl();
+      if (el) scrollPositions.set(String(oldKey), el.scrollTop);
+    }
+    if (newKey === undefined) return;
+    await nextTick(); // 等新 tab 的內容（lazy-load）掛載完成
+    const el = getScrollEl();
+    if (el) el.scrollTop = scrollPositions.get(String(newKey)) ?? 0;
+  },
+);
+
 defineExpose({
-  /** 捲動當前可見 tab 的內容區到底（串流新增條目時呼叫）；:lazy-load 下同時只有 active pane
-   * 掛載，故容器內僅一個 `.arco-tabs-content` 存在，免消費端自行得知 Arco 內部 class 名稱。 */
+  /** 目前 tab 內容的捲動容器（`.arco-tabs-content`）。 */
+  getScrollEl,
+  /** 捲動當前可見 tab 的內容區到底（串流新增條目時呼叫）。 */
   scrollActiveToBottom: (): void => {
-    const scroller = root.value?.querySelector<HTMLElement>('.arco-tabs-content');
+    const scroller = getScrollEl();
     scroller?.scrollTo({ top: scroller.scrollHeight });
   },
 });

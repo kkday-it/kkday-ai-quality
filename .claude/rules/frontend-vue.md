@@ -30,14 +30,26 @@ paths:
 
 > 範例見 `features/judge/pages/AttributionList.vue` 的 `#toolbar`。輕量單行、不會換行的少量控制項（2~3 個）可續用 `flex gap-2`，不強制 Grid。
 
-## UI 元件復用（不自寫）
+## UI 元件復用（Arco 優先 · 不自寫）
 
-新增任何共用 UI 前，先搜尋 codebase 既有 component，找到即擴充，不平行造第二套。
+任何 UI 需求（元件 / 互動方法 / 樣式），查找順序固定：**① codebase 既有共用元件 → ② Arco Design Vue 內建元件/方法/樣式 → ③ 專案已裝的其他套件（`vue-echarts`…）→ ④ 才自寫**。前三層任一能滿足，禁止跳過去自己刻。
 
-- 需要彈窗 / 抽屜 → 用 `a-modal` / `a-drawer`，不自寫
-- 需要表單 / 表格 / 提示 → 用 Arco 對應元件（`a-form` / `a-table` / `Message`）
-- 需要圖表 → 用 `vue-echarts` 的 `<v-chart>`，不引入其他圖表庫
-- **元件薄**：只管渲染 + 互動，業務邏輯下沉 composable / util；function > 50 行或元件塞多職責 → 拆分
+- **元件**：彈窗/抽屜 → `a-modal`/`a-drawer`；表單/表格/樹/級聯/上傳 → `a-form`/`a-table`/`a-tree`/`a-cascader`/`a-upload`；提示/回饋 → `Message`/`Notification`/`a-alert`；導覽 → `a-anchor`/`a-tabs`/`a-breadcrumb`/`a-steps`；資料展示 → `a-descriptions`/`a-statistic`/`a-timeline`/`a-collapse`/`a-empty`/`a-skeleton`——動手寫一個「看起來很基礎」的 UI 片段（loading 骨架、空狀態、麵包屑、步驟條…）前，先查 Arco 是否已有對應元件，十之八九有。
+- **方法 / API**：確認對話走 `Modal.confirm`/`a-popconfirm`（不自寫確認彈窗）；全域訊息走 `Message`/`Notification`（不自己疊 toast）；表單驗證走 `a-form` 的 `rules`（不手寫 validate 邏輯）；圖示一律 `@arco-design/web-vue/es/icon` 具名 import（不外找 icon 套件、不用 emoji/SVG 拼湊）。
+- **樣式 / 語義**：顏色、狀態、尺寸優先用 Arco 的 `type`/`status`/`size`/`color` prop 或 DS token（`var(--color-xxx)` / `rgb(var(--primary-6))`），不要為了微調樣式另外手刻一套視覺規範；Arco prop 不夠精細才退到 `:deep()`（見上方樣式鐵律優先級）。
+- **圖表** → `vue-echarts` 的 `<v-chart>`，不引入其他圖表庫（Arco 本身無重量級圖表元件，此為既定例外）。
+- **判斷「Arco 沒有」前先查文件**：以 [arco.design/vue/component](https://arco.design/vue/component) 為準（禁照搬 React 版寫法），拿不準就先搜再下結論，不要單憑印象斷定「Arco 沒有這個」就直接自寫。
+- **元件薄**：只管渲染 + 互動，業務邏輯下沉 composable / util；function > 50 行或元件塞多職責 → 拆分。
+
+## 佈局性質元件主動拆公共元件（強制 · 不需使用者提醒）
+
+開發過程中若寫出的區塊屬於**佈局性質**（跟具體業務資料無關，只管排版/導覽/容器結構——如「左側錨點導航 + 右側內容區」「固定 header + 可捲動 body」「多欄並排卡片」等），且該區塊已有跡象會被第二處消費（同檔內複用一次以上、或明顯是其他頁面/抽屜也會需要的通用結構），**當場主動拆成獨立元件放共用層，不必等使用者提出**：
+
+- 判準沿用 §Rule of Three（`reuse-and-decoupling.md`）：**佈局結構第 2 次出現**（不用等到第 3 次）即拆——佈局元件比一般邏輯更容易被跨頁復用，且越晚拆、消費端寫死的樣式/資料耦合越深，重構成本越高。
+- 拆出的元件只管**排版與容器結構**，資料/業務邏輯留在呼叫端用 props 注入（呼應「元件薄」）；純樣式/純資料轉換的輔助函式一併下沉共用 `utils`，不要讓拆出的佈局元件裡還混著呼叫端專屬的格式化邏輯。
+- 放置位置：跨 feature 共用 → `@/components`；僅同一 feature 內跨頁復用 → 該 feature 的 `components/`（同 barrel 慣例）。
+- 命名反映「佈局角色」而非「當下業務場景」（如 `LlmCallTimeline` 而非 `PolarityLogPane`），避免改名或內容耦合業務字眼，讓下一個消費端一看名字就懂能不能用。
+- 完成後**同時檢查既有同類佈局是否已重複散落多處**，能收斂就順手收斂（不強制大規模 codemod，但當次任務觸碰到的範圍內要收）。
 
 ## 表格（全局公共元件 · 強制）
 
@@ -115,8 +127,9 @@ import { StickyTabs } from '@/components';
 - **消費端前提**：根元素需在有實際高度的容器內（drawer 走 `:body-style` 撐滿、頁面走 `h-full`）才能 `flex:1` 撐滿並讓內容區正確捲動。
 - **消費端不得再套 `overflow-auto` 包住整個 `<StickyTabs>`**——捲動容器已下沉到元件內部，外層若疊加 `overflow-auto` 會產生雙層捲軸；消費端改用 `overflow-hidden` 讓內部機制接管。
 - **串流新增條目要自動捲到底**：用 `ref` 拿 `StickyTabs` 實例，呼叫其 `scrollActiveToBottom()`（`:lazy-load="true"` 下同時只有 active pane 掛載，元件內部自動抓對容器，消費端不需得知 Arco 內部 class 名稱）。
+- **內容旁要掛一份跟捲動同步的側欄導航**（如左側掛錨點導航）：用同一 `ref` 呼叫 `getScrollEl()` 取得 `.arco-tabs-content` 這個唯一捲動容器本身，餵給 `a-anchor` 的 `:scroll-container`；side-nav 元素本身放在 `<StickyTabs>` **外面**（同一個 flex row 的相鄰兄弟），不要塞進 tab-pane 內部——這樣捲動範圍天然限定在 tab 列下方的內容區，不含 tab 列與側欄自身，也不必額外包一層外層捲動容器。
 
-> Canonical 用例：`features/judge/components/PrejudgeLogView.vue`（7 路 LLM 調用 tab，`polarity`/`C-1`~`C-6`）。`StickyTabs` 內部實作（`:deep()` 覆寫 `.arco-tabs`/`.arco-tabs-nav`/`.arco-tabs-content`，水平 overflow 維持 hidden 不動 Arco 原生 clip 機制）見 `components/StickyTabs.vue` 本身，除非要擴充該元件本身，否則消費端不需要、也不應該知道這些內部細節。
+> Canonical 用例：`features/judge/components/PrejudgeLogView.vue`（7 路 LLM 調用 tab，`polarity`/`C-1`~`C-6`，含左側掛錨點導航 + `getScrollEl()` 用法）。`StickyTabs` 內部實作（`:deep()` 覆寫 `.arco-tabs`/`.arco-tabs-nav`/`.arco-tabs-content`，水平 overflow 維持 hidden 不動 Arco 原生 clip 機制）見 `components/StickyTabs.vue` 本身，除非要擴充該元件本身，否則消費端不需要、也不應該知道這些內部細節。
 
 ## 懶加載 / Code-splitting（預設機制）
 

@@ -14,9 +14,13 @@
    "pkg_oid",
    "order_oid",
    "supplier_oid",
+   "supplier_name",
    "member_uuid",
    "score",
-   "lang"
+   "lang",
+   "trip_stage",
+   "msg_handler",
+   "cs_task_type"
   ]
  },
  "$schema": "./source_mapping.schema.json",
@@ -42,7 +46,11 @@
     "order_oid": "order_oid",
     "session_oid": "source_record_id",
     "supplier_oid": "supplier_oid",
+    "supplier_name": "supplier_name",
     "conversation_type": "channel",
+    "trip_stage": "trip_stage",
+    "msg_handler": "msg_handler",
+    "cs_task_type_name": "cs_task_type",
     "session_datetime_tw": "occurred_at"
    },
    "merge_fields": {
