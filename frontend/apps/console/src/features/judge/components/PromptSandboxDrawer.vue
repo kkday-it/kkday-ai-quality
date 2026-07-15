@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 歸因列表「Prompt 測試」沙盒抽屜：對單列、勾選多筆、或依條件批量選取，跑使用者勾選的 7 條
+ * 歸因列表「Prompt 測試」沙盒抽屜：對單列或批量（依條件目標選取，含「已選內」子模式涵蓋勾選
+ * 測試），跑使用者勾選的 7 條
  * prompt 子集（polarity + C-1..C-6）→ 逐筆逐 prompt 結果。**ungated**（不受正式歸因閘門限制，
  * 即使整體判正向也能測域 prompt）；測試歷史與正式初判完全分離（獨立 `prompt_sandbox_runs` 表），
  * 且捕捉完整 LLM log 供即時觀看與歷史回看（見 `sandbox_classify`/`prompt_sandbox.py`）——「執行
@@ -39,9 +40,9 @@ const props = defineProps<{
   visible: boolean;
   /** 當前反饋來源 code（product_reviews…）。 */
   source: string;
-  /** 觸發入口：single＝單列按鈕；selection＝工具列對勾選多筆；all＝工具列依條件批量選取。 */
-  scope: 'single' | 'selection' | 'all';
-  /** 受測 source_id 清單（single/selection 顯式；all 時由內部依條件解析，此 prop 忽略）。 */
+  /** 觸發入口：single＝單列按鈕；all＝工具列批量（內建依條件目標選取，含「已選內」子模式）。 */
+  scope: 'single' | 'all';
+  /** 受測 source_id 清單（僅 single 時顯式帶入；all 時一律由內部依條件解析，此 prop 忽略）。 */
   sourceIds: string[];
   /** scope=single 時的目標列（供顯示評論原文預覽）。 */
   row?: ProblemRow | null;
@@ -142,8 +143,7 @@ const reviewText = computed(() => String(props.row?.content ?? props.row?.title 
 /** 範圍摘要文字（依 scope 顯示不同語意）。 */
 const scopeSummary = computed(() => {
   if (props.scope === 'single') return '單列測試';
-  if (props.scope === 'selection') return `已選 ${props.sourceIds.length} 筆`;
-  return `依條件批量 · 將測試 ${targets.targetCount.value} 筆`;
+  return `批量 · 將測試 ${targets.targetCount.value} 筆`;
 });
 
 async function run() {
@@ -151,7 +151,7 @@ async function run() {
     Message.warning('請至少勾選一支 Prompt');
     return;
   }
-  if (props.scope !== 'all' && !props.sourceIds.length) {
+  if (props.scope === 'single' && !props.sourceIds.length) {
     Message.warning('沒有受測項目');
     return;
   }
@@ -220,8 +220,9 @@ async function viewHistoryRun(runId: string) {
   }
 }
 
-/** 範圍中文標籤（歷史列表用）。 */
-const SCOPE_LABEL: Record<string, string> = { single: '單列', selection: '選取', all: '依條件' };
+/** 範圍中文標籤（歷史列表用）。selection 為舊版「已選 N」按鈕遺留的歷史紀錄值（該按鈕已併入
+ * all 的「已選內」子模式，觸發端不再產生新的 selection，此處僅為相容顯示舊資料）。 */
+const SCOPE_LABEL: Record<string, string> = { single: '單列', selection: '選取', all: '批量' };
 
 /** 域條目判準：有 domain_label 欄位＝域 prompt 結果；否則為 polarity 條目。 */
 const isDomainEntry = (p: NonNullable<PromptSandboxItemResult['prompts']>[number]): boolean =>

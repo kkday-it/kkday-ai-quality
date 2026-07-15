@@ -181,12 +181,12 @@ const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
 };
-// Prompt 測試沙盒：單列（列操作區）/ 勾選多筆 / 依條件批量選取（工具列兩顆）共用同一 Drawer，
-// 靠 scope 分辨語意（即使 selection 剛好勾 1 筆，仍走 selection 語意——供沙盒歷史列表正確分辨
-// 觸發來源）。scope='all' 時 Drawer 內部委派 usePromptSandboxTargets 比照初判分類做目標選取，
-// 此處需把 effVerticals/selectedRowKeys/listFilters/cascadeOptions 一併傳入供其取用。
+// Prompt 測試沙盒：單列（列操作區）/ 批量（工具列，內含依條件目標選取）共用同一 Drawer，靠
+// scope 分辨語意。scope='all' 時 Drawer 內部委派 usePromptSandboxTargets 比照初判分類做目標
+// 選取（含「已選內／全部資料」切換，勾選測試已是其子功能，不再另設獨立按鈕），此處需把
+// effVerticals/selectedRowKeys/listFilters/cascadeOptions 一併傳入供其取用。
 const sandboxVisible = ref(false);
-const sandboxScope = ref<'single' | 'selection' | 'all'>('single');
+const sandboxScope = ref<'single' | 'all'>('single');
 const sandboxSourceIds = ref<string[]>([]);
 const sandboxRow = ref<ProblemRow | null>(null);
 /** 開單列 Prompt 測試沙盒。 */
@@ -196,18 +196,8 @@ const openRowTest = (record: ProblemRow) => {
   sandboxScope.value = 'single';
   sandboxVisible.value = true;
 };
-/** 開勾選多筆 Prompt 測試沙盒（工具列「已選 N」入口；無勾選則提示）。 */
-const openSelectionTest = () => {
-  if (!selectedRowKeys.value.length) {
-    Message.warning('請先勾選要測試的列');
-    return;
-  }
-  sandboxRow.value = null;
-  sandboxSourceIds.value = [...selectedRowKeys.value] as string[];
-  sandboxScope.value = 'selection';
-  sandboxVisible.value = true;
-};
-/** 開依條件批量選取 Prompt 測試沙盒（工具列入口；比照初判分類，無勾選亦可開，預設測全部未判）。 */
+/** 開批量 Prompt 測試沙盒（工具列唯一入口；比照初判分類，無勾選亦可開，預設測全部未判；
+ * 有勾選時 Drawer 內建「已選內」範圍可測勾選集合）。 */
 const openBatchTest = () => {
   sandboxRow.value = null;
   sandboxSourceIds.value = [];
@@ -437,12 +427,11 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- Prompt 測試沙盒（勾選多筆）：對勾選的列跑選定 prompt 子集，ungated、不落正式判決 -->
-      <a-button size="small" type="dashed" @click="openSelectionTest">
+      <!-- Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」
+           切換，無需先勾選即可開；有勾選時 runCount 顯示於按鈕文字提示 -->
+      <a-button size="small" type="dashed" @click="openBatchTest">
         Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- Prompt 測試沙盒（依條件批量選取）：比照初判分類 stage/篩選目標選取，無需先勾選 -->
-      <a-button size="small" type="dashed" @click="openBatchTest"> Prompt 測試（依條件） </a-button>
     </div>
   </Teleport>
 
@@ -1128,7 +1117,8 @@ onMounted(init);
     <!-- 初判執行日誌抽屜：SSE 即時顯示該次判決各階段 + LLM 輸入參數/prompt/輸出（流式）-->
     <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
-    <!-- Prompt 測試沙盒：單列 / 勾選多筆共用；跑選定 prompt 子集，ungated、與正式判決分離落庫 -->
+    <!-- Prompt 測試沙盒：單列 / 批量（內建依條件目標選取）共用；跑選定 prompt 子集，ungated、
+         與正式判決分離落庫 -->
     <PromptSandboxDrawer
       v-model:visible="sandboxVisible"
       :source="source"
