@@ -146,6 +146,8 @@ export interface PrejudgeBody {
   taxonomy?: string[];
   /** 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。 */
   has_external?: boolean;
+  /** 版本選擇功能：7 條 prompt 各自指定歷史版本（{rule_code: 版本號}；未指定沿用 active）。 */
+  prompt_versions?: Record<string, number>;
 }
 
 /** 啟動初判歸因批量任務（item_ids 顯式 / scope=all 目標選取，可 within_ids 交集勾選範圍）→ {job_id, total, model}。 */
@@ -361,6 +363,9 @@ export interface PromptSandboxStartBody extends PrejudgeBody {
   source: string;
   prompt_ids: string[];
   scope: 'single' | 'selection' | 'all';
+  /** 版本選擇功能：{rule_code: 指定歷史版本號}（沙盒獨有欄位，與 PrejudgeBody 繼承來的
+   * prompt_versions 是不同的請求鍵，兩者互不影響）。不支援測試未存檔草稿。 */
+  versions?: Record<string, number>;
 }
 
 /** 啟動 Prompt 測試沙盒背景 job → {job_id}（前端輪詢 `getPromptSandboxStatus` 拿進度）。
@@ -407,6 +412,8 @@ export interface PromptSandboxRunSummary {
   model: string;
   triggered_by: string;
   created_at: string;
+  /** 本次測試各 prompt 指定的版本號（{rule_code: version}；未指定沿用 active）。 */
+  versions?: Record<string, number>;
 }
 
 /** run_log 快照條目（供沙盒測試歷史回看完整 LLM log；形狀同 `PrejudgeLogDrawer` 的即時日誌）。 */
@@ -455,5 +462,8 @@ export const listPromptSandboxRuns = (
 export const getPromptSandboxRun = (
   runId: string,
 ): Promise<
-  PromptSandboxRunSummary & { results: PromptSandboxItemResult[]; log: PromptSandboxLogEntry[] }
+  PromptSandboxRunSummary & {
+    results: PromptSandboxItemResult[];
+    log: PromptSandboxLogEntry[];
+  }
 > => j(`${BASE}/v1/judgment/prompt-sandbox/runs/${encodeURIComponent(runId)}`);

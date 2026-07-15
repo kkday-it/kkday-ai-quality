@@ -7,3 +7,4 @@ export * from './useLlmConfigs';
 export * from './usePrejudgeJob';
 export * from './useProductVerticalRule';
 export * from './usePromptSandboxTargets';
+export * from './usePromptVersionPicker';

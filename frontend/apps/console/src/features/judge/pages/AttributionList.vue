@@ -6,8 +6,9 @@
  * 底部完整 Arco 分頁。選取跨頁累積（複選 / 分頁選取 / 全部未判 scope）；導出走後端全量 CSV。
  * 正向/中性 不歸因，只有負向才有 L1→L2。
  *
- * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器/展開行明細依來源切換
- * 讀 `SOURCE_LIST_SCHEMAS`（product_reviews 已打樣，其餘來源沿用固定欄位 fallback）。
+ * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器與顯示差異化
+ * （內容欄標籤/對話模式/關聯資料段落/精確查詢 placeholder）依來源讀 `SOURCE_LIST_SCHEMAS`：
+ * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
 import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
 import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
@@ -22,9 +23,22 @@ import {
   IconMessage,
 } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
-import { AttributionDetailDrawer, AttributionFilterBar, PromptSandboxDrawer } from '../components';
+import {
+  AttributionDetailDrawer,
+  AttributionFilterBar,
+  LlmConfigSelect,
+  PromptSandboxDrawer,
+  PromptVersionPickerGroup,
+} from '../components';
 import { useAttributionList } from '../composables';
 import {
+  DIALOGUE_ROLE_COLORS,
+  DIALOGUE_ROLE_LABELS,
+  idPlaceholderFor,
+  INBOUND_CHANNEL_LABELS,
+  INBOUND_HANDLER_LABELS,
+  INBOUND_TRIP_STAGE_LABELS,
+  POLARITY_COLOR,
   POLARITY_LABELS,
   SOURCES,
   STAGE_LABELS,
@@ -32,17 +46,11 @@ import {
   STATUS_LABEL,
   TIER_LABELS,
   TRAVELLER_TYPE_LABELS,
+  type ContextSection,
   type FilterField,
   type ProblemRow,
 } from '../constants';
-import { fmtDt } from '../utils';
-
-/** 傾向類別標籤色（正向綠 / 負向紅 / 中性灰）。 */
-const POLARITY_COLOR: Record<string, string> = {
-  positive: 'green',
-  negative: 'red',
-  neutral: 'gray',
-};
+import { fmtDt, parseDialogue, type DialogueTurn } from '../utils';
 
 /** 判決階段語義色（未判灰 / 已判決綠 / 待覆核橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
@@ -101,8 +109,6 @@ const {
   resetFilters,
   llmConfigId,
   llmConfigs,
-  activeLlmId,
-  setActiveLlm,
   rows,
   total,
   unjudged,
@@ -159,18 +165,49 @@ const {
 // 單列重判完成 + 重載後，把表身捲回剛判的那一列（大列表·表身內滾動 y='100%'，重載會回頂 → 失去位置）。
 // ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
 const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
-const onRejudge = async (id: string) => {
+const onRejudge = async (id: string, promptVersions?: Record<string, number>) => {
   // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；
   // 取得 job_id 即開執行日誌抽屜（判決仍在跑，SSE 流式顯示各階段與 LLM 輸入/輸出）
-  await rejudgeRow(id, (jid) => {
-    logDrawerJobId.value = jid;
-    logDrawerVisible.value = true;
-  });
+  await rejudgeRow(
+    id,
+    (jid) => {
+      logDrawerJobId.value = jid;
+      logDrawerVisible.value = true;
+    },
+    promptVersions,
+  );
   await nextTick();
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
   const tr = tableRef.value?.tableRef?.$el?.querySelectorAll('.arco-table-body tbody > tr')[idx];
-  (tr as HTMLElement | undefined)?.scrollIntoView({ block: 'center', behavior: 'auto' }); // 即時定位，無滾動動畫
+  (tr as HTMLElement | undefined)?.scrollIntoView({
+    block: 'center',
+    behavior: 'auto',
+  }); // 即時定位，無滾動動畫
+};
+
+// ── 確認初判分類抽屜：批量（工具列）與單列（操作欄）共用同一個 confirmOpen 抽屜，
+//    confirmScope 分流內容顯示；confirmRowId 僅 scope='row' 時有值 ──
+const confirmScope = ref<'batch' | 'row'>('batch');
+const confirmRowId = ref('');
+const confirmVersionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
+const openRowConfirm = (record: { _group: unknown }) => {
+  confirmScope.value = 'row';
+  confirmRowId.value = String(record._group);
+  confirmOpen.value = true;
+};
+const openBatchConfirm = () => {
+  confirmScope.value = 'batch';
+  openPrejudge();
+};
+/** 抽屜「開始判決」：依 confirmScope 分流批量／單列執行（草稿不進正式判決，僅傳版本選擇）。 */
+const onConfirmRun = () => {
+  if (confirmScope.value === 'row') {
+    confirmOpen.value = false;
+    onRejudge(confirmRowId.value, confirmVersionSelection.value.versions);
+  } else {
+    doRun(confirmVersionSelection.value.versions);
+  }
 };
 
 // ── 操作：查看判決詳情抽屜（純前端，資料取自該列 attributions）──
@@ -236,6 +273,15 @@ const extTagColor = (v?: string | number | null): string => {
   return 'green';
 };
 
+// ── 來源顯示差異化（schema 驅動：內容標籤/對話模式/關聯段落/精確查詢 placeholder）──
+/** 關聯資料欄是否顯示某段落（schema contextSections 白名單；conversations 無方案/旅客）。 */
+const hasSection = (s: ContextSection): boolean => schema.value.contextSections.includes(s);
+/** 內容欄對話輪次：dialogue 模式且解析出 [ROLE]: 前綴才回輪次；否則 null → 原樣全文 fallback。 */
+const dialogueTurns = (record: ProblemRow): DialogueTurn[] | null =>
+  schema.value.contentMode === 'dialogue' ? parseDialogue(String(record.content || '')) : null;
+/** 精確查詢 placeholder（隨來源切換：評論 rec_oid／進線 session_oid…，與後端 natural_key 篩選對齊）。 */
+const idPlaceholder = computed(() => idPlaceholderFor(source.value));
+
 // ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）──
 const noteOpen = ref(false);
 const noteFindingId = ref('');
@@ -280,34 +326,16 @@ const submitNote = async () => {
 /** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
 const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-const LLM_OPTS = computed(() =>
-  llmConfigs.value.map((c) => ({ value: c.id, label: composeLlmLabel(c) })),
-);
-
-/** 本次判決將使用的模型 label（llmConfigId 跟隨全域啟用中，modal 可臨時覆寫）；無配置回空。 */
+/** 本次判決將使用的模型 label（llmConfigId 跟隨全域啟用中，抽屜可臨時覆寫）；無配置回空。 */
 const currentLlmLabel = computed(() => {
   const c = llmConfigs.value.find((x) => x.id === llmConfigId.value);
   return c ? composeLlmLabel(c) : '';
 });
 
-// 工具列全域模型切換：持久化 active_llm_config_id（與設定抽屜同一寫入路徑，雙向即時同步）
-const switchingLlm = ref(false);
-const onSwitchLlm = async (id: unknown) => {
-  switchingLlm.value = true;
-  try {
-    await setActiveLlm(String(id));
-    Message.success(`歸因模型已切換：${currentLlmLabel.value || String(id)}`);
-  } catch (e: any) {
-    Message.error('模型切換失敗：' + (e?.message || e));
-  } finally {
-    switchingLlm.value = false;
-  }
-};
-
-/** 單列初判歸因（已有歸因時＝重新判決覆寫）二次確認文案（附當前模型，判前提醒用什麼 model 歸因）。 */
+/** 單列（重）判抽屜的說明文案（附當前模型，判前提醒用什麼 model 歸因）；有既有歸因時提醒會覆寫。 */
 const rejudgeConfirmText = computed(
   () =>
-    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」重新初判並覆寫此列現有歸因（人工真值標註保留），並消耗判決額度。確定執行？`,
+    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」對此列進行初判分類（若已有歸因將覆寫，人工真值標註保留），並消耗判決額度。`,
 );
 
 /** schema filter type → AttributionFilters 欄位鍵（現皆同名，保留映射以隔離 schema 命名）。 */
@@ -391,24 +419,14 @@ onMounted(init);
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <!-- 歸因模型全域切換：值＝啟用中配置（與設定抽屜雙向即時同步）；切換即持久化 active_llm_config_id -->
-      <span class="text-sm text-gray-500">歸因模型</span>
-      <a-select
-        :model-value="activeLlmId"
-        size="small"
-        style="width: 230px"
-        :options="LLM_OPTS"
-        :loading="switchingLlm"
-        placeholder="無 LLM 配置（去設定新增）"
-        @change="onSwitchLlm"
-      />
+      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigSelect）-->
       <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）-->
       <a-button
         type="primary"
         size="small"
         :loading="running"
         :disabled="!canPrejudge"
-        @click="openPrejudge"
+        @click="openBatchConfirm"
       >
         初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
@@ -524,7 +542,11 @@ onMounted(init);
       empty-text="尚無資料，請先到「資料上傳」上傳 CSV"
       server
       :total="total"
-      :row-selection="{ type: 'checkbox', selectedRowKeys, showCheckedAll: true }"
+      :row-selection="{
+        type: 'checkbox',
+        selectedRowKeys,
+        showCheckedAll: true,
+      }"
       row-key="_group"
       :scroll="{ x: SCROLL_X }"
       @change="loadPage"
@@ -539,6 +561,7 @@ onMounted(init);
           :fields="toolbarFields"
           :cascade-options="cascadeOptions"
           :model-options="modelOptions"
+          :id-placeholder="idPlaceholder"
           class="mb-2"
           @change="onFilterChange"
         />
@@ -577,7 +600,7 @@ onMounted(init);
           </a-col>
           <a-col flex="none">
             <a-popconfirm
-              :content="`將把已選 ${runCount} 則評論的全部歸因標為「已忽略」。確定執行？`"
+              :content="`將把已選 ${runCount} 筆反饋的全部歸因標為「已忽略」。確定執行？`"
               ok-text="批量忽略"
               cancel-text="取消"
               @ok="batchReview('dismissed')"
@@ -605,15 +628,15 @@ onMounted(init);
         </a-row>
       </template>
       <template #seq="{ record }">{{ record._seq }}</template>
-      <!-- 反饋內容欄：比照關聯資料左標籤式，分「原始評論」（星等+傾向+標題/內容/#ID·時間）
-           與「外部評論」（評論系統融合維度：sentiment 情緒分 + free_tag 面向標籤；輔助訊號，僅有值才顯示）。 -->
+      <!-- 反饋內容欄：比照關聯資料左標籤式，主塊標籤依來源（反饋內容／進線對話／工單內容…，schema.contentLabel），
+           另有「外部評論」（評論系統融合維度：sentiment 情緒分 + free_tag 面向標籤；輔助訊號，僅有值才顯示）。 -->
       <template #review="{ record }">
         <div class="flex flex-col gap-1 py-1">
-          <!-- 原始評論 -->
+          <!-- 主內容塊（星等/標題僅評論形來源有值；進線走對話輪次渲染）-->
           <div class="flex gap-1.5">
             <span
               class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >原始評論</span
+              >{{ schema.contentLabel }}</span
             >
             <div class="min-w-0">
               <div class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -644,12 +667,32 @@ onMounted(init);
                   {{ record.title }}
                 </span>
               </div>
-              <div
-                v-if="record.content"
-                class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]"
-              >
-                {{ record.content }}
-              </div>
+              <!-- 進線對話：按 [ROLE]: 前綴解析輪次（角色 tag + 該輪文字），一眼辨發話方；
+                   非對話模式或解析失敗 fallback 原樣全文 -->
+              <template v-if="record.content">
+                <div v-if="dialogueTurns(record)" class="flex flex-col gap-1">
+                  <div
+                    v-for="(t, ti) in dialogueTurns(record)"
+                    :key="ti"
+                    class="text-xs leading-relaxed"
+                  >
+                    <a-tag
+                      v-if="t.role"
+                      size="small"
+                      :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
+                      class="mr-1"
+                      >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
+                    >
+                    <span class="whitespace-pre-wrap text-[var(--color-text-2)]">{{ t.text }}</span>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]"
+                >
+                  {{ record.content }}
+                </div>
+              </template>
               <div class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
                 #{{ record.source_record_id || record.source_id || '—' }} ·
                 {{ fmtDt(record.occurred_at) || '—' }}
@@ -843,22 +886,26 @@ onMounted(init);
       <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤（name）
                + 右側內容（值），主要值深色、次要明細 --color-text-2（加深，避免太淺看不清）。 -->
       <template #context="{ record }">
+        <!-- 段落依來源 schema.contextSections 裁剪：評論形來源全五段；conversations 無方案/旅客（恆空），改列進線屬性段 -->
         <div class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
           <!-- 訂單 -->
-          <div class="flex gap-1.5">
+          <div v-if="hasSection('order')" class="flex gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >訂單</span
             >
             <div class="min-w-0">
-              <div class="font-medium text-[var(--color-text-1)]">{{ cell(record.order_mid) }}</div>
+              <div class="font-medium text-[var(--color-text-1)]">
+                {{ cell(record.order_mid) }}
+              </div>
               <div class="text-[var(--color-text-2)]">
-                OID {{ cell(record.order_oid) }} · 出發 {{ fmtDt(record.go_date, true) || '—' }}
+                OID {{ cell(record.order_oid) }} · 出發
+                {{ fmtDt(record.go_date, true) || '—' }}
               </div>
             </div>
           </div>
           <!-- 商品 -->
-          <div class="flex gap-1.5">
+          <div v-if="hasSection('product')" class="flex gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >商品</span
@@ -875,7 +922,7 @@ onMounted(init);
             </div>
           </div>
           <!-- 方案 -->
-          <div class="flex gap-1.5">
+          <div v-if="hasSection('package')" class="flex gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >方案</span
@@ -888,16 +935,53 @@ onMounted(init);
               <div class="text-[var(--color-text-2)]">OID {{ cell(record.pkg_oid) }}</div>
             </div>
           </div>
-          <!-- 供應商 -->
-          <div class="flex gap-1.5">
+          <!-- 供應商（conversations 有名稱，優先顯示；OID 附註）-->
+          <div v-if="hasSection('supplier')" class="flex gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >供應商</span
             >
-            <span class="text-[var(--color-text-1)]">{{ cell(record.supplier_oid) }}</span>
+            <div class="min-w-0">
+              <div v-if="record.supplier_name" class="font-medium text-[var(--color-text-1)]">
+                {{ record.supplier_name }}
+              </div>
+              <div class="text-[var(--color-text-2)]">OID {{ cell(record.supplier_oid) }}</div>
+            </div>
+          </div>
+          <!-- 進線屬性（conversations 專屬：行程階段/管道/處理方/工單類型，有值才顯示）-->
+          <div v-if="hasSection('inbound')" class="flex items-center gap-1.5">
+            <span
+              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >進線</span
+            >
+            <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <a-tag v-if="record.trip_stage" size="small" color="arcoblue">
+                {{ INBOUND_TRIP_STAGE_LABELS[String(record.trip_stage)] || record.trip_stage }}
+              </a-tag>
+              <a-tag v-if="record.channel" size="small" color="purple">
+                {{ INBOUND_CHANNEL_LABELS[String(record.channel)] || record.channel }}
+              </a-tag>
+              <span v-if="record.msg_handler" class="text-[var(--color-text-2)]">
+                處理方
+                {{ INBOUND_HANDLER_LABELS[String(record.msg_handler)] || record.msg_handler }}
+              </span>
+              <span v-if="record.cs_task_type" class="text-[var(--color-text-2)]">
+                {{ record.cs_task_type }}
+              </span>
+              <span
+                v-if="
+                  !record.trip_stage &&
+                  !record.channel &&
+                  !record.msg_handler &&
+                  !record.cs_task_type
+                "
+                class="text-gray-300"
+                >—</span
+              >
+            </div>
           </div>
           <!-- 旅客 -->
-          <div class="flex items-center gap-1.5">
+          <div v-if="hasSection('traveller')" class="flex items-center gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >旅客</span
@@ -914,30 +998,14 @@ onMounted(init);
       <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因 覆核在判決歸因欄內。與批量選取解耦。 -->
       <template #actions="{ record }">
         <div class="flex flex-col items-stretch gap-1.5 py-1">
-          <!-- 已有歸因時＝覆寫破壞性（AI 覆寫既有歸因 + 燒判決額度）→ 二次確認；首次無覆寫，直接執行不製造確認疲勞 -->
-          <a-popconfirm
-            v-if="record.attributions && record.attributions.length"
-            :content="rejudgeConfirmText"
-            ok-text="初判分類"
-            cancel-text="取消"
-            @ok="onRejudge(record._group)"
-          >
-            <a-button
-              type="primary"
-              size="small"
-              :loading="isRowBusy(record._group)"
-              :disabled="!canPrejudge"
-            >
-              初判分類
-            </a-button>
-          </a-popconfirm>
+          <!-- 點擊直接開「確認初判分類」抽屜（模型/版本選擇+額度提示，見共用抽屜區塊），不再用小
+               popconfirm——本次執行前要確認的設定已不只是「要不要覆寫」。 -->
           <a-button
-            v-else
             type="primary"
             size="small"
             :loading="isRowBusy(record._group)"
             :disabled="!canPrejudge"
-            @click="onRejudge(record._group)"
+            @click="openRowConfirm(record)"
           >
             初判分類
           </a-button>
@@ -955,79 +1023,85 @@ onMounted(init);
     </TableLayout>
 
     <!-- 初判分類確認抽屜：選取範圍（已選內/全部）× 階段 × 目標篩選（自動帶入列表當前篩選，可重選）+ model -->
+    <!-- 確認初判分類：批量（工具列）與單列（操作欄）共用同一抽屜，confirmScope 分流目標內容；
+         模型 + 7 條 prompt 版本選擇兩者皆有；所有 Prompt 測試都在此進行，不支援測試未存檔草稿。 -->
     <a-drawer
       v-model:visible="confirmOpen"
       title="確認初判分類"
       ok-text="開始判決"
       cancel-text="取消"
       :width="1040"
-      :ok-loading="running"
-      @ok="doRun"
+      :ok-loading="confirmScope === 'row' ? isRowBusy(confirmRowId) : running"
+      @ok="onConfirmRun"
     >
       <div class="flex flex-col gap-3">
-        <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
-        <div v-if="runCount" class="flex items-center gap-2">
-          <span class="text-xs text-gray-500">選取範圍</span>
-          <a-radio-group v-model="targetMode" size="small" @change="refreshTargetCount">
-            <a-radio value="selected">已選 {{ runCount }} 筆內</a-radio>
-            <a-radio value="scope">全部資料</a-radio>
-          </a-radio-group>
-        </div>
-
-        <div class="flex flex-col gap-3">
-          <div>
-            <div class="mb-1 text-xs text-gray-500">
-              目標判決階段（預設只判未判；加選已判階段＝再判）
-            </div>
-            <a-checkbox-group v-model="targetStages" @change="refreshTargetCount">
-              <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">
-                {{ lbl }}
-              </a-checkbox>
-            </a-checkbox-group>
-          </div>
-          <!-- 目標篩選：共用 AttributionFilterBar（完整篩選欄，與列表對齊；自動帶入列表當前篩選，可重選）。
-               星等/日期/ID 兩分支皆套；傾向/信心分層/L1 為判決級，僅對已判分支生效（見 usePrejudgeJob._scopeBody）。 -->
-          <div>
-            <div class="mb-1 text-xs text-gray-500">目標篩選（已自動帶入列表當前篩選，可重選）</div>
-            <AttributionFilterBar
-              :model="draftFilters"
-              :fields="PREJUDGE_TARGET_FIELDS"
-              :cascade-options="cascadeOptions"
-              @change="refreshTargetCount"
-            />
-            <div class="mt-1 text-xs text-gray-400">
-              星等 / 日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1
-              僅對「已判」階段生效（未判列尚無判決可比對）。
-            </div>
-          </div>
-          <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
-          <div v-if="hasJudgedStage" class="flex items-center gap-2">
-            <span class="text-xs text-gray-500">再判信心範圍</span>
-            <a-radio-group v-model="lowConfOnly" size="small" @change="refreshTargetCount">
-              <a-radio :value="true">僅低信心</a-radio>
-              <a-radio :value="false">全部信心</a-radio>
+        <template v-if="confirmScope === 'batch'">
+          <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
+          <div v-if="runCount" class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">選取範圍</span>
+            <a-radio-group v-model="targetMode" size="small" @change="refreshTargetCount">
+              <a-radio value="selected">已選 {{ runCount }} 筆內</a-radio>
+              <a-radio value="scope">全部資料</a-radio>
             </a-radio-group>
           </div>
-        </div>
 
-        <div class="text-sm text-[var(--color-text-1)]">
-          將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
-          筆進行初判分類（正向不分類；負向與含問題點的中性評論歸 L1→L2）。
-        </div>
+          <div class="flex flex-col gap-3">
+            <div>
+              <div class="mb-1 text-xs text-gray-500">
+                目標判決階段（預設只判未判；加選已判階段＝再判）
+              </div>
+              <a-checkbox-group v-model="targetStages" @change="refreshTargetCount">
+                <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">
+                  {{ lbl }}
+                </a-checkbox>
+              </a-checkbox-group>
+            </div>
+            <!-- 目標篩選：共用 AttributionFilterBar（完整篩選欄，與列表對齊；自動帶入列表當前篩選，可重選）。
+                 星等/日期/ID 兩分支皆套；傾向/信心分層/L1 為判決級，僅對已判分支生效（見 usePrejudgeJob._scopeBody）。 -->
+            <div>
+              <div class="mb-1 text-xs text-gray-500">
+                目標篩選（已自動帶入列表當前篩選，可重選）
+              </div>
+              <AttributionFilterBar
+                :model="draftFilters"
+                :fields="PREJUDGE_TARGET_FIELDS"
+                :cascade-options="cascadeOptions"
+                :id-placeholder="idPlaceholder"
+                @change="refreshTargetCount"
+              />
+              <div class="mt-1 text-xs text-gray-400">
+                日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1
+                僅對「已判」階段生效（未判列尚無判決可比對）。
+              </div>
+            </div>
+            <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
+            <div v-if="hasJudgedStage" class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">再判信心範圍</span>
+              <a-radio-group v-model="lowConfOnly" size="small" @change="refreshTargetCount">
+                <a-radio :value="true">僅低信心</a-radio>
+                <a-radio :value="false">全部信心</a-radio>
+              </a-radio-group>
+            </div>
+          </div>
+
+          <div class="text-sm text-[var(--color-text-1)]">
+            將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
+            筆進行初判分類（正向不分類；負向與含問題點的中性反饋歸 L1→L2）。
+          </div>
+        </template>
+        <template v-else>
+          <div class="text-sm text-[var(--color-text-1)]">{{ rejudgeConfirmText }}</div>
+        </template>
+
+        <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
 
         <div>
           <div class="mb-1 text-xs text-gray-500">
-            LLM 模型配置（同「設定 › LLM 模型連線」；本次使用：<b>{{ currentLlmLabel || '未選' }}</b
-            >）
+            Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
           </div>
-          <a-select
-            v-model="llmConfigId"
-            style="width: 100%"
-            :options="LLM_OPTS"
-            placeholder="選擇模型（預設啟用中）"
-          />
+          <PromptVersionPickerGroup @update:resolved="(v) => (confirmVersionSelection = v)" />
         </div>
-        <div class="text-xs text-gray-400">確認後開始批量判決，過程會消耗 token。</div>
+        <div class="text-xs text-gray-400">確認後開始判決，過程會消耗 token。</div>
       </div>
     </a-drawer>
 
@@ -1105,6 +1179,7 @@ onMounted(init);
             :fields="toolbarFields"
             :cascade-options="cascadeOptions"
             :model-options="modelOptions"
+            :id-placeholder="idPlaceholder"
           />
         </div>
         <div class="text-xs text-gray-400">確認後於背景組檔，完成自動下載（可於進度條停止）。</div>
@@ -1138,7 +1213,11 @@ onMounted(init);
       :footer="false"
       :width="680"
       unmount-on-close
-      :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
+      :body-style="{
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }"
     >
       <div class="flex min-h-0 flex-1 gap-5">
         <!-- 左：append-only 歷史時間軸（舊到新，時間遞增；佔 7/10）-->

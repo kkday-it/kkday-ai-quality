@@ -29,6 +29,18 @@ import { useExportJob } from '../composables';
 // 初判 Prompt 編輯器懶載入：md-editor-v3 較重，只在編輯 prompt_* 時才載入該 chunk，不壓首屏 bundle。
 const PromptEditor = defineAsyncComponent(() => import('../components/PromptEditor.vue'));
 
+/** rule_code → 對應 prompts/*.md 檔名式 id（與 prompt_source.PROMPT_IDS 對照，純顯示用；
+ * 讓編輯區標頭跟檔案總管的檔名對得起來，而非顯示內部 DB rule_code）。 */
+const PROMPT_FILE_ID: Record<string, string> = {
+  prompt_polarity: '00_polarity',
+  'prompt_C-1': '01_C-1_content',
+  'prompt_C-2': '02_C-2_quality',
+  'prompt_C-3': '03_C-3_supplier',
+  'prompt_C-4': '04_C-4_platform',
+  'prompt_C-5': '05_C-5_service',
+  'prompt_C-6': '06_C-6_customer',
+};
+
 // 權限：無 judge-rule.version.manage 者唯讀（後端 403 為權威，前端 disable + 提示避免做白工）
 const { can } = usePermission();
 const canManage = computed(() => can(PERM.judgeRuleManage));
@@ -96,6 +108,10 @@ async function pick(code: string) {
 /** 編輯器 / 面板回報變更 → 寫入 store。 */
 function onChange(payload: { json: unknown; valid: boolean }) {
   store.setEdited(payload.json, payload.valid);
+}
+
+function openSave() {
+  saveOpen.value = true;
 }
 
 async function doSave() {
@@ -181,7 +197,7 @@ function doResetAll() {
             </a-menu-item>
           </a-menu-item-group>
           <!-- 初判 Prompt（判決 prompt 唯一真相源）：md 編輯 + md 歷史 diff，無 JSON -->
-          <a-menu-item-group title="初判 Prompt">
+          <a-menu-item-group title="判決 Prompts">
             <a-menu-item v-for="c in promptCodes" :key="c">
               <span class="font-mono text-xs text-[var(--color-text-3)]">{{
                 c.replace('prompt_', '')
@@ -259,7 +275,7 @@ function doResetAll() {
           <span
             class="rounded bg-[rgb(var(--primary-1))] px-2 py-0.5 font-mono text-xs font-semibold text-[rgb(var(--primary-6))]"
           >
-            {{ store.activeCode }}
+            {{ PROMPT_FILE_ID[store.activeCode] ?? store.activeCode }}
           </span>
           <span class="text-sm font-medium text-[var(--color-text-1)]">{{
             store.labelFor(store.activeCode)
@@ -277,7 +293,7 @@ function doResetAll() {
             type="primary"
             size="small"
             :disabled="!store.dirty || !canManage"
-            @click="saveOpen = true"
+            @click="openSave"
             >儲存</a-button
           >
         </div>

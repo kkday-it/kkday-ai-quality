@@ -1,7 +1,8 @@
-// 各來源歸因列表差異化 schema（欄位 / 展開行明細 / 篩選器）——SSOT，AttributionList 依 source 切換整組讀取。
-// product_reviews 先完整打樣；其餘 4 來源沿用舊 intake_items 現況，以現行固定欄位當 fallback stub
-// （待該來源遷移專屬表時再依 §7 補完整 schema，非本次範圍）。
+// 各來源歸因列表差異化 schema（欄位 / 篩選器 / 顯示配置）——SSOT，AttributionList 依 source 切換整組讀取。
+// 5 來源共用統一複合欄 + 共用篩選；顯示差異（內容欄標籤 / 對話模式 / 關聯資料段落 / 精確查詢名詞）
+// 依 SOURCE_DISPLAY 客製（如 conversations＝進線對話輪次 + 進線屬性段，非單純「反饋內容」語義）。
 import type { TableColumnData } from '@arco-design/web-vue';
+import { SOURCES } from './source.constant';
 
 /** 商品垂直分類篩選（多選；選項來自 rule_code=product_vertical 的 active 版本動態解析）。 */
 export interface ProductVerticalFilterDef {
@@ -64,10 +65,21 @@ export type SourceFilterDef =
   | ProductVerticalFilterDef
   | DateRangeFilterDef;
 
-/** 單一來源的歸因列表 schema：欄位 + 篩選器（展開行已廢除，關聯明細改複合欄位平鋪主列）。 */
+/** 關聯資料欄可顯示的段落（依來源裁剪：如 conversations 無方案/旅客，改顯進線屬性段）。 */
+export type ContextSection = 'order' | 'product' | 'package' | 'supplier' | 'traveller' | 'inbound';
+
+/** 單一來源的歸因列表 schema：欄位 + 篩選器 + 顯示差異化（展開行已廢除，關聯明細改複合欄位平鋪主列）。 */
 export interface SourceListSchema {
   columns: TableColumnData[];
   filters: SourceFilterDef[];
+  /** 反饋內容欄左側標籤（如 反饋內容／進線對話——來源語義各異，禁寫死單一名詞）。 */
+  contentLabel: string;
+  /** 精確查詢 id 的業務名詞（placeholder 組「{idNoun} {natural_key} 如 1,2,3」用）。 */
+  idNoun: string;
+  /** 內容渲染模式：text＝原樣全文；dialogue＝按 [ROLE]: 前綴解析成對話輪次（解析失敗 fallback 原樣）。 */
+  contentMode: 'text' | 'dialogue';
+  /** 關聯資料欄顯示段落白名單（模板固定順序渲染；該來源恆空的段落不列，避免整欄「—」噪音）。 */
+  contextSections: ContextSection[];
 }
 
 /** 歸因分類層（L1/L2 共用形狀）。 */
@@ -151,7 +163,12 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
     width: 320,
     sortable: { sortDirections: ['ascend', 'descend'] },
   },
-  { title: '關聯資料', dataIndex: 'order_mid', slotName: 'context', width: 300 },
+  {
+    title: '關聯資料',
+    dataIndex: 'order_mid',
+    slotName: 'context',
+    width: 300,
+  },
   {
     title: '判決歸因（信心度）', // 闊號＝排序依據：此欄可排序，依該 review 各歸因最大 confidence 信心度
     dataIndex: 'confidence',
@@ -181,7 +198,65 @@ function filtersFor(source: string): SourceFilterDef[] {
   return base;
 }
 
-/** 5 反饋來源皆用統一複合欄 + 共用篩選。 */
+/** 關聯資料欄預設段落（訂單→商品→方案→供應商→旅客；product_reviews 等評論形來源全段適用）。 */
+const DEFAULT_CONTEXT_SECTIONS: ContextSection[] = [
+  'order',
+  'product',
+  'package',
+  'supplier',
+  'traveller',
+];
+
+/** 各來源顯示差異化配置（欄位/篩選共用，僅標籤/內容模式/關聯段落依來源語義客製）。 */
+const SOURCE_DISPLAY: Record<
+  string,
+  Pick<SourceListSchema, 'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections'>
+> = {
+  product_reviews: {
+    contentLabel: '反饋內容',
+    idNoun: '評論',
+    contentMode: 'text',
+    contextSections: DEFAULT_CONTEXT_SECTIONS,
+  },
+  // 進線＝客服對話：無方案/旅客欄（恆空不列），改列進線屬性段；內容按 [ROLE]: 解析輪次
+  conversations: {
+    contentLabel: '進線對話',
+    idNoun: '進線',
+    contentMode: 'dialogue',
+    contextSections: ['order', 'product', 'supplier', 'inbound'],
+  },
+  freshdesk_tickets: {
+    contentLabel: '工單內容',
+    idNoun: '工單',
+    contentMode: 'text',
+    contextSections: DEFAULT_CONTEXT_SECTIONS,
+  },
+  app_feedback: {
+    contentLabel: '反饋內容',
+    idNoun: '反饋',
+    contentMode: 'text',
+    contextSections: DEFAULT_CONTEXT_SECTIONS,
+  },
+  mixpanel_tracker: {
+    contentLabel: '反饋內容',
+    idNoun: '反饋',
+    contentMode: 'text',
+    contextSections: DEFAULT_CONTEXT_SECTIONS,
+  },
+};
+
+/** 未知來源的顯示配置回退（泛稱反饋 + 全段落）。 */
+const FALLBACK_DISPLAY: Pick<
+  SourceListSchema,
+  'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections'
+> = {
+  contentLabel: '反饋內容',
+  idNoun: '反饋',
+  contentMode: 'text',
+  contextSections: DEFAULT_CONTEXT_SECTIONS,
+};
+
+/** 5 反饋來源皆用統一複合欄 + 共用篩選；顯示差異（標籤/內容模式/關聯段落）依 SOURCE_DISPLAY。 */
 const _SOURCES = [
   'product_reviews',
   'conversations',
@@ -190,11 +265,22 @@ const _SOURCES = [
   'mixpanel_tracker',
 ];
 export const SOURCE_LIST_SCHEMAS: Record<string, SourceListSchema> = Object.fromEntries(
-  _SOURCES.map((s) => [s, { columns: COMPOSITE_COLUMNS, filters: filtersFor(s) }]),
+  _SOURCES.map((s) => [
+    s,
+    {
+      columns: COMPOSITE_COLUMNS,
+      filters: filtersFor(s),
+      ...(SOURCE_DISPLAY[s] ?? FALLBACK_DISPLAY),
+    },
+  ]),
 );
 
-/** 未註冊來源回退：同一套統一複合欄 + 共用篩選。 */
-const FALLBACK_SCHEMA: SourceListSchema = { columns: COMPOSITE_COLUMNS, filters: BASE_FILTERS };
+/** 未註冊來源回退：同一套統一複合欄 + 共用篩選 + 泛稱顯示。 */
+const FALLBACK_SCHEMA: SourceListSchema = {
+  columns: COMPOSITE_COLUMNS,
+  filters: BASE_FILTERS,
+  ...FALLBACK_DISPLAY,
+};
 
 /**
  * 取某來源的歸因列表 schema；5 來源皆註冊為統一複合欄，未知來源回退 FALLBACK。
@@ -203,4 +289,16 @@ const FALLBACK_SCHEMA: SourceListSchema = { columns: COMPOSITE_COLUMNS, filters:
  */
 export function schemaFor(source: string): SourceListSchema {
   return SOURCE_LIST_SCHEMAS[source] ?? FALLBACK_SCHEMA;
+}
+
+/**
+ * 精確查詢輸入框 placeholder（業務名詞 + 該來源 natural_key）：如
+ * product_reviews→「評論 rec_oid 如 1,2,3」、conversations→「進線 session_oid 如 1,2,3」。
+ * 後端 rec_oid 參數實際按各來源 natural_key 查（_shared.py），placeholder 與之對齊避免誤導。
+ * @param source 來源 code
+ * @returns 該來源的 recOid 篩選 placeholder
+ */
+export function idPlaceholderFor(source: string): string {
+  const naturalKey = SOURCES.find((s) => s.value === source)?.natural_key || 'id';
+  return `${schemaFor(source).idNoun} ${naturalKey} 如 1,2,3`;
 }

@@ -39,15 +39,24 @@ watch(md, (t) => {
 
 <template>
   <!-- flex 撐滿：MdEditor flex-1 min-h-0 由 flex 演算法直接給高（不靠 height:100% 級聯），內部自捲 -->
-  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border">
-    <MdEditor
-      v-model="md"
-      class="min-h-0 flex-1"
-      language="en-US"
-      :preview="true"
-      :code-foldable="false"
-      :toolbars-exclude="['github', 'save', 'pageFullscreen', 'fullscreen', 'htmlPreview', 'catalog']"
-      :footers="['markdownTotal', 'scrollSwitch']"
-    />
+  <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+      <MdEditor
+        v-model="md"
+        class="min-h-0 flex-1"
+        language="en-US"
+        :preview="true"
+        :code-foldable="false"
+        :toolbars-exclude="[
+          'github',
+          'save',
+          'pageFullscreen',
+          'fullscreen',
+          'htmlPreview',
+          'catalog',
+        ]"
+        :footers="['markdownTotal', 'scrollSwitch']"
+      />
+    </div>
   </div>
 </template>

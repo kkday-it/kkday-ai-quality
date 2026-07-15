@@ -10,8 +10,11 @@
  *
  * scope='all'（工具列「依條件批量」入口）時的目標選取比照初判分類（`usePrejudgeJob`），委派
  * `usePromptSandboxTargets` 復用同一套 stage 驅動 + 篩選草稿 + 即時筆數預覽 pattern。
+ *
+ * 所有 Prompt 測試都在此抽屜進行，不支援測試未存檔草稿——版本選擇（PromptVersionPickerGroup）
+ * 只能選已存檔的歷史版本；規則配置頁不再有「測試這份草稿」入口。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   getPromptSandboxRun,
@@ -21,17 +24,21 @@ import {
   startPromptSandbox,
   type PromptSandboxItemResult,
   type PromptSandboxRunSummary,
+  type PromptSandboxStartBody,
 } from '@/api';
-import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { fmtDt } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
+import { StickyTabs, TableLayout } from '@/components';
 // 相對路徑 import（非走 barrel）：本檔自身即為 components barrel 的一員，經 barrel 迴繞 import
 // 同資料夾元件會觸發 circular dep（見 barrel-exports 規則）。
 import AttributionFilterBar from './AttributionFilterBar.vue';
+import LlmConfigSelect from './LlmConfigSelect.vue';
 import PrejudgeLogView from './PrejudgeLogView.vue';
+import PromptVersionPickerGroup from './PromptVersionPickerGroup.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
-import { STAGE_LABELS, type FilterField } from '../constants';
+import { idPlaceholderFor, schemaFor, STAGE_LABELS, type FilterField } from '../constants';
+import { useLlmConfigs } from '../composables/useLlmConfigs';
 import { usePromptSandboxTargets } from '../composables/usePromptSandboxTargets';
 import type { PrejudgeListFilters } from '../composables/usePrejudgeJob';
 
@@ -56,26 +63,15 @@ const props = defineProps<{
   cascadeOptions?: CascadeNode[];
 }>();
 
-const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
+const emit = defineEmits<{
+  (e: 'update:visible', v: boolean): void;
+}>();
 
-// 從 judgeRules store 取 7 支 prompt 的 rule_code + 中文名（SSOT，免另存一份標籤）。
-const store = useJudgeRulesStore();
+// 7 支 prompt 的 rule_code/選版本/開關已下沉進 PromptVersionPickerGroup（含 store.loadList 載入），
+// 本檔不再需要自己拉 judgeRulesStore。
 const selectedCodes = ref<string[]>([]);
-onMounted(async () => {
-  if (!store.metas.length) await store.loadList();
-});
-const promptOptions = computed(() =>
-  store.metas
-    .filter((m) => m.rule_code.startsWith('prompt_'))
-    .map((m) => ({ value: m.rule_code, label: store.labelFor(m.rule_code) }))
-    .sort((a, b) =>
-      a.value === 'prompt_polarity'
-        ? -1
-        : b.value === 'prompt_polarity'
-          ? 1
-          : a.value.localeCompare(b.value),
-    ),
-);
+const { llmConfigId, llmConfigs } = useLlmConfigs();
+const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
 const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));
@@ -99,6 +95,10 @@ const TARGET_FIELDS: FilterField[] = [
   'taxonomy',
   'hasExternal',
 ];
+/** 精確查詢 placeholder（隨來源：評論 rec_oid／進線 session_oid…）。 */
+const idPlaceholder = computed(() => idPlaceholderFor(props.source));
+/** 原文預覽標籤（隨來源：反饋內容／進線對話…）。 */
+const contentLabel = computed(() => schemaFor(props.source).contentLabel);
 /** 任一目標選取條件變更（範圍/階段/篩選欄）→ 重新預覽「將測試 N 筆」。 */
 const onTargetChange = () => {
   if (props.scope === 'all' && props.visible) void targets.refreshTargetCount(promptArgs.value);
@@ -137,8 +137,10 @@ const _openLogStream = (jobId: string) => {
 };
 onBeforeUnmount(_closeLogStream);
 
-/** 評論原文預覽（僅 scope=single 有意義）。 */
-const reviewText = computed(() => String(props.row?.content ?? props.row?.title ?? ''));
+/** 反饋原文預覽（僅單列有意義）：標題另有獨立區塊顯示（見 reviewTitle），這裡只放內文，
+ * 兩者皆可能為空（如純星等無文字的評論）。 */
+const reviewText = computed(() => String(props.row?.content ?? ''));
+const reviewTitle = computed(() => String(props.row?.title ?? ''));
 
 /** 範圍摘要文字（依 scope 顯示不同語意）。 */
 const scopeSummary = computed(() => {
@@ -158,7 +160,7 @@ async function run() {
   running.value = true;
   activeRun.value = null;
   try {
-    const body =
+    const body: PromptSandboxStartBody =
       props.scope === 'all'
         ? targets.scopeBody(promptArgs.value)
         : {
@@ -167,6 +169,10 @@ async function run() {
             prompt_ids: promptArgs.value,
             scope: props.scope,
           };
+    body.llm_config_id = llmConfigId.value || undefined;
+    if (Object.keys(versionSelection.value.versions).length) {
+      body.versions = versionSelection.value.versions;
+    }
     const { job_id } = await startPromptSandbox(body);
     _openLogStream(job_id); // 執行日誌分頁即時串流（與輪詢並行，互不影響）
     // 輪詢至終態（done/error）；沙盒非長批次，短間隔即可即時反映進度。
@@ -222,13 +228,18 @@ async function viewHistoryRun(runId: string) {
 
 /** 範圍中文標籤（歷史列表用）。selection 為舊版「已選 N」按鈕遺留的歷史紀錄值（該按鈕已併入
  * all 的「已選內」子模式，觸發端不再產生新的 selection，此處僅為相容顯示舊資料）。 */
-const SCOPE_LABEL: Record<string, string> = { single: '單列', selection: '選取', all: '批量' };
+const SCOPE_LABEL: Record<string, string> = {
+  single: '單列',
+  selection: '選取',
+  all: '批量',
+};
 
 /** 域條目判準：有 domain_label 欄位＝域 prompt 結果；否則為 polarity 條目。 */
 const isDomainEntry = (p: NonNullable<PromptSandboxItemResult['prompts']>[number]): boolean =>
   p.domain_label !== undefined;
 
-// 開啟時重置狀態 + 載入歷史；勾選帶入至少 polarity（免每次手動勾）；scope='all' 時初始化目標選取器。
+// 開啟時重置狀態 + 載入歷史（選哪些 prompt 由 PromptVersionPickerGroup 的開關預設，見
+// usePromptVersionPicker：預設僅 polarity 開，免每次手動勾）；scope='all' 時初始化目標選取器。
 watch(
   () => props.visible,
   (v) => {
@@ -239,7 +250,6 @@ watch(
       return;
     }
     activeTab.value = 'results';
-    if (!selectedCodes.value.length) selectedCodes.value = ['prompt_polarity'];
     if (props.scope === 'all') {
       targets.openTargetPicker();
       void targets.refreshTargetCount(promptArgs.value);
@@ -253,27 +263,35 @@ watch(
   <a-drawer
     :visible="visible"
     title="Prompt 測試（沙盒 · 不受正式歸因閘門限制 · 不落正式判決）"
-    :width="scope === 'all' ? 1040 : 820"
+    :width="scope === 'all' ? 1080 : 960"
     :footer="false"
-    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
+    :body-style="{
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }"
     @cancel="emit('update:visible', false)"
   >
     <div class="mb-3 text-xs text-[var(--color-text-3)]">
       {{ scopeSummary }} · 勾選要測試的 prompt，即使整體判正向也照跑（不受正式閘門限制）
     </div>
 
-    <!-- 評論原文預覽（僅單列有意義） -->
+    <!-- 原文預覽（僅單列有意義；標籤隨來源：反饋內容／進線對話…；標題+內容一併顯示，
+         避免有標題的來源只看得到內文看不到標題） -->
     <div
-      v-if="scope === 'single' && reviewText"
+      v-if="scope === 'single' && (reviewTitle || reviewText)"
       class="mb-3 rounded-lg border bg-[var(--color-fill-1)] p-3"
     >
-      <div class="mb-1 text-xs font-medium text-[var(--color-text-3)]">評論原文</div>
-      <div class="max-h-24 overflow-auto whitespace-pre-wrap text-sm leading-relaxed">
+      <div class="mb-1 text-xs font-medium text-[var(--color-text-3)]">{{ contentLabel }}</div>
+      <div v-if="reviewTitle" class="mb-1 text-sm font-medium text-[var(--color-text-1)]">
+        {{ reviewTitle }}
+      </div>
+      <div class="whitespace-pre-wrap text-sm leading-relaxed">
         {{ reviewText }}
       </div>
     </div>
 
-    <!-- 依條件批量選取（scope='all'，比照初判分類目標選取）-->
+    <!-- 依條件批量選取（scope='all'，比照初判分類目標選取；adhoc＝臨時貼 ID）-->
     <div v-if="scope === 'all'" class="mb-3 rounded-lg border p-3">
       <div class="mb-2 flex items-center gap-3">
         <span class="text-xs text-[var(--color-text-3)]">範圍</span>
@@ -283,37 +301,60 @@ watch(
           size="small"
           @change="onTargetChange"
         >
+          <a-radio value="adhoc">臨時貼 ID</a-radio>
           <a-radio value="scope">全部資料</a-radio>
           <a-radio value="selected" :disabled="!selectedKeys?.length">已選內</a-radio>
         </a-radio-group>
       </div>
-      <div class="mb-2">
-        <div class="mb-1 text-xs text-[var(--color-text-3)]">目標判決階段（預設只測未判）</div>
-        <a-checkbox-group v-model="targets.targetStages.value" @change="onTargetChange">
-          <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">{{
-            lbl
-          }}</a-checkbox>
-        </a-checkbox-group>
+
+      <!-- 臨時貼 ID：換行分隔 -->
+      <div v-if="targets.targetMode.value === 'adhoc'" class="mb-2">
+        <a-textarea
+          v-model="targets.adhocText.value"
+          :auto-size="{ minRows: 3, maxRows: 6 }"
+          placeholder="每行一個 source_id，貼上後自動去重"
+          @input="onTargetChange"
+        />
       </div>
-      <div class="mb-1 text-xs text-[var(--color-text-3)]">目標篩選（已自動帶入列表當前篩選，可重選）</div>
-      <AttributionFilterBar
-        :model="targets.draftFilters"
-        :fields="TARGET_FIELDS"
-        :cascade-options="cascadeOptions"
-        @change="onTargetChange"
-      />
-      <div class="mt-1 text-xs text-[var(--color-text-3)]">
-        星等 / 日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / 歸因分類 僅對「已判」階段生效。
-      </div>
+
+      <template v-if="targets.targetMode.value === 'scope' || targets.targetMode.value === 'selected'">
+        <div class="mb-2">
+          <div class="mb-1 text-xs text-[var(--color-text-3)]">目標判決階段（預設只測未判）</div>
+          <a-checkbox-group v-model="targets.targetStages.value" @change="onTargetChange">
+            <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">{{
+              lbl
+            }}</a-checkbox>
+          </a-checkbox-group>
+        </div>
+        <div class="mb-1 text-xs text-[var(--color-text-3)]">
+          目標篩選（已自動帶入列表當前篩選，可重選）
+        </div>
+        <AttributionFilterBar
+          :model="targets.draftFilters"
+          :fields="TARGET_FIELDS"
+          :cascade-options="cascadeOptions"
+          :id-placeholder="idPlaceholder"
+          @change="onTargetChange"
+        />
+        <div class="mt-1 text-xs text-[var(--color-text-3)]">
+          日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / 歸因分類 僅對「已判」階段生效。
+        </div>
+      </template>
     </div>
 
-    <!-- 勾選 prompt + 執行 -->
+    <!-- 勾選 prompt（開關）+ 版本選擇 + 執行：開關與版本選擇合併成同一份清單，不再另起一排勾選 -->
     <div class="mb-3 rounded-lg border p-3">
-      <a-checkbox-group v-model="selectedCodes" class="mb-2">
-        <a-checkbox v-for="o in promptOptions" :key="o.value" :value="o.value">{{
-          o.label
-        }}</a-checkbox>
-      </a-checkbox-group>
+      <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" class="mb-2" />
+      <div class="mb-2">
+        <div class="mb-1 text-xs text-[var(--color-text-3)]">
+          Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可個別切換歷史版本）
+        </div>
+        <PromptVersionPickerGroup
+          :with-toggle="true"
+          @update:resolved="(v) => (versionSelection = v)"
+          @update:enabled-codes="(codes) => (selectedCodes = codes)"
+        />
+      </div>
       <div class="flex items-center gap-3">
         <span v-if="scope === 'all'" class="text-xs text-[var(--color-text-3)]"
           >將測試 {{ targets.targetCount.value }} 筆</span
@@ -330,7 +371,8 @@ watch(
       </div>
     </div>
 
-    <a-tabs v-model:active-key="activeTab" class="min-h-0 flex-1">
+    <!-- Tab 列固定可見、僅內容捲動（見 .claude/rules/frontend-vue.md Tabs 規則）：公共元件取代裸 a-tabs -->
+    <StickyTabs v-model:active-key="activeTab" class="min-h-0 flex-1">
       <a-tab-pane key="results" title="測試結果">
         <div class="h-full overflow-auto">
           <a-spin v-if="running" class="block py-8 text-center" />
@@ -403,33 +445,38 @@ watch(
           執行日誌
           <a-tag v-if="logStreaming" size="small" color="arcoblue" class="ml-1">串流中</a-tag>
         </template>
-        <!-- overflow-hidden（非 auto）：捲動已下沉至 PrejudgeLogView 內部 tab 固定 + 內容捲動
-             機制（見 .claude/rules/frontend-vue.md），此處若仍 overflow-auto 會產生雙層捲軸 -->
-        <div class="h-full overflow-hidden pr-1">
+        <!-- 捲動已下沉至 PrejudgeLogView 內部自己的 StickyTabs（見該檔）；本層禁止再疊
+             overflow-auto（frontend-vue.md StickyTabs 規則：外層疊 overflow-auto 會產生雙捲軸，
+             破壞內層 tab/側欄的固定機制），改用 overflow-hidden 讓內部機制接管。 -->
+        <div class="h-full overflow-hidden">
           <PrejudgeLogView :entries="logEntries" :streaming="logStreaming" />
         </div>
       </a-tab-pane>
       <a-tab-pane key="history" title="測試歷史">
-        <div class="h-full overflow-auto">
-          <a-spin v-if="historyLoading" class="block py-4 text-center" />
-          <a-table
-            v-else-if="history.length"
+        <div class="h-full overflow-hidden">
+          <TableLayout
+            full-height
             :data="history"
-            size="mini"
+            :loading="historyLoading"
             :pagination="false"
             row-key="run_id"
+            size="mini"
+            empty-text="尚無測試紀錄"
           >
             <template #columns>
               <a-table-column title="時間" data-index="created_at" :width="150">
                 <template #cell="{ record }">{{ fmtDt(record.created_at) }}</template>
               </a-table-column>
               <a-table-column title="範圍" data-index="scope" :width="70">
-                <template #cell="{ record }">{{ SCOPE_LABEL[record.scope] ?? record.scope }}</template>
+                <template #cell="{ record }">{{
+                  SCOPE_LABEL[record.scope] ?? record.scope
+                }}</template>
               </a-table-column>
               <a-table-column title="筆數" data-index="item_count" :width="60" />
-              <a-table-column title="Prompt" :width="160" ellipsis tooltip>
+              <a-table-column title="Prompt" :width="140" ellipsis tooltip>
                 <template #cell="{ record }">{{ record.prompt_ids.join('、') }}</template>
               </a-table-column>
+              <a-table-column title="模型" data-index="model" ellipsis tooltip />
               <a-table-column title="觸發人" data-index="triggered_by" ellipsis tooltip />
               <a-table-column title="" :width="70">
                 <template #cell="{ record }">
@@ -439,10 +486,9 @@ watch(
                 </template>
               </a-table-column>
             </template>
-          </a-table>
-          <a-empty v-else description="尚無測試紀錄" :image-size="32" />
+          </TableLayout>
         </div>
       </a-tab-pane>
-    </a-tabs>
+    </StickyTabs>
   </a-drawer>
 </template>

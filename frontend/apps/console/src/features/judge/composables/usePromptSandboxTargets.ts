@@ -25,13 +25,25 @@ interface PromptSandboxTargetsDeps {
 export function usePromptSandboxTargets(deps: PromptSandboxTargetsDeps) {
   const { source, effVerticals, selectedKeys, listFilters } = deps;
 
-  /** 選取範圍：selected＝在「已選 N 筆」內做階段+篩選目標選取（within_ids 交集）；scope＝全部資料。 */
-  const targetMode = ref<'selected' | 'scope'>('scope');
+  /** 選取範圍：selected＝在「已選 N 筆」內做階段+篩選目標選取（within_ids 交集）；scope＝全部資料；
+   *  adhoc＝臨時貼 ID 清單。 */
+  const targetMode = ref<'selected' | 'scope' | 'adhoc'>('scope');
   const targetStages = ref<string[]>(['unjudged']);
   const targetCount = ref(0); // 「將測試 N 筆」預覽
   const draftFilters = reactive(emptyFilters());
   /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心分層/歸因分類收斂條件。 */
   const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
+
+  // ── adhoc mode：textarea 換行分隔的臨時 ID 清單 ──
+  const adhocText = ref('');
+  const adhocIds = computed(() => {
+    const seen = new Set<string>();
+    for (const line of adhocText.value.split('\n')) {
+      const id = line.trim();
+      if (id) seen.add(id);
+    }
+    return [...seen];
+  });
 
   const _lf = (): PrejudgeListFilters => {
     const p = filtersToParams(draftFilters);
@@ -48,8 +60,17 @@ export function usePromptSandboxTargets(deps: PromptSandboxTargetsDeps) {
     };
   };
 
-  /** 組 scope=all 目標選取 body（prompt_ids 由呼叫端補齊；start/count 共用同一套 → 預覽=實跑）。 */
+  /** 組請求 body（prompt_ids 由呼叫端補齊；start/count 共用同一套 → 預覽=實跑）。
+   *  adhoc＝item_ids 顯式（scope='selection'）；selected/scope＝依 stage/篩選目標選取（scope='all'）。 */
   const scopeBody = (promptIds: string[]): PromptSandboxStartBody => {
+    if (targetMode.value === 'adhoc') {
+      return {
+        source: toValue(source),
+        scope: 'selection',
+        prompt_ids: promptIds,
+        item_ids: adhocIds.value,
+      };
+    }
     const lf = _lf();
     return {
       source: toValue(source),
@@ -76,8 +97,13 @@ export function usePromptSandboxTargets(deps: PromptSandboxTargetsDeps) {
 
   // 單調遞增請求序號：快速切換條件會併發多次 refresh，僅最後一次可寫入 targetCount（防慢回應覆蓋新值）。
   let countSeq = 0;
-  /** 「將測試 N 筆」預覽：與實跑同一 body 打後端 count 端點。 */
+  /** 「將測試 N 筆」預覽：adhoc 為顯式 item_ids，本地計數免打後端；
+   *  selected/scope 與實跑同一 body 打後端 count 端點。 */
   const refreshTargetCount = async (promptIds: string[]) => {
+    if (targetMode.value === 'adhoc') {
+      targetCount.value = adhocIds.value.length;
+      return;
+    }
     if (!promptIds.length) {
       targetCount.value = 0;
       return;
@@ -118,5 +144,7 @@ export function usePromptSandboxTargets(deps: PromptSandboxTargetsDeps) {
     scopeBody,
     refreshTargetCount,
     openTargetPicker,
+    adhocText,
+    adhocIds,
   };
 }

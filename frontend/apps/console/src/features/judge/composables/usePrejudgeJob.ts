@@ -84,7 +84,9 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       : '',
   );
   // 以 SSE 長連線接收批量判決進度（取代 setInterval 輪詢）；done/error 或連線中斷即 resolve。
-  const _poll = (jid: string) =>
+  // onSnapshot 提供時（單列路徑）改寫進呼叫端自己的狀態，不動這裡的全域 jobStatus/progress——
+  // 否則多列同時重判會共用同一份全域快照、互相覆蓋顯示（rowBusy 本就允許多列並發觸發）。
+  const _poll = (jid: string, onSnapshot?: (st: any) => void) =>
     new Promise<void>((resolve) => {
       const es = new EventSource(prejudgeStreamUrl(jid));
       const finish = () => {
@@ -93,15 +95,19 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       };
       es.onmessage = (ev) => {
         const st = JSON.parse(ev.data);
-        jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
-        progress.value = {
-          processed: st.processed || 0,
-          total: st.total || progress.value.total,
-          totalTokens: st.total_tokens || 0,
-          costUsd: st.cost_usd || 0,
-        };
-        if (Array.isArray(st.failed_items)) failedItems.value = st.failed_items;
-        failedTruncated.value = !!st.failed_items_truncated;
+        if (onSnapshot) {
+          onSnapshot(st);
+        } else {
+          jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
+          progress.value = {
+            processed: st.processed || 0,
+            total: st.total || progress.value.total,
+            totalTokens: st.total_tokens || 0,
+            costUsd: st.cost_usd || 0,
+          };
+          if (Array.isArray(st.failed_items)) failedItems.value = st.failed_items;
+          failedTruncated.value = !!st.failed_items_truncated;
+        }
         if (st.status === 'done' || st.status === 'error' || st.status === 'cancelled') finish();
       };
       es.onerror = finish;
@@ -262,10 +268,12 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     void refreshTargetCount();
   };
 
-  /** 二次確認後執行：範圍（全部/已選內）+ 階段 + 篩選草稿統一走 scope 目標選取（與預覽同 body）。 */
-  const doRun = () => {
+  /** 二次確認後執行：範圍（全部/已選內）+ 階段 + 篩選草稿統一走 scope 目標選取（與預覽同 body）。
+   * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定的沿用 active，見
+   *   PromptVersionPickerGroup／usePromptVersionPicker，正式判決不支援草稿只支援指定版本）。 */
+  const doRun = (promptVersions?: Record<string, number>) => {
     confirmOpen.value = false;
-    _run(_scopeBody());
+    _run({ ..._scopeBody(), prompt_versions: promptVersions });
   };
 
   // ── 單列操作（操作欄；與批量 selectedKeys 完全解耦，各自獨立路徑）──
@@ -281,10 +289,16 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
 
   /**
    * 單列（重）判：對該列跑初判歸因（複用 startPrejudge，item_ids 僅此列），等 SSE done 就地重載。
-   * 走該列按鈕 inline loading，不觸發頁頂大進度條（不設 running，_poll 僅更新無人顯示的 progress）。
+   * 走該列按鈕自己的 inline loading（isRowBusy）；rowBusy 允許多列並發觸發，故 SSE 快照傳 no-op
+   * 回呼，不寫共用的 progress（那份僅供批量頂部大進度條用，多列並發寫入會互相覆蓋）。
    * @param onJob 取得 job_id 即回呼（判決仍在跑）——供頁面即時打開執行日誌抽屜（SSE 串流檢視）。
+   * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定沿用 active）。
    */
-  const rejudgeRow = async (id: string, onJob?: (jobId: string) => void) => {
+  const rejudgeRow = async (
+    id: string,
+    onJob?: (jobId: string) => void,
+    promptVersions?: Record<string, number>,
+  ) => {
     if (rowBusy.value.has(id)) return;
     if (running.value) {
       // 批次判決進行中，避免與批次 job 並發對同一 finding 送出重複判決（重複花費 / 結果互相覆蓋）
@@ -297,9 +311,10 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
         item_ids: [id],
         source: toValue(source),
         llm_config_id: llmConfigId.value || undefined,
+        prompt_versions: promptVersions,
       });
       onJob?.(r.job_id);
-      await _poll(r.job_id);
+      await _poll(r.job_id, () => {});
       await reload();
       Message.success(`已完成歸因（模型 ${r.model}）`);
     } catch (e: any) {
