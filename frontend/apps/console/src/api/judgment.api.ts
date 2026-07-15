@@ -254,36 +254,6 @@ export interface DomainVerdict {
   abstain_reason: string;
 }
 
-/** 單條評論 dry-run 分類結果（歸因列表「測試」）：跑 prompts 判這一則 → 結果，不落庫。 */
-export interface ClassifyOneResult {
-  polarity: string;
-  sentiment_score: number;
-  model: string;
-  text: string;
-  attributions: Array<{
-    is_primary: boolean;
-    l1_domain_code: string;
-    l1_label: string;
-    l2_code: string;
-    l2_label: string;
-    confidence: number;
-    confidence_tier: string;
-    judgment_stage: string;
-    evidence_quote: string;
-    summary: Record<string, string>;
-  }>;
-  /** 六域裁決（診斷理由；polarity 不在 attribute_when 閘門內時恆空，見後端 classify_one）。 */
-  domain_verdicts: DomainVerdict[];
-}
-
-/** 單條評論 dry-run 分類：跑 prompts 判這一則 → 結果，**不落庫**（預覽「改 prompt 後怎麼判」）。 */
-export const classifyOne = (source: string, sourceId: string): Promise<ClassifyOneResult> =>
-  j<ClassifyOneResult>(`${BASE}/v1/judgment/classify-one`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, source_id: sourceId }),
-  });
-
 /**
  * 初判歸因進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。
  * @param jobId startPrejudge 回傳的 job_id（capability token，端點免 auth header）
@@ -436,3 +406,101 @@ export const getJudgmentRun = (jobId: string) =>
 /** 歷來實際判決過的模型清單（judgments 當前 ∪ judgment_history 快照 distinct；stub 排最後）。 */
 export const getJudgmentModels = (): Promise<string[]> =>
   j<string[]>(`${BASE}/judgment-history/models`);
+
+/** Prompt 測試沙盒啟動請求 body：對 source_ids 逐筆跑 prompt_ids 子集（不受正式歸因閘門限制）。
+ * scope 由觸發入口顯式帶入（single＝單列「Prompt 測試」按鈕；selection＝工具列對勾選多筆），
+ * 不用筆數反推——供沙盒歷史列表分辨來源。 */
+export interface PromptSandboxStartBody {
+  source: string;
+  source_ids: string[];
+  prompt_ids: string[];
+  scope: 'single' | 'selection';
+  llm_config_id?: string;
+}
+
+/** 啟動 Prompt 測試沙盒背景 job → {job_id}（前端輪詢 `getPromptSandboxStatus` 拿進度）。
+ * @throws stub 模式（無可用 LLM token）一律拒跑，dev 環境亦不例外——比照 `classify_one` 慣例。 */
+export const startPromptSandbox = (body: PromptSandboxStartBody): Promise<{ job_id: string }> =>
+  j<{ job_id: string }>(`${BASE}/v1/judgment/prompt-sandbox`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+/** Prompt 測試沙盒 job 進度快照（輪詢用）。 */
+export interface PromptSandboxJobStatus {
+  status: 'running' | 'done' | 'error';
+  total: number;
+  done: number;
+  /** 完成後對應的歷史紀錄 run_id（供直接開啟詳情）；running/error 時為 null。 */
+  run_id: string | null;
+}
+
+/** 沙盒測試 job 進度輪詢 → {status, total, done, run_id}。
+ * @param jobId startPromptSandbox 回傳的 job_id。 */
+export const getPromptSandboxStatus = (jobId: string): Promise<PromptSandboxJobStatus> =>
+  j<PromptSandboxJobStatus>(
+    `${BASE}/v1/judgment/prompt-sandbox/status?job_id=${encodeURIComponent(jobId)}`,
+  );
+
+/** 沙盒測試歷史列表單筆（不含 results/log，體積可觀，列表只列摘要）。 */
+export interface PromptSandboxRunSummary {
+  run_id: string;
+  source: string;
+  scope: 'single' | 'selection';
+  item_ids: string[];
+  prompt_ids: string[];
+  item_count: number;
+  model: string;
+  triggered_by: string;
+  created_at: string;
+}
+
+/** run_log 快照條目（供沙盒測試歷史回看完整 LLM log；形狀同 `PrejudgeLogDrawer` 的即時日誌）。 */
+export interface PromptSandboxLogEntry {
+  ts: number;
+  kind: 'stage' | 'llm_request' | 'llm_prompt' | 'llm_response' | 'llm_note' | 'error';
+  stage: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+/** 單筆測試結果（`sandbox_classify` 輸出）：`prompts` 為異質清單——勾了 polarity 有一條
+ * `{prompt_id:"polarity", matched, polarity, sentiment_score, reason}`；勾了域則各一條
+ * `{prompt_id:"C-N", domain_label, matched, attributions, abstain_reason}`。 */
+export interface PromptSandboxItemResult {
+  source_id: string;
+  text?: string;
+  polarity?: string;
+  sentiment_score?: number;
+  prompts?: Array<{
+    prompt_id: string;
+    matched: boolean;
+    /** polarity 條目專屬。 */
+    polarity?: string;
+    sentiment_score?: number;
+    /** 域條目專屬。 */
+    domain_label?: string;
+    attributions?: DomainVerdict['attributions'];
+    abstain_reason?: string;
+    reason?: string;
+  }>;
+  /** 單筆判決失敗（如找不到評論）時的錯誤訊息，取代 prompts。 */
+  error?: string;
+}
+
+/** 沙盒測試歷史列表（created_at 降冪分頁）→ {total, items}——與正式初判歷史完全分離。 */
+export const listPromptSandboxRuns = (
+  limit = 20,
+  offset = 0,
+): Promise<{ total: number; items: PromptSandboxRunSummary[] }> =>
+  j<{ total: number; items: PromptSandboxRunSummary[] }>(
+    `${BASE}/v1/judgment/prompt-sandbox/runs?limit=${limit}&offset=${offset}`,
+  );
+
+/** 單一沙盒測試 run 完整詳情：逐筆 results + 完整 LLM log 快照（供事後回看當時測試跑了什麼）。 */
+export const getPromptSandboxRun = (
+  runId: string,
+): Promise<
+  PromptSandboxRunSummary & { results: PromptSandboxItemResult[]; log: PromptSandboxLogEntry[] }
+> => j(`${BASE}/v1/judgment/prompt-sandbox/runs/${encodeURIComponent(runId)}`);

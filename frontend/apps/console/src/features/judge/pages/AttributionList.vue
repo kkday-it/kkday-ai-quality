@@ -24,7 +24,7 @@ import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
 import type { PrejudgeBody } from '@/api/judgment.api';
-import { AttributionDetailDrawer, AttributionFilterBar, RowPromptTestDrawer } from '../components';
+import { AttributionDetailDrawer, AttributionFilterBar, PromptSandboxDrawer } from '../components';
 import PromptEvalDrawer from '../components/PromptEvalDrawer.vue';
 import {
   POLARITY_LABELS,
@@ -184,13 +184,29 @@ const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
 };
-// 單條「測試」：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）
-const testRow = ref<ProblemRow | null>(null);
-const testOpen = ref(false);
-/** 開單條測試抽屜。 */
+// Prompt 測試沙盒：單列（列操作區）與勾選多筆（工具列）共用同一 Drawer，靠 scope 分辨語意
+// （即使 selection 剛好勾 1 筆，仍走 selection 語意——供沙盒歷史列表正確分辨觸發來源）。
+const sandboxVisible = ref(false);
+const sandboxScope = ref<'single' | 'selection'>('single');
+const sandboxSourceIds = ref<string[]>([]);
+const sandboxRow = ref<ProblemRow | null>(null);
+/** 開單列 Prompt 測試沙盒。 */
 const openRowTest = (record: ProblemRow) => {
-  testRow.value = record;
-  testOpen.value = true;
+  sandboxRow.value = record;
+  sandboxSourceIds.value = record.source_id ? [record.source_id] : [];
+  sandboxScope.value = 'single';
+  sandboxVisible.value = true;
+};
+/** 開勾選多筆 Prompt 測試沙盒（工具列入口）。 */
+const openSelectionTest = () => {
+  if (!selectedRowKeys.value.length) {
+    Message.warning('請先勾選要測試的列');
+    return;
+  }
+  sandboxRow.value = null;
+  sandboxSourceIds.value = [...selectedRowKeys.value] as string[];
+  sandboxScope.value = 'selection';
+  sandboxVisible.value = true;
 };
 
 // 工具列「測試 Prompt」（B1：按條件篩選 × 單一 prompt 測試）：帶當前列表篩選、選一支 prompt 測試，
@@ -434,15 +450,21 @@ onMounted(init);
         <template #icon><icon-download /></template>
         導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
       </a-button>
-      <!-- 測試 Prompt（B1）：帶當前列表篩選，選一支 prompt 對篩選子集測試（不落庫）-->
-      <a-button size="small" type="dashed" @click="promptTestOpen = true"> 測試 Prompt </a-button>
+      <!-- 測試 Prompt 指標評測（B1）：帶當前列表篩選，選一支 prompt 對篩選子集測試（不落庫）-->
+      <a-button size="small" type="dashed" @click="promptTestOpen = true">
+        Prompt 指標評測
+      </a-button>
+      <!-- Prompt 測試沙盒（勾選多筆）：對勾選的列跑選定 prompt 子集，ungated、不落正式判決 -->
+      <a-button size="small" type="dashed" @click="openSelectionTest">
+        Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
+      </a-button>
     </div>
   </Teleport>
 
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <JudgmentRunsDrawer v-model:visible="runsDrawerVisible" />
 
-  <!-- 測試 Prompt 抽屜（B1：filters=帶當前列表篩選，對篩選子集測試） -->
+  <!-- Prompt 指標評測抽屜（B1：filters=帶當前列表篩選，對篩選子集測試） -->
   <PromptEvalDrawer v-model:visible="promptTestOpen" :filters="promptEvalFilters" />
 
   <!-- 判決歷史抽屜（評論級時間軸；懶載）-->
@@ -943,8 +965,8 @@ onMounted(init);
           >
             初判分類
           </a-button>
-          <!-- 單條測試（dry-run 跑 prompts 判這一則,與現有並排,不落庫）→ 調適 prompt 後在真實資料上驗證 -->
-          <a-button size="small" type="dashed" @click="openRowTest(record)"> 測試 </a-button>
+          <!-- Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式判決 -->
+          <a-button size="small" type="dashed" @click="openRowTest(record)"> Prompt 測試 </a-button>
           <!-- 未判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
           <!-- 判決歷史（評論級時間軸：歷次判決快照/覆核轉移/備註；輕量檢視 → text）-->
@@ -1119,8 +1141,14 @@ onMounted(init);
     <!-- 初判執行日誌抽屜：SSE 即時顯示該次判決各階段 + LLM 輸入參數/prompt/輸出（流式）-->
     <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
-    <!-- 單條測試：dry-run 跑 prompts 判這一則,與現有判決並排（不落庫）-->
-    <RowPromptTestDrawer v-model:visible="testOpen" :source="source" :row="testRow" />
+    <!-- Prompt 測試沙盒：單列 / 勾選多筆共用；跑選定 prompt 子集，ungated、與正式判決分離落庫 -->
+    <PromptSandboxDrawer
+      v-model:visible="sandboxVisible"
+      :source="source"
+      :scope="sandboxScope"
+      :source-ids="sandboxSourceIds"
+      :row="sandboxRow"
+    />
 
     <!-- 歸因備註抽屜：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與判決歷史抽屜同比例）-->
     <a-drawer
