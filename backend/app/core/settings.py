@@ -102,7 +102,8 @@ _DEFAULT_LLM: dict = {
 _NEW_DEFAULT: dict = {
     "llm_configs": [],
     "active_llm_config_id": None,
-    "provider_tokens": {},  # { provider_id: token } 跨 config 共用（per-provider 機密）
+    "llm_tokens": {},  # { config_id: token } per-config 機密（每套配置各自獨立 token）
+    "provider_tokens": {},  # 舊 per-provider 共用（遷移來源，保留供回退；resolution 已不用）
     "provider_models": {},  # { provider_id: [model_id...] } 各供應商自訂 model 清單
     "qc_configs": [],
     "active_qc_config_id": None,
@@ -128,6 +129,7 @@ def _blank_settings() -> dict:
     return {
         "llm_configs": [],
         "active_llm_config_id": None,
+        "llm_tokens": {},
         "provider_tokens": {},
         "provider_models": {},
         "qc_configs": [],
@@ -160,6 +162,9 @@ def _migrate_legacy(data: dict) -> dict:
 
     # LLM：舊單一 active config → llm_configs[0]
     llm_id = str(uuid.uuid4())
+    # per-config token：舊單值 api_token 直接歸入該遷移 config 的 llm_tokens
+    if legacy_token:
+        new["llm_tokens"] = {llm_id: legacy_token}
     new["llm_configs"] = [
         {
             "id": llm_id,
@@ -221,6 +226,7 @@ def load_settings(user_id: str) -> dict:
         return migrated
     # 補缺 key + 深複本（避免改到 _NEW_DEFAULT 內的 mutable）
     cur = {**_NEW_DEFAULT, **data}
+    cur["llm_tokens"] = dict(cur.get("llm_tokens") or {})
     cur["provider_tokens"] = dict(cur.get("provider_tokens") or {})
     cur["provider_models"] = dict(cur.get("provider_models") or {})
     cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
@@ -228,7 +234,33 @@ def load_settings(user_id: str) -> dict:
     cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
     cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
     _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
+    # per-config token 遷移：舊 per-provider 共用 token → 每套 config 各自 llm_tokens（一次性，持久化穩定）
+    if _seed_llm_tokens_from_providers(cur):
+        _persist(user_id, cur)
     return cur
+
+
+def _seed_llm_tokens_from_providers(cur: dict) -> bool:
+    """一次性遷移：per-provider 共用 provider_tokens → 每套 config 各自的 llm_tokens（per-config）。
+
+    僅在 llm_tokens 尚空、provider_tokens 有值、且有 config 時執行：每套 config 依 base_url 反推
+    provider，複製該 provider 的共用 token 當自身初值。回傳是否有變更（供 load_settings 決定是否持久化）。
+    """
+    if cur.get("llm_tokens"):
+        return False
+    ptok = cur.get("provider_tokens") or {}
+    configs = cur.get("llm_configs") or []
+    if not ptok or not configs:
+        return False
+    seeded = {
+        c["id"]: ptok[provider_id_for(c.get("base_url") or "")]
+        for c in configs
+        if c.get("id") and ptok.get(provider_id_for(c.get("base_url") or ""))
+    }
+    if not seeded:
+        return False
+    cur["llm_tokens"] = seeded
+    return True
 
 
 def effective_llm_dict(s: dict, config_id: str | None = None) -> dict:
@@ -252,7 +284,8 @@ def effective_llm_dict(s: dict, config_id: str | None = None) -> dict:
         "temperature": cfg.get("temperature"),
         "thinking": cfg.get("thinking", "default"),
         "reasoning_effort": cfg.get("reasoning_effort", "default"),
-        "provider_tokens": dict(s.get("provider_tokens") or {}),
+        # per-config token：該套配置自身的 token（llm_tokens[config_id]）；resolve_provider_token 據此解出
+        "api_token": (s.get("llm_tokens") or {}).get(cfg.get("id"), ""),
         "provider_models": dict(s.get("provider_models") or {}),
     }
 
@@ -264,6 +297,10 @@ def _sanitize(cur: dict) -> None:
         cur["active_llm_config_id"] = (
             cur["llm_configs"][0]["id"] if cur.get("llm_configs") else None
         )
+    # 清除孤立 llm_tokens（config 已刪）——比照 qc_passwords 收斂
+    cur["llm_tokens"] = {
+        cid: t for cid, t in (cur.get("llm_tokens") or {}).items() if cid in llm_ids
+    }
     qc_ids = {c.get("id") for c in cur.get("qc_configs") or []}
     if cur.get("active_qc_config_id") not in qc_ids:
         cur["active_qc_config_id"] = cur["qc_configs"][0]["id"] if cur.get("qc_configs") else None
@@ -290,11 +327,17 @@ def save_settings(user_id: str, patch: dict) -> dict:
         cur["llm_configs"] = [_ensure_id(c) for c in (patch["llm_configs"] or [])]
     if "active_llm_config_id" in patch:
         cur["active_llm_config_id"] = patch["active_llm_config_id"]
+    if "llm_tokens" in patch:
+        merged = dict(cur.get("llm_tokens") or {})
+        for cid, tok in (patch["llm_tokens"] or {}).items():
+            if tok and not _is_masked(tok):
+                merged[cid] = tok  # 空/遮罩不覆蓋該 config 既有真值
+        cur["llm_tokens"] = merged
     if "provider_tokens" in patch:
         merged = dict(cur.get("provider_tokens") or {})
         for pid, tok in (patch["provider_tokens"] or {}).items():
             if tok and not _is_masked(tok):
-                merged[pid] = tok  # 空/遮罩不覆蓋該 provider 既有真值
+                merged[pid] = tok  # 空/遮罩不覆蓋該 provider 既有真值（舊路徑，保留相容）
         cur["provider_tokens"] = merged
     if "provider_models" in patch:
         cur["provider_models"] = dict(patch.get("provider_models") or {})
@@ -328,10 +371,8 @@ def save_settings(user_id: str, patch: dict) -> dict:
 
 
 def _has_active_token(s: dict) -> bool:
-    """active LLM config 的 provider 是否已有 token。"""
-    eff = effective_llm_dict(s)
-    provider = provider_id_for(eff.get("base_url", ""))
-    return bool((s.get("provider_tokens") or {}).get(provider))
+    """active LLM config 自身是否已有 token（per-config）。"""
+    return bool(effective_llm_dict(s).get("api_token"))
 
 
 def _has_active_qc_password(s: dict) -> bool:
@@ -345,6 +386,7 @@ def masked(user_id: str) -> dict:
     cur = load_settings(user_id)
     cur["has_token"] = _has_active_token(cur)
     cur["has_qc_db_password"] = _has_active_qc_password(cur)
+    cur["llm_tokens"] = {c: _mask_secret(t) for c, t in (cur.get("llm_tokens") or {}).items()}
     cur["provider_tokens"] = {
         p: _mask_secret(t) for p, t in (cur.get("provider_tokens") or {}).items()
     }
@@ -379,7 +421,7 @@ def _decrypt_secret_maps(data: dict) -> None:
 
     舊明文列直通（crypto.decrypt_secret 對非密文原樣返回），支撐漸進遷移。
     """
-    for key in ("provider_tokens", "qc_passwords"):
+    for key in ("llm_tokens", "provider_tokens", "qc_passwords"):
         data[key] = {k: crypto.decrypt_secret(v) for k, v in (data.get(key) or {}).items()}
 
 
@@ -389,13 +431,13 @@ def _persist(user_id: str, data: dict) -> None:
     加密作用在複本，入參 data（呼叫端後續仍持有的明文版）不被污染。
     """
     stored = dict(data)
-    for key in ("provider_tokens", "qc_passwords"):
+    for key in ("llm_tokens", "provider_tokens", "qc_passwords"):
         stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
     db.save_user_settings(user_id, stored)
 
 
 def resolve_provider_token(eff: dict) -> str:
-    """由 effective LLM dict 解出當前 provider 實際生效的 token（provider_tokens 優先，fallback env）。
+    """由 effective LLM dict 解出該配置實際生效的 token（per-config api_token 優先，fallback env）。
 
     與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（judgment router /
     prejudge_batch 第二道防線）據此判斷「本次批量是否將落為 stub 假判」，兩處邏輯合一防漂移
@@ -403,12 +445,12 @@ def resolve_provider_token(eff: dict) -> str:
 
     Args:
         eff: effective LLM dict（`effective_llm_dict()` 產出或 contextvar `current()` 讀出，
-            須含 base_url / provider_tokens 兩鍵；缺鍵視為空）。
+            含該配置自身的 api_token；缺鍵視為空）。
 
     Returns:
         實際生效 token；解不出任何 token 回空字串（呼叫端以 falsy 判 stub）。
     """
     from app.core.config import env  # 函式內 import：維持 settings 不在頂層依賴 config
 
-    provider = provider_id_for(eff.get("base_url") or "")
-    return (eff.get("provider_tokens") or {}).get(provider) or env.openai_api_key
+    # per-config：直接取該配置自身 token（effective_llm_dict 已解出 api_token）；fallback env（infra 後備）
+    return eff.get("api_token") or env.openai_api_key

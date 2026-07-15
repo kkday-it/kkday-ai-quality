@@ -14,8 +14,8 @@ import type { LlmConfig } from '../types';
 const props = defineProps<{
   /** 編輯中的 config（新建時由父元件帶 id + 預設值）。 */
   modelValue: LlmConfig;
-  /** 各 provider 明文 token（本 session 已知）；切換 provider 時還原該 provider token。 */
-  providerTokens: Record<string, string>;
+  /** 此套配置自身已知明文 token（per-config，本 session 已知；供眼睛切換顯示全文）。 */
+  tokenKnown: string;
 }>();
 const emit = defineEmits<{
   (e: 'save', payload: { config: LlmConfig; tokenPatch?: Record<string, string> }): void;
@@ -54,9 +54,9 @@ const tokenDirty = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 
-// 帶入當前 provider 已知 token（明文，供眼睛切換）；hasToken 反映真實狀態
-form.value.api_token = props.providerTokens[selectedProvider.value] ?? '';
-const hasToken = computed(() => !!(props.providerTokens[selectedProvider.value] || (tokenDirty.value && form.value.api_token)));
+// 帶入此套配置自身已知 token（明文，供眼睛切換）；hasToken 反映真實狀態（per-config）
+form.value.api_token = props.tokenKnown ?? '';
+const hasToken = computed(() => !!(props.tokenKnown || (tokenDirty.value && form.value.api_token)));
 
 /** 當前供應商的 model 下拉（{id,desc}）；已選/歷史 model 不在 curated 時補一筆，再過濾版本門檻。 */
 const modelOptions = computed(() => {
@@ -73,8 +73,7 @@ const selectProvider = (id: unknown) => {
   if (!p) return;
   selectedProvider.value = p.id;
   form.value.base_url = p.base_url;
-  form.value.api_token = props.providerTokens[p.id] ?? '';
-  tokenDirty.value = false;
+  // per-config token：切換供應商不動 token（token 屬此套配置，非跟著 provider 還原）
   form.value.model = p.defaultModel ?? p.defaultModels[0]?.id ?? '';
   if (p.thinking !== undefined) form.value.thinking = p.thinking === 'on' ? 'on' : 'off';
   if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
@@ -106,9 +105,10 @@ const rules = {
 const onSave = async () => {
   if (await formRef.value?.validate()) return; // 有錯 → 行內顯示、不送出
   saving.value = true;
+  // per-config token patch：key＝此套配置 id（非 provider）；dirty 且非空才帶（空/遮罩後端不覆蓋）
   const tokenPatch =
     tokenDirty.value && form.value.api_token
-      ? { [selectedProvider.value]: form.value.api_token }
+      ? { [props.modelValue.id]: form.value.api_token }
       : undefined;
   emit('save', { config: buildConfig(), tokenPatch });
   saving.value = false;
@@ -140,10 +140,9 @@ const onTest = async () => {
       temperature: useTemp.value ? form.value.temperature : null,
       thinking: form.value.thinking,
       reasoning_effort: form.value.reasoning_effort,
-      provider_tokens:
-        tokenDirty.value && form.value.api_token
-          ? { [selectedProvider.value]: form.value.api_token }
-          : undefined,
+      // per-config：表單明文 token（dirty 才帶）；空/遮罩時後端沿用已儲存該套 config 的 token
+      api_token: tokenDirty.value && form.value.api_token ? form.value.api_token : undefined,
+      config_id: props.modelValue.id,
     });
     testResult.value = r;
     if (r.ok) Message.success('連線成功');
@@ -204,7 +203,7 @@ watch(testResult, async (r) => {
       />
       <template #extra>
         <span class="text-xs text-[#86909c]">
-          Token 依供應商共用、只存後端（user_settings，DB），不入 git，前端僅遮罩顯示。
+          此配置專用 token（每套配置各自獨立）、只存後端（user_settings，DB），不入 git，前端僅遮罩顯示。
         </span>
       </template>
     </a-form-item>

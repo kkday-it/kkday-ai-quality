@@ -64,7 +64,8 @@ class SettingsIn(BaseModel):
     # LLM 多 config
     llm_configs: list[LlmConfigIn] | None = None
     active_llm_config_id: str | None = None
-    provider_tokens: dict | None = None  # { provider_id: token } 跨 config 共用
+    llm_tokens: dict | None = None  # { config_id: token } per-config 機密（每套配置各自獨立）
+    provider_tokens: dict | None = None  # 舊 per-provider 共用（保留相容，resolution 已不用）
     provider_models: dict | None = None  # 各供應商自訂 model 清單
     # QC DB 多 config
     qc_configs: list[QcConfigIn] | None = None
@@ -111,7 +112,7 @@ def get_settings_raw(user: dict = Depends(load_user_context)) -> dict:
 
 
 class TestLlmIn(BaseModel):
-    """即時測試 LLM 入參：當前表單 flat 值（非已儲存）；token 空/遮罩沿用已儲存該 provider token。"""
+    """即時測試 LLM 入參：當前表單 flat 值（非已儲存）；token 空/遮罩沿用已儲存該 config token。"""
 
     base_url: str | None = None
     model: str | None = None
@@ -119,27 +120,32 @@ class TestLlmIn(BaseModel):
     # default | on | off（per-provider 傳遞邏輯見 client._reasoning_kwargs）
     thinking: str | None = None
     reasoning_effort: str | None = None
-    provider_tokens: dict | None = None  # { provider_id: token }
+    api_token: str | None = (
+        None  # 該配置表單明文 token（空/遮罩 → 沿用已儲存 llm_tokens[config_id]）
+    )
+    config_id: str | None = None  # 反查已儲存該套 token 用（api_token 空/遮罩時）
 
 
 @router.post("/api/settings/test-llm")
 def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
     """即時測試 LLM 連線：用「當前表單值」（body，非已儲存）送極短 prompt，**不寫入** user_settings。
 
-    token 為空 / 遮罩時沿用已儲存該 provider 明文（免重輸）；以 base_url 反推 provider 取 token。
+    token 為空 / 遮罩時沿用已儲存該 config（config_id）明文 llm_tokens（per-config，免重輸）。
     """
     from app.core import settings as app_settings
 
-    saved = app_settings.load_settings(user["user_id"])  # 含明文 provider_tokens
-    # provider_tokens 逐 key 合併（空/遮罩 → 沿用已儲存該 provider token，免重輸）
-    ptokens = dict(saved.get("provider_tokens") or {})
-    for pid, tok in (body.provider_tokens or {}).items():
-        if tok and "***" not in str(tok) and "…" not in str(tok):
-            ptokens[pid] = tok
-    base_url = (body.base_url or "").strip()
+    saved = app_settings.load_settings(user["user_id"])  # 含明文 llm_tokens
+    # per-config token：表單明文優先；空/遮罩 → 沿用已儲存該套 config 的 llm_tokens[config_id]
+    form_tok = body.api_token
+    if form_tok and "***" not in str(form_tok) and "…" not in str(form_tok):
+        token = form_tok
+    else:
+        token = (saved.get("llm_tokens") or {}).get(
+            body.config_id or ""
+        ) or config.env.openai_api_key
     cfg = {
-        "token": ptokens.get(app_settings.provider_id_for(base_url)) or config.env.openai_api_key,
-        "base_url": base_url,
+        "token": token,
+        "base_url": (body.base_url or "").strip(),
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
         "thinking": body.thinking or "default",

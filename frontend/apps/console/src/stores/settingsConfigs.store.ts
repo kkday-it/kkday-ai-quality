@@ -1,6 +1,6 @@
 // 多套設定 config 全域狀態（Pinia）：連線(管理) 與 啟用(切換) 兩個 tab 共享同一份資料。
 // 用 store 而非 composable：設定抽屜 unmount-on-close，composable 會隨卸載丟狀態；store 跨掛載週期持久。
-// 機密策略：providerTokens / qcPasswords 在本 store 暫存「本 session 已知明文」（loadAll 自 raw 端點 + 剛存的值），
+// 機密策略：llmTokens / qcPasswords 在本 store 暫存「本 session 已知明文」（loadAll 自 raw 端點 + 剛存的值），
 // 供編輯回填；持久化由後端 saveSettings 整包/部分 patch 合併（空/遮罩不覆蓋）。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
@@ -12,8 +12,8 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   const qcConfigs = ref<QcConfig[]>([]);
   const activeLlmId = ref<string | null>(null);
   const activeQcId = ref<string | null>(null);
-  /** per-provider 明文 token（本 session 已知）；key＝provider id。 */
-  const providerTokens = ref<Record<string, string>>({});
+  /** per-config 明文 token（本 session 已知）；key＝config id（每套配置各自獨立 token）。 */
+  const llmTokens = ref<Record<string, string>>({});
   /** per-config 明文 password（本 session 已知）；key＝config id。 */
   const qcPasswords = ref<Record<string, string>>({});
   const stubMode = ref(true);
@@ -36,7 +36,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     try {
       const s: SettingsBundle = await getSettingsRaw();
       syncFrom(s);
-      providerTokens.value = { ...(s.provider_tokens ?? {}) };
+      llmTokens.value = { ...(s.llm_tokens ?? {}) };
       qcPasswords.value = { ...(s.qc_passwords ?? {}) };
       loaded.value = true;
     } finally {
@@ -47,16 +47,16 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   /** 送 patch 給後端並以權威回應同步狀態；剛存的明文機密合併進本地 map（供再編輯）。 */
   async function persist(
     patch: Record<string, unknown>,
-    localSecrets?: { providerTokens?: Record<string, string>; qcPasswords?: Record<string, string> }
+    localSecrets?: { llmTokens?: Record<string, string>; qcPasswords?: Record<string, string> }
   ): Promise<void> {
     const m: SettingsBundle = await saveSettings(patch);
     syncFrom(m);
-    if (localSecrets?.providerTokens) Object.assign(providerTokens.value, localSecrets.providerTokens);
+    if (localSecrets?.llmTokens) Object.assign(llmTokens.value, localSecrets.llmTokens);
     if (localSecrets?.qcPasswords) Object.assign(qcPasswords.value, localSecrets.qcPasswords);
   }
 
   // ── LLM ──
-  /** 新增/更新一套 LLM config（依 id upsert）；tokenPatch＝{providerId: 明文token}（dirty 才帶）。 */
+  /** 新增/更新一套 LLM config（依 id upsert）；tokenPatch＝{configId: 明文token}（dirty 才帶，per-config）。 */
   async function saveLlmConfig(
     cfg: LlmConfig,
     tokenPatch?: Record<string, string>
@@ -67,8 +67,8 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     else list.push(cfg);
     const patch: Record<string, unknown> = { llm_configs: list };
     if (!activeLlmId.value) patch.active_llm_config_id = cfg.id; // 首套自動設為啟用
-    if (tokenPatch) patch.provider_tokens = tokenPatch;
-    await persist(patch, tokenPatch ? { providerTokens: tokenPatch } : undefined);
+    if (tokenPatch) patch.llm_tokens = tokenPatch;
+    await persist(patch, tokenPatch ? { llmTokens: tokenPatch } : undefined);
   }
 
   async function deleteLlmConfig(id: string): Promise<void> {
@@ -117,7 +117,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     qcConfigs,
     activeLlmId,
     activeQcId,
-    providerTokens,
+    llmTokens,
     qcPasswords,
     stubMode,
     loading,

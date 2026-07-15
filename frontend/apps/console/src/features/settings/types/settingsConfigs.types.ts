@@ -1,5 +1,5 @@
 // 多套設定 config 型別（對齊後端 user_settings.data 結構）。
-// 機密（LLM token / QC password）不在 config 本體：token 跨 config 共用 provider_tokens（per-provider）、
+// 機密（LLM token / QC password）不在 config 本體：LLM token 存 llm_tokens（per-config_id，每套獨立）、
 // QC password 存 qc_passwords（per-config_id）。詳見 backend/app/core/settings.py。
 
 /** 單套 LLM 模型 config。 */
@@ -30,7 +30,8 @@ export interface QcConfig {
 export interface SettingsBundle {
   llm_configs?: LlmConfig[];
   active_llm_config_id?: string | null;
-  provider_tokens?: Record<string, string>;
+  llm_tokens?: Record<string, string>; // { config_id: token } per-config（每套配置各自獨立）
+  provider_tokens?: Record<string, string>; // 舊 per-provider 共用（保留相容）
   provider_models?: Record<string, string[]>;
   qc_configs?: QcConfig[];
   active_qc_config_id?: string | null;

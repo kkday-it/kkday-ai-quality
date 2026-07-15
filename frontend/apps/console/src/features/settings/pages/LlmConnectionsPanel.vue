@@ -126,7 +126,7 @@ useListDragSort(
           :config="c"
           :item-key="c.id"
           :active="c.id === store.activeLlmId"
-          :provider-tokens="store.providerTokens"
+          :token-known="store.llmTokens[c.id] ?? ''"
           @delete="onDelete(c.id)"
           @activate="onActivate(c.id)"
           @save="onSave"
@@ -137,7 +137,7 @@ useListDragSort(
         <a-card v-if="isEditingNew && editing" :bordered="true" size="small" class="mb-2">
           <LlmConfigEditor
             :model-value="editing"
-            :provider-tokens="store.providerTokens"
+            :token-known="''"
             @save="onSave"
             @cancel="cancel"
           />

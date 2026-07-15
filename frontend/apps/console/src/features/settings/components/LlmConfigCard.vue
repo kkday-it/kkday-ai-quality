@@ -13,7 +13,8 @@ defineProps<{
   config: LlmConfig;
   active: boolean;
   itemKey: string;
-  providerTokens?: Record<string, string>;
+  /** 此套配置自身已知明文 token（per-config；供編輯回填眼睛顯示）。 */
+  tokenKnown?: string;
 }>();
 defineEmits<{
   (e: 'delete'): void;
@@ -57,7 +58,7 @@ defineEmits<{
     <!-- body：展開即為編輯表單本身；編輯器自管草稿，儲存/取消由父層處理 -->
     <LlmConfigEditor
       :model-value="config"
-      :provider-tokens="providerTokens ?? {}"
+      :token-known="tokenKnown ?? ''"
       @save="(payload) => $emit('save', payload)"
       @cancel="$emit('cancel')"
     />
