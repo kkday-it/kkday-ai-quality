@@ -67,23 +67,29 @@ def _diagnostic_polarity_schema(schema: dict) -> dict:
 
 
 def domain_verdicts(
-    item: dict, text_: str, model: str, polarity: str
+    item: dict, text_: str, model: str, polarity: str, *, pids: list[str] | None = None
 ) -> tuple[list[dict], list[dict]]:
-    """六域並行診斷歸因：回 (gated attrs 含 reason, verdicts 六域逐支交代)。
+    """域並行診斷歸因：回 (gated attrs 含 reason, verdicts 逐域交代)。
 
     每域獨立呼叫該域 prompt（動態附診斷 schema/system，不動 production `_attrs_pack`），命中則附
-    reason，棄權則附 abstain_reason——無論匹配與否六個域都有交代。合流閘門委派 `prejudge._gate_attrs`
+    reason，棄權則附 abstain_reason——無論匹配與否每個域都有交代。合流閘門委派 `prejudge._gate_attrs`
     （與 production 同一套同(域,面向)去重/信心閘門/排序規則，避免評測與生產兩份實作 drift）。
+
+    LLM 呼叫的 stage 帶域名標籤（`attribute:{domain}`，如 `attribute:C-1`）而非固定 `attribute`——
+    stage 純屬 log/usage 記帳標籤、不參與判決 gating 或 exact-cache key（`client.chat_json` 的
+    `cache_key` 只是 OpenAI `prompt_cache_key` 效能提示，見其 docstring），此改動對判決結果零影響，
+    僅讓 llm_usage / run_log 能分域檢視（原固定字串令 7 泳道日誌分不出是哪一域）。
 
     Args:
         item: 判決輸入 item dict（供 `_finalize_attr_l2` 的證據封頂讀 order_oid 等）。
         text_: 評論文字。
         model: 判決模型。
         polarity: 已判定的整體傾向（negative/neutral，用於填 {POLARITY} 槽）。
+        pids: 要跑的域 prompt 子集（預設全六域 `prompt_source.DOMAIN_PROMPT_IDS`，向後相容）。
 
     Returns:
         (gated_attrs, verdicts)：gated_attrs 為過閘門後的最終歸因（含 reason）；
-        verdicts 為 `[{domain, domain_label, matched, attributions, abstain_reason}]`（六域皆有）。
+        verdicts 為 `[{domain, domain_label, matched, attributions, abstain_reason}]`（含 pids 每域）。
     """
     from concurrent.futures import ThreadPoolExecutor
     from contextvars import copy_context
@@ -92,17 +98,19 @@ def domain_verdicts(
 
     valid = prejudge._l2_label_map()
     effort = prejudge._attr_effort()
-    pids = prompt_source.DOMAIN_PROMPT_IDS
+    pids = pids if pids is not None else prompt_source.DOMAIN_PROMPT_IDS
 
     def _one(pid: str) -> dict:
         p = prompt_source.load(pid)
         schema = _diagnostic_domain_schema(p["schema"])
         system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE
         user = prejudge._render_pack_user(p["user_template"], text_, polarity)
-        out = prejudge._call(system, user, "attribute", model, schema=schema, effort=effort)
+        domain = prompt_source._domain_of(pid)
+        out = prejudge._call(
+            system, user, f"attribute:{domain}", model, schema=schema, effort=effort
+        )
         from app.core import ai_judge  # lazy：域中文名自 `## Taxonomy` 派生（ai_judge 快取）
 
-        domain = prompt_source._domain_of(pid)
         raw_attrs = [a for a in (out.get("attributions") or []) if isinstance(a, dict)]
         finalized: list[dict] = []
         for raw in raw_attrs[:3]:
@@ -125,6 +133,96 @@ def domain_verdicts(
     all_attrs = [a for v in verdicts for a in v["attributions"]]
     gated = prejudge._gate_attrs(all_attrs, prejudge._max_attributions())
     return gated, verdicts
+
+
+def _sandbox_polarity(text_: str, model: str) -> tuple[str, int, str]:
+    """沙盒極性診斷：跑 00_polarity（附診斷 reason 欄），回 (polarity, sentiment, reason)。
+
+    比照 `_run_polarity`（B0 診斷 overlay 同一套 schema/system 疊法）但單筆、且用 `prejudge._call`
+    走 model override（沙盒可能指定非目前 config 的模型），而非 `client.chat_json` 直呼。
+    """
+    from app.judge import prejudge
+
+    p = prompt_source.load(prompt_source.POLARITY_ID)
+    schema = _diagnostic_polarity_schema(p["schema"])
+    system = p["system"] + _DIAGNOSTIC_POLARITY_NOTE
+    out = prejudge._call(
+        system,
+        prejudge._render_pack_user(p["user_template"], text_, ""),  # polarity 無 {POLARITY} 槽
+        "polarity",
+        model,
+        schema=schema,
+        effort=prejudge._polarity_effort(),
+    )
+    pol = str(out.get("polarity", "")).strip().lower()
+    pol = pol if pol in ("positive", "negative", "neutral") else "neutral"
+    sentiment = prejudge._clamp_sentiment(out.get("sentiment"), pol)
+    return pol, sentiment, str(out.get("reason", ""))[:300]
+
+
+def sandbox_classify(item: dict, prompt_ids: list[str], model: str) -> dict:
+    """Prompt 測試沙盒：對單筆 item 跑「使用者勾選的」prompt 子集，ungated（不受正式歸因閘門限制）。
+
+    與 `classify_one` 的差異：`classify_one` 走 production `to_findings` 管線（受歸因閘門限制，
+    正向評論不跑六域）；本函式供歸因列表「Prompt 測試」沙盒——使用者可任意勾選 7 支 prompt 中的
+    子集，即使勾了域 prompt 但整體是正向評論，也照跑（測試目的不受生產策略約束）。域診斷委派
+    `domain_verdicts`（`pids` 子集），stage 已帶域名標籤（見該函式 docstring）。
+
+    Args:
+        item: `_build_sandbox_item` 組裝的判決輸入 item dict。
+        prompt_ids: 使用者勾選的 prompt id 子集（`polarity` / `C-1`..`C-6`，`prompt_id_of` 值域）。
+        model: 判決模型。
+
+    Returns:
+        {source_id, text, polarity, sentiment_score, prompts}：`prompts` 為異質清單——勾了
+        `polarity` 有一條 `{prompt_id:"polarity", matched, polarity, sentiment_score, reason}`；
+        勾了域則各一條 `{prompt_id:"C-N", domain_label, matched, attributions, abstain_reason}`。
+        只勾域未勾 polarity：仍會內部先跑一次極性（不落入 `prompts`）以填域 prompt 的 {POLARITY} 槽。
+    """
+    from app.judge import prejudge
+
+    text_ = prejudge._text_of(item)
+    want_polarity = "polarity" in prompt_ids
+    domain_pids = [prompt_id_of(p) for p in prompt_ids if p != "polarity"]
+
+    polarity = ""
+    sentiment = 0
+    prompts: list[dict] = []
+
+    if want_polarity or domain_pids:
+        polarity, sentiment, reason = _sandbox_polarity(text_, model)
+        if want_polarity:
+            prompts.append(
+                {
+                    "prompt_id": "polarity",
+                    "matched": True,
+                    "polarity": polarity,
+                    "sentiment_score": sentiment,
+                    "reason": reason,
+                }
+            )
+
+    if domain_pids:
+        _, verdicts = domain_verdicts(item, text_, model, polarity or "neutral", pids=domain_pids)
+        for pid, v in zip(domain_pids, verdicts, strict=True):
+            ext_id = (prompt_source.rule_code_for_prompt(pid) or "").removeprefix("prompt_")
+            prompts.append(
+                {
+                    "prompt_id": ext_id,
+                    "domain_label": v["domain_label"],
+                    "matched": v["matched"],
+                    "attributions": v["attributions"],
+                    "abstain_reason": v["abstain_reason"],
+                }
+            )
+
+    return {
+        "source_id": item.get("source_id", ""),
+        "text": text_,
+        "polarity": polarity,
+        "sentiment_score": sentiment,
+        "prompts": prompts,
+    }
 
 
 # ─────────────────────────── prompt 對照 ───────────────────────────
@@ -431,6 +529,40 @@ def _run_polarity(pid: str, samples: list[dict], *, diagnostic: bool = True) -> 
     return {"prompt": "polarity", **m, "mismatches": mismatches}
 
 
+def _build_sandbox_item(source: str, source_id: str) -> dict:
+    """單筆判決輸入 item 組裝：取原始資料 → normalize_row → canonical 欄位補齊。
+
+    比照 `prejudge_batch._work_one`——否則 `_text_of` 讀不到 product_reviews 的
+    rec_title/rec_desc（在 rec_* 欄，非 content/comment）→ 判空文字。供 `classify_one`
+    與沙盒測試（`prompt_sandbox.py`）共用，避免重複組裝邏輯。
+
+    Args:
+        source: 來源 code（如 product_reviews）。
+        source_id: 該來源業務 id（product_reviews→rec_oid）。
+
+    Returns:
+        item dict（含 content/prod_oid/order_oid/raw，供 `prejudge.to_findings`/`_text_of` 使用）。
+
+    Raises:
+        ValueError: 找不到該則評論。
+    """
+    from app.core import source_mapping as _srcmap
+
+    items = db.get_items_by_ids([source_id], source)
+    if not items:
+        raise ValueError(f"找不到評論：{source}/{source_id}")
+    canon = _srcmap.normalize_row(source, items[0]) if source in _srcmap.sources() else {}
+    return {
+        **items[0],
+        "source": source,
+        "source_id": source_id,
+        "content": canon.get("content") or "",
+        "prod_oid": canon.get("prod_oid") or "",
+        "order_oid": canon.get("order_oid") or "",
+        "raw": items[0],  # 供 _evidence_cap 讀 order_oid
+    }
+
+
 def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dict:
     """單條評論 dry-run 分類（歸因列表「測試」用）：跑 prompts 判一則 → 結果,**不落庫**。
 
@@ -461,24 +593,9 @@ def classify_one(source: str, source_id: str, *, diagnostic: bool = True) -> dic
     if client.is_stub():
         raise ValueError("stub 模式（該配置無可用 LLM token），拒跑避免假結果")
     from app.core import settings as app_settings
-    from app.core import source_mapping as _srcmap
     from app.judge import prejudge
 
-    items = db.get_items_by_ids([source_id], source)
-    if not items:
-        raise ValueError(f"找不到評論：{source}/{source_id}")
-    # 正規化源欄→canonical content（判決主輸入）——比照 prejudge_batch._work_one,否則 _text_of 讀不到
-    # product_reviews 的 rec_title/rec_desc（在 rec_* 欄,非 content/comment）→ 判空文字。
-    canon = _srcmap.normalize_row(source, items[0]) if source in _srcmap.sources() else {}
-    item = {
-        **items[0],
-        "source": source,
-        "source_id": source_id,
-        "content": canon.get("content") or "",
-        "prod_oid": canon.get("prod_oid") or "",
-        "order_oid": canon.get("order_oid") or "",
-        "raw": items[0],  # 供 _evidence_cap 讀 order_oid
-    }
+    item = _build_sandbox_item(source, source_id)
     model = app_settings.current().get("model", "")
     findings = prejudge.to_findings(item, model=model)  # 非落庫
     polarity = findings[0].polarity if findings else ""
