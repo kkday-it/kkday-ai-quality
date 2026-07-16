@@ -3,7 +3,7 @@
  * 判決歷史抽屜（評論級時間軸）：某則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註
  * 三類事件混排（舊到新，時間遞增，Arco a-timeline）。判決事件附「與前一次判決的變更」徽章
  * （模型/歸因數/分類/內容——client-side 對比，無需後端 diff 端點）+「查看 LLM 日誌」入口
- * （job_id 存在時，開 `PrejudgeLogDrawer` 歷史模式回看當時完整 LLM 執行日誌）；右側可新增
+ * （job_id 存在時，開 `PrejudgeLogDrawer` 回看當時完整 LLM 執行日誌快照）；右側可新增
  * 評論級備註（與 finding 級「歸因備註」並存，兩個入口不同層級）。
  *
  * 資料源＝GET /api/judgment-history（append-only judgment_history 表；重判結果與前次完全
@@ -15,7 +15,7 @@ import { addJudgmentHistoryNote, getJudgmentHistory, type JudgmentHistoryEntry }
 import { StateGuard } from '@/components';
 import { POLARITY_LABELS, STATUS_LABEL, type ProblemRow } from '../constants';
 
-// 「查看 LLM 日誌」入口目標（點開才載；與初判分類即時抽屜共用同一元件，此處走 history 模式）
+// 「查看 LLM 日誌」入口目標（點開才載；PrejudgeLogDrawer 為歷史快照回看專用）
 const PrejudgeLogDrawer = defineAsyncComponent(() => import('./PrejudgeLogDrawer.vue'));
 const logDrawerVisible = ref(false);
 const logDrawerJobId = ref('');
@@ -290,10 +290,6 @@ const statusText = (e: JudgmentHistoryEntry): string => {
     </div>
 
     <!-- 「查看 LLM 日誌」：讀落庫快照的歷史回看模式（與初判分類即時抽屜共用同一元件）-->
-    <PrejudgeLogDrawer
-      v-model:visible="logDrawerVisible"
-      :job-id="logDrawerJobId"
-      mode="history"
-    />
+    <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
   </a-drawer>
 </template>

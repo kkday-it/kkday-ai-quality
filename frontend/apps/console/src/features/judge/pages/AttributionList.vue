@@ -11,9 +11,15 @@
  * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
 import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
-import { ExportProgressBar, StateGuard, TableLayout } from '@/components';
+import {
+  CollapsibleSidePanel,
+  ExportProgressBar,
+  StateGuard,
+  TableLayout,
+} from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
+import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
@@ -27,6 +33,7 @@ import {
   AttributionDetailDrawer,
   AttributionFilterBar,
   LlmConfigSelect,
+  PrejudgeLogView,
   PromptSandboxDrawer,
   PromptVersionPickerGroup,
 } from '../components';
@@ -73,11 +80,6 @@ const JudgmentRunsDrawer = defineAsyncComponent(
   () => import('../components/JudgmentRunsDrawer.vue'),
 );
 const runsDrawerVisible = ref(false);
-
-// 初判執行日誌抽屜（點「初判分類」即開；SSE 流式顯示各階段與 LLM 輸入參數/prompt/輸出；點開才載）
-const PrejudgeLogDrawer = defineAsyncComponent(() => import('../components/PrejudgeLogDrawer.vue'));
-const logDrawerVisible = ref(false);
-const logDrawerJobId = ref('');
 
 // 判決歷史抽屜（評論級時間軸：判決快照/覆核轉移/備註；點開才載）
 const JudgmentHistoryDrawer = defineAsyncComponent(
@@ -128,6 +130,9 @@ const {
   progress,
   progressPct,
   costText,
+  logEntries,
+  logStreaming,
+  logError,
   failedItems,
   failedTruncated,
   retryFailed,
@@ -166,16 +171,9 @@ const {
 // ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
 const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
 const onRejudge = async (id: string, promptVersions?: Record<string, number>) => {
-  // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；
-  // 取得 job_id 即開執行日誌抽屜（判決仍在跑，SSE 流式顯示各階段與 LLM 輸入/輸出）
-  await rejudgeRow(
-    id,
-    (jid) => {
-      logDrawerJobId.value = jid;
-      logDrawerVisible.value = true;
-    },
-    promptVersions,
-  );
+  // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；執行日誌（logEntries/
+  // logStreaming）由 usePrejudgeJob 內部直接開流，就地顯示於確認抽屜本身，不再另開獨立抽屜。
+  await rejudgeRow(id, promptVersions);
   await nextTick();
   const idx = rows.value.findIndex((r) => String(r._group) === id);
   if (idx < 0) return;
@@ -190,25 +188,54 @@ const onRejudge = async (id: string, promptVersions?: Record<string, number>) =>
 //    confirmScope 分流內容顯示；confirmRowId 僅 scope='row' 時有值 ──
 const confirmScope = ref<'batch' | 'row'>('batch');
 const confirmRowId = ref('');
+/** 左側選單目前顯示的面板；row scope 沒有「目標範圍」項，恆為 settings。 */
+const confirmPanel = ref<'target' | 'settings'>('target');
+/** 判決設定/目標範圍面板是否展開。開抽屜時預設**展開**——「確認」按鈕收在面板 footer 內
+ * （面板＝確認表單），預設收合會把主行為藏起來多一次點擊；確認後自動收合改看執行日誌。 */
+const confirmSettingsOpen = ref(false);
 const confirmVersionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 const openRowConfirm = (record: { _group: unknown }) => {
   confirmScope.value = 'row';
   confirmRowId.value = String(record._group);
+  confirmPanel.value = 'settings';
+  confirmSettingsOpen.value = true;
+  logEntries.value = []; // 清掉上一次執行殘留的日誌，避免誤讀成本次結果
+  logError.value = '';
   confirmOpen.value = true;
 };
 const openBatchConfirm = () => {
   confirmScope.value = 'batch';
+  confirmPanel.value = 'target';
+  confirmSettingsOpen.value = true;
+  logEntries.value = [];
+  logError.value = '';
   openPrejudge();
 };
-/** 抽屜「開始判決」：依 confirmScope 分流批量／單列執行（草稿不進正式判決，僅傳版本選擇）。 */
+/** 抽屜「確認」：依 confirmScope 分流批量／單列執行（草稿不進正式判決，僅傳版本選擇）。
+ * 不關閉抽屜——確認後自動收合設定面板，下方常駐的執行日誌區就地串流；關閉抽屜走右上 X
+ * （不影響背景 job）。 */
 const onConfirmRun = () => {
+  confirmSettingsOpen.value = false;
   if (confirmScope.value === 'row') {
-    confirmOpen.value = false;
     onRejudge(confirmRowId.value, confirmVersionSelection.value.versions);
   } else {
     doRun(confirmVersionSelection.value.versions);
   }
 };
+
+// ── 確認抽屜執行前摘要卡：把「這次會用什麼設定跑」攤開給使用者看（模型 + 版本選擇），
+//    取代原本收合面板時的大片空白；label 復用 judgeRules store 與 composeLlmLabel，勿另建對照。 ──
+const judgeRulesStore = useJudgeRulesStore();
+const confirmModelLabel = computed(() => {
+  const c = llmConfigs.value.find((x) => x.id === llmConfigId.value);
+  return c ? composeLlmLabel(c) : '系統預設模型';
+});
+/** 指定了非 active 歷史版本的 prompt 清單（[中文名, 版本號]）；空＝全部沿用 active。 */
+const confirmPinnedVersions = computed(() =>
+  Object.entries(confirmVersionSelection.value.versions).map(
+    ([code, ver]) => [judgeRulesStore.labelFor(code), ver] as const,
+  ),
+);
 
 // ── 操作：查看判決詳情抽屜（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
@@ -1028,80 +1055,165 @@ onMounted(init);
     <a-drawer
       v-model:visible="confirmOpen"
       title="確認初判分類"
-      ok-text="開始判決"
-      cancel-text="取消"
       :width="1040"
-      :ok-loading="confirmScope === 'row' ? isRowBusy(confirmRowId) : running"
-      @ok="onConfirmRun"
+      :footer="false"
+      :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
     >
-      <div class="flex flex-col gap-3">
-        <template v-if="confirmScope === 'batch'">
-          <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
-          <div v-if="runCount" class="flex items-center gap-2">
-            <span class="text-xs text-gray-500">選取範圍</span>
-            <a-radio-group v-model="targetMode" size="small" @change="refreshTargetCount">
-              <a-radio value="selected">已選 {{ runCount }} 筆內</a-radio>
-              <a-radio value="scope">全部資料</a-radio>
-            </a-radio-group>
-          </div>
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+        <!-- 左側收合軌 + 懸浮判決設定面板 + 主內容：面板用絕對定位懸浮在觸發 tab 右側（不佔版面
+             寬度、不推擠內容），收合狀態下摘要卡／執行日誌直接貼齊左側 tab 顯示；面板本身用
+             v-show（非 v-if）保持掛載，PromptVersionPickerGroup 的預設值/emit 即使收合也立即生效。 -->
+        <div class="flex min-h-0 flex-1 gap-3 overflow-hidden">
+          <CollapsibleSidePanel
+            v-model="confirmSettingsOpen"
+            label="判決設定"
+            floating
+            panel-class="w-[560px] max-h-[70vh]"
+          >
+            <a-menu
+              v-if="confirmScope === 'batch'"
+              :selected-keys="[confirmPanel]"
+              class="mb-3 rounded border"
+              @menu-item-click="(k: string) => (confirmPanel = k as 'target' | 'settings')"
+            >
+              <a-menu-item key="target">目標範圍</a-menu-item>
+              <a-menu-item key="settings">判決設定</a-menu-item>
+            </a-menu>
 
-          <div class="flex flex-col gap-3">
-            <div>
-              <div class="mb-1 text-xs text-gray-500">
-                目標判決階段（預設只判未判；加選已判階段＝再判）
+            <template v-if="confirmPanel === 'target' && confirmScope === 'batch'">
+              <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
+              <div v-if="runCount" class="mb-3 flex items-center gap-2">
+                <span class="text-xs text-gray-500">選取範圍</span>
+                <a-radio-group v-model="targetMode" size="small" @change="refreshTargetCount">
+                  <a-radio value="selected">已選 {{ runCount }} 筆內</a-radio>
+                  <a-radio value="scope">全部資料</a-radio>
+                </a-radio-group>
               </div>
-              <a-checkbox-group v-model="targetStages" @change="refreshTargetCount">
-                <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">
-                  {{ lbl }}
-                </a-checkbox>
-              </a-checkbox-group>
+
+              <div class="flex flex-col gap-3">
+                <div>
+                  <div class="mb-1 text-xs text-gray-500">
+                    目標判決階段（預設只判未判；加選已判階段＝再判）
+                  </div>
+                  <a-checkbox-group v-model="targetStages" @change="refreshTargetCount">
+                    <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">
+                      {{ lbl }}
+                    </a-checkbox>
+                  </a-checkbox-group>
+                </div>
+                <!-- 目標篩選：共用 AttributionFilterBar（完整篩選欄，與列表對齊；自動帶入列表當前篩選，可重選）。
+                     星等/日期/ID 兩分支皆套；傾向/信心分層/L1 為判決級，僅對已判分支生效（見 usePrejudgeJob._scopeBody）。 -->
+                <div>
+                  <div class="mb-1 text-xs text-gray-500">
+                    目標篩選（已自動帶入列表當前篩選，可重選）
+                  </div>
+                  <AttributionFilterBar
+                    :model="draftFilters"
+                    :fields="PREJUDGE_TARGET_FIELDS"
+                    :cascade-options="cascadeOptions"
+                    :id-placeholder="idPlaceholder"
+                    @change="refreshTargetCount"
+                  />
+                  <div class="mt-1 text-xs text-gray-400">
+                    日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1
+                    僅對「已判」階段生效（未判列尚無判決可比對）。
+                  </div>
+                </div>
+                <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
+                <div v-if="hasJudgedStage" class="flex items-center gap-2">
+                  <span class="text-xs text-gray-500">再判信心範圍</span>
+                  <a-radio-group v-model="lowConfOnly" size="small" @change="refreshTargetCount">
+                    <a-radio :value="true">僅低信心</a-radio>
+                    <a-radio :value="false">全部信心</a-radio>
+                  </a-radio-group>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="flex flex-col gap-3">
+                <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
+                <div>
+                  <div class="mb-1 text-xs text-gray-500">
+                    Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
+                  </div>
+                  <PromptVersionPickerGroup @update:resolved="(v) => (confirmVersionSelection = v)" />
+                </div>
+              </div>
+            </template>
+
+            <!-- 動作列收在面板內（面板＝確認表單）：取消＝收合面板（不關抽屜）；確認＝依 scope
+                 分流執行並自動收合面板改看執行日誌。 -->
+            <template #footer>
+              <a-button size="small" @click="confirmSettingsOpen = false">取消</a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :loading="confirmScope === 'row' ? isRowBusy(confirmRowId) : running"
+                @click="onConfirmRun"
+              >
+                確認
+              </a-button>
+            </template>
+          </CollapsibleSidePanel>
+
+          <!-- 主內容（恆顯示，不隨確認前後切換）：上＝本次執行摘要卡；下＝LLM 執行日誌
+               （未執行時為日誌空狀態，確認後就地串流——不再另開獨立的 PrejudgeLogDrawer）。 -->
+          <div class="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+            <div class="flex flex-none flex-col gap-2 rounded-lg border p-4">
+              <div class="text-sm text-[var(--color-text-1)]">
+                <template v-if="confirmScope === 'batch'">
+                  將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
+                  筆進行初判分類（正向不分類；負向與含問題點的中性反饋歸 L1→L2）。
+                </template>
+                <template v-else>{{ rejudgeConfirmText }}</template>
+              </div>
+              <div class="flex items-baseline gap-2 text-sm">
+                <span class="w-20 shrink-0 text-xs text-gray-500">模型</span>
+                <span>{{ confirmModelLabel }}</span>
+              </div>
+              <div class="flex items-baseline gap-2 text-sm">
+                <span class="w-20 shrink-0 text-xs text-gray-500">Prompt 版本</span>
+                <span v-if="!confirmPinnedVersions.length">全部沿用目前 active 版</span>
+                <div v-else class="flex flex-col gap-1">
+                  <span>指定 {{ confirmPinnedVersions.length }} 支歷史版本：</span>
+                  <span
+                    v-for="[label, ver] in confirmPinnedVersions"
+                    :key="label"
+                    class="text-xs text-[var(--color-text-2)]"
+                  >
+                    {{ label }} → v{{ ver }}
+                  </span>
+                </div>
+              </div>
+              <div class="text-xs text-gray-400">
+                在左側「判決設定」面板調整模型 / Prompt 版本並按「確認」後開始分類，過程會消耗
+                token，執行日誌即時顯示於下方。
+              </div>
             </div>
-            <!-- 目標篩選：共用 AttributionFilterBar（完整篩選欄，與列表對齊；自動帶入列表當前篩選，可重選）。
-                 星等/日期/ID 兩分支皆套；傾向/信心分層/L1 為判決級，僅對已判分支生效（見 usePrejudgeJob._scopeBody）。 -->
-            <div>
-              <div class="mb-1 text-xs text-gray-500">
-                目標篩選（已自動帶入列表當前篩選，可重選）
-              </div>
-              <AttributionFilterBar
-                :model="draftFilters"
-                :fields="PREJUDGE_TARGET_FIELDS"
-                :cascade-options="cascadeOptions"
-                :id-placeholder="idPlaceholder"
-                @change="refreshTargetCount"
+            <!-- 進度列：確認後即時反映（單列/批量都寫共用 jobStatus/progress，見 usePrejudgeJob）-->
+            <div v-if="jobStatus" class="flex flex-none items-center gap-3 rounded-lg border px-3 py-2">
+              <a-progress
+                class="flex-1"
+                size="small"
+                :percent="progressPct / 100"
+                :status="
+                  jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'
+                "
               />
-              <div class="mt-1 text-xs text-gray-400">
-                日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / L1
-                僅對「已判」階段生效（未判列尚無判決可比對）。
+              <span class="text-xs text-[var(--color-text-3)]">
+                已處理 {{ progress.processed }}/{{ progress.total }}
+                <template v-if="costText"> · {{ costText }}</template>
+              </span>
+            </div>
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+              <a-alert v-if="logError" type="warning" :content="logError" class="flex-none" />
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <PrejudgeLogView :entries="logEntries" :streaming="logStreaming" />
               </div>
             </div>
-            <!-- 再判信心範圍：勾選任一已判階段才顯示（原「再判收斂」的傾向/信心/L1 已併入上方統一篩選欄）-->
-            <div v-if="hasJudgedStage" class="flex items-center gap-2">
-              <span class="text-xs text-gray-500">再判信心範圍</span>
-              <a-radio-group v-model="lowConfOnly" size="small" @change="refreshTargetCount">
-                <a-radio :value="true">僅低信心</a-radio>
-                <a-radio :value="false">全部信心</a-radio>
-              </a-radio-group>
-            </div>
           </div>
-
-          <div class="text-sm text-[var(--color-text-1)]">
-            將對 <b class="text-[rgb(var(--primary-6))]">{{ targetCount }}</b>
-            筆進行初判分類（正向不分類；負向與含問題點的中性反饋歸 L1→L2）。
-          </div>
-        </template>
-        <template v-else>
-          <div class="text-sm text-[var(--color-text-1)]">{{ rejudgeConfirmText }}</div>
-        </template>
-
-        <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
-
-        <div>
-          <div class="mb-1 text-xs text-gray-500">
-            Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
-          </div>
-          <PromptVersionPickerGroup @update:resolved="(v) => (confirmVersionSelection = v)" />
         </div>
-        <div class="text-xs text-gray-400">確認後開始判決，過程會消耗 token。</div>
       </div>
     </a-drawer>
 
@@ -1188,9 +1300,6 @@ onMounted(init);
 
     <!-- 操作欄：查看判決詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
     <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
-
-    <!-- 初判執行日誌抽屜：SSE 即時顯示該次判決各階段 + LLM 輸入參數/prompt/輸出（流式）-->
-    <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
     <!-- Prompt 測試沙盒：單列 / 批量（內建依條件目標選取）共用；跑選定 prompt 子集，ungated、
          與正式判決分離落庫 -->
