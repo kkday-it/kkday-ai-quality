@@ -75,11 +75,6 @@ def rule_code_for_prompt(prompt_id: str) -> str | None:
     return _PROMPT_RULE.get(prompt_id)
 
 
-def is_prompt_rule(rule_code: str) -> bool:
-    """rule_code 是否為初判 Prompt（prompt_*）。"""
-    return rule_code in _RULE_PROMPT
-
-
 # ─────────────────────────── md 解析 ───────────────────────────
 def _extract_title(text: str) -> str:
     """取首個 H1（`# ...`）標題純文字；`## ...` 不算（需 `#` 後緊接空白）。"""

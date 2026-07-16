@@ -50,26 +50,19 @@ def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
         assert "data.source.upload" in qc_perms
         assert "data.datapack.import" in qc_perms
         assert "judge-rule.version.manage" not in qc_perms
-        assert "config.file.write" not in qc_perms
         # admin 全量且為 qc 超集
         assert qc_perms <= admin_perms
-        assert {"judge-rule.version.manage", "config.file.write"} <= admin_perms
+        assert "judge-rule.version.manage" in admin_perms
 
 
 def test_qc_forbidden_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
-    """qc 打 admin-tier 端點（規則管理 / config 覆寫）一律 403。"""
+    """qc 打 admin-tier 端點（規則管理）一律 403。"""
     from app.api.main import app
 
     with TestClient(app) as client:
         qc = _auth(_login(client, "someone@kkday.com"))
         assert client.post("/api/judge-rules/C-1/reset-default", headers=qc).status_code == 403
         assert client.post("/api/judge-rules/reset-default-all", headers=qc).status_code == 403
-        assert (
-            client.put(
-                "/api/config/files/whatever.json", json={"content": {}}, headers=qc
-            ).status_code
-            == 403
-        )
 
 
 def test_qc_allowed_on_datapack_import(temp_db, roles_cfg) -> None:

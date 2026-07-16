@@ -61,11 +61,11 @@ def test_insert_and_overview_aggregation(temp_db) -> None:
 
 
 def test_insert_single_row(temp_db) -> None:
-    """單筆即時寫入（ad-hoc true_label 呼叫用）→ overview 計入。"""
-    db.insert_llm_usage_row(_row(stage="true_label", model="gpt-5-nano"))
+    """單筆即時寫入（ad-hoc 呼叫用）→ overview 計入。"""
+    db.insert_llm_usage_row(_row(stage="adhoc", model="gpt-5-nano"))
     ov = db.llm_usage_overview()
     assert ov["kpi"]["calls"] == 1
-    assert ov["by_stage"][0]["key"] == "true_label"
+    assert ov["by_stage"][0]["key"] == "adhoc"
 
 
 def test_empty_bulk_insert_noop(temp_db) -> None:

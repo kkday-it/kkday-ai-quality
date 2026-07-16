@@ -2,7 +2,7 @@
 
 AI 商品質檢平台 — AI 法官（內容爭議裁決，內容質量 Pod 第三支柱）。
 本檔僅負責 app 組裝：middleware + 建表/播種 + 掛載各領域 router；端點實作分散於 `app/api/routers/`
-（auth / inbound / settings / findings / problems / v1 / config / rules / exports 各自帶完整 /api 路徑）。
+（auth / inbound / settings / findings / problems / v1 / rules / exports 各自帶完整 /api 路徑）。
 
 啟動：uvicorn app.api.main:app --reload --port 8100
 """
@@ -30,7 +30,6 @@ db.init_db()  # 啟動即建表（冪等）
 # ── 掛載領域 router（各自帶完整 /api 路徑；v1 為新攝取架構 /api/v1）──
 from app.api.routers import admin_import as admin_import_router  # noqa: E402
 from app.api.routers import auth as auth_router  # noqa: E402
-from app.api.routers import config as config_router  # noqa: E402
 from app.api.routers import exports as exports_router  # noqa: E402
 from app.api.routers import findings as findings_router  # noqa: E402
 from app.api.routers import inbound as inbound_router  # noqa: E402
@@ -45,7 +44,6 @@ from app.api.routers import (  # noqa: E402
 
 for _r in (
     v1_router,  # /api/v1（攝取 + 判決）
-    config_router.router,  # /api/config（規則 JSON 查看/編輯）
     rules_router.router,  # /api/judge-rules（規則版本化）
     exports_router.router,  # /api/exports（通用導出 job）
     auth_router.router,  # /api/auth

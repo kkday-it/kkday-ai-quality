@@ -39,9 +39,9 @@ _MAX_WORKERS = 4
 
 
 def _guard_stub(eff: dict) -> None:
-    """無條件拒絕 stub 模式（不只正式環境）：比照 `prompt_eval.classify_one` 既有慣例——
-    Prompt 測試沙盒是「看 prompt 實際判得怎樣」的調適工具，stub 假結果會誤導判斷，dev 環境
-    零 key 時也不例外（與 `prejudge_batch` 正式批量判決刻意放行 dev stub 的定位不同）。
+    """無條件拒絕 stub 模式（不只正式環境）：Prompt 測試沙盒是「看 prompt 實際判得怎樣」的調適
+    工具，stub 假結果會誤導判斷，dev 環境零 key 時也不例外（與 `prejudge_batch` 正式批量判決
+    刻意放行 dev stub 的定位不同）。
     """
     if not app_settings.resolve_provider_token(eff):
         raise ValueError("目前配置無可用 LLM token（stub 模式），拒絕以假結果執行 Prompt 測試沙盒")
@@ -129,7 +129,7 @@ def _run(
     `prompt_sandbox_runs` 快照（含 results + log 完整快照）。
     """
     app_settings.set_current(eff)  # 背景 thread set 好 contextvar，供 copy_context 快照攜帶
-    client.set_llm_cache_read(False)  # 沙盒測試量測真實行為（同 classify-one 既有慣例）
+    client.set_llm_cache_read(False)  # 沙盒測試量測真實行為
     client.set_usage_context({"job_id": job_id})
     run_log.bind(job_id)  # 決策：沙盒不設 LOG_JOB_MAX_ITEMS 上限，大批量靠既有 dropped 機制截斷
     model = eff.get("model", "")

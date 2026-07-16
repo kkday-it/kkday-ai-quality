@@ -29,7 +29,7 @@ def _wait_done(job_id: str, timeout: float = 5.0) -> dict:
 
 
 def test_guard_stub_rejects_unconditionally(monkeypatch):
-    """無 token 的 eff → 無條件拒跑（非僅正式環境），比照 classify_one 既有慣例。
+    """無 token 的 eff → 無條件拒跑（非僅正式環境）。
 
     明確 monkeypatch `resolve_provider_token` 回空（而非依賴容器當下是否恰好無 key）——
     guard 邏輯的正確性不該偶然依附於執行環境有沒有配置真實 OPENAI_API_KEY。

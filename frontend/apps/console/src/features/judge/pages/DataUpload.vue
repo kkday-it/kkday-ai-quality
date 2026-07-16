@@ -14,7 +14,6 @@ import {
   uploadStreamUrl,
   getBatches,
   getBatchItems,
-  exportBatchUrl,
   type SheetValidation,
   type UploadJobSnapshot,
 } from '@/api';
@@ -197,11 +196,6 @@ const itemCols = [
   { title: '狀態', dataIndex: 'status', width: 90 },
   { title: '錄入時間', dataIndex: 'created_at', width: 180 },
 ];
-
-/** 導出批次 CSV（瀏覽器直接下載，dev 經 vite proxy /api）。 */
-const exportBatch = (batch: any) => {
-  window.open(exportBatchUrl(batch.batch_id), '_blank');
-};
 </script>
 
 <template>
@@ -359,10 +353,7 @@ const exportBatch = (batch: any) => {
             ><a-tag>{{ sourceLabel(record.source) }}</a-tag></template
           >
           <template #op="{ record }">
-            <a-space>
-              <a-link @click="openDetail(record)">查看</a-link>
-              <a-link @click="exportBatch(record)">導出 CSV</a-link>
-            </a-space>
+            <a-link @click="openDetail(record)">查看</a-link>
           </template>
         </a-table>
       </StateGuard>
@@ -375,11 +366,6 @@ const exportBatch = (batch: any) => {
       :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
       unmount-on-close
     >
-      <template #extra>
-        <a-button v-if="detailBatch" size="small" @click="exportBatch(detailBatch)"
-          >導出 CSV</a-button
-        >
-      </template>
       <StateGuard
         :loading="itemsLoading"
         :error="itemsError"

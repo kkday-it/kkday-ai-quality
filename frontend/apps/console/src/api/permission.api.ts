@@ -21,7 +21,6 @@ export interface BusinessList {
 /** business-key 常數（對齊後端 permission_keys.py；be2 風格 module.sub-function.action）。 */
 export const PERM = {
   judgeRuleManage: 'judge-rule.version.manage',
-  configFileWrite: 'config.file.write',
   dataDatapackImport: 'data.datapack.import',
   dataDatapackExport: 'data.datapack.export',
   dataSourceUpload: 'data.source.upload',

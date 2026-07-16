@@ -102,6 +102,3 @@ export const getBatches = (): Promise<Record<string, unknown>[]> =>
 export const getBatchItems = (batchId: string): Promise<Record<string, unknown>[]> =>
   j<Record<string, unknown>[]>(`${BASE}/batches/${encodeURIComponent(batchId)}/items`);
 
-/** 批次 CSV 匯出 URL（給 window.open / a 連結直接下載）。 */
-export const exportBatchUrl = (batchId: string) =>
-  `${BASE}/batches/${encodeURIComponent(batchId)}/export`;
