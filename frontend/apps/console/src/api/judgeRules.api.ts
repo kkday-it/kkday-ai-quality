@@ -1,7 +1,7 @@
 // 判決規則管理 API（RULE_CODES：product_vertical + source_mapping + prompt_* 的版本化）。
 // 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前依 code 型別驗證，非法回 422；存檔後熱重載。
-// 註：C-1~C-6（歸因判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 退役，判準改走 prompt_C-1~6；
-// 同日 global_rule（極性閘門+證據政策）併入 judgment.json（靜態設定檔），亦移出本 API 管理範圍。
+// 本 API 管理範圍：product_vertical + source_mapping + prompt_polarity/prompt_C-1~6（版本化）；
+// 判準 prompt 描述、極性閘門與證據政策為 judgment.json 靜態設定（改值需重啟後端），不在此 API 範圍。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
 /** rule code：'product_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'。 */

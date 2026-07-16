@@ -109,8 +109,7 @@ class TicketFinding(BaseModel):
         """判決 payload → judgments typed 欄位 dict（落庫形狀 SSOT）。
 
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
-        殘留 / legacy 欄（verdict 軸、symptom_tag、severity、evidence_level…
-        見 plans/1-peaceful-wirth.md）一律不入庫。finding_id / source /
+        殘留 / legacy 欄（verdict 軸、symptom_tag、severity、evidence_level…）一律不入庫。finding_id / source /
         source_id / prod_oid / status / created_at / needs_review
         由 db.findings._finding_values 補齊（來源關聯 + 人工覆核軸）。
 

@@ -24,4 +24,4 @@ AI 法官 V3 第一管道（售前售後進線）的 BigQuery 查詢結果樣本
 
 ## 對應規格
 - SQL 出處：H2 內容治理規劃 Doc（`1MN_aLEzpIlsOM1G9IoGO1sXZ_eUPjXLldMicfqyrxmA`）
-- 規格：repo `docs/PLAN-V3-售前售後進線.md` 附錄、Confluence「① 如何整合（V3）」
+- 規格：Confluence「① 如何整合（V3）」

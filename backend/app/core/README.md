@@ -6,7 +6,7 @@
 | 項目 | 職責 |
 |---|---|
 | `db/` | **資料存取層**（package）：`tables`（SQLAlchemy schema+engine）、`source_registry`（來源→表 SSOT）、`_shared`（共用 helper/常數），及 8 個職責模組（users / rule_versions / ingest / findings / problems / prejudge_targets / attribution / export）。`__init__` barrel re-export 全函式 → `from app.core import db; db.X()`。見 `db/README.md`。 |
-| `judge_config/` | **判準 config loader**（package）：ai_judge / product_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`。（原 `global_rule.py` 已於 2026-07-13 併入 `judgment.json` 靜態設定檔並移除，見 `judge_config/README.md`）|
+| `judge_config/` | **判準 config loader**（package）：ai_judge / product_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
 | `schema.py` | Pydantic 領域模型（`TicketFinding` 判決單元 + `AdequacyResult`）；判決引擎與 db 兩側平行消費。 |
 | `export_jobs.py` | 通用導出背景 job registry（in-mem 進度快照 + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 判決規則導出共用，端點見 `api/routers/exports.py`。 |
 | `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |

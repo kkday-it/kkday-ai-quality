@@ -41,7 +41,7 @@ frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
   apps/console/src/features/ # judge / settings / overview / auth（feature-based）
   packages/types
 scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
-docs/                        # 文檔地圖（README）· 上手指南 HTML · archive/（過時 spec 封存）
+docs/                        # 文檔地圖（README）· archive/（過時 spec 封存）
 start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入口；stop 只停止·資料一律保留）
 docker-compose.yml           # 生產編排（PG + backend 單worker + frontend nginx）
 docker-compose.dev.yml       # 開發編排（hot reload：source volume + uvicorn --reload + vite HMR）
@@ -113,13 +113,13 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩判決模型——當前判決維度，僅套判決級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |
 | POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 judgment_history 最新快照（未判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
-| POST | `/api/judge-rules/export` | 啟動判決規則 xlsx 導出背景 job → {job_id} |
+| POST | `/api/judge-rules/export` | 啟動判決 Prompt 包 zip 導出背景 job（打包 prompts/ 目錄）→ {job_id} |
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `judgment.prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
 | GET | `/api/v1/judgment/runs` · `/runs/{job_id}` | 歸因歷史（run 級 LLM 使用紀錄：批量/選取/單筆重判；詳情含 per-stage token/費用明細）|
 | GET/POST | `/api/judgment-history` · `/notes` · `/models` | 判決歷史（**評論級**時間軸：判決快照/覆核轉移/備註三類事件；重判結果與前次全同時去重不記）· 新增評論級備註 · 歷來判決過的模型清單（篩選/導出下拉選項）。需登入 |
 | CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）|
-| PATCH | `/api/findings/{id}/status` · `/batch/status` · `/{id}/true_label` | 單筆/批量歸因人工覆核（確認/忽略/new＝撤銷回待處理；同值冪等、轉移記入判決歷史）· 標註真值分類。需權限，記操作者/時間 audit |
+| PATCH | `/api/findings/{id}/status` · `/batch/status` | 單筆/批量歸因人工覆核（確認/忽略/new＝撤銷回待處理；同值冪等、轉移記入判決歷史）。需權限，記操作者/時間 audit |
 | POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（register 受 `AIQ_ALLOW_SELF_REGISTER` 環境閘：僅 development 預設開放）（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
 | POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。登入即可用（qc+admin 皆有 `data.datapack.import`）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |

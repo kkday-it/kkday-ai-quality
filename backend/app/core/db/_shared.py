@@ -19,10 +19,11 @@ from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
 # ── 判決顯示標籤 + 信心閾值（judgment.json）───────────────
 # 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
-# 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
+# 同步反映新值、無需改呼叫端。SSOT＝config/ai_judge/judgment.json（專案靜態設定檔），改值＝改檔 + 重啟
+# （或呼叫 reload_judgment_cfg 熱重載）。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
-# status_labels code-side fallback：judgment SSOT＝DB active 版（可熱編輯），舊 active 版尚無
-# status_labels 鍵時仍需有 label（seed 檔同步有此鍵，QC 存新版後以 DB 為準）。
+# status_labels code-side fallback：judgment.json 讀取失敗或未來版本缺此鍵時仍需有預設 label 可用
+# （現行 seed 檔已含此鍵）。
 _DEFAULT_STATUS_LABELS: dict[str, str] = {
     "new": "待處理",
     "auto_confirmed": "自動確認",
@@ -62,10 +63,9 @@ def read_judgment_config() -> dict:
     """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕 +
     極性閘門 polarity_gate + 證據政策 evidence_policy）。
 
-    2026-07-13 起 judgment 降為**專案靜態設定檔**（移出 RULE_CODES、不再 DB 版本化 / 不列規則頁）——
-    直讀檔案即單一真相源，不再走 DB active。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。
-    同日原 global_rule.json（polarity_gate/evidence_policy）併入本檔，減少判決 config 檔案數。
-    保留此函式為 judgment 讀取的**單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
+    judgment 為**專案靜態設定檔**（不進 RULE_CODES、不 DB 版本化 / 不列規則頁）——直讀檔案即單一真相源
+    （非讀 DB active）。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。保留此函式為 judgment 讀取的
+    **單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
     """
     return _read_judgment_file()
 
@@ -73,7 +73,7 @@ def read_judgment_config() -> dict:
 def reload_judgment_cfg() -> None:
     """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge）。
 
-    就地更新 label / 閾值 dict（DB active 優先，見 read_judgment_config），使 import 引用免改碼即反映新值。
+    就地更新 label / 閾值 dict（讀 config/ai_judge/judgment.json，見 read_judgment_config），使 import 引用免改碼即反映新值。
     """
     _apply_judgment_cfg(read_judgment_config())
 

@@ -25,7 +25,6 @@ def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVI
 | key | 端點 | 角色 |
 |---|---|---|
 | `judge-rule.version.manage` | judge-rules save/restore/reset×2 | admin |
-| `config.file.write` | config PUT /files | admin |
 | `data.datapack.import` | admin import validate/run | qc+admin（業務拍板：登入即可用全部資料導入功能） |
 | `data.datapack.export` | admin export/start | qc+admin |
 | `data.source.upload` | inbound validate/upload | qc+admin |

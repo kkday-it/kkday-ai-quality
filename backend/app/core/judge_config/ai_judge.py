@@ -2,7 +2,7 @@
 
 **結構 SSOT＝prompts/*.md 的 `## Taxonomy`**（Prompt-as-Source）：域機器值來自 prompt 檔名尾綴
 （content/quality/supplier/platform/service/customer）、分類樹（facets/層級）＋域中文名／action／owner
-／evidence_gated 全來自各域 prompt 的 `## Taxonomy` root（`config/ai_judge/domains.json` 已退場）。判準
+／evidence_gated 全來自各域 prompt 的 `## Taxonomy` root。判準
 例句（✅❌/正反例）為 prompt `<domain_boundary>` prose，供 LLM 直接讀，本模組不攜帶；僅建「分類結構」
 索引（域/面向 code↔label、級聯樹、evidence_gated），供歸因列表篩選、judgments 顯示、`_l2_label_map`
 等消費端查詢。
@@ -72,14 +72,12 @@ def _ensure_loaded() -> None:
         label = d.get("domain_label") or domain
         _domain_label[domain] = label
         action = d.get("action")
-        if action:  # 域→建議行動（SSOT＝`## Taxonomy` root action，取代 prejudge 舊硬編碼 dict）
+        if action:  # 域→建議行動（SSOT＝`## Taxonomy` root action）
             _domain_action[domain] = action
         owner = d.get("owner")
         if owner:  # 域→負責單位（SSOT＝`## Taxonomy` root；值待業務填，填後即流通）
             _domain_owner[domain] = owner
-        if d.get(
-            "evidence_gated"
-        ):  # 域→需外部訂單佐證（自 `## Taxonomy` root，取代 judgment.json evidence_gated_domains）
+        if d.get("evidence_gated"):  # 域→需外部訂單佐證（自 `## Taxonomy` root）
             _domain_evidence_gated.add(domain)
         facets = d.get("facets") or []
         for f in facets:
@@ -159,17 +157,14 @@ def domain_label(code: str) -> str:
 def evidence_gated_domains() -> frozenset[str]:
     """需外部訂單佐證才可高信心的域機器值集合（自各域 `## Taxonomy` root 的 evidence_gated）。
 
-    取代 judgment.json 硬編碼 evidence_gated_domains——該域是否需佐證＝該域自己的語義，寫在自己 prompt。
+    該域是否需佐證＝該域自己的語義，寫在自己 prompt。
     """
     _ensure_loaded()
     return frozenset(_domain_evidence_gated)
 
 
 def domain_action(code: str) -> str:
-    """域 code → recommended_action（自各域 `## Taxonomy` root action）；未設回 escalate_ux。
-
-    取代 prejudge 舊 _DOMAIN_ACTION 硬編碼（曾用已廢域名 order/platform/cs，導致現行域靜默失準）。
-    """
+    """域 code → recommended_action（自各域 `## Taxonomy` root action）；未設回 escalate_ux。"""
     _ensure_loaded()
     return _domain_action.get(code, "escalate_ux")
 

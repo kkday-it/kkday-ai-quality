@@ -6,10 +6,9 @@
 - prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：判決 prompt 唯一真相源＝
   prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
   存檔驗證/drift 護欄委派 app.judge.prompt_source。
-註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕 + 極性閘門 + 證據政策）已於 2026-07-13 移出
-RULE_CODES，降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀
-檔案），不再 DB 版本化 / 不列規則頁。同日原 global_rule（極性閘門 polarity_gate + 證據政策
-evidence_policy）併入 judgment.json 一併退出 RULE_CODES，減少判決 config 檔案數。
+註：judgment（顯示標籤 + 信心閾值 + prejudge 旋鈕 + 極性閘門 + 證據政策）為專案靜態設定檔
+config/ai_judge/judgment.json（`_shared.read_judgment_config` 直讀檔案），不進 RULE_CODES、不 DB
+版本化 / 不列規則頁。
 判準文字由 prompt_C-1~6 的 System 承載、域結構由 app.judge.prompt_source.structure() 派生（非本表）。
 """
 
@@ -40,9 +39,6 @@ RULE_CODES = (
     "prompt_C-5",
     "prompt_C-6",
 )
-# 註：judgment（判決顯示 label + 信心閾值 + prejudge 旋鈕）已於 2026-07-13 移出 RULE_CODES——
-# 降為專案靜態設定檔 config/ai_judge/judgment.json（_shared.read_judgment_config 直讀檔案），不再
-# DB 版本化 / 不列於規則配置頁。其值皆非 QC 逐條熱調的判準文本，過度工程化為可熱編規則反成干擾。
 
 
 def _rule_file(code: str) -> Path:

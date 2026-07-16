@@ -56,7 +56,7 @@ _DRY_RUN_CORRECT_RATE = 0.7
 
 
 def _load_testset(path: str) -> list[dict]:
-    """讀 mock_testset_gen.py 產出的 JSONL 測試集。"""
+    """讀 JSONL 格式測試集。"""
     samples = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -101,7 +101,7 @@ def _judge_one_real(sample: dict, model: str, repeat_idx: int) -> dict:
     """單樣本單次重判（唯讀）：組 synthetic norm item → to_findings → 取主歸因 L1。
 
     norm 欄位比照 prejudge._text_of / _base_kwargs 最小需求（content/source/source_id/
-    prod_oid/order_oid/raw）；刻意不帶 rating 欄，避免誤觸 Stage0 零 LLM 略過。
+    prod_oid/order_oid/raw）。
     """
     from app.judge import prejudge
     from app.judge.llm import client
@@ -378,7 +378,9 @@ def _render_markdown(report: dict, meta: dict) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Prompt 穩定性重複一致性評測（P/R/F1＋重複一致性）")
-    ap.add_argument("--testset", required=True, help="mock_testset_gen.py 產出的 JSONL 測試集路徑")
+    ap.add_argument(
+        "--testset", required=True, help="JSONL 格式測試集路徑（格式參考 tmp/mock_testset/testset_v1.jsonl）"
+    )
     ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM（--dry-run 時可省略）")
     ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（切換模型；空＝該帳號 active）")
     ap.add_argument("--repeats", type=int, default=3, help="每則樣本重複判決次數（量測 run-to-run 一致性）")

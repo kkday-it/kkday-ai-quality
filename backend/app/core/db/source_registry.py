@@ -2,7 +2,7 @@
 
 5 反饋來源皆已拆為獨立實體表（見 tables.py）：product_reviews / conversations /
 freshdesk_tickets / app_feedback / mixpanel_tracker，各以特徵 id 為 natural_key。
-本模組登記每個來源的 table + natural_key + score_col/category_col/date_col，供 db.py
+本模組登記每個來源的 table + natural_key + score_col/category_col/date_col，供 db 子模組
 統一 spec 驅動查詢（source=None＝縱覽全部，走 judgments 直接聚合，非單表）。
 """
 

@@ -198,7 +198,7 @@ export const prejudgeStreamUrl = (jobId: string): string =>
 export const prejudgeLogStreamUrl = (jobId: string): string =>
   `${BASE}/v1/judgment/prejudge/log-stream?job_id=${encodeURIComponent(jobId)}`;
 
-/** run_log 快照條目（供判決歷史回看當時的完整 LLM 日誌；形狀同 `PrejudgeLogDrawer` 的即時日誌）。 */
+/** run_log 快照條目（供判決歷史回看當時的完整 LLM 日誌；形狀同 `PrejudgeLogDrawer` 的歷史日誌快照）。 */
 export interface JudgmentRunLogEntry {
   ts: number;
   kind: 'stage' | 'llm_request' | 'llm_prompt' | 'llm_response' | 'llm_note' | 'error';
@@ -416,7 +416,7 @@ export interface PromptSandboxRunSummary {
   versions?: Record<string, number>;
 }
 
-/** run_log 快照條目（供沙盒測試歷史回看完整 LLM log；形狀同 `PrejudgeLogDrawer` 的即時日誌）。 */
+/** run_log 快照條目（供沙盒測試歷史回看完整 LLM log；形狀同 `PrejudgeLogDrawer` 的歷史日誌快照）。 */
 export interface PromptSandboxLogEntry {
   ts: number;
   kind: 'stage' | 'llm_request' | 'llm_prompt' | 'llm_response' | 'llm_note' | 'error';

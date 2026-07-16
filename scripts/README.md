@@ -1,7 +1,7 @@
 # scripts/ — 開發腳本（按職責分層）
 
 **開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed）、
-`ops/`（生產維運：backup-db/restore-db）、`audit/`（分析審計：accuracy_audit）、`tools/`（產生器/批次：prejudge_reviews/translate_summaries/multi_model_eval/persist_multimodel_history/taxonomy_health/eval_prompt_single/encrypt_user_secrets/dump_datapack）。
+`ops/`（生產維運：backup-db/restore-db）、`audit/`（分析審計：accuracy_audit）、`tools/`（產生器/批次：translate_summaries/multi_model_eval/persist_multimodel_history/taxonomy_health/eval_prompt_single/encrypt_user_secrets/dump_datapack）。
 **例外：`start.sh` / `stop.sh` 放 repo 根**（與 docker-compose 同級·onboarding 入口，clone 後一眼可見免翻子夾）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
 `backend/`（`run.sh` / `seed_mock.py` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
@@ -19,7 +19,6 @@
 | `./scripts/dev/test.sh` | 後端 smoke test（零 key stub） | `cd backend && ./run.sh test` |
 | `./scripts/dev/lint.sh` | Lint 前後端（ruff + eslint） | `cd backend && .venv/bin/ruff check .` ＋ `cd frontend && pnpm lint` |
 | `./scripts/dev/format.sh` | 格式化前後端（Prettier + ruff format，鏈式/長行自動換行） | `cd frontend && pnpm format` ＋ `cd backend && .venv/bin/ruff format .` |
-| `./scripts/tools/prejudge_reviews.sh` | 批量預判歸因（product_reviews → L3 + 信心度，config/ai_judge 驅動） | `cd backend && .venv/bin/python prejudge_reviews.py` |
 | `./scripts/tools/translate_summaries.py` | 一鍵批量轉譯既有判決摘要為繁中（DB 直接改；只轉非中文為主者·需 active LLM·stub 拒跑；`--dry-run`/`--limit N` 試跑） | `cd backend && .venv/bin/python ../scripts/tools/translate_summaries.py` |
 | `./scripts/tools/multi_model_eval.py` | 多模型準確度評測（唯讀不寫 judgments）：`--build-set` 建評測集（有外部 free_tag 且已判的 product_reviews）／`--run --config-id <id>` 以指定 LLM 配置逐則 `to_findings` 收集 sentiment/polarity/歸因 | `cd backend && .venv/bin/python ../scripts/tools/multi_model_eval.py --help` |
 | `./scripts/tools/persist_multimodel_history.py` | 把多模型評測結果（`tmp/multi_model/*_v4.json`）灌進 `judgment_history`（kind='judgment' 每評論每模型一筆快照，**只寫歷史不碰 judgments 活表**→列表恆 gpt canonical）：供判決歷史 modal 看各模型、導出 `compare_models` 並排對比；去重天然（model+params+digest）、label 由 BD/Gemini 自帶＋ai_judge fallback 補 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/persist_multimodel_history.py --dry-run` |

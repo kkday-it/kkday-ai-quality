@@ -5,9 +5,8 @@
  * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
  * Prompt 測試（對單列/勾選多筆跑選定 prompt 子集）於歸因列表工具列與列操作區提供，
  * 本頁不重複提供。
- * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
- * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
- * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
+ * 子規則：source_mapping（純 JSON）＋判決 Prompts（prompt_polarity + prompt_C-1~6，Prompt-as-Source
+ * md 編輯）；judgment.json 靜態設定（極性閘門 + 證據政策，改值需重啟後端）不列本頁。
  */
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useLocalStorage } from '@vueuse/core';
