@@ -21,7 +21,7 @@
 
 本期只验证 `01_C-1_content.md`；其他五个单域 Prompt 只用于建立 C-1 的近邻责任边界。`00_polarity.md` 暂不串入 C-1 单元评测，避免极性错误污染 C-1 Prompt 的诊断结果。
 
-仓库已有 `scripts/tools/mock_testset_gen.py` 和 `scripts/tools/prompt_stability_eval.py`，但它们服务于旧的六域竞争式分类，不能独立评估 C-1 的域命中、L2 选码、证据落地和棄权。因此本期应新建隔离的 Prompt Lab，不在旧脚本上堆叠分支。
+仓库旧有的 mock 测试集评测脚本服务于旧的六域竞争式分类，不能独立评估 C-1 的域命中、L2 选码、证据落地和棄权，因此本期新建隔离的 Prompt Lab，不在旧脚本上堆叠分支（该批旧脚本已清退）。
 
 ## 2. 核心目标
 
