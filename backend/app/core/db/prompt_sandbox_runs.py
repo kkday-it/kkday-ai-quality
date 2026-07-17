@@ -21,8 +21,9 @@ def insert_sandbox_run(row: dict) -> str:
 
     Args:
         row: {source, scope, item_ids, prompt_ids, item_count, results, log, model,
-              triggered_by, job_id, versions}（versions＝版本選擇功能，{rule_code: 版本號}，
-              見 app.judge.prompt_source.load）。
+              triggered_by, job_id, versions, drafts, compare}（versions＝版本選擇功能
+              {rule_code: 版本號}；drafts＝草稿全文快照 {rule_code: md}；compare＝雙跑對比
+              模式標記，見 app.judge.prompt_source.load / prompt_sandbox）。
 
     Returns:
         新建列的 run_id。
@@ -43,6 +44,8 @@ def insert_sandbox_run(row: dict) -> str:
                 triggered_by=row.get("triggered_by", ""),
                 job_id=row.get("job_id"),
                 versions=row.get("versions") or {},
+                drafts=row.get("drafts") or {},
+                compare=bool(row.get("compare")),
             )
         )
     return run_id
@@ -64,6 +67,9 @@ def list_sandbox_runs(limit: int = 20, offset: int = 0) -> dict:
         r.c.triggered_by,
         r.c.created_at,
         r.c.versions,
+        # 歷史列表分辨「草稿雙跑對比」run（drafts 全文體積大，詳情才帶）。
+        # 用下標取欄：欄名 compare 撞 ColumnCollection.compare 方法，屬性存取拿到的是方法非欄位。
+        r.c["compare"],
     )
     stmt = select(*cols).order_by(r.c.created_at.desc())
     cnt = select(func.count()).select_from(r)

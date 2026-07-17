@@ -34,7 +34,8 @@ _DIAGNOSTIC_POLARITY_NOTE = (
 def _diagnostic_domain_schema(schema: dict) -> dict:
     """域 prompt schema 動態加診斷欄位：attributions[].reason（必填）+ 頂層 abstain_reason（必填）。
 
-    冪等：abstain_reason 自 2026-07-16 起內建於各域 prompt md 的 ## Schema，已存在就不重複加
+    冪等：md ## Schema 已存在同名欄位時不重複加（現行 md 不含 abstain_reason——2026-07-16 已自
+    production Schema 移除，本 overlay 為沙盒唯一來源；冪等護欄保留防未來 md 變動）
     （避免 required 重複項）；pin 舊版（無此欄）時仍由此補上。
     """
     out = copy.deepcopy(schema)
@@ -64,6 +65,7 @@ def domain_verdicts(
     *,
     pids: list[str] | None = None,
     versions: dict[str, int] | None = None,
+    drafts: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """域並行診斷歸因：回 (gated attrs 含 reason, verdicts 逐域交代)。
 
@@ -84,6 +86,8 @@ def domain_verdicts(
         pids: 要跑的域 prompt 子集（預設全六域 `prompt_source.DOMAIN_PROMPT_IDS`，向後相容）。
         versions: {rule_code: 指定歷史版本號}（版本選擇功能）；貫穿至 `prompt_source.load`。預設
             None＝沿用 DB active，對既有呼叫端零副作用。
+        drafts: {rule_code: 草稿 md 全文}（草稿測試功能）；貫穿至 `prompt_source.load`，
+            同 rule_code 時草稿優先於 versions。
 
     Returns:
         (gated_attrs, verdicts)：gated_attrs 為過閘門後的最終歸因（含 reason）；
@@ -99,7 +103,7 @@ def domain_verdicts(
     pids = pids if pids is not None else prompt_source.DOMAIN_PROMPT_IDS
 
     def _one(pid: str) -> dict:
-        p = prompt_source.load(pid, versions=versions)
+        p = prompt_source.load(pid, versions=versions, drafts=drafts)
         schema = _diagnostic_domain_schema(p["schema"])
         system = p["system"] + _DIAGNOSTIC_DOMAIN_NOTE
         user = prejudge._render_pack_user(p["user_template"], text_, polarity)
@@ -144,6 +148,7 @@ def _sandbox_polarity(
     model: str,
     *,
     versions: dict[str, int] | None = None,
+    drafts: dict[str, str] | None = None,
 ) -> tuple[str, int, str]:
     """沙盒極性診斷：跑 00_polarity（附診斷 reason 欄），回 (polarity, sentiment, reason)。
 
@@ -153,10 +158,11 @@ def _sandbox_polarity(
 
     Args:
         versions: {rule_code: 指定歷史版本號}，貫穿至 `prompt_source.load`；預設 None 零副作用。
+        drafts: {rule_code: 草稿 md 全文}，貫穿至 `prompt_source.load`（草稿優先於 versions）。
     """
     from app.judge import prejudge
 
-    p = prompt_source.load(prompt_source.POLARITY_ID, versions=versions)
+    p = prompt_source.load(prompt_source.POLARITY_ID, versions=versions, drafts=drafts)
     schema = _diagnostic_polarity_schema(p["schema"])
     system = p["system"] + _DIAGNOSTIC_POLARITY_NOTE
     out = prejudge._call(
@@ -180,6 +186,7 @@ def sandbox_classify(
     model: str,
     *,
     versions: dict[str, int] | None = None,
+    drafts: dict[str, str] | None = None,
 ) -> dict:
     """Prompt 測試沙盒：對單筆 item 跑「使用者勾選的」prompt 子集，ungated（不受正式歸因閘門限制）。
 
@@ -193,6 +200,8 @@ def sandbox_classify(
         model: 判決模型。
         versions: {rule_code: 指定歷史版本號}（版本選擇功能；`prompt_sandbox._one` 貫穿呼叫）。
             預設 None＝沿用 active，對既有呼叫端零副作用。
+        drafts: {rule_code: 草稿 md 全文}（草稿測試功能；同 rule_code 時草稿優先於 versions）。
+            極性有草稿且勾選域時，域 prompt 的 {POLARITY} 槽用「草稿極性」的結果——變體內部自洽。
 
     Returns:
         {source_id, text, polarity, sentiment_score, prompts}：`prompts` 為異質清單——勾了
@@ -211,7 +220,9 @@ def sandbox_classify(
     prompts: list[dict] = []
 
     if want_polarity or domain_pids:
-        polarity, sentiment, reason = _sandbox_polarity(text_, model, versions=versions)
+        polarity, sentiment, reason = _sandbox_polarity(
+            text_, model, versions=versions, drafts=drafts
+        )
         if want_polarity:
             prompts.append(
                 {
@@ -231,6 +242,7 @@ def sandbox_classify(
             polarity or "neutral",
             pids=domain_pids,
             versions=versions,
+            drafts=drafts,
         )
         for pid, v in zip(domain_pids, verdicts, strict=True):
             ext_id = (prompt_source.rule_code_for_prompt(pid) or "").removeprefix("prompt_")
@@ -361,6 +373,42 @@ def compute_polarity_metrics(records: list[dict]) -> dict:
         "polarity_match_rate": round(pol_ok / n, 3) if n else None,
         "sentiment_match_rate": round(sent_ok / len(sent_records), 3) if sent_records else None,
     }
+
+
+def sandbox_result_summary(res: dict) -> dict:
+    """單筆沙盒結果（`sandbox_classify` 輸出或雙跑變體）→ 等價性摘要（純函式）。
+
+    形狀對齊 `compute_equivalence_metrics` 的 record 摘要：{polarity, sentiment, n_findings,
+    facets: [[l1,l2]…], primary: [l1,l2]|None}——primary 取全域最高 confidence 的歸因。
+    """
+    facets: list[list[str]] = []
+    primary: list[str] | None = None
+    best = -1.0
+    for p in res.get("prompts") or []:
+        for a in p.get("attributions") or []:
+            l1 = str(a.get("l1_domain_code") or "")
+            l2 = str(a.get("l2_code") or "")
+            facets.append([l1, l2])
+            conf = float(a.get("confidence") or 0)
+            if conf > best:
+                best, primary = conf, [l1, l2]
+    return {
+        "polarity": res.get("polarity"),
+        "sentiment": res.get("sentiment_score"),
+        "n_findings": len(facets),
+        "facets": facets,
+        "primary": primary,
+    }
+
+
+def sandbox_pair_metrics(pairs: list[tuple[dict, dict]]) -> dict:
+    """逐筆 (a, b) 沙盒結果對 → 等價性聚合指標（純函式）。
+
+    供兩處共用：雙跑對比 run 的 baseline/draft 摘要、測試歷史 run-vs-run 對比端點。
+    委派 `compute_equivalence_metrics`（同一套口徑，避免兩份實作 drift）。
+    """
+    records = [{"a": sandbox_result_summary(a), "b": sandbox_result_summary(b)} for a, b in pairs]
+    return compute_equivalence_metrics(records)
 
 
 def compute_equivalence_metrics(records: list[dict]) -> dict:

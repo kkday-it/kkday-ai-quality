@@ -11,21 +11,30 @@
  * scope='all'（工具列「依條件批量」入口）時的目標選取比照初判分類（`usePrejudgeJob`），委派
  * `usePromptSandboxTargets` 復用同一套 stage 驅動 + 篩選草稿 + 即時筆數預覽 pattern。
  *
- * 所有 Prompt 測試都在此抽屜進行，不支援測試未存檔草稿——版本選擇（PromptVersionPickerGroup）
- * 只能選已存檔的歷史版本；規則配置頁不再有「測試這份草稿」入口。
+ * 所有 Prompt 測試都在此抽屜進行。草稿閉環（編輯 → 測試 → 對比 → 入庫）：版本選擇
+ * （PromptVersionPickerGroup withDrafts）可對每支 prompt 編輯 DB 草稿並以「📝 草稿」選項送測；
+ * 有草稿時預設同 job 雙跑對比（baseline vs draft，token ×2），結果並排差異高亮＋等價性
+ * metrics；滿意後「採納草稿入庫」（PromptDraftAdoptDrawer：diff 確認 → saveRule 即 active →
+ * 清草稿）。測試歷史另支援勾兩筆 run-vs-run 對比（同一套對比視圖）。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
+  comparePromptSandboxRuns,
   getPromptSandboxRun,
   getPromptSandboxStatus,
   listPromptSandboxRuns,
   prejudgeLogStreamUrl,
   startPromptSandbox,
   type PromptSandboxItemResult,
+  type PromptSandboxRunCompare,
   type PromptSandboxRunSummary,
   type PromptSandboxStartBody,
+  type PromptSandboxVariantResult,
+  type SandboxCompareMetrics,
 } from '@/api';
+import { getRuleDraft } from '@/api/judgeRules.api';
+import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { fmtDt } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
@@ -35,7 +44,11 @@ import { CollapsibleSidePanel, StickyTabs, TableLayout } from '@/components';
 import AttributionFilterBar from './AttributionFilterBar.vue';
 import LlmConfigSelect from './LlmConfigSelect.vue';
 import PrejudgeLogView from './PrejudgeLogView.vue';
+import PromptDraftAdoptDrawer from './PromptDraftAdoptDrawer.vue';
+import PromptDraftEditorDrawer from './PromptDraftEditorDrawer.vue';
 import PromptVersionPickerGroup from './PromptVersionPickerGroup.vue';
+import SandboxCompareCard from './SandboxCompareCard.vue';
+import SandboxPromptEntries from './SandboxPromptEntries.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 import { idPlaceholderFor, schemaFor, STAGE_LABELS, type FilterField } from '../constants';
 import { useLlmConfigs } from '../composables/useLlmConfigs';
@@ -67,14 +80,98 @@ const emit = defineEmits<{
   (e: 'update:visible', v: boolean): void;
 }>();
 
-// 7 支 prompt 的 rule_code/選版本/開關已下沉進 PromptVersionPickerGroup（含 store.loadList 載入），
-// 本檔不再需要自己拉 judgeRulesStore。
+// 7 支 prompt 的選版本/開關/草稿模式下沉進 PromptVersionPickerGroup；store 供 labelFor（草稿
+// 編輯/採納抽屜標題）與 active 版本（stale 提示）。
+const rulesStore = useJudgeRulesStore();
 const selectedCodes = ref<string[]>([]);
 const { llmConfigId, llmConfigs } = useLlmConfigs();
 const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
 const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));
+
+// ── 草稿閉環狀態 ──
+/** 納入測試且處於草稿模式的 rule_code（picker emit；送測時逐條取 DB 草稿內容快照）。 */
+const draftCodes = ref<string[]>([]);
+/** 有草稿時是否雙跑對比（預設開；關＝只跑草稿省 token 但無前後對照）。 */
+const compareEnabled = ref(true);
+const pickerRef = ref<InstanceType<typeof PromptVersionPickerGroup>>();
+/** 草稿編輯抽屜。 */
+const draftEditor = ref<{ visible: boolean; code: string; baseVersion: number }>({
+  visible: false,
+  code: '',
+  baseVersion: 0,
+});
+/** 採納入庫確認抽屜（draftText＝測試 run 的草稿快照）。 */
+const adopt = ref<{ visible: boolean; code: string; draftText: string; runId: string }>({
+  visible: false,
+  code: '',
+  draftText: '',
+  runId: '',
+});
+/** run-vs-run 對比檢視（非 null 時結果分頁顯示對比而非單次 run）。 */
+const runCompare = ref<PromptSandboxRunCompare | null>(null);
+/** 測試歷史勾選（恰 2 筆可對比）。 */
+const compareSelection = ref<string[]>([]);
+
+function openDraftEditor(payload: { code: string; baseVersion: number }): void {
+  draftEditor.value = { visible: true, ...payload };
+}
+/** 草稿存檔/刪除 → 刷新 picker 草稿選項。 */
+function onDraftChanged(): void {
+  void pickerRef.value?.refreshDrafts();
+}
+/** 入庫成功 → 新版本進下拉並選中 + 草稿選項消失。 */
+function onAdopted(payload: { code: string }): void {
+  void pickerRef.value?.reloadHistory(payload.code);
+  void pickerRef.value?.refreshDrafts();
+}
+/** 從當前 run 的草稿快照發起採納。 */
+function openAdopt(code: string): void {
+  const text = activeRun.value?.drafts?.[code] ?? '';
+  if (!text) {
+    Message.warning('本次測試無此 prompt 的草稿快照');
+    return;
+  }
+  adopt.value = { visible: true, code, draftText: text, runId: activeRun.value?.run_id ?? '' };
+}
+
+// ── 對比輔助（雙跑 item 與 run-vs-run item 共用）──
+/** 兩側結果是否有實質差異（極性不同或 (prompt_id, l2_code) 集合不同）——對比卡片標記用。 */
+function differs(
+  a?: PromptSandboxVariantResult | PromptSandboxItemResult | null,
+  b?: PromptSandboxVariantResult | PromptSandboxItemResult | null,
+): boolean {
+  if (!a || !b) return true;
+  if (a.polarity !== b.polarity) return true;
+  const key = (v: PromptSandboxVariantResult | PromptSandboxItemResult) =>
+    (v.prompts ?? [])
+      .flatMap((p) => (p.attributions ?? []).map((x) => `${p.prompt_id}:${x.l2_code}`))
+      .sort()
+      .join('|');
+  return key(a) !== key(b);
+}
+/** 雙跑 run 的「結果有差異」筆數（對比頭部摘要）。 */
+const changedCount = computed(() => {
+  const rs = activeRun.value?.results ?? [];
+  return rs.filter((r) => r.compare && differs(r.baseline, r.draft)).length;
+});
+/** 當前 run 帶的草稿快照 code 清單（採納入庫動作列；不依賴 compare——只跑草稿亦可採納）。 */
+const runDraftCodes = computed(() => Object.keys(activeRun.value?.drafts ?? {}));
+/** metrics 顯示格式（null → —；比率 → 百分比）。 */
+const pct = (v: number | null | undefined): string =>
+  v == null ? '—' : `${Math.round(v * 1000) / 10}%`;
+/** metrics 摘要條目（雙跑 run 與 run-vs-run 共用渲染）。 */
+const metricRows = (m: SandboxCompareMetrics | null | undefined) =>
+  m
+    ? [
+        { label: '極性一致', value: pct(m.polarity_agree) },
+        { label: '情緒分一致', value: pct(m.sentiment_agree) },
+        { label: '歸因 Jaccard', value: pct(m.facet_jaccard_mean) },
+        { label: '主歸因一致', value: pct(m.primary_agree) },
+        { label: '筆數一致', value: pct(m.count_equal) },
+      ]
+    : [];
 
 // ── scope='all' 依條件批量選取（比照初判分類 usePrejudgeJob 的目標選取 pattern）──
 const targets = usePromptSandboxTargets({
@@ -114,6 +211,10 @@ const running = ref(false);
 type RunDetail = PromptSandboxRunSummary & {
   results: PromptSandboxItemResult[];
   log: LogEntry[];
+  /** 草稿測試 run：各 prompt 的草稿 md 全文快照（採納入庫的內容來源）。 */
+  drafts?: Record<string, string>;
+  /** 雙跑對比 run：baseline vs draft 等價性聚合（後端讀取時動態算）。 */
+  metrics?: SandboxCompareMetrics | null;
 };
 const activeRun = ref<RunDetail | null>(null);
 /** 防禦舊資料：歷史 run 的 log/results 可能為 null（舊 schema 落庫），v-for 迭代 null 會讓整個
@@ -183,6 +284,7 @@ async function run() {
   const token = ++runSeq;
   running.value = true;
   activeRun.value = null;
+  runCompare.value = null; // 新一輪測試離開 run-vs-run 檢視
   settingsOpen.value = false; // 確認即收面板：測試結果/執行日誌立即可見
   activeTab.value = 'results';
   try {
@@ -198,6 +300,22 @@ async function run() {
     body.llm_config_id = llmConfigId.value || undefined;
     if (Object.keys(versionSelection.value.versions).length) {
       body.versions = versionSelection.value.versions;
+    }
+    // 草稿模式：送測時取 DB 草稿內容快照帶入（後端逐條強驗 + 落庫快照，與草稿後續演進脫鉤）
+    if (draftCodes.value.length) {
+      const fetched = await Promise.all(
+        draftCodes.value.map(async (code) => ({ code, ...(await getRuleDraft(code)) })),
+      );
+      const drafts: Record<string, string> = {};
+      for (const { code, draft } of fetched) {
+        const text = typeof draft?.content.text === 'string' ? draft.content.text : '';
+        if (!text.trim()) {
+          throw new Error(`「${rulesStore.labelFor(code)}」草稿不存在或為空，請先編輯儲存`);
+        }
+        drafts[code] = text;
+      }
+      body.drafts = drafts;
+      body.compare = compareEnabled.value;
     }
     const { job_id } = await startPromptSandbox(body);
     if (token !== runSeq) return;
@@ -249,11 +367,28 @@ async function loadHistory() {
 async function viewHistoryRun(runId: string) {
   try {
     _closeLogStream(); // 回看歷史時若有正在跑的即時串流先關閉，避免與靜態快照混淆
+    runCompare.value = null; // 離開 run-vs-run 檢視
     activeRun.value = _normalizeRun(await getPromptSandboxRun(runId));
     logEntries.value = activeRun.value.log;
     activeTab.value = 'results';
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '載入測試紀錄失敗');
+  }
+}
+
+/** 測試歷史勾恰兩筆 → run-vs-run 對比（後端按 source_id 對齊 + metrics），結果分頁顯示。 */
+const comparing = ref(false);
+async function doCompareRuns() {
+  if (compareSelection.value.length !== 2) return;
+  comparing.value = true;
+  try {
+    const [a, b] = compareSelection.value;
+    runCompare.value = await comparePromptSandboxRuns(a, b);
+    activeTab.value = 'results';
+  } catch (e) {
+    Message.error(e instanceof Error ? e.message : '對比失敗');
+  } finally {
+    comparing.value = false;
   }
 }
 
@@ -265,10 +400,6 @@ const SCOPE_LABEL: Record<string, string> = {
   all: '批量',
 };
 
-/** 域條目判準：有 domain_label 欄位＝域 prompt 結果；否則為 polarity 條目。 */
-const isDomainEntry = (p: NonNullable<PromptSandboxItemResult['prompts']>[number]): boolean =>
-  p.domain_label !== undefined;
-
 // 開啟時重置狀態 + 載入歷史（選哪些 prompt 由 PromptVersionPickerGroup 的開關預設，見
 // usePromptVersionPicker：預設僅 polarity 開，免每次手動勾）；scope='all' 時初始化目標選取器。
 watch(
@@ -278,6 +409,8 @@ watch(
       runSeq += 1; // 作廢進行中的輪詢迴圈：關抽屜後不再打 API、不覆寫重開後的畫面
       running.value = false; // 被作廢的迴圈不會再動 running（token 已過期），這裡顯式復位
       activeRun.value = null;
+      runCompare.value = null;
+      compareSelection.value = [];
       _closeLogStream();
       logEntries.value = [];
       return;
@@ -401,13 +534,30 @@ watch(
         <div v-show="sandboxPanel === 'settings' || scope !== 'all'">
           <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" class="mb-2" />
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
-            Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可個別切換歷史版本）
+            Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或
+            📝 草稿；編輯鈕可即時修改草稿）
           </div>
           <PromptVersionPickerGroup
+            ref="pickerRef"
             :with-toggle="true"
+            :with-drafts="true"
             @update:resolved="(v) => (versionSelection = v)"
             @update:enabled-codes="(codes) => (selectedCodes = codes)"
+            @update:draft-codes="(codes) => (draftCodes = codes)"
+            @edit-draft="openDraftEditor"
           />
+          <div
+            v-if="draftCodes.length"
+            class="mt-2 flex items-center gap-2 rounded border border-dashed border-[var(--color-border-3)] px-2 py-1.5 text-xs"
+          >
+            <a-switch v-model="compareEnabled" size="small" />
+            <span
+              >與基準雙跑對比：同批 item 以「選定版本」與「草稿」各跑一遍並排差異（<span
+                class="text-[rgb(var(--orange-6))]"
+                >token 成本 ×2</span
+              >）；關閉＝只跑草稿</span
+            >
+          </div>
           <div class="mt-3 text-xs text-[var(--color-text-3)]">
             確認後開始測試，過程會消耗 token（不落正式判決、不受正式閘門限制）。
           </div>
@@ -450,63 +600,109 @@ watch(
           <a-tab-pane key="results" title="測試結果">
             <div class="h-full overflow-auto">
               <a-spin v-if="running" class="block py-8 text-center" />
-              <template v-else-if="activeRun">
-                <div class="mb-2 text-xs text-[var(--color-text-3)]">
-                  {{ fmtDt(activeRun.created_at) }} · model={{ activeRun.model }} ·
-                  {{ activeRun.item_count }} 筆
+
+              <!-- run-vs-run 對比檢視（測試歷史勾兩筆） -->
+              <template v-else-if="runCompare">
+                <div class="mb-2 flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+                  <a-button size="mini" type="text" @click="runCompare = null">← 返回</a-button>
+                  <span>
+                    A：{{ fmtDt(runCompare.a.created_at) }} · {{ runCompare.a.model }}
+                    <span class="mx-1 text-[var(--color-text-4)]">vs</span>
+                    B：{{ fmtDt(runCompare.b.created_at) }} · {{ runCompare.b.model }}
+                  </span>
+                </div>
+                <div
+                  v-if="runCompare.metrics"
+                  class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border bg-[var(--color-fill-1)] px-3 py-2 text-xs"
+                >
+                  <span class="text-[var(--color-text-3)]"
+                    >對齊 {{ runCompare.metrics.n }} 筆</span
+                  >
+                  <span v-for="m in metricRows(runCompare.metrics)" :key="m.label">
+                    {{ m.label }} <span class="font-mono font-medium">{{ m.value }}</span>
+                  </span>
                 </div>
                 <div class="flex flex-col gap-3">
-                  <div
-                    v-for="item in activeRun.results"
+                  <SandboxCompareCard
+                    v-for="item in runCompare.items"
                     :key="item.source_id"
-                    class="rounded-lg border p-3"
+                    :source-id="item.source_id"
+                    :has-diff="differs(item.a, item.b)"
+                    left-label="A"
+                    right-label="B"
+                    :left="item.a"
+                    :right="item.b"
+                  />
+                </div>
+              </template>
+
+              <template v-else-if="activeRun">
+                <div class="mb-2 flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+                  <span>
+                    {{ fmtDt(activeRun.created_at) }} · model={{ activeRun.model }} ·
+                    {{ activeRun.item_count }} 筆
+                  </span>
+                  <a-tag v-if="activeRun.compare" size="small" color="purple">草稿雙跑對比</a-tag>
+                  <!-- 只跑草稿（關閉對比）的 run：結果內容來自草稿，必須可分辨（否則與一般
+                       選版本測試外觀完全相同，使用者無從判斷這是草稿驗證結果） -->
+                  <a-tag v-else-if="runDraftCodes.length" size="small" color="purple"
+                    >草稿結果（未對比）</a-tag
                   >
-                    <div class="mb-2 flex items-center gap-2">
-                      <span class="font-mono text-xs text-[var(--color-text-3)]">{{
-                        item.source_id
-                      }}</span>
-                      <a-tag v-if="item.polarity" size="small">{{ item.polarity }}</a-tag>
-                    </div>
-                    <a-alert v-if="item.error" type="error" :content="item.error" />
-                    <div v-else class="flex flex-col gap-2">
-                      <div
-                        v-for="(p, i) in item.prompts"
-                        :key="i"
-                        class="rounded border-l-2 border-[var(--color-border-3)] bg-[var(--color-fill-1)] px-2 py-1.5 text-xs"
-                      >
-                        <template v-if="isDomainEntry(p)">
-                          <div class="flex items-center gap-1.5">
-                            <a-tag size="small" :color="p.matched ? 'green' : 'gray'">{{
-                              p.matched ? '✅ 命中' : '⭕ 棄權'
-                            }}</a-tag>
-                            <span class="font-medium">{{ p.domain_label }}</span>
-                            <template v-if="p.matched && p.attributions?.[0]">
-                              <span class="text-[var(--color-text-3)]">›</span>
-                              <span>{{ p.attributions[0].l2_label }}</span>
-                              <span class="ml-auto font-mono text-[11px] text-[var(--color-text-3)]"
-                                >{{ Math.round((p.attributions[0].confidence ?? 0) * 100) }}%</span
-                              >
-                            </template>
-                          </div>
-                          <div class="mt-1 text-[var(--color-text-2)]">
-                            {{ p.matched ? p.attributions?.[0]?.reason : p.abstain_reason }}
-                          </div>
-                        </template>
-                        <template v-else>
-                          <div class="flex items-center gap-1.5">
-                            <a-tag size="small" color="arcoblue">極性</a-tag>
-                            <span class="font-medium">{{ p.polarity }}</span>
-                            <span class="ml-auto font-mono text-[11px] text-[var(--color-text-3)]"
-                              >情緒 {{ p.sentiment_score }}</span
-                            >
-                          </div>
-                          <div v-if="p.reason" class="mt-1 text-[var(--color-text-2)]">
-                            {{ p.reason }}
-                          </div>
-                        </template>
+                </div>
+
+                <!-- 雙跑對比 run：差異摘要 + metrics -->
+                <div
+                  v-if="activeRun.compare"
+                  class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border bg-[var(--color-fill-1)] px-3 py-2 text-xs"
+                >
+                  <span class="text-[var(--color-text-3)]"
+                    >{{ activeRun.results.length }} 筆中
+                    <span class="font-medium text-[rgb(var(--orange-6))]">{{ changedCount }}</span>
+                    筆結果有差異</span
+                  >
+                  <span v-for="m in metricRows(activeRun.metrics)" :key="m.label">
+                    {{ m.label }} <span class="font-mono font-medium">{{ m.value }}</span>
+                  </span>
+                </div>
+                <!-- 採納入庫動作列：只要本次 run 帶了草稿快照就提供（不依賴 compare——關閉
+                     雙跑對比「只跑草稿」仍是合法工作流程，閉環最後一步不可消失） -->
+                <div v-if="runDraftCodes.length" class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                  <span class="text-[var(--color-text-3)]">滿意草稿結果？</span>
+                  <a-button
+                    v-for="code in runDraftCodes"
+                    :key="code"
+                    type="primary"
+                    size="mini"
+                    @click="openAdopt(code)"
+                    >採納「{{ rulesStore.labelFor(code) }}」草稿入庫</a-button
+                  >
+                </div>
+
+                <div class="flex flex-col gap-3">
+                  <template v-for="item in activeRun.results" :key="item.source_id">
+                    <!-- 雙跑對比 item：左基準 / 右草稿並排（與 run-vs-run 共用同一卡片佈局） -->
+                    <SandboxCompareCard
+                      v-if="item.compare && !item.error"
+                      :source-id="item.source_id"
+                      :has-diff="differs(item.baseline, item.draft)"
+                      left-label="基準（選定版本）"
+                      right-label="草稿"
+                      :left="item.baseline ?? null"
+                      :right="item.draft ?? null"
+                    />
+                    <div v-else class="rounded-lg border p-3">
+                      <div class="mb-2 flex items-center gap-2">
+                        <span class="font-mono text-xs text-[var(--color-text-3)]">{{
+                          item.source_id
+                        }}</span>
+                        <a-tag v-if="!item.error && item.polarity" size="small">{{
+                          item.polarity
+                        }}</a-tag>
                       </div>
+                      <a-alert v-if="item.error" type="error" :content="item.error" />
+                      <SandboxPromptEntries v-else :prompts="item.prompts ?? []" />
                     </div>
-                  </div>
+                  </template>
                 </div>
               </template>
               <div v-else class="py-8 text-center text-xs text-[var(--color-text-3)]">
@@ -536,7 +732,23 @@ watch(
                 row-key="run_id"
                 size="mini"
                 empty-text="尚無測試紀錄"
+                :row-selection="{ type: 'checkbox', showCheckedAll: false }"
+                :selected-keys="compareSelection"
+                @selection-change="(keys: (string | number)[]) => (compareSelection = keys.map(String))"
               >
+                <template #toolbar>
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="text-[var(--color-text-3)]">勾選兩筆可對比結果差異</span>
+                    <a-button
+                      size="mini"
+                      type="outline"
+                      :disabled="compareSelection.length !== 2"
+                      :loading="comparing"
+                      @click="doCompareRuns"
+                      >對比所選 2 筆</a-button
+                    >
+                  </div>
+                </template>
                 <template #columns>
                   <a-table-column title="時間" data-index="created_at" :width="150">
                     <template #cell="{ record }">{{ fmtDt(record.created_at) }}</template>
@@ -548,7 +760,11 @@ watch(
                   </a-table-column>
                   <a-table-column title="筆數" data-index="item_count" :width="60" />
                   <a-table-column title="Prompt" :width="140" ellipsis tooltip>
-                    <template #cell="{ record }">{{ record.prompt_ids.join('、') }}</template>
+                    <template #cell="{ record }">
+                      <a-tag v-if="record.compare" size="small" color="purple" class="mr-1"
+                        >對比</a-tag
+                      >{{ record.prompt_ids.join('、') }}
+                    </template>
                   </a-table-column>
                   <a-table-column title="模型" data-index="model" ellipsis tooltip />
                   <a-table-column title="觸發人" data-index="triggered_by" ellipsis tooltip />
@@ -566,5 +782,24 @@ watch(
         </StickyTabs>
       </div>
     </div>
+
+    <!-- 草稿編輯抽屜（picker 每列編輯鈕開啟；存檔/刪除後刷新草稿選項） -->
+    <PromptDraftEditorDrawer
+      v-model:visible="draftEditor.visible"
+      :code="draftEditor.code"
+      :label="rulesStore.labelFor(draftEditor.code)"
+      :base-version="draftEditor.baseVersion"
+      :active-version="pickerRef?.activeVersionOf(draftEditor.code)"
+      @changed="onDraftChanged"
+    />
+    <!-- 採納入庫確認抽屜（diff 對照 → saveRule 即 active → 清草稿） -->
+    <PromptDraftAdoptDrawer
+      v-model:visible="adopt.visible"
+      :code="adopt.code"
+      :label="rulesStore.labelFor(adopt.code)"
+      :draft-text="adopt.draftText"
+      :run-id="adopt.runId"
+      @adopted="onAdopted"
+    />
   </a-drawer>
 </template>

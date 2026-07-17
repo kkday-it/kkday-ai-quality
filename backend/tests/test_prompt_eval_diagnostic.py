@@ -98,7 +98,11 @@ def _diag_env(monkeypatch, *, amin: float = 0.0):
     monkeypatch.setattr(prejudge, "_max_attributions", lambda: 2)
     monkeypatch.setattr(prejudge, "_polarity_effort", lambda: None)
 
-    def _fake_load(pid: str, versions: dict[str, int] | None = None) -> dict:
+    def _fake_load(
+        pid: str,
+        versions: dict[str, int] | None = None,
+        drafts: dict[str, str] | None = None,
+    ) -> dict:
         dom = prompt_source._domain_of(pid) or "content"
         return {
             "title": pid,

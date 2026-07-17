@@ -7,7 +7,7 @@
 
 | feature | 內容 |
 |---|---|
-| `judge/` | **AI 法官主模組**：規則配置（RuleManager 版本化編輯：source_mapping 整體配置〔上傳表頭校驗〕/ 判決 Prompt〔polarity + C-1~6 六域，7 支 Prompt-as-Source md〕+ 歷史對比）、資料上傳、歸因列表（一列一 review + 多歸因堆疊 + 伺服器分頁 + 初判歸因批次 + 單筆/批量覆核〔確認/忽略/再點撤銷〕+ 覆核狀態/判決模型篩選 + xlsx 導出（可選「輸出結果版本」＝指定模型的歷史快照，多模型對比）+ `JudgmentHistoryModal` 評論級判決歷史時間軸〔a-timeline：判決快照/覆核轉移/備註三類事件 + 變更徽章 + 評論級備註〕）、歸因概覽（縱覽 + 各來源專屬概覽·KPI+漏斗+L1-L2 下鑽+趨勢+PDF 報表導出+判決模型篩選〔當前判決維度·KPI 文案揭露口徑〕）。 |
+| `judge/` | **AI 法官主模組**：規則配置（RuleManager 版本化編輯：source_mapping 整體配置〔上傳表頭校驗〕/ 判決 Prompt〔polarity + C-1~6 六域，7 支 Prompt-as-Source md〕+ 歷史對比）、資料上傳、歸因列表（一列一 review + 多歸因堆疊 + 伺服器分頁 + 初判歸因批次 + 單筆/批量覆核〔確認/忽略/再點撤銷〕+ 覆核狀態/判決模型篩選 + xlsx 導出（可選「輸出結果版本」＝指定模型的歷史快照，多模型對比）+ `JudgmentHistoryModal` 評論級判決歷史時間軸〔a-timeline：判決快照/覆核轉移/備註三類事件 + 變更徽章 + 評論級備註〕+ `PromptSandboxDrawer` Prompt 測試沙盒〔單列/批量 ungated 測試·per-prompt 版本選擇·**草稿閉環**：`PromptDraftEditorDrawer` 編輯 DB 草稿（dry-run 驗證）→「📝 草稿」選項送測（雙跑對比開關·token ×2 標示）→ `SandboxPromptEntries` 基準 vs 草稿並排差異高亮＋等價性 metrics → `PromptDraftAdoptDrawer` 採納入庫（公共 `MdTextDiff` 對照確認·入庫即 active·清草稿）；測試歷史勾 2 筆 run-vs-run 對比〕）、歸因概覽（縱覽 + 各來源專屬概覽·KPI+漏斗+L1-L2 下鑽+趨勢+PDF 報表導出+判決模型篩選〔當前判決維度·KPI 文案揭露口徑〕）。 |
 | `settings/` | 設定抽屜：LLM 模型連線 / QC DB 連線（profiles 多套 + 啟用切換）。 |
 | `overview/` | 總覽儀表板（config-驅動 DashboardView + chartRegistry；三業務目標 config/presale/postsale）。 |
 | `usage/` | 💰 AI 消耗 dashboard（llm_usage per-call 紀錄聚合：成本/token/模型/階段趨勢）。 |

@@ -52,9 +52,28 @@ class SaveIn(BaseModel):
     note: str = ""
 
 
+class DraftIn(BaseModel):
+    """草稿寫入請求：完整 content（{_meta, text}）＋分叉基準版本（stale 偵測用）。"""
+
+    content: dict
+    base_version: int
+
+
+class ValidateIn(BaseModel):
+    """dry-run 驗證請求：prompt md 全文（不落庫）。"""
+
+    text: str
+
+
 def _check_code(code: str) -> None:
     if code not in _VALID_CODES:
         raise HTTPException(status_code=404, detail=f"未知 rule code：{code}")
+
+
+def _check_prompt_code(code: str) -> None:
+    """草稿／dry-run 驗證端點僅服務初判 Prompt（prompt_*）——其餘 rule 無草稿概念。"""
+    if code not in _VALID_CODES or not code.startswith("prompt_"):
+        raise HTTPException(status_code=404, detail=f"非初判 Prompt rule code：{code}")
 
 
 def _validate(code: str, content: dict) -> None:
@@ -164,6 +183,14 @@ def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -
     return {"groups": product_vertical.all_groups(), "group_order": product_vertical.group_order()}
 
 
+# 註：須定義於 `/{code}` GET 之前，否則 "drafts" 會被當成 code 段被 get_rule 攔截。
+@router.get("/drafts")
+def list_drafts(user: dict = Depends(auth.get_current_user)) -> list[dict]:
+    """列所有存在草稿的 prompt（rule_code/base_version/updated_by/updated_at，不含 content）——
+    供沙盒版本選擇器一次拉取草稿存在狀態，免逐 code 輪詢。"""
+    return db.list_prompt_drafts()
+
+
 # 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。
 @router.post("/export")
 def export_prompts_zip(user: dict = Depends(auth.get_current_user)) -> dict:
@@ -240,6 +267,64 @@ def save_rule(
     )
     _reload_judge_cache()
     return res
+
+
+@router.get("/{code}/draft")
+def get_draft(code: str, user: dict = Depends(auth.get_current_user)) -> dict:
+    """取某 prompt 的草稿；無草稿回 draft: null（200，前端免把「尚無草稿」當錯誤處理）。"""
+    _check_prompt_code(code)
+    return {"rule_code": code, "draft": db.get_prompt_draft(code)}
+
+
+@router.put("/{code}/draft")
+def put_draft(
+    code: str,
+    body: DraftIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
+    """寫入/覆蓋草稿（last-write-wins）。刻意寬鬆只驗 text 非空——草稿允許存半成品，
+    送測（prompt-sandbox drafts）與入庫（save_rule）才走 prompt_source.validate 強驗。
+    草稿不影響判決管線，故不需 _reload_judge_cache。"""
+    _check_prompt_code(code)
+    text = body.content.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPException(status_code=422, detail="草稿 content 需含 text（md 全文字串）")
+    db.upsert_prompt_draft(
+        code,
+        body.content,
+        body.base_version,
+        updated_by=user.get("email") or user.get("user_id", ""),
+    )
+    return {"rule_code": code, "saved": True}
+
+
+@router.delete("/{code}/draft")
+def delete_draft(
+    code: str,
+    user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
+) -> dict:
+    """刪除草稿（入庫採納後清理／手動捨棄）。deleted=false 表原本就無草稿（冪等，不視為錯誤）。"""
+    _check_prompt_code(code)
+    return {"rule_code": code, "deleted": db.delete_prompt_draft(code)}
+
+
+# 註：須定義於 `/{code}` POST 之後仍可正確匹配（雙段路徑不與單段衝突）；比照 draft 端點聚集於此。
+@router.post("/{code}/validate")
+def validate_prompt_text(
+    code: str, body: ValidateIn, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """dry-run 驗證 prompt md 全文（不落庫）：三節可解析 + Schema 合法 + {TEXT}/{POLARITY} 佔位符
+    + 域 Taxonomy 檢查。供草稿編輯器「驗證」鈕與沙盒送測前 fail-fast 共用；驗證失敗以 200 回
+    {valid:false, error}——「內容不合法」是本端點的正常業務結果，非 HTTP 層錯誤。"""
+    _check_prompt_code(code)
+    from app.judge import prompt_source
+
+    prompt_id = prompt_source.prompt_id_for_rule(code)
+    try:
+        prompt_source.validate(body.text, prompt_id)
+    except ValueError as e:
+        return {"valid": False, "error": str(e)}
+    return {"valid": True}
 
 
 @router.post("/{code}/restore/{version}")

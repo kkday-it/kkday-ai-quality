@@ -289,6 +289,22 @@ judge_rule_versions = Table(
     ),
 )
 
+# 判決 Prompt 草稿（prompt_polarity / prompt_C-1~6 每 rule_code 一份共享草稿）。與 judge_rule_versions
+# 分離：版本表維持「存檔即 active」單一語意；草稿＝未入庫的編輯中內容——沙盒可直接送測（雙跑對比），
+# 驗證滿意後一鍵入庫成新 active 版（隨後刪本列），或捨棄。併發=last-write-wins，
+# updated_by/updated_at 供前端顯示編輯線索；base_version 供 stale 偵測（< active 版本號時提示分叉過時）。
+prompt_drafts = Table(
+    "prompt_drafts",
+    metadata,
+    Column("rule_code", Text, primary_key=True),  # 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
+    Column(
+        "content", JSONB, nullable=False
+    ),  # {"_meta":..., "text": md 全文}（同 rule content 格式）
+    Column("base_version", Integer, nullable=False),  # 從哪個版本分叉
+    Column("updated_by", Text),  # 最後編輯人（user email）
+    Column("updated_at", DateTime(timezone=True), server_default=func.now()),
+)
+
 # 歸因備註（append-only 歷史；每條歸因 finding_id 可累積多則備註，記備註人/時間/內容）。
 # 獨立表：重判（replace_source_findings 刪+插 judgments）不影響備註（依 finding_id 關聯，同域重判 id 不變）。
 finding_notes = Table(
@@ -413,6 +429,12 @@ prompt_sandbox_runs = Table(
     # 版本選擇功能（見 app.judge.prompt_source.load 的 versions 參數）：本次測試 7 條 prompt 各自
     # 用哪個版本，非 active 才需記（active 沿用 judge_rule_versions 當下狀態，事後可回推）。
     Column("versions", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # 草稿測試（見 app.judge.prompt_source.load 的 drafts 參數）：本次測試各 prompt 的草稿 md 全文
+    # 快照（{rule_code: md 全文}）——run 與草稿後續演進脫鉤，事後可溯源當時測的是什麼內容。
+    Column("drafts", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # 雙跑對比模式：true 時 results 逐筆為 {source_id, text, compare, baseline:{...}, draft:{...}}
+    # （基準版 vs 草稿版各跑一次）；false 維持單跑形狀（歷史 run 相容）。
+    Column("compare", Boolean, nullable=False, server_default=text("false")),
     # 歷史列表熱路徑：依時間倒序
     Index("idx_prompt_sandbox_runs_created", "created_at"),
 )

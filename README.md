@@ -117,8 +117,9 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `judgment.prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
 | GET | `/api/v1/judgment/runs` · `/runs/{job_id}` | 歸因歷史（run 級 LLM 使用紀錄：批量/選取/單筆重判；詳情含 per-stage token/費用明細）|
+| POST/GET | `/api/v1/judgment/prompt-sandbox/*` | 歸因列表「Prompt 測試」沙盒（ungated·不落正式判決）：啟動（可帶 `versions` 選版本、`drafts` 草稿全文快照、`compare` 雙跑對比）/ count 筆數預覽 / status 輪詢 / runs 測試歷史（詳情含 LLM log 快照；雙跑 run 另附 drafts 快照＋等價性 metrics）/ `runs/compare?a=&b=` 兩筆 run 結果對齊對比 |
 | GET/POST | `/api/judgment-history` · `/notes` · `/models` | 判決歷史（**評論級**時間軸：判決快照/覆核轉移/備註三類事件；重判結果與前次全同時去重不記）· 新增評論級備註 · 歷來判決過的模型清單（篩選/導出下拉選項）。需登入 |
-| CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）|
+| CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）+ Prompt 草稿暫存（`/drafts`·`/{code}/draft`，沙盒送測/雙跑對比用）+ `/{code}/validate` dry-run 驗證（不落庫）|
 | PATCH | `/api/findings/{id}/status` · `/batch/status` | 單筆/批量歸因人工覆核（確認/忽略/new＝撤銷回待處理；同值冪等、轉移記入判決歷史）。需權限，記操作者/時間 audit |
 | POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（register 受 `AIQ_ALLOW_SELF_REGISTER` 環境閘：僅 development 預設開放）（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |

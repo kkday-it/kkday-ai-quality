@@ -52,6 +52,12 @@ from app.core.db.llm_usage import (
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_problems
+from app.core.db.prompt_drafts import (
+    delete_prompt_draft,
+    get_prompt_draft,
+    list_prompt_drafts,
+    upsert_prompt_draft,
+)
 from app.core.db.prompt_sandbox_runs import (
     insert_sandbox_run,
     list_sandbox_runs,
@@ -132,6 +138,10 @@ __all__ = [
     "insert_sandbox_run",
     "list_sandbox_runs",
     "sandbox_run_detail",
+    "delete_prompt_draft",
+    "get_prompt_draft",
+    "list_prompt_drafts",
+    "upsert_prompt_draft",
     "update_batch_inserted",
     "update_finding_status",
 ]

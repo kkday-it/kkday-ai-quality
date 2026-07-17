@@ -96,3 +96,67 @@ export const startRulesExport = (): Promise<{ job_id: string; filename: string }
     method: 'POST',
     headers: JSON_HEADERS,
   });
+
+// ── 初判 Prompt 草稿（prompt_* 每 rule_code 一份共享草稿；未入庫的編輯中內容）──
+// 草稿與版本表分離：存草稿不影響判決；沙盒可直接送測（雙跑對比），滿意後 saveRule 入庫成新 active 版。
+
+/** 草稿完整內容（GET 單筆）。 */
+export interface PromptDraft {
+  /** {_meta, text}（同 rule content 格式）。 */
+  content: Record<string, unknown>;
+  /** 從哪個版本分叉（stale 偵測：< 現行 active 版本號時提示「active 已前進」）。 */
+  base_version: number;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+/** 草稿存在狀態（列表用，不含 content）。 */
+export interface PromptDraftMeta {
+  rule_code: RuleCode;
+  base_version: number;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+/** 取某 prompt 的草稿；無草稿回 draft: null（200，非錯誤）。 */
+export const getRuleDraft = (code: RuleCode): Promise<{ rule_code: RuleCode; draft: PromptDraft | null }> =>
+  j<{ rule_code: RuleCode; draft: PromptDraft | null }>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}/draft`,
+  );
+
+/** 列所有存在草稿的 prompt（供沙盒版本選擇器一次拉取草稿存在狀態）。 */
+export const listRuleDrafts = (): Promise<PromptDraftMeta[]> =>
+  j<PromptDraftMeta[]>(`${BASE}/judge-rules/drafts`);
+
+/** 寫入/覆蓋草稿（last-write-wins；存檔寬鬆只驗 text 非空，送測/入庫才強驗）。 */
+export const saveRuleDraft = (
+  code: RuleCode,
+  content: Record<string, unknown>,
+  baseVersion: number,
+): Promise<{ rule_code: RuleCode; saved: boolean }> =>
+  j<{ rule_code: RuleCode; saved: boolean }>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}/draft`,
+    {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content, base_version: baseVersion }),
+    },
+  );
+
+/** 刪除草稿（入庫採納後清理／手動捨棄）；deleted=false＝原本就無草稿（冪等）。 */
+export const deleteRuleDraft = (code: RuleCode): Promise<{ rule_code: RuleCode; deleted: boolean }> =>
+  j<{ rule_code: RuleCode; deleted: boolean }>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}/draft`,
+    { method: 'DELETE', headers: JSON_HEADERS },
+  );
+
+/** dry-run 驗證 prompt md 全文（不落庫）：三節/Schema/{TEXT}/{POLARITY}/Taxonomy；
+ * 內容不合法回 {valid:false, error}（200，非 HTTP 錯誤）。 */
+export const validateRuleText = (
+  code: RuleCode,
+  text: string,
+): Promise<{ valid: boolean; error?: string }> =>
+  j<{ valid: boolean; error?: string }>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}/validate`,
+    { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ text }) },
+  );

@@ -111,6 +111,12 @@ class PromptSandboxIn(PrejudgeIn):
     # 版本選擇功能：{rule_code: 指定歷史版本號}（前端 PromptVersionPickerGroup／
     # usePromptVersionPicker）；不帶時全 7 支沿用 DB active。
     versions: dict[str, int] | None = None
+    # 草稿測試功能：{rule_code: 草稿 md 全文}（內容快照隨請求帶入，與 DB 草稿演進脫鉤）；
+    # 送測前逐條 prompt_source.validate 強驗 fail-fast（草稿存檔寬鬆、送測強驗）。
+    drafts: dict[str, str] | None = None
+    # 雙跑對比模式（僅 drafts 非空時有效）：每筆 item 跑 baseline（僅 versions）與
+    # draft（versions+drafts）各一遍——token 成本 ×2，由前端明示後帶入。
+    compare: bool = False
 
 
 @router.post("/prompt-sandbox")
@@ -140,6 +146,8 @@ async def start_prompt_sandbox(
             scope=body.scope,
             triggered_by=user.get("email") or user.get("user_id", ""),
             versions=body.versions,
+            drafts=body.drafts,
+            compare=body.compare,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -174,12 +182,81 @@ def list_prompt_sandbox_runs(
     return db.list_sandbox_runs(limit=limit, offset=offset)
 
 
+# 註：須定義於 `/runs/{run_id}` 之前，否則 "compare" 會被當成 run_id 段攔截。
+@router.get("/prompt-sandbox/runs/compare")
+def compare_prompt_sandbox_runs(
+    a: str, b: str, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """兩筆沙盒測試 run 的結果對比（run-vs-run）→ {a, b, items, metrics}。
+
+    按 source_id 對齊兩筆 run 的逐筆結果：單邊獨有的 item 仍列於 items（另一側為 null）；
+    判決失敗的 item 保留 error 標記列出（草稿造成部分 item 判決失敗正是對比最該凸顯的訊號，
+    不可靜默消失），但任一側帶 error 即不計入 metrics。雙跑對比 run 取其 draft 變體
+    （該 run 實際受測的新配置），單跑 run 取原結果。metrics 委派
+    `prompt_eval.sandbox_pair_metrics`（與雙跑 run 摘要同一套口徑）。
+    """
+    from app.judge import prompt_eval
+
+    ra, rb = db.sandbox_run_detail(a), db.sandbox_run_detail(b)
+    if ra is None or rb is None:
+        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+
+    def _meta(row: dict) -> dict:
+        keep = ("run_id", "source", "scope", "item_count", "model", "prompt_ids",
+                "versions", "compare", "created_at")  # fmt: skip
+        return {k: row.get(k) for k in keep}
+
+    def _normalize(r: dict) -> dict:
+        # 雙跑 item → 取 draft 變體並補回 item 級 source_id/text，形狀同單跑結果；
+        # error item（{source_id, error}）原樣保留，供對比視圖顯示失敗而非消失。
+        if r.get("compare"):
+            return {"source_id": r.get("source_id", ""), "text": r.get("text", ""),
+                    **(r.get("draft") or {})}  # fmt: skip
+        return r
+
+    def _index(row: dict) -> dict[str, dict]:
+        return {
+            r.get("source_id", ""): _normalize(r)
+            for r in (row.get("results") or [])
+            if isinstance(r, dict)
+        }
+
+    ia, ib = _index(ra), _index(rb)
+    items = [
+        {"source_id": sid, "a": ia.get(sid), "b": ib.get(sid)} for sid in sorted(set(ia) | set(ib))
+    ]
+    pairs = [
+        (it["a"], it["b"])
+        for it in items
+        if it["a"] and it["b"] and not it["a"].get("error") and not it["b"].get("error")
+    ]
+    return {
+        "a": _meta(ra),
+        "b": _meta(rb),
+        "items": items,
+        "metrics": prompt_eval.sandbox_pair_metrics(pairs) if pairs else None,
+    }
+
+
 @router.get("/prompt-sandbox/runs/{run_id}")
 def get_prompt_sandbox_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
-    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。"""
+    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。
+
+    雙跑對比 run（compare=true）另附 metrics（baseline vs draft 等價性聚合，讀取時動態算
+    ——口徑演進不受落庫快照凍結）。
+    """
     row = db.sandbox_run_detail(run_id)
     if row is None:
         raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+    if row.get("compare"):
+        from app.judge import prompt_eval
+
+        pairs = [
+            (r["baseline"], r["draft"])
+            for r in (row.get("results") or [])
+            if isinstance(r, dict) and r.get("compare")
+        ]
+        row["metrics"] = prompt_eval.sandbox_pair_metrics(pairs) if pairs else None
     return row
 
 

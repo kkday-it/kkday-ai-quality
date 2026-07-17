@@ -364,12 +364,18 @@ export interface PromptSandboxStartBody extends PrejudgeBody {
   prompt_ids: string[];
   scope: 'single' | 'selection' | 'all';
   /** 版本選擇功能：{rule_code: 指定歷史版本號}（沙盒獨有欄位，與 PrejudgeBody 繼承來的
-   * prompt_versions 是不同的請求鍵，兩者互不影響）。不支援測試未存檔草稿。 */
+   * prompt_versions 是不同的請求鍵，兩者互不影響）。 */
   versions?: Record<string, number>;
+  /** 草稿測試功能：{rule_code: 草稿 md 全文}（送測時的內容快照；後端逐條強驗 fail-fast，
+   * 同 rule_code 與 versions 並存時草稿優先）。 */
+  drafts?: Record<string, string>;
+  /** 雙跑對比模式（僅 drafts 非空時有效）：每筆 item 跑 baseline（僅 versions）與
+   * draft（versions+drafts）各一遍——token 成本 ×2。 */
+  compare?: boolean;
 }
 
 /** 啟動 Prompt 測試沙盒背景 job → {job_id}（前端輪詢 `getPromptSandboxStatus` 拿進度）。
- * @throws stub 模式（無可用 LLM token）一律拒跑，dev 環境亦不例外——比照 `classify_one` 慣例。 */
+ * @throws stub 模式（無可用 LLM token）一律拒跑，dev 環境亦不例外。 */
 export const startPromptSandbox = (body: PromptSandboxStartBody): Promise<{ job_id: string }> =>
   j<{ job_id: string }>(`${BASE}/v1/judgment/prompt-sandbox`, {
     method: 'POST',
@@ -378,7 +384,9 @@ export const startPromptSandbox = (body: PromptSandboxStartBody): Promise<{ job_
   });
 
 /** 預覽 Prompt 測試沙盒「將測試 N 筆」（與 `startPromptSandbox` 同一套標的解析；不派工、不消耗 token）。 */
-export const previewPromptSandboxCount = (body: PromptSandboxStartBody): Promise<{ total: number }> =>
+export const previewPromptSandboxCount = (
+  body: PromptSandboxStartBody,
+): Promise<{ total: number }> =>
   j<{ total: number }>(`${BASE}/v1/judgment/prompt-sandbox/count`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -414,6 +422,8 @@ export interface PromptSandboxRunSummary {
   created_at: string;
   /** 本次測試各 prompt 指定的版本號（{rule_code: version}；未指定沿用 active）。 */
   versions?: Record<string, number>;
+  /** 雙跑對比 run（草稿 vs 基準）標記；歷史列表分辨用（草稿全文快照 drafts 詳情才帶）。 */
+  compare?: boolean;
 }
 
 /** run_log 快照條目（供沙盒測試歷史回看完整 LLM log；形狀同 `PrejudgeLogDrawer` 的歷史日誌快照）。 */
@@ -447,6 +457,30 @@ export interface PromptSandboxItemResult {
   }>;
   /** 單筆判決失敗（如找不到評論）時的錯誤訊息，取代 prompts。 */
   error?: string;
+  /** 雙跑對比 item 標記：true 時本筆為 {baseline, draft} 兩組結果（prompts 等欄位在變體內）。 */
+  compare?: boolean;
+  /** 雙跑對比：基準版（僅 versions）結果。 */
+  baseline?: PromptSandboxVariantResult;
+  /** 雙跑對比：草稿版（versions+drafts，草稿優先）結果。 */
+  draft?: PromptSandboxVariantResult;
+}
+
+/** 雙跑對比單一變體的結果（形狀同單跑 item 去掉 source_id/text/error）。 */
+export interface PromptSandboxVariantResult {
+  polarity?: string;
+  sentiment_score?: number;
+  prompts?: PromptSandboxItemResult['prompts'];
+}
+
+/** 兩組結果的等價性聚合指標（後端 compute_equivalence_metrics 口徑）。 */
+export interface SandboxCompareMetrics {
+  n: number;
+  polarity_agree: number | null;
+  sentiment_agree: number | null;
+  count_equal: number | null;
+  count_mae: number | null;
+  facet_jaccard_mean: number | null;
+  primary_agree: number | null;
 }
 
 /** 沙盒測試歷史列表（created_at 降冪分頁）→ {total, items}——與正式初判歷史完全分離。 */
@@ -458,12 +492,34 @@ export const listPromptSandboxRuns = (
     `${BASE}/v1/judgment/prompt-sandbox/runs?limit=${limit}&offset=${offset}`,
   );
 
-/** 單一沙盒測試 run 完整詳情：逐筆 results + 完整 LLM log 快照（供事後回看當時測試跑了什麼）。 */
+/** 單一沙盒測試 run 完整詳情：逐筆 results + 完整 LLM log 快照（供事後回看當時測試跑了什麼）。
+ * 雙跑對比 run 另附 drafts（草稿全文快照，採納入庫的內容來源）與 metrics（讀取時動態算）。 */
 export const getPromptSandboxRun = (
   runId: string,
 ): Promise<
   PromptSandboxRunSummary & {
     results: PromptSandboxItemResult[];
     log: PromptSandboxLogEntry[];
+    drafts?: Record<string, string>;
+    metrics?: SandboxCompareMetrics | null;
   }
 > => j(`${BASE}/v1/judgment/prompt-sandbox/runs/${encodeURIComponent(runId)}`);
+
+/** run-vs-run 對比回應：按 source_id 對齊的逐筆結果對 + 等價性聚合指標。 */
+export interface PromptSandboxRunCompare {
+  a: PromptSandboxRunSummary;
+  b: PromptSandboxRunSummary;
+  /** 單邊獨有的 item 另一側為 null（僅兩邊皆有者計入 metrics）。 */
+  items: Array<{
+    source_id: string;
+    a: PromptSandboxItemResult | null;
+    b: PromptSandboxItemResult | null;
+  }>;
+  metrics: SandboxCompareMetrics | null;
+}
+
+/** 兩筆沙盒測試 run 的結果對比（run-vs-run；雙跑 run 取其 draft 變體參與對齊）。 */
+export const comparePromptSandboxRuns = (a: string, b: string): Promise<PromptSandboxRunCompare> =>
+  j<PromptSandboxRunCompare>(
+    `${BASE}/v1/judgment/prompt-sandbox/runs/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
+  );

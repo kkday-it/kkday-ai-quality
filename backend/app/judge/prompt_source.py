@@ -157,6 +157,7 @@ def _raw_text(prompt_id: str) -> str:
 def load(
     prompt_id: str,
     versions: dict[str, int] | None = None,
+    drafts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """取某 prompt 解析結果（DB active 優先→檔案 fallback）；lazy 模組級 cache。
 
@@ -165,21 +166,27 @@ def load(
         versions: {rule_code: 指定歷史版本號}（版本選擇功能）。命中時讀
             `db.get_rule_version(rule_code, version)` 那個特定版本的內容，**不寫入 `_cache`**
             （指定版本只服務本次呼叫，不可污染其他並發正式判決/沙盒 job）。
+        drafts: {rule_code: md 全文}（草稿測試功能，僅沙盒路徑使用）。命中時直接解析該
+            全文（不觸 DB），同樣**不寫入 `_cache`**；同 rule_code 與 versions 並存時
+            **drafts 優先**（草稿本就基於某版本編輯，測的是草稿內容）。
 
     Returns:
         {"title", "system", "user_template", "schema"}。
 
     Raises:
         ValueError: 未知 prompt_id、md 解析失敗，或指定的 versions 版本號不存在。
-        FileNotFoundError: 無 DB 版且無檔案（僅無 versions 命中時才會走到此路徑）。
+        FileNotFoundError: 無 DB 版且無檔案（僅無 versions/drafts 命中時才會走到此路徑）。
     """
     if prompt_id not in _PROMPT_RULE:
         raise ValueError(f"未知 prompt_id：{prompt_id}")
     rule_code = _PROMPT_RULE[prompt_id]
+    draft_text = drafts.get(rule_code) if drafts else None
     pinned_version = versions.get(rule_code) if versions else None
-    if pinned_version is None and prompt_id in _cache:
+    if draft_text is None and pinned_version is None and prompt_id in _cache:
         return _cache[prompt_id]
-    if pinned_version is not None:
+    if draft_text is not None:
+        raw_text = draft_text
+    elif pinned_version is not None:
         from app.core import db  # lazy：同 `_raw_text` 避免 import-time 拉 sqlalchemy
 
         content = db.get_rule_version(rule_code, pinned_version)
@@ -196,8 +203,8 @@ def load(
         # 域 prompt 的 Schema l2_code enum 由 `## Taxonomy` 派生注入（prompt 不手寫 code 清單、零 drift）
         codes = [f["code"] for f in _flatten_taxonomy(root)]
         _inject_derived_enum(parsed["schema"], codes)
-    if pinned_version is not None:
-        return parsed  # 指定版本路徑：不快取
+    if draft_text is not None or pinned_version is not None:
+        return parsed  # 草稿/指定版本路徑：不快取
     _cache[prompt_id] = parsed
     return parsed
 

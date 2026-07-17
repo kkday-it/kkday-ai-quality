@@ -48,6 +48,7 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "mixpanel_tracker",
     "batches",
     "judge_rule_versions",
+    "prompt_drafts",
     "judgments",
     "finding_notes",
     "llm_usage",
