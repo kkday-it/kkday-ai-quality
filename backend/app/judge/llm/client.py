@@ -165,6 +165,56 @@ def _record_usage(
         db.insert_llm_usage_row(row)
 
 
+# ── flex 回退量測（P1b）：全域計數器，prejudge_batch 於 job 始末取差值 log ──────
+# 目的：量測「flex 429 回退標準價」漏掉折扣的占比（>5% 才立項 Batch API lane，見升級計畫 P1b）。
+_FLEX_LOCK = threading.Lock()
+_flex_counters = {"attempts": 0, "fallbacks": 0}
+
+
+def flex_stats() -> dict[str, int]:
+    """flex serving tier 全域計數快照（{attempts, fallbacks}）；供 job 始末差值量測回退率。
+
+    多 job 併發時差值含同時段他 job 流量（量測目標是全域回退占比，可接受）；計數自 process 啟動累計。
+    """
+    with _FLEX_LOCK:
+        return dict(_flex_counters)
+
+
+def _flex_bump(key: str) -> None:
+    with _FLEX_LOCK:
+        _flex_counters[key] += 1
+
+
+def embed_one(text: str, *, model: str) -> list[float] | None:
+    """單文本 embedding（域路由特徵用）；失敗/不可用一律回 None（fail-open，絕不拋）。
+
+    僅 OpenAI provider（base_url 反推）支援；stub / 非 OpenAI / model 空值 → None。usage 以
+    stage="router_embed" 落 llm_usage（單價讀 llm_model.json 根層 `embeddings` 表，見 pricing）。
+
+    Args:
+        text: 輸入文本（截 8000 字防超 embedding 上限；路由特徵夠用）。
+        model: embedding 模型 id（SSOT＝judgment.json prejudge.domain_router.embedding_model）。
+
+    Returns:
+        embedding 向量；不可用回 None（呼叫端 fail-open 全域跑）。
+    """
+    if not model:
+        return None
+    cfg = _resolve()
+    if not cfg["token"] or _settings.provider_id_for(cfg["base_url"]) != "openai":
+        return None
+    try:
+        cli = _get_client(cfg["token"], cfg["base_url"])
+        resp = cli.embeddings.create(model=model, input=text[:8000])
+        u = getattr(resp, "usage", None)
+        pt = int(getattr(u, "prompt_tokens", 0) or getattr(u, "total_tokens", 0) or 0)
+        _record_usage("router_embed", {**cfg, "model": model, "service_tier": None}, pt, 0, 0)
+        return list(resp.data[0].embedding)
+    except Exception:  # noqa: BLE001  路由輔助，失敗 fail-open（絕不阻斷判決主流程）
+        _log.warning("embedding 失敗（model=%s），域路由 fail-open", model, exc_info=True)
+        return None
+
+
 # 共用 OpenAI client 快取（按 token+base_url）：避免每次呼叫新建 connection pool；
 # OpenAI SDK client thread-safe，可跨 ThreadPool worker 共用。高併發批量必要的效能優化。
 _CLIENT_CACHE: dict[tuple[str, str], object] = {}
@@ -374,6 +424,8 @@ def chat_json(
     tier = cfg.get("service_tier")
     if tier and tier != "default" and is_openai:
         kwargs["service_tier"] = tier
+        if tier == "flex":
+            _flex_bump("attempts")  # P1b 量測：flex 嘗試數（回退數見 429 handler）
     # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
     ck = cache_key if (cache_key and is_openai) else None
     # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄。
@@ -428,6 +480,7 @@ def chat_json(
             and getattr(e, "code", None) == "resource_unavailable"
         ):
             _log.warning("flex 容量不足(stage=%s)，回退標準 tier 重試", stage)
+            _flex_bump("fallbacks")  # P1b 量測：該筆以標準價計費（漏掉 -50% 折扣）
             kwargs.pop("service_tier", None)
             cfg = {**cfg, "service_tier": None}
             resp = _complete(cfg, kwargs, ck)

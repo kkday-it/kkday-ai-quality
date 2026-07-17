@@ -1,10 +1,10 @@
 """判決核心（prejudge）確定性行為測試——Prompt-as-Source 唯一引擎路徑（legacy 已全數退役）。
 
 分兩層，皆不需 LLM key（stub）/ 不碰 DB：
-- **純 helper**：信心分層邊界、階段派生、證據封頂、寬鬆 float 解析。
-- **stub 管線**：`to_findings` 在 stub 模式的確定性啟發式（純好評略過 / 極性閘門 / 負向未歸因 pending_data）。
+- **純 helper**：信心分層邊界、階段派生、證據封頂、寬鬆 float 解析、批次 effort 上限。
+- **stub 管線**：`to_findings` 在 stub 模式的確定性啟發式（極性閘門 / 負向未歸因 pending_data）。
 
-config 相關讀取（閾值 / 旋鈕 / 負向詞）一律 monkeypatch 固定，使斷言與 config 漂移解耦。
+config 相關讀取（閾值 / 旋鈕）一律 monkeypatch 固定，使斷言與 config 漂移解耦。
 """
 
 from __future__ import annotations
@@ -15,9 +15,6 @@ from app.judge import prejudge
 
 _FIXED_TIERS = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
 _FIXED_CFG = {
-    "neg_keywords": ["退款", "差", "誤導"],
-    "enable_stage0_skip": True,
-    "stage0_max_comment_len": 8,
     "max_attributions": 2,
 }
 
@@ -84,7 +81,6 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     )
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model, **k: ("neutral", 3))
-    monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     attr = {
         "l1_domain_code": "supplier",
         "l1_label": "供應商履約",
@@ -119,7 +115,6 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(
     monkeypatch.setattr(prejudge, "_polarity_gate_cfg", lambda: {"attribute_when": ["negative"]})
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     monkeypatch.setattr(prejudge, "_stage1_polarity", lambda item, text, model, **k: ("neutral", 3))
-    monkeypatch.setattr(prejudge, "_skip0", lambda item, text: False)
     called = []
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])
     fs = prejudge.to_findings(
@@ -152,35 +147,29 @@ def test_as_float_lenient_parse_and_clip() -> None:
     assert prejudge._as_float("bad", 0.3) == 0.3  # ValueError → default
 
 
-def test_has_neg_kw(fixed_config) -> None:
-    """負向關鍵詞偵測（含任一即真）。"""
-    assert prejudge._has_neg_kw("我要退款") is True
-    assert prejudge._has_neg_kw("服務很差") is True
-    assert prejudge._has_neg_kw("很滿意推薦") is False
-
-
 def test_stub_polarity_heuristic(fixed_config) -> None:
-    """stub 極性：回 (polarity, sentiment 1-5)。rating≤2 負(1-2) / ≥4 正(4-5) / 中間看負向詞 / 無法判別兜底 neutral(3)。"""
+    """stub 極性（純 rating 分流；keyword 機制 2026-07-16 全棧退役）：
+    rating≤2 負(1-2) / ≥4 正(4-5) / 3 或無 rating → 中立 3。"""
     pol = prejudge._stub_polarity
-    assert pol({"rating": 1}, "隨便") == ("negative", 1)
-    assert pol({"rating": 2}, "隨便") == ("negative", 2)
-    assert pol({"rating": 5}, "隨便") == ("positive", 5)
-    assert pol({"rating": 4}, "隨便") == ("positive", 4)
-    assert pol({"rating": 3}, "要退款") == (
-        "negative",
-        1,
-    )  # 中間 + 負向詞（無 rating 區間，預設 1）
-    assert pol({"rating": 3}, "普通") == ("neutral", 3)  # 中間 + 無負向詞 + 有字 → 兜底中立 3
-    assert pol({}, "誤導消費者") == ("negative", 1)  # 無 rating 靠負向詞
-    assert pol({}, "") == ("neutral", 3)  # 無 rating 無字
+    assert pol({"rating": 1}) == ("negative", 1)
+    assert pol({"rating": 2}) == ("negative", 2)
+    assert pol({"rating": 5}) == ("positive", 5)
+    assert pol({"rating": 4}) == ("positive", 4)
+    assert pol({"rating": 3}) == ("neutral", 3)  # 中間 → 中立 3
+    assert pol({}) == ("neutral", 3)  # 無 rating → 中立 3
 
 
-def test_skip0_pure_good_review(fixed_config) -> None:
-    """Stage0 零 LLM 略過：rating=5 + 短評 + 無負向詞 才略過。"""
-    assert prejudge._skip0({"rating": 5}, "讚") is True
-    assert prejudge._skip0({"rating": 5}, "這個商品真的非常好用大推") is False  # 過長
-    assert prejudge._skip0({"rating": 4}, "讚") is False  # 非滿分
-    assert prejudge._skip0({"rating": 5}, "退款") is False  # 含負向詞
+def test_cap_batch_reasoning_effort(monkeypatch) -> None:
+    """批次 effort 硬上限：超限壓檔、未超限/未知值原樣放行、cap 缺失不動作。"""
+    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {"batch_max_reasoning_effort": "medium"})
+    assert prejudge.cap_batch_reasoning_effort("xhigh") == "medium"  # 超限壓檔
+    assert prejudge.cap_batch_reasoning_effort("high") == "medium"
+    assert prejudge.cap_batch_reasoning_effort("low") == "low"  # 未超限原樣
+    assert prejudge.cap_batch_reasoning_effort("medium") == "medium"
+    assert prejudge.cap_batch_reasoning_effort(None) is None  # 空值放行
+    assert prejudge.cap_batch_reasoning_effort("default") == "default"  # 未知值放行
+    monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})  # cap 缺失 → 不動作
+    assert prejudge.cap_batch_reasoning_effort("xhigh") == "xhigh"
 
 
 # ── stub 管線行為（to_findings） ────────────────────────────────────────
@@ -199,7 +188,7 @@ def _item(rating: int | None, comment: str, **extra) -> dict:
 
 
 def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
-    """純好評（rating=5 短評）→ 單一非問題正向 finding（Stage0 略過，不歸因）。"""
+    """純好評（rating=5 短評）→ 單一非問題正向 finding（stub rating 啟發式，不歸因）。"""
     out = prejudge.to_findings(_item(5, "讚"), model="gpt-5-nano")
     assert len(out) == 1
     f = out[0]
@@ -226,7 +215,7 @@ def test_to_findings_negative_unattributed_pending_data(stub_engine) -> None:
 
 
 def test_to_findings_middling_review_neutral_judged(stub_engine) -> None:
-    """中間評分 + 無負向詞 + 有字 → 兜底中立 3 → judged（傾向只有三態，無 unknown/insufficient）。"""
+    """中間評分（rating=3）→ 中立 3 → judged（傾向只有三態，無 unknown/insufficient）。"""
     out = prejudge.to_findings(_item(3, "普通"), model="gpt-5-nano")
     assert len(out) == 1
     f = out[0]

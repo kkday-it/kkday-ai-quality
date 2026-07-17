@@ -14,34 +14,7 @@
     "secondary_min_confidence": 0.35
   },
   "prejudge": {
-    "_comment": "初判歸因管線旋鈕。判決引擎恆為 prompt_pack（Prompt-as-Source，判決 prompt 唯一真相源＝prompts/*.md，極性 00_polarity + 六域 01_C-1~06_C-6 並行歸因；舊 legacy 單呼叫 32 面向目錄引擎已於 2026-07-13 全數退役刪除）。stage1_model：極性閘門 fallback 模型（同 provider token）；stage0：零 LLM 略過純好評（enable_stage0_skip；rating 高且無負向詞）；neg_keywords：stub/Stage0 判負向的關鍵詞；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 8；2026-07-14 改採「同(域,面向)並列」粒度後 2→6，容納跨域＋同 L1 多 L2 面向並列，如「服務」域同時命中導遊素質＋注意事項宣導不足）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；attribute 降檔須先更大樣本 A/B 驗準）。max_workers_by_model/max_workers_default：批次併發上限依生效 model 分別設（切旗艦模型帳號 TPM/RPM tier 較低時自動降併發避免撞 rate limit；手動維護表，缺則用 default）——為軟上限，實際再與製程級硬天花板 env.prejudge_max_workers 取 min。max_implicit_retries：隱式（scope=all+unjudged）批次對同一筆的連續失敗上限，超過即排除於隱式重撈外（防壞 prompt/失效 key 系統性失敗無限重撈），只能靠顯式「重判本批失敗筆」item_ids 重判；成功即歸零；<1＝停用。domain_retry：六域並行歸因中「單域」LLM 呼叫失敗的有界重試次數（預設 1；0＝關閉）——其餘域已成功、僅該域瞬時失利時止血，省整筆 6 域重打；耗盡仍讓整筆 fail-loud（交批次層計 failed）。adaptive_concurrency：AIMD 自適應併發（enabled 預設 true）——max_workers_by_model 作 ceiling，item 因 429 失敗 → 併發 *=backoff(0.5) 乘性收縮，清空 probe_interval_s(3) 秒無 429 → +1 加性回升，不低於 floor(2)；保證有能力時爬回 ceiling、過載才降，免手動預測 effort×tier 的最佳併發。關閉則固定 max_workers。",
-    "neg_keywords": [
-      "退款",
-      "退費",
-      "沒有",
-      "錯",
-      "誤導",
-      "差",
-      "爛",
-      "騙",
-      "找不到",
-      "遲到",
-      "取消",
-      "沒收到",
-      "客訴",
-      "抱怨",
-      "失望",
-      "糟",
-      "貴",
-      "拒絕",
-      "無法",
-      "不符",
-      "壞了",
-      "當機",
-      "卡住",
-      "連不上",
-      "危險"
-    ],
+    "_comment": "初判歸因管線旋鈕。判決引擎恆為 prompt_pack（Prompt-as-Source，判決 prompt 唯一真相源＝prompts/*.md，極性 00_polarity + 六域 01_C-1~06_C-6 並行歸因）。stage1_model：極性閘門 fallback 模型（同 provider token）；max_attributions：多歸因（全 5 來源 1:N）一則反饋最多輸出幾條獨立歸因，防過度歸因（硬上限 8；2026-07-14 改採「同(域,面向)並列」粒度後 2→6，容納跨域＋同 L1 多 L2 面向並列，如「服務」域同時命中導遊素質＋注意事項宣導不足）；flex_min_items/batch_service_tier：批次 flex serving tier 門檻；*_reasoning_effort：per-stage 獨立 reasoning_effort（polarity＝極性閘門／attribute＝歸因；null＝沿用主 config；polarity=minimal 經 2026-07-07 dev+holdout A/B 驗證零漏放行；attribute 降檔須先更大樣本 A/B 驗準）。max_workers_by_model/max_workers_default：批次併發上限依生效 model 分別設（切旗艦模型帳號 TPM/RPM tier 較低時自動降併發避免撞 rate limit；手動維護表，缺則用 default）——為軟上限，實際再與製程級硬天花板 env.prejudge_max_workers 取 min。max_implicit_retries：隱式（scope=all+unjudged）批次對同一筆的連續失敗上限，超過即排除於隱式重撈外（防壞 prompt/失效 key 系統性失敗無限重撈），只能靠顯式「重判本批失敗筆」item_ids 重判；成功即歸零；<1＝停用。domain_retry：六域並行歸因中「單域」LLM 呼叫失敗的有界重試次數（預設 1；0＝關閉）——其餘域已成功、僅該域瞬時失利時止血，省整筆 6 域重打；耗盡仍讓整筆 fail-loud（交批次層計 failed）。adaptive_concurrency：AIMD 自適應併發（enabled 預設 true）——max_workers_by_model 作 ceiling，item 因 429 失敗 → 併發 *=backoff(0.5) 乘性收縮，清空 probe_interval_s(3) 秒無 429 → +1 加性回升，不低於 floor(2)；保證有能力時爬回 ceiling、過載才降，免手動預測 effort×tier 的最佳併發。關閉則固定 max_workers。batch_max_reasoning_effort：批次 job 的 reasoning_effort 硬上限（防 xhigh 診斷檔位誤用於全量批次——reasoning token 暴增 ~6x、費用近 10x；單筆/沙盒不受限；未知值如 default 原樣放行）。domain_router：embedding 學習式候選域剪枝（enabled 預設 false＝全 6 域零行為變更；shadow_rate＝影子抽樣比例，抽中樣本強制全跑＋虛擬比對路由預測、漏域落 judgment_history kind=router_shadow；embedding_model＝特徵模型（僅 OpenAI provider）；thresholds＝per-domain 機率閾值覆寫（缺省用權重檔內建，訓練端以 holdout recall ≥99.5% 選定）；always_on＝不參與剪枝恆跑的域。域鍵一律用域機器值（content/quality/supplier/platform/service/customer＝judgments.l1_code 同詞彙表），勿用 C-x 碼。權重檔 data/router/weights.json 由 scripts/tools/train_domain_router.py 離線訓練產出；權重缺失/embedding 失敗一律 fail-open 全域跑。（stub 模式極性走純 rating 啟發式分流。診斷理由 abstain_reason 僅 Prompt 測試沙盒 overlay 動態附加，production 不收集、不落庫、無 config 旋鈕。）",
     "stage1_model": "gpt-5-mini",
     "flex_min_items": 10,
     "max_attributions": 6,
@@ -61,9 +34,16 @@
       "probe_interval_s": 3.0,
       "floor": 2
     },
-    "enable_stage0_skip": true,
     "polarity_reasoning_effort": "minimal",
-    "attribute_reasoning_effort": null
+    "attribute_reasoning_effort": null,
+    "batch_max_reasoning_effort": "medium",
+    "domain_router": {
+      "enabled": false,
+      "shadow_rate": 0.0,
+      "embedding_model": "text-embedding-3-small",
+      "thresholds": {},
+      "always_on": []
+    }
   },
   "tier_labels": {
     "jury": "評審覆核",

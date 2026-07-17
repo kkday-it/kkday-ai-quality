@@ -6,9 +6,10 @@
 （`_resolve_attrs_multi` 尾段）。判準與結構皆源自 prompt 本身（見 ai_judge.py）。
 
 管線：
-- Stage 0 零 LLM 略過純好評（rating=5 + 評論極短 + 無負向詞）→ $0，不歸因。
 - Stage 1 極性閘門：進歸因傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral
   ——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
+- 域路由剪枝（domain_router；judgment.json prejudge.domain_router，預設關閉＝全 6 域）：embedding
+  學習式候選域 → 只並行命中的域；候選全空手時自動補跑其餘域（兜底＝現行全跑，見 _resolve_attrs_multi）。
 - 歸因合流閘門（_resolve_attrs_multi 尾段）：同(域,面向)去重（保信心最高，同 L1 多 L2 並列）+ 排序 + attr_min/secondary_min。
 - G1 自動確認路由、證據封頂、grounding 壓信心、stub 雙防線等 code-side 機制不屬 prompt。
 
@@ -163,15 +164,6 @@ def _text_of(item: dict) -> str:
     return txt
 
 
-def _neg_keywords() -> list[str]:
-    return _prejudge_cfg().get("neg_keywords", [])
-
-
-def _has_neg_kw(text: str) -> bool:
-    """文字是否含負向關鍵詞（stub/Stage0 判負向用）。"""
-    return any(kw in text for kw in _neg_keywords())
-
-
 def _action_for(l1_domain: str) -> str:
     """歸因域 → recommended_action（讀 config；未歸類 / 未知域回 escalate_ux）。"""
     action = ai_judge.domain_action(l1_domain)
@@ -250,15 +242,20 @@ def _call(
     schema: dict | None = None,
     effort: str | None = None,
     label: str | None = None,
+    cache_key: str | None = None,
 ) -> dict:
     """呼叫 LLM；暫時覆寫 contextvar 的 model（及可選 reasoning_effort）為本階段值，呼叫後還原（thread-local 安全）。
 
     schema 傳入時走 Structured Outputs（強制 l2_code 只吐候選白名單合法 code）。
     effort 傳入時暫時覆寫 reasoning_effort（① 收緊輸出：attribute 階段可獨立降 effort 省 completion；
     見 _attr_effort。None＝沿用當前 config，零行為改變）。
+    cache_key 傳入時作 OpenAI prompt_cache_key 路由提示（未傳沿用 stage）——官方語義為「同 key 同前綴
+    導向同一快取節點、每 key 約 15 RPM」，故六域各自帶獨立 key（"attribute:C-1"…），避免多前綴共擠
+    一個 key 溢流重建快取（llm_usage 的 stage 標籤不受影響，仍記 stage 原值）。
     """
     from app.core import settings as app_settings
 
+    ck = cache_key or stage
     cur = app_settings.current()
     override: dict = {}
     if model and model != cur.get("model"):
@@ -268,12 +265,10 @@ def _call(
     if override:
         app_settings.set_current({**cur, **override})
         try:
-            return client.chat_json(
-                system, user, stage, schema=schema, cache_key=stage, label=label
-            )
+            return client.chat_json(system, user, stage, schema=schema, cache_key=ck, label=label)
         finally:
             app_settings.set_current(cur)
-    return client.chat_json(system, user, stage, schema=schema, cache_key=stage, label=label)
+    return client.chat_json(system, user, stage, schema=schema, cache_key=ck, label=label)
 
 
 def _evidence_grounded(text: str, quote: str) -> bool:
@@ -287,11 +282,12 @@ def _evidence_grounded(text: str, quote: str) -> bool:
 
 
 # ── stub 啟發式（無 token 時零 key 跑通閉環；佔位非真值）─────────────────────
-def _stub_polarity(item: dict, text: str) -> tuple[str, int]:
-    """rating + 負向關鍵詞 啟發式極性（stub）；回 (polarity, sentiment 1-5)。
+def _stub_polarity(item: dict) -> tuple[str, int]:
+    """純 rating 啟發式極性（stub）；回 (polarity, sentiment 1-5)。
 
-    sentiment 取 rating 細分並夾區間：rating≤2→負向(1-2)、≥4→正向(4-5)、中間看負向詞；
-    無法判別一律兜底中立 3（傾向只有 positive/negative/neutral 三態）。
+    sentiment 取 rating 細分並夾區間：rating≤2→負向(1-2)、≥4→正向(4-5)、3 或無 rating→中立 3
+    （傾向只有 positive/negative/neutral 三態）。純 rating 啟發式，僅供無 LLM 時佔位，非真值、
+    準確度不承諾。
     """
     r = item.get("rating")
     if isinstance(r, int):
@@ -299,8 +295,6 @@ def _stub_polarity(item: dict, text: str) -> tuple[str, int]:
             return "negative", max(1, min(2, r))  # rating 1→1、2→2
         if r >= 4:
             return "positive", min(5, r)  # rating 4→4、5→5
-    if _has_neg_kw(text):
-        return "negative", 1
     return "neutral", 3
 
 
@@ -391,19 +385,6 @@ def _attributed_finding(
 
 
 # ── 各階段 ──────────────────────────────────────────────────────────────────
-def _skip0(item: dict, text: str) -> bool:
-    """Stage0 零 LLM 略過：純好評（rating=5 + 評論極短 + 無負向詞）。"""
-    cfg = _prejudge_cfg()
-    if not cfg.get("enable_stage0_skip", True):
-        return False
-    return (
-        isinstance(item.get("rating"), int)
-        and item.get("rating") >= cfg.get("stage0_min_rating", 5)
-        and len(text) <= cfg.get("stage0_max_comment_len", 8)
-        and not _has_neg_kw(text)
-    )
-
-
 def _clamp_sentiment(raw: Any, polarity: str) -> int:
     """LLM 情緒分正規化為 1-5，並夾進 polarity 對應區間確保與傾向一致（負面 1-2 / 中立 3 / 正面 4-5）。
 
@@ -510,12 +491,29 @@ def _resolve_attrs_multi(
     polarity: str = "negative",
     *,
     versions: dict[str, int] | None = None,
+    candidate_pids: list[str] | None = None,
 ) -> list[dict]:
-    """負向/混合中性評論 → 多條淨化 attr dict：六域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門（`_gate_attrs`）。"""
+    """負向/混合中性評論 → 多條淨化 attr dict：域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門（`_gate_attrs`）。
+
+    candidate_pids（域路由剪枝候選；None＝全 6 域，零行為改變）帶入時只跑候選域；候選域全空手
+    （閘門後零歸因）→ **兜底補跑其餘域**再合流一次——路由漏判的最壞情況退化為現行全跑，
+    不會比不剪枝更差（三層防線第 2 層，見 domain_router）。
+
+    診斷理由（reason/abstain_reason）僅 Prompt 測試沙盒（診斷 overlay）提供；
+    production 判決不收集、不落庫。
+    """
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
         return []
-    attrs = _attrs_pack(item, text, model, max_n, polarity, versions=versions)
-    return _gate_attrs(attrs, max_n)
+    attrs = _attrs_pack(item, text, model, max_n, polarity, versions=versions, pids=candidate_pids)
+    gated = _gate_attrs(attrs, max_n)
+    if candidate_pids is not None and not gated:
+        from app.judge import prompt_source
+
+        rest = [p for p in prompt_source.DOMAIN_PROMPT_IDS if p not in set(candidate_pids)]
+        if rest:  # 兜底：候選全空手 → 補跑其餘域（合流時帶上候選域產出一起過閘門）
+            attrs += _attrs_pack(item, text, model, max_n, polarity, versions=versions, pids=rest)
+            gated = _gate_attrs(attrs, max_n)
+    return gated
 
 
 def to_findings(
@@ -553,16 +551,26 @@ def to_findings(
     source_id = item.get("source_id", "")
 
     # 各 return 皆過 _route：依 finding 的 tier+stage 設 status（G1 自動確認路由）。
-    if _skip0(item, text):
-        # skip0＝高星短好評（rating≥5）→ 正向、情緒分 5
-        return _route([_non_issue_finding(item, "positive", "heuristic", sentiment=5)])
     polarity, sentiment = _stage1_polarity(item, text, model, versions=versions)
     if polarity not in _attribute_when():  # config 驅動（judgment.json polarity_gate）
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
+    # 域路由剪枝（judgment.json prejudge.domain_router；預設關閉 → decision.pids=None＝全 6 域）。
+    # shadow 抽樣時強制全跑（production 輸出零風險），事後虛擬比對路由預測、漏域落 judgment_history。
+    from app.judge import domain_router
+
+    decision = domain_router.decide(text, polarity)
     attrs = _resolve_attrs_multi(
-        item, text, model, _max_attributions(), polarity, versions=versions
+        item,
+        text,
+        model,
+        _max_attributions(),
+        polarity,
+        versions=versions,
+        candidate_pids=None if decision.shadow else decision.pids,
     )
+    if decision.shadow and decision.pids is not None:
+        domain_router.report_shadow(decision, attrs, source=src, source_id=source_id)
     if not attrs:
         if (
             polarity != "negative"
@@ -625,6 +633,39 @@ def batch_service_tier(n_items: int) -> str | None:
     if n_items < int(cfg.get("flex_min_items", 10) or 0):
         return None
     return str(tier)
+
+
+# reasoning_effort 檔位序（批次上限比較用；值域隨 provider 演進，未知值不參與比較=不封）
+_EFFORT_RANK: dict[str, int] = {
+    "none": 0,
+    "minimal": 1,
+    "low": 2,
+    "medium": 3,
+    "high": 4,
+    "xhigh": 5,
+}
+
+
+def cap_batch_reasoning_effort(effort: str | None) -> str | None:
+    """批次 job 的 reasoning_effort 硬上限（judgment.json prejudge.batch_max_reasoning_effort）。
+
+    制度性防呆：使用者 active LLM 檔位若設 xhigh（診斷/小樣本用），全量批次誤用會讓 reasoning
+    token 暴增 ~6x、費用近 10x（2026-07 實測 gpt-5.4-mini xhigh vs gpt-5-mini）——批次啟動時將
+    effort 壓到上限檔位，單筆/沙盒呼叫不受影響。cap 缺失/未知值（如 "default"）→ 原樣放行。
+
+    Args:
+        effort: 生效設定的 reasoning_effort（可為 None/"default"/未知新值）。
+
+    Returns:
+        壓檔後的 effort（未超限或無法比較時原樣返回）。
+    """
+    cap = str(_prejudge_cfg().get("batch_max_reasoning_effort") or "").strip().lower()
+    if cap not in _EFFORT_RANK:
+        return effort
+    e = str(effort or "").strip().lower()
+    if e in _EFFORT_RANK and _EFFORT_RANK[e] > _EFFORT_RANK[cap]:
+        return cap
+    return effort
 
 
 def max_workers_for(model: str) -> int:
@@ -754,7 +795,7 @@ def _pack_polarity(
         versions: 版本選擇功能（初判分類指定歷史版本），透傳給 `prompt_source.load`。
     """
     if client.is_stub():
-        return _stub_polarity(item, text)
+        return _stub_polarity(item)
     from app.judge import prompt_source
 
     p = prompt_source.load(prompt_source.POLARITY_ID, versions=versions)
@@ -779,15 +820,19 @@ def _attrs_pack(
     polarity: str = "negative",
     *,
     versions: dict[str, int] | None = None,
+    pids: list[str] | None = None,
 ) -> list[dict]:
-    """六域並行歸因：各域 prompt 獨立判本域問題 → 合流淨化 attr dict 清單。
+    """域並行歸因：各域 prompt 獨立判本域問題 → 合流淨化 attr dict 清單。
 
-    六支域 prompt（01_C-1~06_C-6）ThreadPool 並行，各 chat_json(System, User.填槽, schema=檔內 schema)；
+    域 prompt（01_C-1~06_C-6）ThreadPool 並行，各 chat_json(System, User.填槽, schema=檔內 schema)；
     每域回 {"attributions":[{l2_code,confidence,summary,evidence_quote}...]}，逐條過 _finalize_attr_l2
     （grounding 壓信心 / 證據封頂 / 白名單校驗）。l2→l1 由 _sanitize_l2 映射——自洽 drift 護欄
     （Schema l2_code enum 由 `## Taxonomy` 派生）保證回的 l2_code 必落該
     prompt 對應域，故等同「由回覆 prompt 歸屬直接給」。合流後的同(域,面向)去重 / 排序 / attr_min /
     secondary_min 閘門由 _resolve_attrs_multi 尾段共用。
+
+    pids＝要跑的域 prompt 子集（域路由剪枝傳入；None/空＝全 6 域，行為與剪枝前完全一致——
+    比照 prompt_eval.domain_verdicts 的既有子集模式）。
 
     並行安全：contextvar _current（effective LLM 設定）於呼叫端 copy_context() 快照後 ctx.run——比照
     prejudge_batch 配方（同一 Context 不可並發 run，故每域一份獨立快照）。
@@ -802,7 +847,7 @@ def _attrs_pack(
 
     valid = _l2_label_map()
     effort = _attr_effort()
-    pids = prompt_source.DOMAIN_PROMPT_IDS
+    pids = list(pids) if pids else list(prompt_source.DOMAIN_PROMPT_IDS)
     dom_retry = _domain_retry()
     retry_delay = (
         0.5  # 秒；單域重試前的短暫緩衝（SDK 內建退避已在單次呼叫內耗盡，此為再打一次前的間隔）
@@ -824,6 +869,9 @@ def _attrs_pack(
                     schema=p["schema"],
                     effort=effort,
                     label=dom,
+                    # 官方 prompt caching 語義：同 key 同前綴導向同一節點、每 key ~15 RPM——六域
+                    # 前綴各異，各帶獨立 key 避免共擠 "attribute" 一個 key 溢流重建快取。
+                    cache_key=f"attribute:{dom}",
                 )
                 return [
                     _finalize_attr_l2(item, text, a, valid)

@@ -203,7 +203,7 @@ def _work_one(
                 },
             )
             findings = prejudge.to_findings(norm, model=model, versions=prompt_versions)
-            # 完成日誌附歸因結果 digest（傾向/L1›L2/信心/摘要），流程 tab 一目瞭然免切詳情
+            # 完成日誌附歸因結果 digest（傾向/L1›L2/信心/摘要/未匹配理由），流程 tab 一目瞭然免切詳情
             digest = [
                 {
                     "polarity": f.polarity,
@@ -313,8 +313,22 @@ def _run(
     tier = prejudge.batch_service_tier(len(item_ids))
     if tier:
         eff = {**eff, "service_tier": tier}
+    # 批次 reasoning_effort 硬上限（judgment.json prejudge.batch_max_reasoning_effort）：
+    # active LLM 檔位若設 xhigh（診斷用），全量批次誤用會讓 reasoning token 暴增 ~6x、費用近 10x
+    # ——制度性防呆壓檔；單筆/沙盒呼叫不經此路徑，不受影響。
+    capped_effort = prejudge.cap_batch_reasoning_effort(eff.get("reasoning_effort"))
+    if capped_effort != eff.get("reasoning_effort"):
+        _log.warning(
+            "job=%s reasoning_effort=%s 超出批次上限，壓至 %s（batch_max_reasoning_effort）",
+            job_id,
+            eff.get("reasoning_effort"),
+            capped_effort,
+        )
+        eff = {**eff, "reasoning_effort": capped_effort}
     # 在背景 thread 的 context 內 set 好 contextvar，稍後每筆任務 copy_context 快照即帶上。
     app_settings.set_current(eff)
+    # P1b flex 回退量測：job 始末取全域計數差值（多 job 併發時含他 job 流量，量測全域占比可接受）
+    flex_before = client.flex_stats()
     # LLM exact-cache 讀取閘：批次開（重用規則未變部分·零 token）；顯式重判關（使用者要求真的重打）
     client.set_llm_cache_read(cache_read)
     # 小批量 job 收集執行日誌（前端抽屜 SSE 即時檢視）；bind 後 copy_context 快照自動攜帶歸屬
@@ -425,6 +439,18 @@ def _run(
             db.insert_llm_usage_rows(usage_buf)
         except Exception:  # noqa: BLE001
             _log.debug("llm_usage flush 失敗 job=%s", job_id)
+        # P1b flex 回退量測：log 差值（fallbacks/attempts 即漏折扣占比；>5% 依計畫立項 Batch API lane）
+        fs = client.flex_stats()
+        att = fs["attempts"] - flex_before["attempts"]
+        fb = fs["fallbacks"] - flex_before["fallbacks"]
+        if att > 0:
+            _log.info(
+                "job=%s flex 統計 attempts=%d fallbacks=%d（回退率 %.1f%%）",
+                job_id,
+                att,
+                fb,
+                100.0 * fb / att,
+            )
         client.set_usage_context(None)
         try:  # 歸因歷史終態回寫（於 llm_usage flush 後，詳情頁 per-stage 明細即刻可查）
             snap = get_job(job_id)

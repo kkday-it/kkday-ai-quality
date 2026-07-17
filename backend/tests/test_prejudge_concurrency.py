@@ -34,7 +34,7 @@ def test_attrs_pack_single_domain_bounded_retry(monkeypatch) -> None:
     monkeypatch.setattr(prejudge, "_domain_retry", lambda: 1)
     calls: dict[str, int] = {}
 
-    def _fake_call(system, user, stage, model, *, schema, effort, label=None):
+    def _fake_call(system, user, stage, model, *, schema, effort, label=None, cache_key=None):
         calls[system] = calls.get(system, 0) + 1
         if "03_C-3" in system and calls[system] == 1:
             raise RuntimeError("boom")
@@ -50,7 +50,7 @@ def test_attrs_pack_domain_exhausts_retry_raises(monkeypatch) -> None:
     """單域連續失敗至耗盡 → 整筆 fail-loud（拋出，交批次層計 failed）。"""
     monkeypatch.setattr(prejudge, "_domain_retry", lambda: 1)
 
-    def _fake_call(system, user, stage, model, *, schema, effort, label=None):
+    def _fake_call(system, user, stage, model, *, schema, effort, label=None, cache_key=None):
         if "03_C-3" in system:
             raise RuntimeError("persistent")
         return {"attributions": [{"l2_code": "X", "confidence": 0.9}]}

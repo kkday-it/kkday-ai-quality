@@ -43,6 +43,12 @@ def _load() -> dict[str, dict]:
                 mid = m.get("id")
                 if mid and "input" in m and "output" in m:
                     table[mid] = {"input": float(m["input"]), "output": float(m["output"])}
+        # 根層 embeddings[]（域路由特徵模型；僅計價、不進聊天模型下拉）同樣收入單價表——
+        # 缺此段會令 embedding 用量回退 price_default（mini 級聊天價），高估 ~12x。
+        for m in cfg.get("embeddings", []):
+            mid = m.get("id")
+            if mid and "input" in m and "output" in m:
+                table[mid] = {"input": float(m["input"]), "output": float(m["output"])}
         _table = table
         _default = cfg.get("price_default") or {"input": 0.0, "output": 0.0}
     return _table

@@ -42,7 +42,12 @@ def _pack_env(monkeypatch, *, amin: float = 0.2):
             "title": pid,
             "system": f"SYS::{pid}",
             "user_template": "傾向：{POLARITY}\n{TEXT}",
-            "schema": {"type": "object"},
+            # 對齊現行 md schema（不含 abstain_reason——production 已移除，沙盒 overlay 才動態加）
+            "schema": {
+                "type": "object",
+                "properties": {"attributions": {}},
+                "required": ["attributions"],
+            },
             "taxonomy": {
                 "code": dom,
                 "label": dom,
@@ -75,7 +80,9 @@ def test_attrs_pack_merges_six_domains_and_dedups(monkeypatch):
     _pack_env(monkeypatch)
     text = "現場導遊態度很差全程臭臉"
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
+    def _fake_call(
+        system, user, stage, model, *, schema=None, effort=None, label=None, cache_key=None
+    ):
         # 僅供應商域 prompt 回一條；其餘五域回空陣列
         if "SYS::03_C-3_supplier" in system:
             return {
@@ -104,7 +111,9 @@ def test_attrs_pack_ranks_and_caps(monkeypatch):
     _pack_env(monkeypatch, amin=0.2)
     text = "導遊態度差而且行程表寫得不清楚"
 
-    def _fake_call(system, user, stage, model, *, schema=None, effort=None, label=None):
+    def _fake_call(
+        system, user, stage, model, *, schema=None, effort=None, label=None, cache_key=None
+    ):
         if "SYS::03_C-3_supplier" in system:
             return {
                 "attributions": [
@@ -139,3 +148,71 @@ def test_attrs_pack_stub_returns_empty(monkeypatch):
     _pack_env(monkeypatch)
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: True)
     assert prejudge._attrs_pack({}, "文字", "m", 2, "negative") == []
+
+
+def test_resolve_attrs_all_abstain_no_reason_collection(monkeypatch):
+    """六域全棄權 → 回 ([], "")——production 不收集棄權理由（abstain_reason 已自 md ## Schema
+    移除，2026-07-16 以最新 prompt 為準；棄權理由僅 Prompt 測試沙盒經診斷 overlay 提供）。"""
+    _pack_env(monkeypatch)
+
+    def _fake_call(
+        system, user, stage, model, *, schema=None, effort=None, label=None, cache_key=None
+    ):
+        # production schema 不含 abstain_reason（沙盒 overlay 才動態加）——回歸鎖
+        assert "abstain_reason" not in (schema.get("required") or [])
+        return {"attributions": []}
+
+    monkeypatch.setattr(prejudge, "_call", _fake_call)
+    attrs = prejudge._resolve_attrs_multi({}, "整體不太行", "gpt-5-mini", 2, "negative")
+    assert attrs == []
+
+
+def test_gated_out_candidates_yield_empty(monkeypatch):
+    """域有回歸因但低於 attr_min 被閘掉 → 回空清單。"""
+    _pack_env(monkeypatch, amin=0.5)
+
+    def _fake_call(
+        system, user, stage, model, *, schema=None, effort=None, label=None, cache_key=None
+    ):
+        if "SYS::01_C-1_content" in system:
+            return {
+                "attributions": [
+                    {
+                        "l2_code": "C-1-2",
+                        "confidence": 0.3,
+                        "summary": [{"lang": "zh-tw", "text": "行程描述"}],
+                        "evidence_quote": "行程表寫得不清楚",
+                    }
+                ]
+            }
+        return {"attributions": []}
+
+    monkeypatch.setattr(prejudge, "_call", _fake_call)
+    attrs = prejudge._resolve_attrs_multi({}, "行程表寫得不清楚", "gpt-5-mini", 2, "negative")
+    assert attrs == []  # 低於 attr_min 的候選被閘門刷掉，不成違規線
+
+
+def test_old_version_schema_without_field_degrades_gracefully(monkeypatch):
+    """pin 未含 abstain_reason 的舊版 → 不注入任何東西、不炸：理由記空（補救＝發版含欄版本）。"""
+    _pack_env(monkeypatch)
+
+    def _fake_load(pid: str, versions=None) -> dict:
+        return {
+            "title": pid,
+            "system": f"SYS::{pid}",
+            "user_template": "傾向：{POLARITY}\n{TEXT}",
+            "schema": {"type": "object"},
+        }
+
+    monkeypatch.setattr(prompt_source, "load", _fake_load)
+
+    def _fake_call(
+        system, user, stage, model, *, schema=None, effort=None, label=None, cache_key=None
+    ):
+        assert "abstain_reason" not in (schema.get("required") or [])  # 舊版原樣送出，零注入
+        assert "diagnostic_instructions" not in system
+        return {"attributions": []}
+
+    monkeypatch.setattr(prejudge, "_call", _fake_call)
+    attrs = prejudge._resolve_attrs_multi({}, "整體不太行", "gpt-5-mini", 2, "negative")
+    assert attrs == []
