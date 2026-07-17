@@ -25,17 +25,25 @@ const props = withDefaults(
 
 defineEmits<{ (e: 'cancel'): void }>();
 
-/** Arco 進度條狀態色：停止中橙 / 100% 綠 / 其餘藍。 */
+/** Arco 進度條狀態色：停止中橙 / 上傳雲端中藍（雖 100% 仍進行中）/ 100% 綠 / 其餘藍。 */
 const barStatus = computed(() =>
-  props.status === 'cancelling' ? 'warning' : props.pct >= 100 ? 'success' : 'normal',
+  props.status === 'cancelling'
+    ? 'warning'
+    : props.status !== 'uploading' && props.pct >= 100
+      ? 'success'
+      : 'normal',
 );
 
-/** 進度文字：準備中（total 未知）/ 停止中 / 已處理 N/總量。 */
+/** 進度文字：準備中（total 未知）/ 停止中 / 上傳雲端中 / 已處理 N/總量。 */
 const text = computed(() => {
   if (props.status === 'cancelling') return '停止中…';
+  if (props.status === 'uploading') return `${props.label}·上傳 Google Drive…`;
   if (!props.total) return `${props.label}·準備中…`;
   return `${props.label}·已處理 ${props.processed} / ${props.total}`;
 });
+
+/** 停止鈕停用：停止已送出、或已進上傳段（bytes 已組完，上傳無中斷點）。 */
+const stopDisabled = computed(() => props.status === 'cancelling' || props.status === 'uploading');
 </script>
 
 <template>
@@ -43,7 +51,7 @@ const text = computed(() => {
     <div class="flex items-center gap-3">
       <a-progress class="flex-1" :percent="pct / 100" :status="barStatus" />
       <a-popconfirm content="確定停止導出？已產生部分不保留，可稍後重新導出。" @ok="$emit('cancel')">
-        <a-button size="small" status="danger" :disabled="status === 'cancelling'">
+        <a-button size="small" status="danger" :disabled="stopDisabled">
           {{ status === 'cancelling' ? '停止中…' : '停止' }}
         </a-button>
       </a-popconfirm>

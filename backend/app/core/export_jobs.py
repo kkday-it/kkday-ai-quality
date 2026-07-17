@@ -12,10 +12,16 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Callable
 
 _log = logging.getLogger(__name__)
+
+# 終態 job 快照的保留時窗（秒）：download pop 即清；使用者放棄下載時靠 start_export 的
+# 惰性清掃回收，避免 in-mem registry 無界成長。
+_TERMINAL_TTL_SECONDS = 3600
+_TERMINAL_STATUSES = ("done", "error", "cancelled")
 
 # job_id → 進度快照（JSON-safe，供 SSE 直接序列化推送）。
 _jobs: dict[str, dict] = {}
@@ -73,6 +79,17 @@ def _new_snapshot(filename: str) -> dict:
     }
 
 
+def _mark_done(job_id: str) -> None:
+    """標 done 並收斂進度（total 未由 builder 設過時以 processed 收斂，避免前端卡 0%）。"""
+    snap = _jobs.get(job_id)
+    if snap is None:
+        return
+    snap["status"] = "done"
+    snap["done_at"] = time.time()
+    snap["total"] = snap["total"] or snap["processed"]
+    snap["processed"] = snap["total"]
+
+
 def _run(job_id: str, builder: Builder) -> None:
     """背景執行 builder：成功存 result bytes + 標 done；取消標 cancelled；其餘例外標 error。"""
     try:
@@ -82,10 +99,7 @@ def _run(job_id: str, builder: Builder) -> None:
             if snap is None:  # 已被取消清除
                 return
             _results[job_id] = data
-            snap["status"] = "done"
-            # total 未由 builder 設過時（如空資料）以 processed 收斂，避免前端卡在 0%
-            snap["total"] = snap["total"] or snap["processed"]
-            snap["processed"] = snap["total"]
+            _mark_done(job_id)
     except Cancelled:
         _set_status(job_id, "cancelled")
     except Exception as e:  # noqa: BLE001  整份導出級失敗 → 標 error 供前端停串流並提示
@@ -95,6 +109,7 @@ def _run(job_id: str, builder: Builder) -> None:
             if snap is not None:
                 snap["status"] = "error"
                 snap["error"] = str(e)
+                snap["done_at"] = time.time()
     finally:
         with _lock:
             _cancels.pop(job_id, None)
@@ -105,6 +120,20 @@ def _set_status(job_id: str, status: str) -> None:
     with _lock:
         if job_id in _jobs:
             _jobs[job_id]["status"] = status
+
+
+def _sweep_stale_jobs() -> None:
+    """惰性回收超過 TTL 的終態 job（快照 + 未被取走的 bytes）。呼叫端須持 _lock。"""
+    now = time.time()
+    for jid, snap in list(_jobs.items()):
+        if snap["status"] not in _TERMINAL_STATUSES:
+            continue
+        done_at = snap.get("done_at")
+        if done_at is None:  # 終態但無時戳（如 cancelled）：現在補上，一個 TTL 後回收
+            snap["done_at"] = now
+        elif now - done_at > _TERMINAL_TTL_SECONDS:
+            _jobs.pop(jid, None)
+            _results.pop(jid, None)
 
 
 def start_export(builder: Builder, filename: str) -> str:
@@ -119,6 +148,7 @@ def start_export(builder: Builder, filename: str) -> str:
     """
     job_id = f"ex_{uuid.uuid4().hex[:12]}"
     with _lock:
+        _sweep_stale_jobs()
         _jobs[job_id] = _new_snapshot(filename)
         _cancels[job_id] = threading.Event()
     threading.Thread(
@@ -134,7 +164,7 @@ def cancel_export(job_id: str) -> bool:
     """
     with _lock:
         snap = _jobs.get(job_id)
-        if snap is None or snap["status"] in ("done", "error", "cancelled"):
+        if snap is None or snap["status"] in _TERMINAL_STATUSES:
             return False
         snap["status"] = "cancelling"
         ev = _cancels.get(job_id)
