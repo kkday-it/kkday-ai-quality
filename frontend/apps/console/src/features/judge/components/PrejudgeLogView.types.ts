@@ -8,5 +8,7 @@ export interface LogEntry {
   message: string;
   /** 同一次 LLM 調用的分組鍵（polarity / C-1..C-6）；前端據此把 request/prompt/response 聚合成一個 tab。 */
   label?: string;
+  /** 所屬評論（source_id；後端 run_log.bind_item 蓋章）——批量日誌按評論分組的鍵；job 級事件與舊快照無此欄。 */
+  item_id?: string;
   data?: Record<string, unknown>;
 }

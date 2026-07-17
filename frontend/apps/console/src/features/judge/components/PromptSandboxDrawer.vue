@@ -203,8 +203,6 @@ const onTargetChange = () => {
 watch(promptArgs, onTargetChange);
 
 const activeTab = ref<'results' | 'log' | 'history'>('results');
-/** 左側選單目前顯示的面板；scope='single' 沒有「目標範圍」項，恆為 settings。 */
-const sandboxPanel = ref<'target' | 'settings'>('settings');
 /** 初判設定面板是否展開；預設收合，讓執行日誌/測試結果直接可見，不被設定區擠到下面。 */
 const settingsOpen = ref(false);
 const running = ref(false);
@@ -416,7 +414,6 @@ watch(
       return;
     }
     activeTab.value = 'results';
-    sandboxPanel.value = props.scope === 'all' ? 'target' : 'settings';
     settingsOpen.value = false;
     if (props.scope === 'all') {
       targets.openTargetPicker();
@@ -460,21 +457,10 @@ watch(
         floating
         panel-class="w-[560px] max-h-[70vh]"
       >
-        <a-menu
-          v-if="scope === 'all'"
-          :selected-keys="[sandboxPanel]"
-          class="mb-2 rounded border"
-          @menu-item-click="(k: string) => (sandboxPanel = k as 'target' | 'settings')"
-        >
-          <a-menu-item key="target">目標範圍</a-menu-item>
-          <a-menu-item key="settings">初判設定</a-menu-item>
-        </a-menu>
-
-        <!-- 目標範圍（scope='all'，比照初判分類目標選取；adhoc＝臨時貼 ID）。
-             兩個子面板用 v-show（非 v-if）常駐掛載：初判設定面板內的 PromptVersionPickerGroup
-             需要 onMounted 才會 emit 預設勾選——批量預設停在「目標範圍」，若用 v-if 該元件
-             不掛載，selectedCodes 恆空、「確認」永遠 disabled。 -->
-        <div v-show="sandboxPanel === 'target' && scope === 'all'">
+        <!-- 一頁化：目標範圍（scope='all' 專屬）＋初判設定順排全展開，無內層頁籤——開面板即見
+             全部配置。目標範圍比照初判分類目標選取；adhoc＝臨時貼 ID。 -->
+        <div v-if="scope === 'all'">
+          <a-divider orientation="left" :margin="12">目標範圍</a-divider>
           <div class="mb-2 flex items-center gap-3">
             <span class="text-xs text-[var(--color-text-3)]">範圍</span>
             <a-radio-group
@@ -532,9 +518,9 @@ watch(
           </div>
         </div>
 
-        <!-- 初判設定：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）；
-             scope='single' 恆顯示這裡（sandboxPanel 恆為 settings）。 -->
-        <div v-show="sandboxPanel === 'settings' || scope !== 'all'">
+        <!-- 初判設定（恆顯示）：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）。 -->
+        <div>
+          <a-divider orientation="left" :margin="12">初判設定</a-divider>
           <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" class="mb-2" />
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
             Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或 📝
@@ -703,7 +689,7 @@ watch(
                           item.polarity
                         }}</a-tag>
                       </div>
-                      <a-alert v-if="item.error" type="error" :content="item.error" />
+                      <a-alert v-if="item.error" type="error">{{ item.error }}</a-alert>
                       <SandboxPromptEntries v-else :prompts="item.prompts ?? []" />
                     </div>
                   </template>

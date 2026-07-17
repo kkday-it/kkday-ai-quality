@@ -139,6 +139,7 @@ def _one(
     （versions+drafts，草稿優先）——回 `{source_id, text, compare, baseline, draft}`；
     變體內不重複 source_id/text（item 級已有）。單跑維持 `sandbox_classify` 原形狀。
     """
+    run_log.bind_item(source_id)  # 本筆全部 emit（含各 prompt 的 LLM 三段）自動帶 item_id
     item = prompt_eval._build_sandbox_item(source, source_id)
     if not compare:
         return prompt_eval.sandbox_classify(

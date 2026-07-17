@@ -73,6 +73,18 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 當前 job 狀態（running/paused/cancelling/cancelled/done/error；由 SSE 權威更新，動作先樂觀設）。 */
   const jobStatus = ref('');
   const progress = ref({ processed: 0, total: 0, totalTokens: 0, costUsd: 0 });
+  /** 上一輪 job 的終態快照（僅 done/error/cancelled 寫入；連線中斷放手不寫＝避免假終態）。
+   *  finally 清空 jobId/jobStatus 後仍保留，供抽屜終態摘要卡與「查看 LLM 日誌」精準定位；
+   *  開新一輪（openPrejudge / rejudgeRow / openRowConfirm）起手清空。 */
+  const lastRun = ref<{
+    jobId: string;
+    status: string;
+    processed: number;
+    total: number;
+    totalTokens: number;
+    costUsd: number;
+    model: string;
+  } | null>(null);
   /** 本批失敗筆明細（SSE snapshot.failed_items；供顯示原因 + 「重新初判本批失敗筆」收 item_id）。 */
   const failedItems = ref<PrejudgeFailedItem[]>([]);
   /** 失敗筆超過後端上限、清單已截斷（只計數；重新初判仍以清單內可見者為準）。 */
@@ -199,6 +211,15 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       } else {
         // _poll 因連線持續失敗放手（非終態）：後端 job 可能仍在跑，勿假報成功
         Message.warning('進度連線中斷：任務可能仍在背景執行，稍後重新整理列表確認結果');
+      }
+      if (['done', 'error', 'cancelled'].includes(jobStatus.value)) {
+        // 終態快照存檔：finally 清 jobStatus 後抽屜靠它顯示結果摘要（非終態不寫＝避免假終態）
+        lastRun.value = {
+          jobId: r.job_id,
+          status: jobStatus.value,
+          ...progress.value,
+          model: r.model,
+        };
       }
       await reload(); // 重載當前頁（保持頁碼，就地看到結果）
     } catch (e: any) {
@@ -332,6 +353,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     // 避免使用者臨時加勾已初判階段卻沒選傾向時，把整庫已初判全數重新初判。
     draftFilters.polarity = hasSel ? [] : lf.polarity?.length ? [...lf.polarity] : ['negative'];
     lowConfOnly.value = !hasSel;
+    lastRun.value = null; // 開新一輪設定，清上一輪終態摘要（避免與新目標混看）
     confirmOpen.value = true;
     void refreshTargetCount();
   };
@@ -375,6 +397,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       Message.warning('批次初判進行中，請稍後再試');
       return;
     }
+    lastRun.value = null;
     _setBusy(id, true);
     jobStatus.value = 'running';
     progress.value = { processed: 0, total: 1, totalTokens: 0, costUsd: 0 };
@@ -387,6 +410,14 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       });
       _openLog(r.job_id);
       await _poll(r.job_id);
+      if (['done', 'error', 'cancelled'].includes(jobStatus.value)) {
+        lastRun.value = {
+          jobId: r.job_id,
+          status: jobStatus.value,
+          ...progress.value,
+          model: r.model,
+        };
+      }
       await reload();
       if (jobStatus.value === 'done') {
         Message.success(`已完成歸因（模型 ${r.model}）`);
@@ -427,6 +458,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     logEntries,
     logStreaming,
     logError,
+    lastRun,
     failedItems,
     failedTruncated,
     retryFailed,

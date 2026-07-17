@@ -183,6 +183,8 @@ def _work_one(
             source_id = str(item.get(spec.natural_key) or "") if spec else ""
             # per-item 用量情境（worker 自身 copied context，隔離）：附 source_id 供 llm_usage 落庫歸戶
             client.set_usage_context({"job_id": job_id, "source": src, "source_id": source_id})
+            # 日誌 item 歸屬蓋章：本筆全部 emit（含六域 ThreadPool 內的 LLM 三段）自動帶 item_id
+            run_log.bind_item(source_id or str(item.get("item_id", "")))
             norm = dict(item)
             norm["source"] = src
             norm["source_id"] = source_id

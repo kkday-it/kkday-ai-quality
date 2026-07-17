@@ -74,6 +74,16 @@ const canExport = computed(() => can(PERM.problemListExport));
 const PrejudgeRunsDrawer = defineAsyncComponent(
   () => import('../components/PrejudgeRunsDrawer.vue'),
 );
+// 終態摘要卡「查看 LLM 日誌」目標（點開才載；歷史快照回看專用，大批量無快照時元件自帶說明）
+const PrejudgeLogDrawer = defineAsyncComponent(() => import('../components/PrejudgeLogDrawer.vue'));
+const logDrawerVisible = ref(false);
+const logDrawerJobId = ref('');
+/** 終態摘要卡「查看 LLM 日誌」：以 lastRun.jobId 精準開啟該次 job 的日誌快照。 */
+const openLastRunLog = () => {
+  if (!lastRun.value) return;
+  logDrawerJobId.value = lastRun.value.jobId;
+  logDrawerVisible.value = true;
+};
 const runsDrawerVisible = ref(false);
 
 // 歸因歷史抽屜（評論級時間軸：初判快照/判決轉移/備註；點開才載）
@@ -128,6 +138,7 @@ const {
   logEntries,
   logStreaming,
   logError,
+  lastRun,
   failedItems,
   failedTruncated,
   retryFailed,
@@ -183,8 +194,6 @@ const onRejudge = async (id: string, promptVersions?: Record<string, number>) =>
 //    confirmScope 分流內容顯示；confirmRowId 僅 scope='row' 時有值 ──
 const confirmScope = ref<'batch' | 'row'>('batch');
 const confirmRowId = ref('');
-/** 左側選單目前顯示的面板；row scope 沒有「目標範圍」項，恆為 settings。 */
-const confirmPanel = ref<'target' | 'settings'>('target');
 /** 初判設定/目標範圍面板是否展開。開抽屜時預設**展開**——「確認」按鈕收在面板 footer 內
  * （面板＝確認表單），預設收合會把主行為藏起來多一次點擊；確認後自動收合改看執行日誌。 */
 const confirmSettingsOpen = ref(false);
@@ -192,15 +201,14 @@ const confirmVersionSelection = ref<{ versions: Record<string, number> }>({ vers
 const openRowConfirm = (record: { _group: unknown }) => {
   confirmScope.value = 'row';
   confirmRowId.value = String(record._group);
-  confirmPanel.value = 'settings';
   confirmSettingsOpen.value = true;
   logEntries.value = []; // 清掉上一次執行殘留的日誌，避免誤讀成本次結果
   logError.value = '';
+  lastRun.value = null; // 新一輪確認流程開始，清上一輪終態摘要
   confirmOpen.value = true;
 };
 const openBatchConfirm = () => {
   confirmScope.value = 'batch';
-  confirmPanel.value = 'target';
   confirmSettingsOpen.value = true;
   logEntries.value = [];
   logError.value = '';
@@ -478,6 +486,9 @@ onMounted(init);
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <PrejudgeRunsDrawer v-model:visible="runsDrawerVisible" />
 
+  <!-- 終態摘要卡「查看 LLM 日誌」目標（歷史快照回看；懶載）-->
+  <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
+
   <!-- 歸因歷史抽屜（評論級時間軸；懶載）-->
   <AttributionHistoryDrawer v-model:visible="historyOpen" :source="source" :row="historyRow" />
 
@@ -508,39 +519,6 @@ onMounted(init);
         >
       </div>
     </a-alert>
-    <!-- 初判歸因進度：批量初判進行中才顯示（控制列已移入工具列橫帶）-->
-    <div v-if="running" class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
-      <div class="flex items-center gap-3">
-        <a-progress
-          class="flex-1"
-          :percent="progressPct / 100"
-          :status="jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'"
-        />
-        <!-- 一鍵暫停/恢復/停止：依 jobStatus 切換 -->
-        <a-button v-if="jobStatus === 'paused'" size="small" type="primary" @click="resumeJob">
-          恢復
-        </a-button>
-        <a-button v-else size="small" :disabled="jobStatus === 'cancelling'" @click="pauseJob">
-          暫停
-        </a-button>
-        <a-popconfirm
-          content="確定停止？僅取消『尚未派發』的初判；已在進行的會判完（無法中途中斷）。故小批量可能已全部派發、停止近乎無效。已初判結果保留，剩餘可稍後重跑。"
-          @ok="cancelJob"
-        >
-          <a-button size="small" status="danger" :disabled="jobStatus === 'cancelling'">
-            {{ jobStatus === 'cancelling' ? '停止中…' : '停止' }}
-          </a-button>
-        </a-popconfirm>
-      </div>
-      <div class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500">
-        <span>
-          {{ jobStatus === 'paused' ? '已暫停' : jobStatus === 'cancelling' ? '停止中' : '已處理' }}
-          {{ progress.processed }} / {{ progress.total }} 筆…
-        </span>
-        <span v-if="costText">花費 {{ costText }}</span>
-      </div>
-    </div>
-
     <!-- 導出實時進度：導出進行中才顯示（背景 job + SSE，可停止）-->
     <ExportProgressBar
       v-if="exporting"
@@ -1058,7 +1036,8 @@ onMounted(init);
       <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
         <!-- 左側收合軌 + 懸浮初判設定面板 + 主內容：面板用絕對定位懸浮在觸發 tab 右側（不佔版面
              寬度、不推擠內容），收合狀態下摘要卡／執行日誌直接貼齊左側 tab 顯示；面板本身用
-             v-show（非 v-if）保持掛載，PromptVersionPickerGroup 的預設值/emit 即使收合也立即生效。 -->
+             v-show（非 v-if）保持掛載，PromptVersionPickerGroup 的預設值/emit 即使收合也立即生效；
+             面板內容一頁化（目標範圍＋初判設定順排全展開，無內層頁籤，開面板即見全部配置）。 -->
         <div class="flex min-h-0 flex-1 gap-3 overflow-hidden">
           <CollapsibleSidePanel
             v-model="confirmSettingsOpen"
@@ -1066,17 +1045,8 @@ onMounted(init);
             floating
             panel-class="w-[560px] max-h-[70vh]"
           >
-            <a-menu
-              v-if="confirmScope === 'batch'"
-              :selected-keys="[confirmPanel]"
-              class="mb-3 rounded border"
-              @menu-item-click="(k: string) => (confirmPanel = k as 'target' | 'settings')"
-            >
-              <a-menu-item key="target">目標範圍</a-menu-item>
-              <a-menu-item key="settings">初判設定</a-menu-item>
-            </a-menu>
-
-            <template v-if="confirmPanel === 'target' && confirmScope === 'batch'">
+            <template v-if="confirmScope === 'batch'">
+              <a-divider orientation="left" :margin="12">目標範圍</a-divider>
               <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
               <div v-if="runCount" class="mb-3 flex items-center gap-2">
                 <span class="text-xs text-gray-500">選取範圍</span>
@@ -1126,19 +1096,16 @@ onMounted(init);
               </div>
             </template>
 
-            <template v-else>
-              <div class="flex flex-col gap-3">
-                <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
-                <div>
-                  <div class="mb-1 text-xs text-gray-500">
-                    Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
-                  </div>
-                  <PromptVersionPickerGroup
-                    @update:resolved="(v) => (confirmVersionSelection = v)"
-                  />
+            <a-divider orientation="left" :margin="12">初判設定</a-divider>
+            <div class="flex flex-col gap-3">
+              <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
+              <div>
+                <div class="mb-1 text-xs text-gray-500">
+                  Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
                 </div>
+                <PromptVersionPickerGroup @update:resolved="(v) => (confirmVersionSelection = v)" />
               </div>
-            </template>
+            </div>
 
             <!-- 動作列收在面板內（面板＝確認表單）：取消＝收合面板（不關抽屜）；確認＝依 scope
                  分流執行並自動收合面板改看執行日誌。 -->
@@ -1189,26 +1156,98 @@ onMounted(init);
                 token，執行日誌即時顯示於下方。
               </div>
             </div>
-            <!-- 進度列：確認後即時反映（單列/批量都寫共用 jobStatus/progress，見 usePrejudgeJob）-->
-            <div
-              v-if="jobStatus"
-              class="flex flex-none items-center gap-3 rounded-lg border px-3 py-2"
-            >
-              <a-progress
-                class="flex-1"
-                size="small"
-                :percent="progressPct / 100"
-                :status="
-                  jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'
-                "
-              />
+            <!-- 進度列（執行中）：單列/批量共用 jobStatus/progress（見 usePrejudgeJob）；
+                 暫停/恢復/停止僅批量顯示（running＝batch 專屬旗標，單列 job 無控制意義）。 -->
+            <div v-if="jobStatus" class="flex flex-none flex-col gap-1 rounded-lg border px-3 py-2">
+              <div class="flex items-center gap-3">
+                <a-progress
+                  class="flex-1"
+                  size="small"
+                  :percent="progressPct / 100"
+                  :status="
+                    jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'
+                  "
+                />
+                <template v-if="running">
+                  <a-button
+                    v-if="jobStatus === 'paused'"
+                    size="mini"
+                    type="primary"
+                    @click="resumeJob"
+                  >
+                    恢復
+                  </a-button>
+                  <a-button
+                    v-else
+                    size="mini"
+                    :disabled="jobStatus === 'cancelling'"
+                    @click="pauseJob"
+                  >
+                    暫停
+                  </a-button>
+                  <a-popconfirm
+                    content="確定停止？僅取消『尚未派發』的初判；已在進行的會判完（無法中途中斷）。故小批量可能已全部派發、停止近乎無效。已初判結果保留，剩餘可稍後重跑。"
+                    @ok="cancelJob"
+                  >
+                    <a-button size="mini" status="danger" :disabled="jobStatus === 'cancelling'">
+                      {{ jobStatus === 'cancelling' ? '停止中…' : '停止' }}
+                    </a-button>
+                  </a-popconfirm>
+                </template>
+              </div>
               <span class="text-xs text-[var(--color-text-3)]">
-                已處理 {{ progress.processed }}/{{ progress.total }}
+                {{
+                  jobStatus === 'paused'
+                    ? '已暫停'
+                    : jobStatus === 'cancelling'
+                      ? '停止中'
+                      : '已處理'
+                }}
+                {{ progress.processed }}/{{ progress.total }} 筆
                 <template v-if="costText"> · {{ costText }}</template>
               </span>
             </div>
+            <!-- 終態摘要卡：上一輪已結束且未開新一輪（jobStatus 已清、lastRun 留存）——
+                 讓「跑完發生了什麼」留在畫面上，不只靠一閃而過的 toast。 -->
+            <div v-else-if="lastRun" class="flex flex-none flex-col gap-2 rounded-lg border p-3">
+              <div class="flex items-center gap-2">
+                <a-tag
+                  size="small"
+                  :color="
+                    lastRun.status === 'done'
+                      ? 'green'
+                      : lastRun.status === 'error'
+                        ? 'red'
+                        : 'gray'
+                  "
+                >
+                  {{
+                    lastRun.status === 'done'
+                      ? '完成'
+                      : lastRun.status === 'error'
+                        ? '失敗'
+                        : '已停止'
+                  }}
+                </a-tag>
+                <span class="text-sm">已處理 {{ lastRun.processed }}/{{ lastRun.total }} 筆</span>
+              </div>
+              <div class="text-xs text-[var(--color-text-3)]">
+                模型 {{ lastRun.model }}
+                <template v-if="lastRun.totalTokens">
+                  · {{ lastRun.totalTokens.toLocaleString() }} tokens · ≈ ${{
+                    lastRun.costUsd.toFixed(4)
+                  }}
+                </template>
+              </div>
+              <div class="flex gap-2">
+                <a-button size="mini" type="text" @click="openLastRunLog">查看 LLM 日誌</a-button>
+                <a-button size="mini" type="text" @click="runsDrawerVisible = true">
+                  查看初判紀錄
+                </a-button>
+              </div>
+            </div>
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
-              <a-alert v-if="logError" type="warning" :content="logError" class="flex-none" />
+              <a-alert v-if="logError" type="info" class="flex-none">{{ logError }}</a-alert>
               <div class="min-h-0 flex-1 overflow-hidden">
                 <PrejudgeLogView :entries="logEntries" :streaming="logStreaming" />
               </div>

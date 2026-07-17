@@ -43,7 +43,7 @@ const rightEntries = computed(() => entriesOf(props.right));
         <div class="mb-1 text-xs font-medium text-[var(--color-text-3)]">
           {{ leftLabel }}<template v-if="left?.polarity"> · {{ left.polarity }}</template>
         </div>
-        <a-alert v-if="left?.error" type="error" :content="left.error" />
+        <a-alert v-if="left?.error" type="error">{{ left.error }}</a-alert>
         <SandboxPromptEntries
           v-else-if="left"
           :prompts="leftEntries"
@@ -56,7 +56,7 @@ const rightEntries = computed(() => entriesOf(props.right));
         <div class="mb-1 text-xs font-medium text-[var(--color-text-3)]">
           {{ rightLabel }}<template v-if="right?.polarity"> · {{ right.polarity }}</template>
         </div>
-        <a-alert v-if="right?.error" type="error" :content="right.error" />
+        <a-alert v-if="right?.error" type="error">{{ right.error }}</a-alert>
         <SandboxPromptEntries
           v-else-if="right"
           :prompts="rightEntries"

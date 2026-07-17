@@ -294,6 +294,11 @@ const statusText = (e: AttributionHistoryEntry): string => {
     </div>
 
     <!-- 「查看 LLM 日誌」：讀落庫快照的歷史回看模式（與初判分類即時抽屜共用同一元件）-->
-    <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
+    <!-- 單評論視角：帶 item-id 過濾批量快照，直達本則評論的日誌（批量抽屜入口不帶＝整批視角） -->
+    <PrejudgeLogDrawer
+      v-model:visible="logDrawerVisible"
+      :job-id="logDrawerJobId"
+      :item-id="sourceId"
+    />
   </a-drawer>
 </template>
