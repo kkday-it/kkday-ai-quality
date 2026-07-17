@@ -1,4 +1,4 @@
-/** 後端 run_log.emit 的條目形狀（backend/app/judge/run_log.py）；`PrejudgeLogDrawer`（判決歷史回看落庫快照）
+/** 後端 run_log.emit 的條目形狀（backend/app/judge/run_log.py）；`PrejudgeLogDrawer`（歸因歷史回看落庫快照）
  * 與 Prompt 測試沙盒（即時 SSE + 歷史回看 log 快照）共用同一形狀，供 `PrejudgeLogView` 渲染。 */
 export interface LogEntry {
   ts: number;

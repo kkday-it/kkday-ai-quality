@@ -1,5 +1,5 @@
 import { ref, computed, watch, toValue, type MaybeRefOrGetter } from 'vue';
-import { getAttributionOverview, getAttributionBreakdown, getJudgmentModels } from '@/api';
+import { getAttributionOverview, getAttributionBreakdown, getPrejudgeModels } from '@/api';
 import { useVerticalFilterStore } from '@/stores';
 import { buildDonutOption, buildBarOption, buildTrendOption } from '@/shared/charts';
 import {
@@ -69,13 +69,13 @@ export function useAttributionDashboard(
   const onVerticalChange = (v: unknown) =>
     verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
 
-  // 判決模型篩選（工具列多選；judgments.model IN——當前判決維度）。空＝不篩選。
-  // ⚠️ 語義：套用後 judged 變「所選模型的判決覆蓋數」，與總反饋差額含「他模型判過」非皆未判
+  // 初判模型篩選（工具列多選；attributions.model IN——當前初判維度）。空＝不篩選。
+  // ⚠️ 語義：套用後 judged 變「所選模型的初判覆蓋數」，與總反饋差額含「他模型判過」非皆未初判
   //（KPI 文案由頁面依 modelFiltered 揭露）。
   const modelFilter = ref<string[]>([]);
-  /** 判決模型選項（歷來實際判過的模型；載一次）；失敗回空不阻斷概覽。 */
+  /** 初判模型選項（歷來實際判過的模型；載一次）；失敗回空不阻斷概覽。 */
   const modelOptions = ref<{ value: string; label: string }[]>([]);
-  getJudgmentModels()
+  getPrejudgeModels()
     .then((models) => {
       modelOptions.value = models.map((m) => ({
         value: m,
@@ -85,7 +85,7 @@ export function useAttributionDashboard(
     .catch(() => {
       modelOptions.value = [];
     });
-  /** 是否已套用判決模型篩選（KPI 文案揭露口徑用）。 */
+  /** 是否已套用初判模型篩選（KPI 文案揭露口徑用）。 */
   const modelFiltered = computed(() => modelFilter.value.length > 0);
   const effModel = () => (modelFilter.value.length ? [...modelFilter.value] : undefined);
 
@@ -181,7 +181,7 @@ export function useAttributionDashboard(
       toValue(query.dateTo),
       toValue(query.granularity),
       verticalFilter.activeGroups, // 全局垂直分類變更 → 縱覽同步重載
-      modelFilter.value, // 判決模型篩選變更 → 重載
+      modelFilter.value, // 初判模型篩選變更 → 重載
     ],
     reload,
     { immediate: true },
@@ -189,7 +189,7 @@ export function useAttributionDashboard(
 
   const hasData = computed(() => !!data.value && data.value.total_intake > 0);
 
-  /** KPI：問題占比 / 自動採信率以「已判」為分母（未判不計入比率語義）。 */
+  /** KPI：問題占比 / 自動採信率以「已初判」為分母（未初判不計入比率語義）。 */
   const kpi = computed(() => {
     const d = data.value;
     if (!d) return null;
@@ -253,7 +253,7 @@ export function useAttributionDashboard(
     const neg = d.by_polarity.find((p) => p.polarity === 'negative')?.n ?? 0;
     return buildAttrFunnelOption([
       { name: '反饋', value: d.total_intake },
-      { name: '已判', value: d.judged },
+      { name: '已初判', value: d.judged },
       { name: POLARITY_LABELS.negative, value: neg },
       { name: '已歸因', value: d.attributed },
     ]);
@@ -280,7 +280,7 @@ export function useAttributionDashboard(
       unit: '筆',
       months: data.value?.trend.months ?? [],
       series: [
-        { name: '已判', data: data.value?.trend.judged ?? [] },
+        { name: '已初判', data: data.value?.trend.judged ?? [] },
         { name: POLARITY_LABELS.negative, data: data.value?.trend.negative ?? [] },
       ],
     }),
@@ -304,7 +304,7 @@ export function useAttributionDashboard(
     verticalOptions,
     verticalGroups,
     onVerticalChange,
-    // 判決模型篩選（縱覽工具列；當前判決維度）
+    // 初判模型篩選（縱覽工具列；當前初判維度）
     modelFilter,
     modelOptions,
     modelFiltered,

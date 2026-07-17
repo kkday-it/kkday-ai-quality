@@ -4,13 +4,13 @@
 （content/quality/supplier/platform/service/customer）、分類樹（facets/層級）＋域中文名／action／owner
 ／evidence_gated 全來自各域 prompt 的 `## Taxonomy` root。判準
 例句（✅❌/正反例）為 prompt `<domain_boundary>` prose，供 LLM 直接讀，本模組不攜帶；僅建「分類結構」
-索引（域/面向 code↔label、級聯樹、evidence_gated），供歸因列表篩選、judgments 顯示、`_l2_label_map`
+索引（域/面向 code↔label、級聯樹、evidence_gated），供歸因列表篩選、attributions 顯示、`_l2_label_map`
 等消費端查詢。
 
-深度：僅 L1（域）→ L2（面向）二層（判決引擎 prompt_pack 只判到 L2）。
+深度：僅 L1（域）→ L2（面向）二層（初判引擎 prompt_pack 只判到 L2）。
 
 快取：首次存取時 lazy 載入並快取於模組級變數；reload() 連動清空 prompt_source 快取後重建，保證
-「prompt 存檔／恢復默認／批次判決入口重載」時分類結構與判決 prompt 同步刷新（不會一邊新一邊舊）。
+「prompt 存檔／恢復默認／批次初判入口重載」時分類結構與初判 prompt 同步刷新（不會一邊新一邊舊）。
 """
 
 from __future__ import annotations
@@ -120,7 +120,7 @@ def _build_cascade(node: dict[str, Any], *, root: bool) -> dict[str, Any]:
 
 
 def reload() -> None:
-    """清空快取並重載（prompt 存檔／恢復默認／批次判決入口後呼叫，使分類結構即時反映新版）。
+    """清空快取並重載（prompt 存檔／恢復默認／批次初判入口後呼叫，使分類結構即時反映新版）。
 
     連動清空 `prompt_source` 的 md 解析快取（結構派生自它）——保證兩者一起刷新，不會結構已重載但
     prompt 文字仍是舊快取（曾是缺口：prejudge_batch._reload_judge_rules 只 reload ai_judge，未連動
@@ -172,7 +172,7 @@ def domain_action(code: str) -> str:
 def domain_owner(code: str) -> str:
     """域 code → 負責單位（自各域 `## Taxonomy` root owner，如 AM / 客服）；未設回空字串（前端空則不顯示）。
 
-    值為業務配置（禁自創）：於該域 prompt `## Taxonomy` root 填入 owner，reload 後即流通到判決 judges；
+    值為業務配置（禁自創）：於該域 prompt `## Taxonomy` root 填入 owner，reload 後即流通到初判 judges；
     未填時 owner 恆空，前端不顯示負責單位標籤。
     """
     _ensure_loaded()

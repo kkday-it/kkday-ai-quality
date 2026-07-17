@@ -1,4 +1,4 @@
-// 判決規則狀態（product_vertical/source_mapping + prompt_* 的 active content / dirty / 歷史 / 存檔恢復）。
+// 初判規則狀態（product_vertical/source_mapping + prompt_* 的 active content / dirty / 歷史 / 存檔恢復）。
 // 檔案＝默認 seed，DB＝live+歷史；所有寫操作走後端版本化，store 只持有當前選中 rule 的編輯態。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';

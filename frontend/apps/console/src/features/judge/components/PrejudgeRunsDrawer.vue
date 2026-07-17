@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * 歸因歷史抽屜：每次觸發 LLM 歸因（批量初判 / 選取多筆 / 單筆重判）一列。
+ * 歸因歷史抽屜：每次觸發 LLM 歸因（批量初判 / 選取多筆 / 單筆重新初判）一列。
  *
- * 列表走 /v1/judgment/runs（server 分頁；執行中列由後端 overlay 即時進度），展開行懶載
- * /v1/judgment/runs/{job_id} 取 per-stage LLM 用量明細（呼叫數 / token / reasoning / 快取 / 費用）
+ * 列表走 /v1/prejudge/runs（server 分頁；執行中列由後端 overlay 即時進度），展開行懶載
+ * /v1/prejudge/runs/{job_id} 取 per-stage LLM 用量明細（呼叫數 / token / reasoning / 快取 / 費用）
  * 與發起參數快照。開啟且有執行中 run 時每 3s 自動刷新（useIntervalFn）。
  */
 import { computed, reactive, ref, watch } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
-import { getJudgmentRun, listJudgmentRuns, type JudgmentRun, type JudgmentRunStage } from '@/api';
+import { getPrejudgeRun, listPrejudgeRuns, type PrejudgeRun, type PrejudgeRunStage } from '@/api';
 import { TableLayout } from '@/components';
 import { DEFAULT_PAGE_SIZE, SOURCE_LABEL } from '../constants';
 import { fmtDt } from '../utils';
@@ -16,7 +16,7 @@ import { fmtDt } from '../utils';
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 
-/** 觸發型態 → 顯示 label / tag 色（三型分色一眼可辨；紫留給「重判」）。 */
+/** 觸發型態 → 顯示 label / tag 色（三型分色一眼可辨；紫留給「重新初判」）。 */
 const KIND_LABEL: Record<string, string> = { batch: '批量', selected: '選取', single: '單筆' };
 const KIND_COLOR: Record<string, string> = { batch: 'arcoblue', selected: 'gold', single: 'cyan' };
 const STATUS_LABEL: Record<string, string> = {
@@ -40,18 +40,18 @@ const STATUS_COLOR: Record<string, string> = {
 
 const loading = ref(false);
 const error = ref('');
-const rows = ref<JudgmentRun[]>([]);
+const rows = ref<PrejudgeRun[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(DEFAULT_PAGE_SIZE);
 // 展開行懶載的詳情快取（job_id → stages+params；失敗存 error 字串供行內顯示）
-const details = reactive<Record<string, { stages: JudgmentRunStage[] } | { error: string }>>({});
+const details = reactive<Record<string, { stages: PrejudgeRunStage[] } | { error: string }>>({});
 
 const load = async () => {
   loading.value = true;
   error.value = '';
   try {
-    const data = await listJudgmentRuns({
+    const data = await listPrejudgeRuns({
       limit: pageSize.value,
       offset: (page.value - 1) * pageSize.value,
     });
@@ -89,14 +89,14 @@ const onExpand = async (rowKey: string | number) => {
   const id = String(rowKey);
   if (details[id]) return;
   try {
-    details[id] = { stages: (await getJudgmentRun(id)).stages };
+    details[id] = { stages: (await getPrejudgeRun(id)).stages };
   } catch (e) {
     details[id] = { error: e instanceof Error ? e.message : String(e) };
   }
 };
 
 /** 展開行詳情取值 helper（模板免型別窄化 cast）。 */
-const stagesOf = (id: string): JudgmentRunStage[] | null => {
+const stagesOf = (id: string): PrejudgeRunStage[] | null => {
   const d = details[id];
   return d && 'stages' in d ? d.stages : null;
 };
@@ -109,7 +109,7 @@ const fmtTokens = (n: number | null) => (n == null ? '—' : n.toLocaleString())
 const fmtCost = (v: number | null) => (v == null ? '—' : `$${v.toFixed(4)}`);
 
 /** run 耗時（終態＝迄-起；執行中＝至今）；<1s 顯示 <1s。 */
-const fmtDuration = (r: JudgmentRun) => {
+const fmtDuration = (r: PrejudgeRun) => {
   const end = r.finished_at ? new Date(r.finished_at).getTime() : Date.now();
   const sec = Math.round((end - new Date(r.started_at).getTime()) / 1000);
   if (sec < 1) return '<1s';
@@ -118,7 +118,7 @@ const fmtDuration = (r: JudgmentRun) => {
 };
 
 /** 發起參數快照 → 人話摘要（只列有值且對追溯有意義的鍵）。 */
-const paramsSummary = (r: JudgmentRun) => {
+const paramsSummary = (r: PrejudgeRun) => {
   const p = r.params || {};
   const parts: string[] = [];
   if (Array.isArray(p.stages) && p.stages.length)
@@ -142,7 +142,7 @@ const paramsSummary = (r: JudgmentRun) => {
     unmount-on-close
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
-    <template #title>歸因歷史（每次批量 / 選取 / 單筆重判的 LLM 使用紀錄）</template>
+    <template #title>歸因歷史（每次批量 / 選取 / 單筆重新初判的 LLM 使用紀錄）</template>
 
     <!-- 內建表格模式：滿高首尾固定 + server 分頁（含「全部」）+ error 表上方顯示 -->
     <TableLayout
@@ -169,7 +169,7 @@ const paramsSummary = (r: JudgmentRun) => {
             <a-tag size="small" :color="KIND_COLOR[record.kind] || 'gray'">{{
               KIND_LABEL[record.kind] || record.kind
             }}</a-tag>
-            <a-tag v-if="record.rejudge" size="small" color="purple" class="ml-1">重判</a-tag>
+            <a-tag v-if="record.rejudge" size="small" color="purple" class="ml-1">重新初判</a-tag>
           </template>
         </a-table-column>
         <a-table-column title="反饋來源" :width="96">

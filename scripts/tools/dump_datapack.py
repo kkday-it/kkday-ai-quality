@@ -10,7 +10,7 @@
 用法：
   python scripts/tools/dump_datapack.py                      # → data/exports/datapack_<ts>.zip（不含敏感表）
   python scripts/tools/dump_datapack.py --include-sensitive  # 併入 users / user_settings
-  python scripts/tools/dump_datapack.py --tables judgments,product_reviews
+  python scripts/tools/dump_datapack.py --tables attributions,product_reviews
   python scripts/tools/dump_datapack.py --out /path/to/x.zip
 """
 

@@ -74,7 +74,12 @@ export function buildTrendOption(trend: TrendData) {
     tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${v}${trend.unit}` },
     legend: { bottom: 0, textStyle: { color: C.gray, fontSize: 12 } },
     grid: { left: 8, right: 16, top: 16, bottom: 36, containLabel: true },
-    xAxis: { type: 'category', boundaryGap: false, data: trend.months, axisLine: { lineStyle: { color: C.line } } },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: trend.months,
+      axisLine: { lineStyle: { color: C.line } },
+    },
     yAxis: {
       type: 'value',
       axisLabel: { formatter: `{value}${trend.unit}`, color: C.gray },
@@ -88,13 +93,19 @@ export function buildTrendOption(trend: TrendData) {
  * 商品類別覆蓋橫向堆疊長條（Tier2 + Tier3 數量）。
  * @param rows 類別覆蓋列
  */
-export function buildCoverageOption(rows: { prod: string; tier2: number; tier3: number; color: string }[]) {
+export function buildCoverageOption(
+  rows: { prod: string; tier2: number; tier3: number; color: string }[],
+) {
   const prods = rows.map((r) => r.prod);
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     legend: { bottom: 0, data: ['Tier2', 'Tier3'], textStyle: { color: C.gray } },
     grid: { left: 8, right: 24, top: 12, bottom: 36, containLabel: true },
-    xAxis: { type: 'value', splitLine: { lineStyle: { color: C.line } }, axisLabel: { color: C.gray } },
+    xAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: C.line } },
+      axisLabel: { color: C.gray },
+    },
     yAxis: { type: 'category', data: prods, axisLabel: { color: '#4e5969', fontWeight: 600 } },
     series: [
       {
@@ -123,7 +134,13 @@ export function buildCoverageOption(rows: { prod: string; tier2: number; tier3: 
 export function buildDonutOption(data: IntakeBreakdown) {
   return {
     tooltip: { trigger: 'item', valueFormatter: (v: number) => `${v}${data.unit}` },
-    legend: { type: 'scroll', orient: 'vertical', right: 8, top: 'center', textStyle: { color: C.gray, fontSize: 12 } },
+    legend: {
+      type: 'scroll',
+      orient: 'vertical',
+      right: 8,
+      top: 'center',
+      textStyle: { color: C.gray, fontSize: 12 },
+    },
     series: [
       {
         type: 'pie',
@@ -133,7 +150,11 @@ export function buildDonutOption(data: IntakeBreakdown) {
         itemStyle: { borderColor: '#fff', borderWidth: 2 },
         label: { formatter: '{d}%', fontSize: 11, color: '#4e5969' },
         labelLine: { length: 8, length2: 8 },
-        data: data.items.map((it) => ({ name: it.name, value: it.value, itemStyle: { color: it.color } })),
+        data: data.items.map((it) => ({
+          name: it.name,
+          value: it.value,
+          itemStyle: { color: it.color },
+        })),
       },
     ],
   };
@@ -159,7 +180,11 @@ export function buildFunnelOption(data: ReviewFunnel) {
         gap: 2,
         label: { position: 'inside', formatter: '{b}：{c}%', color: '#fff', fontSize: 12 },
         itemStyle: { borderColor: '#fff', borderWidth: 1 },
-        data: data.stages.map((s, i) => ({ name: s.name, value: s.value, itemStyle: { color: palette[i % palette.length] } })),
+        data: data.stages.map((s, i) => ({
+          name: s.name,
+          value: s.value,
+          itemStyle: { color: palette[i % palette.length] },
+        })),
       },
     ],
   };
@@ -203,7 +228,9 @@ export function buildGaugeOption(g: GaugeData) {
           rich: { v: { fontSize: 24, fontWeight: 700, color: reached ? C.green : C.primary } },
           offsetCenter: [0, '58%'],
         },
-        data: [{ value: g.value, name: typeof g.target === 'number' ? `目標 ${g.target}${g.unit}` : '' }],
+        data: [
+          { value: g.value, name: typeof g.target === 'number' ? `目標 ${g.target}${g.unit}` : '' },
+        ],
       },
     ],
   };
@@ -217,7 +244,11 @@ export function buildBarOption(d: BarData) {
   const names = d.items.map((it) => it.name);
   const hasTarget = typeof d.target === 'number';
   return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (v: number) => `${v}${d.unit}` },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      valueFormatter: (v: number) => `${v}${d.unit}`,
+    },
     grid: { left: 8, right: 28, top: 12, bottom: hasTarget ? 28 : 12, containLabel: true },
     xAxis: {
       type: 'value',
@@ -230,15 +261,29 @@ export function buildBarOption(d: BarData) {
       {
         type: 'bar',
         barWidth: 16,
-        data: d.items.map((it) => ({ value: it.value, itemStyle: { color: it.color ?? C.primary, borderRadius: [0, 3, 3, 0] } })),
-        label: { show: true, position: 'right', formatter: `{c}${d.unit}`, color: C.gray, fontSize: 11 },
+        data: d.items.map((it) => ({
+          value: it.value,
+          itemStyle: { color: it.color ?? C.primary, borderRadius: [0, 3, 3, 0] },
+        })),
+        label: {
+          show: true,
+          position: 'right',
+          formatter: `{c}${d.unit}`,
+          color: C.gray,
+          fontSize: 11,
+        },
         ...(hasTarget
           ? {
               markLine: {
                 silent: true,
                 symbol: 'none',
                 lineStyle: { type: 'dashed', color: C.red, width: 1.5 },
-                label: { formatter: `目標 ${d.target}${d.unit}`, color: C.red, fontSize: 11, position: 'insideEndTop' },
+                label: {
+                  formatter: `目標 ${d.target}${d.unit}`,
+                  color: C.red,
+                  fontSize: 11,
+                  position: 'insideEndTop',
+                },
                 data: [{ xAxis: d.target }],
               },
             }

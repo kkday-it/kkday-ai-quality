@@ -1,6 +1,6 @@
 # 7 支 Prompt 基線指標（單支調適的參照基準）
 
-> 量測：2026-07-13　·　`scripts/tools/eval_prompt_single.py`　·　每支 n=20（md5 穩定抽樣＝重跑同批樣本，前後可比）　·　模型 gpt-5-mini　·　真值＝production judgments（規則 v3.2：C-1 v44／C-2 v40／C-3 v42／C-4 v39／C-5 v39／C-6 v46）
+> 量測：2026-07-13　·　`scripts/tools/eval_prompt_single.py`　·　每支 n=20（md5 穩定抽樣＝重跑同批樣本，前後可比）　·　模型 gpt-5-mini　·　真值＝production attributions（規則 v3.2：C-1 v44／C-2 v40／C-3 v42／C-4 v39／C-5 v39／C-6 v46）
 > 用法：調任一支模板或該域規則後，跑 `eval_prompt_single.py --prompt <X> --n 20` 與本表對比；±1 案例（±0.05~0.10）屬 run-to-run 噪音帶，超出才視為實質變化。
 
 ## 現行基線（v3.4 優化後）

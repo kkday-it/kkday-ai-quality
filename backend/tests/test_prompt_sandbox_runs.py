@@ -1,6 +1,6 @@
 """Prompt 測試沙盒歷史（prompt_sandbox_runs）：落庫 + 列表分頁 + 詳情查詢。
 
-額外驗證與正式 judgments/judgment_history 互不干擾（分離語意）。
+額外驗證與正式 attributions/attribution_history 互不干擾（分離語意）。
 """
 
 from __future__ import annotations
@@ -67,16 +67,16 @@ def test_list_sandbox_runs_pagination(temp_db) -> None:
     assert len(page2["items"]) == 1
 
 
-def test_sandbox_run_isolated_from_judgments_tables(temp_db) -> None:
-    """沙盒測試落庫後，judgments/judgment_history 完全無新列（測試歷史與正式初判分離）。"""
+def test_sandbox_run_isolated_from_attributions_tables(temp_db) -> None:
+    """沙盒測試落庫後，attributions/attribution_history 完全無新列（測試歷史與正式初判分離）。"""
     from sqlalchemy import func, select
 
     from app.core.db import tables as T
 
     db.insert_sandbox_run(_row())
     with T.get_engine().connect() as c:
-        j_count = c.execute(select(func.count()).select_from(T.judgments)).scalar()
-        h_count = c.execute(select(func.count()).select_from(T.judgment_history)).scalar()
+        j_count = c.execute(select(func.count()).select_from(T.attributions)).scalar()
+        h_count = c.execute(select(func.count()).select_from(T.attribution_history)).scalar()
     assert j_count == 0
     assert h_count == 0
 

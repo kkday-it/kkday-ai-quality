@@ -1,4 +1,4 @@
-// 導出背景 job 前端生命週期：啟動 → SSE 追進度 → 完成下載 / 可停止。多處導出（問題列表 / 判決規則）
+// 導出背景 job 前端生命週期：啟動 → SSE 追進度 → 完成下載 / 可停止。多處導出（問題列表 / 初判規則）
 // 共用同一套進度/停止互動，故下沉為 composable，呼叫端只需提供「starter（回 job_id）」與下載檔名。
 import { computed, h, ref } from 'vue';
 import { Message, Notification } from '@arco-design/web-vue';

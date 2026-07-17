@@ -181,7 +181,7 @@ const targets = usePromptSandboxTargets({
   listFilters: () => props.listFilters ?? {},
 });
 /** 依條件批量選取的目標篩選欄位子集（順序對齊初判分類 PREJUDGE_TARGET_FIELDS；
- * 判決階段由上方 checkbox 承擔，不納入此欄）。 */
+ * 初判階段由上方 checkbox 承擔，不納入此欄）。 */
 const TARGET_FIELDS: FilterField[] = [
   'recOid',
   'prodOid',
@@ -205,7 +205,7 @@ watch(promptArgs, onTargetChange);
 const activeTab = ref<'results' | 'log' | 'history'>('results');
 /** 左側選單目前顯示的面板；scope='single' 沒有「目標範圍」項，恆為 settings。 */
 const sandboxPanel = ref<'target' | 'settings'>('settings');
-/** 判決設定面板是否展開；預設收合，讓執行日誌/測試結果直接可見，不被設定區擠到下面。 */
+/** 初判設定面板是否展開；預設收合，讓執行日誌/測試結果直接可見，不被設定區擠到下面。 */
 const settingsOpen = ref(false);
 const running = ref(false);
 type RunDetail = PromptSandboxRunSummary & {
@@ -435,7 +435,7 @@ watch(
 <template>
   <a-drawer
     :visible="visible"
-    title="Prompt 測試（沙盒 · 不受正式歸因閘門限制 · 不落正式判決）"
+    title="Prompt 測試（沙盒 · 不受正式歸因閘門限制 · 不落正式初判）"
     :width="scope === 'all' ? 1080 : 960"
     :footer="false"
     :body-style="{
@@ -449,14 +449,14 @@ watch(
       {{ scopeSummary }} · 勾選要測試的 prompt，即使整體判正向也照跑（不受正式閘門限制）
     </div>
 
-    <!-- 左側收合軌 + 右側主內容：判決設定（模型/版本，scope='all' 再加目標範圍）預設收合，
+    <!-- 左側收合軌 + 右側主內容：初判設定（模型/版本，scope='all' 再加目標範圍）預設收合，
          點窄直排 tab 展開/收合，收合時執行日誌／測試結果直接可見，不被設定區擠到下面。
          面板用 v-show（非 v-if）保持掛載：即使收合，PromptVersionPickerGroup 的預設勾選仍會
          立即生效，避免「確認」按鈕因元件未掛載而誤判為未選任何 prompt。 -->
     <div class="flex min-h-0 flex-1 gap-3 overflow-hidden">
       <CollapsibleSidePanel
         v-model="settingsOpen"
-        label="判決設定"
+        label="初判設定"
         floating
         panel-class="w-[560px] max-h-[70vh]"
       >
@@ -467,11 +467,11 @@ watch(
           @menu-item-click="(k: string) => (sandboxPanel = k as 'target' | 'settings')"
         >
           <a-menu-item key="target">目標範圍</a-menu-item>
-          <a-menu-item key="settings">判決設定</a-menu-item>
+          <a-menu-item key="settings">初判設定</a-menu-item>
         </a-menu>
 
         <!-- 目標範圍（scope='all'，比照初判分類目標選取；adhoc＝臨時貼 ID）。
-             兩個子面板用 v-show（非 v-if）常駐掛載：判決設定面板內的 PromptVersionPickerGroup
+             兩個子面板用 v-show（非 v-if）常駐掛載：初判設定面板內的 PromptVersionPickerGroup
              需要 onMounted 才會 emit 預設勾選——批量預設停在「目標範圍」，若用 v-if 該元件
              不掛載，selectedCodes 恆空、「確認」永遠 disabled。 -->
         <div v-show="sandboxPanel === 'target' && scope === 'all'">
@@ -503,7 +503,9 @@ watch(
             v-if="targets.targetMode.value === 'scope' || targets.targetMode.value === 'selected'"
           >
             <div class="mb-2">
-              <div class="mb-1 text-xs text-[var(--color-text-3)]">目標判決階段（預設只測未判）</div>
+              <div class="mb-1 text-xs text-[var(--color-text-3)]">
+                目標初判階段（預設只測未初判）
+              </div>
               <a-checkbox-group v-model="targets.targetStages.value" @change="onTargetChange">
                 <a-checkbox v-for="(lbl, code) in STAGE_LABELS" :key="code" :value="code">{{
                   lbl
@@ -521,7 +523,8 @@ watch(
               @change="onTargetChange"
             />
             <div class="mt-1 text-xs text-[var(--color-text-3)]">
-              日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / 歸因分類 僅對「已判」階段生效。
+              日期 / ID / 外部評論 對所有目標生效；傾向 / 信心分層 / 歸因分類
+              僅對「已初判」階段生效。
             </div>
           </template>
           <div class="mt-2 text-xs text-[var(--color-text-3)]">
@@ -529,13 +532,13 @@ watch(
           </div>
         </div>
 
-        <!-- 判決設定：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）；
+        <!-- 初判設定：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）；
              scope='single' 恆顯示這裡（sandboxPanel 恆為 settings）。 -->
         <div v-show="sandboxPanel === 'settings' || scope !== 'all'">
           <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" class="mb-2" />
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
-            Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或
-            📝 草稿；編輯鈕可即時修改草稿）
+            Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或 📝
+            草稿；編輯鈕可即時修改草稿）
           </div>
           <PromptVersionPickerGroup
             ref="pickerRef"
@@ -559,7 +562,7 @@ watch(
             >
           </div>
           <div class="mt-3 text-xs text-[var(--color-text-3)]">
-            確認後開始測試，過程會消耗 token（不落正式判決、不受正式閘門限制）。
+            確認後開始測試，過程會消耗 token（不落正式初判、不受正式閘門限制）。
           </div>
         </div>
 
@@ -615,9 +618,7 @@ watch(
                   v-if="runCompare.metrics"
                   class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border bg-[var(--color-fill-1)] px-3 py-2 text-xs"
                 >
-                  <span class="text-[var(--color-text-3)]"
-                    >對齊 {{ runCompare.metrics.n }} 筆</span
-                  >
+                  <span class="text-[var(--color-text-3)]">對齊 {{ runCompare.metrics.n }} 筆</span>
                   <span v-for="m in metricRows(runCompare.metrics)" :key="m.label">
                     {{ m.label }} <span class="font-mono font-medium">{{ m.value }}</span>
                   </span>
@@ -666,7 +667,10 @@ watch(
                 </div>
                 <!-- 採納入庫動作列：只要本次 run 帶了草稿快照就提供（不依賴 compare——關閉
                      雙跑對比「只跑草稿」仍是合法工作流程，閉環最後一步不可消失） -->
-                <div v-if="runDraftCodes.length" class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                <div
+                  v-if="runDraftCodes.length"
+                  class="mb-3 flex flex-wrap items-center gap-2 text-xs"
+                >
                   <span class="text-[var(--color-text-3)]">滿意草稿結果？</span>
                   <a-button
                     v-for="code in runDraftCodes"
@@ -734,7 +738,9 @@ watch(
                 empty-text="尚無測試紀錄"
                 :row-selection="{ type: 'checkbox', showCheckedAll: false }"
                 :selected-keys="compareSelection"
-                @selection-change="(keys: (string | number)[]) => (compareSelection = keys.map(String))"
+                @selection-change="
+                  (keys: (string | number)[]) => (compareSelection = keys.map(String))
+                "
               >
                 <template #toolbar>
                   <div class="flex items-center gap-2 text-xs">

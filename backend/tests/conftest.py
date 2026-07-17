@@ -1,4 +1,4 @@
-"""pytest 共用 fixture：判決測試走 stub 模式（零 key）+ 隔離 PostgreSQL 測試庫。
+"""pytest 共用 fixture：初判測試走 stub 模式（零 key）+ 隔離 PostgreSQL 測試庫。
 
 DB 為 PostgreSQL only，temp_db 指向專用測試庫 `kkdb_ai_quality_test`（與 dev 庫隔離），
 每次 test 前建表（缺庫自動 createdb）+ 清空全表確保隔離。測試只需本機 PostgreSQL 在跑，

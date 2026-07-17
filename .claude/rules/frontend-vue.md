@@ -54,11 +54,11 @@ paths:
 - **判準＝Rule of Three 提前版**：**佈局結構第 2 次出現**（不用等到第 3 次）即拆——佈局元件比一般邏輯更容易被跨頁復用，且越晚拆、消費端寫死的樣式/資料耦合越深，重構成本越高。第 1 次出現時若已能預見「這結構明顯會被別處用到」（如抽屜的收合面板、確認彈窗的左選單），可以在第 1 次就直接拆，不必機械等到第 2 次才動手。
 - 拆出的元件只管**排版與容器結構**，資料/業務邏輯留在呼叫端用 props 注入（呼應「元件薄」）；純樣式/純資料轉換的輔助函式一併下沉共用 `utils`，不要讓拆出的佈局元件裡還混著呼叫端專屬的格式化邏輯。
 - **v-show 優先於 v-if**：可收合/可切換顯示的佈局元件（側欄、面板、tab 內容），若 slot/內容內有元件依賴掛載時機初始化預設值（如版本選擇器的預設勾選、composable 的 onMounted 副作用），一律用 `v-show` 保留掛載，不用 `v-if` 忽掛忽卸——避免「收合時看似正常、展開才觸發初始化」的隱性時序 bug（實例：`CollapsibleSidePanel.vue`）。
-- **放置位置判準＝元件內容是否耦合業務，不是看目前消費端剛好都在哪個 feature**：元件本身不含任何業務邏輯（純排版/容器結構，props 全是外觀/開關類）→ 一律放 `@/components`，即使當下兩個消費端剛好都在同一個 feature 內也一樣；元件內容本身就耦合某 feature 的業務語意（如判決分類、規則版本）才留在該 feature 的 `components/`（同 barrel 慣例）。判斷時問自己：「把這個元件搬去給完全不相干的 feature 用，需要改元件本身一行 code 嗎？」不需要 → 放 `@/components`。
+- **放置位置判準＝元件內容是否耦合業務，不是看目前消費端剛好都在哪個 feature**：元件本身不含任何業務邏輯（純排版/容器結構，props 全是外觀/開關類）→ 一律放 `@/components`，即使當下兩個消費端剛好都在同一個 feature 內也一樣；元件內容本身就耦合某 feature 的業務語意（如初判分類、規則版本）才留在該 feature 的 `components/`（同 barrel 慣例）。判斷時問自己：「把這個元件搬去給完全不相干的 feature 用，需要改元件本身一行 code 嗎？」不需要 → 放 `@/components`。
 - 命名反映「佈局角色」而非「當下業務場景」（如 `LlmCallTimeline`、`CollapsibleSidePanel` 而非 `PolarityLogPane`、`JudgmentSettingsRail`），避免改名或內容耦合業務字眼，讓下一個消費端一看名字就懂能不能用。
 - 完成後**同時檢查既有同類佈局是否已重複散落多處**，能收斂就順手收斂（不強制大規模 codemod，但當次任務觸碰到的範圍內要收）。
 
-> Canonical 用例：`@/components/CollapsibleSidePanel.vue`（判決確認抽屜與 Prompt 測試抽屜的「左側窄直排收合軌＋可收合面板」共用元件，2026-07-16 於第 2 次出現時抽出；兩個消費端當下都在 judge feature 內，但元件本身零業務耦合，仍放跨 feature 共用層而非 `features/judge/components/`——這正是本條「判準看內容不看消費端」的實例）；`StickyTabs.vue`（tabs 固定捲動）；`TableLayout.vue`（表格三態）。
+> Canonical 用例：`@/components/CollapsibleSidePanel.vue`（初判確認抽屜與 Prompt 測試抽屜的「左側窄直排收合軌＋可收合面板」共用元件，2026-07-16 於第 2 次出現時抽出；兩個消費端當下都在 judge feature 內，但元件本身零業務耦合，仍放跨 feature 共用層而非 `features/judge/components/`——這正是本條「判準看內容不看消費端」的實例）；`StickyTabs.vue`（tabs 固定捲動）；`TableLayout.vue`（表格三態）。
 
 ## 表格（全局公共元件 · 強制）
 
@@ -93,7 +93,7 @@ paths:
 
 - 主行為**每區至多一顆** primary；其餘不得搶佔主色。
 - **相鄰按鈕禁止「同 type 且同 status」**；同層級多顆 text 檢視鈕以不同 icon 區分。
-- 列操作欄範本（AttributionList）：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 判決歷史 `text`+icon——四鈕四樣式，掃一眼即分級。
+- 列操作欄範本（AttributionList）：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 歸因歷史 `text`+icon——四鈕四樣式，掃一眼即分級。
 - 有明確語義的動作**配對應 icon**（導出→`icon-download`、新增→`icon-plus`、刷新→`icon-refresh`），icon 從 `@arco-design/web-vue/es/icon` 具名 import。
 - 破壞性操作除變色外，仍須二次確認（`Modal.confirm` / `a-popconfirm`），顏色不替代確認。
 

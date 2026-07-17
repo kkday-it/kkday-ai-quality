@@ -2,9 +2,9 @@
 
 比照 `prejudge_batch.py` 的 job registry pattern（`start` 立即回 job_id，前端輪詢 `get_job` 拿
 進度），但刻意不含暫停/取消/自適應併發/計費 sink——沙盒測試是調適用途的小規模操作，不需要正式批量
-判決管線的這些控制項，複製過來只會增加不必要的複雜度。
+初判管線的這些控制項，複製過來只會增加不必要的複雜度。
 
-與 `prejudge_batch` 最大差異：結果不落 `judgments`/`judgment_history`（正式歸因），只落獨立的
+與 `prejudge_batch` 最大差異：結果不落 `attributions`/`attribution_history`（正式歸因），只落獨立的
 `prompt_sandbox_runs`（見 `core/db/tables.py`），確保測試歷史與正式初判完全分離。job 結束時把
 `run_log` 快照（`run_log.read`）一併存進該筆歷史，供事後回看當時的完整 LLM log（run_log 本身純
 記憶體、job 淘汰後不可回溯，落庫快照是唯一持久化管道）。
@@ -40,13 +40,13 @@ _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
 # 筆數間併發（每筆內部域 prompt 已用自己的 ThreadPool 並行，見 prompt_eval.domain_verdicts）；
-# 沙盒測試非正式判決量級，固定小併發即可，不比照 prejudge_batch 的 per-model/自適應併發。
+# 沙盒測試非正式初判量級，固定小併發即可，不比照 prejudge_batch 的 per-model/自適應併發。
 _MAX_WORKERS = 4
 
 
 def _guard_stub(eff: dict) -> None:
     """無條件拒絕 stub 模式（不只正式環境）：Prompt 測試沙盒是「看 prompt 實際判得怎樣」的調適
-    工具，stub 假結果會誤導判斷，dev 環境零 key 時也不例外（與 `prejudge_batch` 正式批量判決
+    工具，stub 假結果會誤導判斷，dev 環境零 key 時也不例外（與 `prejudge_batch` 正式批量初判
     刻意放行 dev stub 的定位不同）。
     """
     if not app_settings.resolve_provider_token(eff):
@@ -132,7 +132,7 @@ def _one(
     compare: bool = False,
 ) -> dict:
     """單筆：組 item → `sandbox_classify`。獨立函式供 ThreadPoolExecutor 提交（copy_context 攜帶
-    設定 contextvar，見 `_run`）。單筆組裝/判決失敗（如找不到該則評論）讓例外往上拋，由 `_run` 的
+    設定 contextvar，見 `_run`）。單筆組裝/初判失敗（如找不到該則評論）讓例外往上拋，由 `_run` 的
     `future.result()` 呼叫端接住記錄，不擋同批其他筆。
 
     compare=True（雙跑對比）：同一 item 跑兩遍——baseline（僅 versions，不帶草稿）與 draft

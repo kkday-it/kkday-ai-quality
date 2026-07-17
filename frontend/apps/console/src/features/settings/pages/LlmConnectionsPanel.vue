@@ -19,7 +19,7 @@ onMounted(() => store.loadAll());
 // 既有卡片已「展開即編輯」（LlmConfigCard body 直接是表單），不再需要編輯態切換。
 const editing = ref<LlmConfig | null>(null);
 const isEditingNew = computed(
-  () => !!editing.value && !store.llmConfigs.some((c) => c.id === editing.value!.id)
+  () => !!editing.value && !store.llmConfigs.some((c) => c.id === editing.value!.id),
 );
 const blank = (): LlmConfig => ({
   id: crypto.randomUUID(),
@@ -43,7 +43,7 @@ watch(
   (list) => {
     if (!activeId.value && list[0]) activeId.value = list[0].id;
   },
-  { immediate: true, deep: false }
+  { immediate: true, deep: false },
 );
 // 單開不變量：展開任一既有面板（activeId 變真值）即丟棄尚未存的「新增」草稿，
 // 確保任何交互下只有一個編輯面板展開（新增尾卡在手風琴單開控制之外，須手動互斥）。
@@ -98,7 +98,7 @@ useListDragSort(
       Message.error('排序儲存失敗：' + (e?.message || e));
     }
   },
-  { handle: '.drag-handle', draggable: '.arco-collapse-item' }
+  { handle: '.drag-handle', draggable: '.arco-collapse-item' },
 );
 </script>
 
@@ -145,7 +145,7 @@ useListDragSort(
       </AccordionGroup>
 
       <p class="mb-0 mt-3 text-[13px] leading-[1.7] text-[#4e5969]">
-        管理多套 LLM 配置；開啟卡片右側開關即切換當前判決使用的模型（綠色徽章為啟用中）。
+        管理多套 LLM 配置；開啟卡片右側開關即切換當前初判使用的模型（綠色徽章為啟用中）。
       </p>
     </div>
   </StateGuard>

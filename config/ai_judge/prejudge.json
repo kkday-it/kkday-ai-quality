@@ -1,0 +1,69 @@
+{
+  "_comment": "初判分類（prejudge）配置——專案靜態設定檔（非 DB 版本化；前端 @config/ai_judge/prejudge.json、後端 _shared.read_pipeline_config 與 verdict.json 合併直讀）。集中：極性閘門/證據政策/信心閾值/prejudge 旋鈕/傾向・分層・階段 label（顯示用繁中，DB 存 code）。調值＝改此檔＋重啟後端。判準文字 SSOT＝prompts/*.md（Prompt-as-Source），非本檔。細節見 config/README.md。",
+  "polarity_gate": {
+    "_comment": "哪些整體傾向進歸因（positive 恆 non_issue 不歸因）。neutral 涵蓋「整體滿意但含具體問題點」的混合評論——其問題面向照樣歸因；歸因後找不到具體問題點仍回 non_issue。",
+    "attribute_when": [
+      "negative",
+      "neutral"
+    ]
+  },
+  "evidence_policy": {
+    "_comment": "require_quote_grounded：evidence_quote 須為進線原文逐字片段才採信。attr_min_confidence：整條歸因最低信心，低於即丟棄（0＝關閉）。secondary_min_confidence：非 primary 條目最低信心，低於只留主因（0＝關閉）。證據閘域清單在各域 prompt `## Taxonomy` root evidence_gated。",
+    "attr_min_confidence": 0.2,
+    "require_quote_grounded": true,
+    "secondary_min_confidence": 0.35
+  },
+  "prejudge": {
+    "_comment": "初判管線旋鈕（引擎恆為 prompt_pack：00_polarity 極性閘門 + 01~06_C-N 六域並行歸因）。stage1_model：極性閘門 fallback 模型。max_attributions：一則反饋最多輸出幾條歸因（硬上限 8）。flex_min_items/batch_service_tier：批次 flex serving tier 門檻。*_reasoning_effort：per-stage reasoning_effort（polarity／attribute；null＝沿用主 config）。max_workers_by_model/max_workers_default：批次併發軟上限（依生效 model；實際與 env.prejudge_max_workers 取 min）。max_implicit_retries：隱式批次對同一筆的連續失敗上限，超過排除於隱式重撈（顯式重新初判不受限；<1＝停用）。domain_retry：單域 LLM 失敗的有界重試（0＝關閉；耗盡整筆 fail-loud）。adaptive_concurrency：AIMD 自適應併發（429→乘性收縮、無 429→加性回升，不低於 floor；關閉＝固定 max_workers）。batch_max_reasoning_effort：批次 reasoning_effort 硬上限（單筆/沙盒不受限）。domain_router：embedding 候選域剪枝（enabled=false＝全 6 域照跑；shadow_rate 影子抽樣落 attribution_history kind=router_shadow；域鍵＝域機器值（attributions.l1_code 同詞彙）；權重 data/router/weights.json，缺失/失敗一律 fail-open 全域跑）。stub 模式極性走 rating 啟發式。細節見 config/README.md。",
+    "stage1_model": "gpt-5-mini",
+    "flex_min_items": 10,
+    "max_attributions": 6,
+    "batch_service_tier": "flex",
+    "max_workers_by_model": {
+      "gpt-5-mini": 64,
+      "gpt-5.4-mini": 48,
+      "gpt-5.4": 32,
+      "gpt-5.5": 16
+    },
+    "max_workers_default": 32,
+    "max_implicit_retries": 3,
+    "domain_retry": 1,
+    "adaptive_concurrency": {
+      "enabled": true,
+      "backoff": 0.5,
+      "probe_interval_s": 3.0,
+      "floor": 2
+    },
+    "polarity_reasoning_effort": "minimal",
+    "attribute_reasoning_effort": null,
+    "batch_max_reasoning_effort": "medium",
+    "domain_router": {
+      "enabled": false,
+      "shadow_rate": 0.0,
+      "embedding_model": "text-embedding-3-small",
+      "thresholds": {},
+      "always_on": []
+    }
+  },
+  "tier_labels": {
+    "jury": "評審複審",
+    "auto_accept": "自動採信",
+    "needs_review": "人工複審"
+  },
+  "stage_labels": {
+    "judged": "已初判",
+    "unjudged": "未初判",
+    "pending_data": "待數據補充",
+    "pending_review": "待複審"
+  },
+  "polarity_labels": {
+    "neutral": "中立",
+    "negative": "負向",
+    "positive": "正向"
+  },
+  "confidence_tiers": {
+    "jury_low": 0.5,
+    "jury_high": 0.7,
+    "auto_accept": 0.8
+  }
+}

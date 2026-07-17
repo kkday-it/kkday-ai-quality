@@ -10,9 +10,17 @@ const base = {
   loop: [],
   engines: [
     {
-      id: 'ai_judge', name: 'AI 法官', tagline: '', pLevel: 'P1', status: '', statusColor: '',
-      goal: '', metrics: [{ label: '舊', value: 1, unit: '%' }], spark: [1, 2],
-      route: null, cta: '',
+      id: 'ai_judge',
+      name: 'AI 法官',
+      tagline: '',
+      pLevel: 'P1',
+      status: '',
+      statusColor: '',
+      goal: '',
+      metrics: [{ label: '舊', value: 1, unit: '%' }],
+      spark: [1, 2],
+      route: null,
+      cta: '',
     },
   ],
   crossTrend: { title: '', unit: '%', months: [], series: [] },
@@ -21,12 +29,28 @@ const base = {
       label: 'c',
       northStar: [
         {
-          key: 'intake_content_ratio', label: '', value: 14.95, unit: '%', target: 10,
-          targetText: '', delta: 0, deltaDir: 'up', deltaGood: true, tone: 'core', hint: '', spark: [1],
+          key: 'intake_content_ratio',
+          label: '',
+          value: 14.95,
+          unit: '%',
+          target: 10,
+          targetText: '',
+          delta: 0,
+          deltaDir: 'up',
+          deltaGood: true,
+          tone: 'core',
+          hint: '',
+          spark: [1],
         },
       ],
       charts: {
-        laggingTrend: { title: '', unit: '%', months: ['1 月'], target: 10, series: [{ name: '舊', data: [9] }] },
+        laggingTrend: {
+          title: '',
+          unit: '%',
+          months: ['1 月'],
+          target: 10,
+          series: [{ name: '舊', data: [9] }],
+        },
       },
       sources: [],
     },
@@ -54,7 +78,10 @@ describe('patchAiJudgeData', () => {
     expect(ns.delta).toBeCloseTo(-24.93);
     expect(ns.deltaDir).toBe('down');
     expect(ns.deltaGood).toBe(true);
-    const lag = out.goals.content.charts.laggingTrend as { months: string[]; series: { data: number[] }[] };
+    const lag = out.goals.content.charts.laggingTrend as {
+      months: string[];
+      series: { data: number[] }[];
+    };
     expect(lag.months).toEqual(['6 月', '7 月']);
     expect(lag.series[0].data).toEqual([33.33, 8.4]);
   });

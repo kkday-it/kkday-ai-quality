@@ -2,7 +2,7 @@
 /**
  * 初判 Prompt 草稿編輯抽屜（沙盒閉環第一步）：載入該 prompt 的 DB 草稿（無則以指定分叉基準版本
  * 內容為底建新草稿）→ md 編輯（複用 PromptEditor：md-editor-v3 左寫右渲染）→ 驗證（dry-run，
- * 不落庫）／儲存草稿（寬鬆，可存半成品）／刪除草稿。草稿與版本表分離：存草稿不影響判決；
+ * 不落庫）／儲存草稿（寬鬆，可存半成品）／刪除草稿。草稿與版本表分離：存草稿不影響初判；
  * 送測（沙盒雙跑對比）與入庫（saveRule）才強驗。
  */
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
@@ -53,9 +53,7 @@ const dirty = ref(false);
 
 /** 分叉基準已落後 active（stale）：仍可編輯送測，入庫前自行斟酌是否先對齊。 */
 const isStale = computed(
-  () =>
-    props.activeVersion != null &&
-    (draftBase.value ?? props.baseVersion) < props.activeVersion,
+  () => props.activeVersion != null && (draftBase.value ?? props.baseVersion) < props.activeVersion,
 );
 
 /** 開啟時載入：既有草稿優先；無草稿 → 以分叉基準版本內容為底。 */
@@ -125,7 +123,7 @@ async function save(): Promise<void> {
     await saveRuleDraft(props.code, { ...content.value, text: editedText.value }, base);
     draftBase.value = base;
     dirty.value = false;
-    Message.success('草稿已儲存（未入庫，不影響正式判決）');
+    Message.success('草稿已儲存（未入庫，不影響正式初判）');
     emit('changed');
   } catch (e) {
     Message.error(e instanceof Error ? e.message : '儲存草稿失敗');
@@ -205,9 +203,7 @@ function onCancel(): void {
           >刪除草稿</a-button
         >
         <div class="flex-1" />
-        <a-button size="small" :loading="validating" type="dashed" @click="validate"
-          >驗證</a-button
-        >
+        <a-button size="small" :loading="validating" type="dashed" @click="validate">驗證</a-button>
         <a-button size="small" @click="onCancel">關閉</a-button>
         <a-button type="primary" size="small" :loading="saving" :disabled="!dirty" @click="save"
           >儲存草稿</a-button

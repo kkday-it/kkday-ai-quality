@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""多模型準確度評測——逐則跑指定模型收集歸因（唯讀：不寫 judgments）。
+"""多模型準確度評測——逐則跑指定模型收集歸因（唯讀：不寫 attributions）。
 
-用於比較不同 LLM（字節 / Gemini / Claude…）在同一評測集上的判決準確率。唯讀配方（to_findings
+用於比較不同 LLM（字節 / Gemini / Claude…）在同一評測集上的初判準確率。唯讀配方（to_findings
 收集、ThreadPool+copy_context 繼承 LLM 配置、cache_read=False、stub 拒跑），特點：
 ① 額外收集 sentiment_score（情緒分準確度用）② 以 --config-id 明確選某一 LLM 配置切換模型
-③ 評測集為「有外部 free_tag ground truth 且已判」的 product_reviews（供對比外部評論系統）。
+③ 評測集為「有外部 free_tag ground truth 且已初判」的 product_reviews（供對比外部評論系統）。
 
 兩模式：
-- --build-set：建評測集 JSON（免 token）。預設該週有外部 free_tag 且已判的 product_reviews。
-- --run --config-id <id> --user <email>：以該配置逐則重判評測集，收集每則 sentiment/polarity/歸因。
+- --build-set：建評測集 JSON（免 token）。預設該週有外部 free_tag 且已初判的 product_reviews。
+- --run --config-id <id> --user <email>：以該配置逐則重新初判評測集，收集每則 sentiment/polarity/歸因。
 
 用法（backend venv）：
     cd backend
@@ -45,13 +45,13 @@ _FETCH_CHUNK = 200
 
 
 def _build_evalset(date_from: str, date_to: str, judged_only: bool) -> list[dict]:
-    """建評測集：該日期窗內有外部 free_tag ground truth（可選：且已判）的 product_reviews。
+    """建評測集：該日期窗內有外部 free_tag ground truth（可選：且已初判）的 product_reviews。
 
     每則收集對比所需 ground truth：星等（rec_scores，用戶真實評分）、外部 sentiment、外部 free_tag。
     完整源列於 run 階段以 get_items_by_ids 依 rec_oid 取回（供 to_findings normalize）。
     """
     join = (
-        "JOIN judgments j ON j.source='product_reviews' AND j.source_id=pr.rec_oid"
+        "JOIN attributions j ON j.source='product_reviews' AND j.source_id=pr.rec_oid"
         if judged_only
         else ""
     )
@@ -76,7 +76,7 @@ def _build_evalset(date_from: str, date_to: str, judged_only: bool) -> list[dict
 
 
 def _judge_one(item: dict, model: str) -> dict:
-    """單則重判（唯讀）：normalize（複製 prejudge_batch._work_one 配方）→ to_findings → 收集。"""
+    """單則重新初判（唯讀）：normalize（複製 prejudge_batch._work_one 配方）→ to_findings → 收集。"""
     from app.core import source_mapping as _srcmap
     from app.core.db import source_registry as _reg
     from app.judge import prejudge
@@ -117,7 +117,7 @@ def _judge_one(item: dict, model: str) -> dict:
 
 
 def _run_eval(evalset: list[dict], model: str, workers: int) -> list[dict]:
-    """對評測集全量重判（ThreadPool + copy_context 繼承 LLM 配置 contextvar）。"""
+    """對評測集全量重新初判（ThreadPool + copy_context 繼承 LLM 配置 contextvar）。"""
     ids = [e["rec_oid"] for e in evalset]
     results: list[dict] = []
     t0 = time.time()
@@ -144,7 +144,7 @@ def main() -> None:
     ap.add_argument("--build-set", action="store_true", help="建評測集（免 token）")
     ap.add_argument("--date-from", default="2026-06-30", help="評測集日期窗起（含）")
     ap.add_argument("--date-to", default="2026-07-09", help="評測集日期窗迄（不含）")
-    ap.add_argument("--all-freetag", action="store_true", help="不限已判（預設只收已判，對齊現有 Sheet）")
+    ap.add_argument("--all-freetag", action="store_true", help="不限已初判（預設只收已初判，對齊現有 Sheet）")
     ap.add_argument("--eval-set", help="評測集 JSON 路徑（run 模式必填）")
     ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM")
     ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（切換模型；空＝該帳號 active）")

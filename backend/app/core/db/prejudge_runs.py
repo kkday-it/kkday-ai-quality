@@ -1,7 +1,7 @@
-"""歸因歷史（judgment_runs）：run 級寫入/回寫 + 列表分頁 + llm_usage per-stage 明細聚合。
+"""歸因歷史（prejudge_runs）：run 級寫入/回寫 + 列表分頁 + llm_usage per-stage 明細聚合。
 
-一次「觸發 LLM 歸因」（批量初判 / 選取多筆 / 單筆重判）＝一列 run。寫入點＝prejudge_batch
-（start_job 建檔 → 暫停/恢復/停止回寫狀態 → 終態回寫統計）；讀取供 /api/v1/judgment/runs。
+一次「觸發 LLM 歸因」（批量初判 / 選取多筆 / 單筆重新初判）＝一列 run。寫入點＝prejudge_batch
+（start_job 建檔 → 暫停/恢復/停止回寫狀態 → 終態回寫統計）；讀取供 /api/v1/prejudge/runs。
 執行中的即時進度以 in-mem job 快照 overlay（API 層做），本模組只管持久化事實。
 """
 
@@ -12,7 +12,7 @@ from sqlalchemy import insert as sa_insert
 
 from app.core.db import tables as T
 
-# 建檔時允許寫入的欄（其餘由 DB default 補；終態統計走 finish_judgment_run）。
+# 建檔時允許寫入的欄（其餘由 DB default 補；終態統計走 finish_prejudge_run）。
 _INSERT_COLS = (
     "job_id",
     "kind",
@@ -26,27 +26,27 @@ _INSERT_COLS = (
 )
 
 
-def insert_judgment_run(row: dict) -> None:
+def insert_prejudge_run(row: dict) -> None:
     """建立 run 紀錄（job 啟動時；status 由呼叫端帶 running）。"""
     vals = {k: row.get(k) for k in _INSERT_COLS}
     with T.get_engine().begin() as c:
-        c.execute(sa_insert(T.judgment_runs).values(**vals))
+        c.execute(sa_insert(T.prejudge_runs).values(**vals))
 
 
-def update_judgment_run_status(job_id: str, status: str) -> None:
-    """回寫 run 狀態（暫停/恢復/停止中；終態走 finish_judgment_run 連同統計一起回寫）。"""
+def update_prejudge_run_status(job_id: str, status: str) -> None:
+    """回寫 run 狀態（暫停/恢復/停止中；終態走 finish_prejudge_run 連同統計一起回寫）。"""
     with T.get_engine().begin() as c:
         c.execute(
-            update(T.judgment_runs).where(T.judgment_runs.c.job_id == job_id).values(status=status)
+            update(T.prejudge_runs).where(T.prejudge_runs.c.job_id == job_id).values(status=status)
         )
 
 
-def finish_judgment_run(job_id: str, snap: dict) -> None:
+def finish_prejudge_run(job_id: str, snap: dict) -> None:
     """終態回寫：狀態 + 進度統計 + token/費用 + finished_at（取 job 結束時的 in-mem 快照）。"""
     with T.get_engine().begin() as c:
         c.execute(
-            update(T.judgment_runs)
-            .where(T.judgment_runs.c.job_id == job_id)
+            update(T.prejudge_runs)
+            .where(T.prejudge_runs.c.job_id == job_id)
             .values(
                 status=snap.get("status", "done"),
                 processed=snap.get("processed", 0),
@@ -60,30 +60,30 @@ def finish_judgment_run(job_id: str, snap: dict) -> None:
 
 
 def save_run_log(job_id: str, entries: list[dict]) -> None:
-    """落存單次判決的完整執行日誌快照（run_log.read 產出）；僅小批量 job 有收集內容。
+    """落存單次初判的完整執行日誌快照（run_log.read 產出）；僅小批量 job 有收集內容。
 
-    供判決歷史「查看 LLM 日誌」入口事後回看（run_log 本身純記憶體、重啟即清）。
+    供歸因歷史「查看 LLM 日誌」入口事後回看（run_log 本身純記憶體、重啟即清）。
     """
     with T.get_engine().begin() as c:
         c.execute(
-            update(T.judgment_runs).where(T.judgment_runs.c.job_id == job_id).values(log=entries)
+            update(T.prejudge_runs).where(T.prejudge_runs.c.job_id == job_id).values(log=entries)
         )
 
 
 def get_run_log(job_id: str) -> list[dict] | None:
     """讀某 job 落庫的執行日誌快照；job 不存在或未收集日誌（大批量 / 舊資料）回 None。"""
-    r = T.judgment_runs
+    r = T.prejudge_runs
     with T.get_engine().connect() as c:
         row = c.execute(select(r.c.log).where(r.c.job_id == job_id)).first()
     return row[0] if row and row[0] else None
 
 
 def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) -> bool:
-    """標的中是否已有判決（判定本次為「重判」）；超大清單只抽前 sample_cap 筆探測（夠準且省查詢）。"""
+    """標的中是否已有初判（判定本次為「重新初判」）；超大清單只抽前 sample_cap 筆探測（夠準且省查詢）。"""
     ids = [str(i) for i in item_ids[:sample_cap] if i]
     if not ids or not source:
         return False
-    j = T.judgments
+    j = T.attributions
     with T.get_engine().connect() as c:
         row = c.execute(
             select(j.c.finding_id).where(j.c.source == source, j.c.source_id.in_(ids)).limit(1)
@@ -91,9 +91,9 @@ def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) 
     return row is not None
 
 
-def list_judgment_runs(limit: int = 20, offset: int = 0, source: str | None = None) -> dict:
+def list_prejudge_runs(limit: int = 20, offset: int = 0, source: str | None = None) -> dict:
     """歸因歷史列表（started_at 降冪分頁）→ {total, items}；datetime 轉 ISO 字串。"""
-    r = T.judgment_runs
+    r = T.prejudge_runs
     stmt = select(r).order_by(r.c.started_at.desc())
     cnt = select(func.count()).select_from(r)
     if source:
@@ -105,9 +105,9 @@ def list_judgment_runs(limit: int = 20, offset: int = 0, source: str | None = No
     return {"total": total, "items": [_serialize(dict(row)) for row in rows]}
 
 
-def judgment_run_detail(job_id: str) -> dict | None:
+def prejudge_run_detail(job_id: str) -> dict | None:
     """單一 run 詳情：run 欄位 + llm_usage per-stage 明細聚合（stages；job 結束 flush 後才有值）。"""
-    r = T.judgment_runs
+    r = T.prejudge_runs
     u = T.llm_usage
     with T.get_engine().connect() as c:
         row = c.execute(select(r).where(r.c.job_id == job_id)).mappings().first()

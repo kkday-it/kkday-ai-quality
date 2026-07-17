@@ -1,14 +1,14 @@
-"""把多模型評測結果（tmp/multi_model/*_v4.json）灌進 judgment_history（kind='judgment'）。
+"""把多模型評測結果（tmp/multi_model/*_v4.json）灌進 attribution_history（kind='prejudge'）。
 
-用途：三模型（ByteDance/Gemini/Claude）判決原本只活在評測 JSON / GSheet，不在 DB。本腳本把它們
-以「每評論每模型一筆判決快照」寫入 judgment_history，讓歸因列表的判決歷史 modal 看得到各模型、
-導出可複選並排對比——**完全不碰 judgments 活表**（列表資料源恆為 gpt canonical）。
+用途：三模型（ByteDance/Gemini/Claude）初判原本只活在評測 JSON / GSheet，不在 DB。本腳本把它們
+以「每評論每模型一筆初判快照」寫入 attribution_history，讓歸因列表的歸因歷史 modal 看得到各模型、
+導出可複選並排對比——**完全不碰 attributions 活表**（列表資料源恆為 gpt canonical）。
 
 設計要點：
-- 只寫 judgment_history（append-only），不呼叫 replace_source_findings → 不覆蓋 gpt 活表。
-- 快照形狀對齊 judgment_history.snapshot_of（l1/l2/l3/confidence/content/is_primary + 頂層
+- 只寫 attribution_history（append-only），不呼叫 replace_source_findings → 不覆蓋 gpt 活表。
+- 快照形狀對齊 attribution_history.snapshot_of（l1/l2/l3/confidence/content/is_primary + 頂層
   polarity/sentiment_score），故既有 latest_snapshots / _adapt_snapshot / 前端 modal 直接吃。
-- 去重天然：insert_judgment_event 以 model+params+digest 比對，重跑同 params 自動 skip。
+- 去重天然：insert_prejudge_event 以 model+params+digest 比對，重跑同 params 自動 skip。
 - label 補全：BD/Gemini 自帶 l1_label/l2_label；Claude 只有 C-code → 由 BD/Gemini 聯集 map +
   ai_judge fallback 補；l1 域機器值/中文域名由 C-code 反查（_L1_CODE_TO_DOMAIN + domain_label）。
 
@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-# C-code L1 → 域機器值（judgments.l1_code 存機器值，非 C-code）；與 prejudge 六域一致。
+# C-code L1 → 域機器值（attributions.l1_code 存機器值，非 C-code）；與 prejudge 六域一致。
 _L1_CODE_TO_DOMAIN = {
     "C-1": "content",
     "C-2": "product_quality",
@@ -60,7 +60,7 @@ def _norm_attr(a: dict, l1_lab: dict[str, str], l2_lab: dict[str, str]) -> tuple
     """
     from app.core.judge_config import ai_judge
 
-    # L1：取域機器值（judgments.l1_code 慣例）。BD/Gemini 已是機器值；Claude 是 C-1..C-6 → 反查。
+    # L1：取域機器值（attributions.l1_code 慣例）。BD/Gemini 已是機器值；Claude 是 C-1..C-6 → 反查。
     raw_l1 = a.get("l1_code") or a.get("l1") or ""
     l1_domain = _L1_CODE_TO_DOMAIN.get(raw_l1, raw_l1)  # 已是機器值則原樣
     l1_label = a.get("l1_label") or ai_judge.domain_label(l1_domain)
@@ -75,7 +75,7 @@ def _norm_attr(a: dict, l1_lab: dict[str, str], l2_lab: dict[str, str]) -> tuple
 def _to_attributions(
     r: dict, l1_lab: dict[str, str], l2_lab: dict[str, str]
 ) -> list[dict]:
-    """一則評論的模型結果 → judgment_history snapshot_of 形狀陣列（每 attr 一筆）。
+    """一則評論的模型結果 → attribution_history snapshot_of 形狀陣列（每 attr 一筆）。
 
     polarity/sentiment_score 為評論級（同則各 attr 相同）；stage 固定 'judged'（評測即判到底）；
     l3 留空（評測只到 L2）；confidence 取 attr.conf（Claude 無 → 0.8 佔位）；finding_id 走
@@ -122,7 +122,7 @@ def main() -> int:
     args = ap.parse_args()
 
     from app.core.db import tables as T
-    from app.core.db.judgment_history import insert_judgment_event
+    from app.core.db.attribution_history import insert_prejudge_event
 
     base = Path(args.dir)
     files = [base / f for f in args.files]
@@ -150,9 +150,9 @@ def main() -> int:
             for r in results:
                 attributions = _to_attributions(r, l1_lab, l2_lab)
                 if not attributions:
-                    # 純好評（無歸因）也記一筆判決快照（空陣列）→ 歷史看得到「該模型判為 non_issue」。
+                    # 純好評（無歸因）也記一筆初判快照（空陣列）→ 歷史看得到「該模型判為 non_issue」。
                     attributions = []
-                wrote = insert_judgment_event(
+                wrote = insert_prejudge_event(
                     c,
                     args.source,
                     str(r["rec_oid"]),

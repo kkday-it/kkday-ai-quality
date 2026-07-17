@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 判決詳情抽屜（原 AttributionList 內 modal 抽出）：完整展示單一反饋的
- * 原文 → 關聯資料 → 每條歸因全欄位（分類路徑/信心含原始值/階段/覆核狀態/摘要多語系/
+ * 歸因詳情抽屜（原 AttributionList 內 modal 抽出）：完整展示單一反饋的
+ * 原文 → 關聯資料 → 每條歸因全欄位（分類路徑/信心含原始值/階段/判決狀態/摘要多語系/
  * 逐字佐證/建議行動/負責單位/真值/finding_id）。純展示、資料取自列上 attributions，零額外請求；
  * 全部走 Arco 現成組件（a-drawer / a-descriptions / a-tag / a-rate / a-typography）。
  */
@@ -22,14 +22,14 @@ import { fmtDt } from '../utils';
 const visible = defineModel<boolean>('visible', { default: false });
 defineProps<{ row: ProblemRow | null }>();
 
-/** 判決階段語義色（同列表：已判決綠 / 待覆核橙 / 待數據補充藍）。 */
+/** 初判階段語義色（同列表：已初判綠 / 待複審橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
   judged: 'green',
   pending_review: 'orange',
   pending_data: 'arcoblue',
 };
 
-/** 信心分層語義色（auto_accept 可採信綠 / jury 需覆核橙 / needs_review 必人工紅）。 */
+/** 信心分層語義色（auto_accept 可採信綠 / jury 需複審橙 / needs_review 必人工紅）。 */
 const TIER_COLOR: Record<string, string> = {
   auto_accept: 'green',
   jury: 'orange',
@@ -57,7 +57,7 @@ const otherLangs = (a: Attribution): [string, string][] =>
     :width="640"
     :footer="false"
     unmount-on-close
-    :title="`判決詳情 · #${row?.source_record_id ?? row?.source_id ?? ''}`"
+    :title="`歸因詳情 · #${row?.source_record_id ?? row?.source_id ?? ''}`"
   >
     <div v-if="row" class="flex flex-col gap-4">
       <!-- ① 反饋原文：星等 + 傾向 + 標題 + 全文 + ID·時間 -->
@@ -123,7 +123,7 @@ const otherLangs = (a: Attribution): [string, string][] =>
         </a-descriptions-item>
       </a-descriptions>
 
-      <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因/覆核狀態/真值徽章）-->
+      <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因/判決狀態/真值徽章）-->
       <template v-if="row.attributions && row.attributions.length">
         <a-descriptions
           v-for="(a, ai) in row.attributions"
@@ -162,7 +162,7 @@ const otherLangs = (a: Attribution): [string, string][] =>
             >
               {{ TIER_LABELS[a.confidence.tier] || a.confidence.tier }}
             </a-tag>
-            <!-- 校準後 value ≠ LLM 原始 raw 時並列原始值，供覆核者判讀校準幅度 -->
+            <!-- 校準後 value ≠ LLM 原始 raw 時並列原始值，供人工判決判讀校準幅度 -->
             <span
               v-if="
                 typeof a.confidence?.raw === 'number' && a.confidence.raw !== a.confidence.value
@@ -172,13 +172,13 @@ const otherLangs = (a: Attribution): [string, string][] =>
               原始 {{ a.confidence.raw.toFixed(2) }}
             </span>
           </a-descriptions-item>
-          <a-descriptions-item label="判決階段">
+          <a-descriptions-item label="初判階段">
             <a-tag v-if="a.stage" size="small" :color="STAGE_COLOR[a.stage]">
               {{ STAGE_LABELS[a.stage] || a.stage }}
             </a-tag>
             <span v-else>—</span>
           </a-descriptions-item>
-          <a-descriptions-item label="判決模型">
+          <a-descriptions-item label="初判模型">
             <a-tag v-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
             <span v-else>—</span>
           </a-descriptions-item>
@@ -214,7 +214,7 @@ const otherLangs = (a: Attribution): [string, string][] =>
           </a-descriptions-item>
         </a-descriptions>
       </template>
-      <a-empty v-else description="此列尚無歸因（未判 / 正向不歸因）" />
+      <a-empty v-else description="此列尚無歸因（未初判 / 正向不歸因）" />
     </div>
   </a-drawer>
 </template>

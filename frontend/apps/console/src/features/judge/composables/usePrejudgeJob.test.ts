@@ -136,7 +136,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     expect(body).not.toHaveProperty('max_confidence');
   });
 
-  it('scope 模式 + 含已判階段 + lowConfOnly → 帶 target_polarity + max_confidence(auto_accept)', async () => {
+  it('scope 模式 + 含已初判階段 + lowConfOnly → 帶 target_polarity + max_confidence(auto_accept)', async () => {
     const job = mk();
     job.targetMode.value = 'scope';
     job.targetStages.value = ['unjudged', 'pending_review'];
@@ -149,7 +149,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     expect(typeof body.max_confidence).toBe('number'); // ＝judgment.confidence_tiers.auto_accept
   });
 
-  it('scope 模式 + 目標篩選草稿（openPrejudge 以頁面篩選初始化）→ 表級全帶、判決級只在已判階段帶', async () => {
+  it('scope 模式 + 目標篩選草稿（openPrejudge 以頁面篩選初始化）→ 表級全帶、初判級只在已初判階段帶', async () => {
     const filters = {
       polarity: ['negative'],
       confidenceTier: 'jury',
@@ -158,7 +158,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
       dateTo: '2026-07-07',
       prodOid: 'P1',
     };
-    // 僅未判：表級（日期/oid）帶、判決級（confidence_tier/taxonomy）不帶
+    // 僅未初判：表級（日期/oid）帶、初判級（confidence_tier/taxonomy）不帶
     const job = mk({ filters });
     job.openPrejudge(); // 初始化草稿（來自頁面篩選）
     job.targetMode.value = 'scope';
@@ -169,7 +169,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     expect(body).toMatchObject({ date_from: '2026-07-01', date_to: '2026-07-07', prod_oid: 'P1' });
     expect(body).not.toHaveProperty('confidence_tier');
 
-    // 含已判階段：判決級收斂一併帶上
+    // 含已初判階段：初判級收斂一併帶上
     const job2 = mk({ filters });
     job2.openPrejudge();
     job2.targetMode.value = 'scope';

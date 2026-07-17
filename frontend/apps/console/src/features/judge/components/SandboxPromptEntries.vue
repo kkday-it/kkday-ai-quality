@@ -82,7 +82,9 @@ const diffTagColor = computed(() => (props.side === 'old' ? 'red' : 'green'));
             v-for="(a, k) in p.attributions ?? []"
             :key="k"
             class="flex items-start gap-1.5"
-            :class="isDiffAttr(p.prompt_id, a.l2_code) ? 'rounded bg-[var(--color-fill-2)] px-1' : ''"
+            :class="
+              isDiffAttr(p.prompt_id, a.l2_code) ? 'rounded bg-[var(--color-fill-2)] px-1' : ''
+            "
           >
             <a-tag
               v-if="isDiffAttr(p.prompt_id, a.l2_code)"

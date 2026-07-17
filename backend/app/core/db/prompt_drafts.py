@@ -1,4 +1,4 @@
-"""判決 Prompt 草稿存取（prompt_polarity / prompt_C-1~6 每 rule_code 一份共享草稿）。
+"""初判 Prompt 草稿存取（prompt_polarity / prompt_C-1~6 每 rule_code 一份共享草稿）。
 
 草稿＝未入庫的編輯中 prompt 內容：沙盒可直接送測（雙跑對比），驗證滿意後由呼叫端走
 `save_rule_version` 入庫成新 active 版並刪草稿；與 judge_rule_versions 完全分離，

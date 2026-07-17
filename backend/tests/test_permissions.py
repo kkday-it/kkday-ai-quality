@@ -102,17 +102,17 @@ def test_anonymous_gets_401_not_403(temp_db) -> None:
         assert client.post("/api/problems/export", json={}).status_code == 401
         assert client.post("/api/judge-rules/C-1/reset-default").status_code == 401
         assert (
-            client.patch("/api/findings/x/status", json={"status": "confirmed"}).status_code == 401
+            client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code == 401
         )
 
 
 def test_qc_allowed_on_prejudge_run(temp_db, roles_cfg) -> None:
-    """qc 打批量判決啟動端點非 401/403（judgment.prejudge.run 為 qc 日常主功能）。"""
+    """qc 打批量初判啟動端點非 401/403（prejudge.run 為 qc 日常主功能）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
         qc = _auth(_login(client, "someone@kkday.com"))
-        r = client.post("/api/v1/judgment/prejudge", json={"item_ids": []}, headers=qc)
+        r = client.post("/api/v1/prejudge", json={"item_ids": []}, headers=qc)
         assert r.status_code not in (401, 403), r.text
 
 
@@ -121,10 +121,10 @@ def test_anonymous_401_on_prejudge_and_read_endpoints(temp_db) -> None:
     from app.api.main import app
 
     with TestClient(app) as client:
-        assert client.post("/api/v1/judgment/prejudge", json={}).status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/pause?job_id=x").status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/resume?job_id=x").status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/cancel?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge", json={}).status_code == 401
+        assert client.post("/api/v1/prejudge/pause?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge/resume?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge/cancel?job_id=x").status_code == 401
         assert client.get("/api/problems").status_code == 401
         assert client.get("/api/problems/attribution_overview").status_code == 401
         assert client.get("/api/problems/attribution_breakdown?l1=content").status_code == 401

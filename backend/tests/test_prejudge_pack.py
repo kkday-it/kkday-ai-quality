@@ -1,4 +1,4 @@
-"""Prompt-as-Source 引擎確定性行為測試（判決引擎唯一路徑，legacy 已全數退役）。
+"""Prompt-as-Source 引擎確定性行為測試（初判引擎唯一路徑，legacy 已全數退役）。
 
 覆蓋：
 - _stage1_polarity → _pack_polarity 吃 00_polarity（parse 出 polarity/sentiment）；

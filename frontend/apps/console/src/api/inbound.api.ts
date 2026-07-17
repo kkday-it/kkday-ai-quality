@@ -101,4 +101,3 @@ export const getBatches = (): Promise<Record<string, unknown>[]> =>
 /** 某批次的錄入明細（點擊批次展開用）。 */
 export const getBatchItems = (batchId: string): Promise<Record<string, unknown>[]> =>
   j<Record<string, unknown>[]>(`${BASE}/batches/${encodeURIComponent(batchId)}/items`);
-

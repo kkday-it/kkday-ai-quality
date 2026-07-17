@@ -87,7 +87,7 @@ def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
 
 
 def test_run_records_per_item_error_without_failing_whole_job(temp_db, monkeypatch):
-    """單筆判決失敗（如找不到評論）不擋全批：該筆記錯誤，job 仍 done，其餘筆正常落庫。"""
+    """單筆初判失敗（如找不到評論）不擋全批：該筆記錯誤，job 仍 done，其餘筆正常落庫。"""
     monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")  # 過 guard
     monkeypatch.setattr(
         prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}

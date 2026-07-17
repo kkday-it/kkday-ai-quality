@@ -143,7 +143,7 @@ def test_exact_cache_hit_skips_api_call(monkeypatch, tmp_path) -> None:
 
 
 def test_exact_cache_read_gate_write_always(monkeypatch, tmp_path) -> None:
-    """讀取閘關（顯式重判）→ 照打 API；但寫入恆開 → 重開讀取後命中。"""
+    """讀取閘關（顯式重新初判）→ 照打 API；但寫入恆開 → 重開讀取後命中。"""
     _tmp_cache(monkeypatch, tmp_path)
     calls: list = []
     monkeypatch.setattr(

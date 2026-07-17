@@ -4,10 +4,10 @@
 **雙跑**算出「自我一致性噪音地板」，之後每個改動（域路由 / effort 降檔 / cache_key…）跑同一金標集，
 各指標 ≥ 地板 − 1pp 才視為等價過閘。指標純函式 SSOT＝app.judge.prompt_eval.compute_equivalence_metrics。
 
-金標集：judgments 依 (source × polarity) 分層、md5(source:source_id) 穩定排序抽樣（跨 run 可比、
+金標集：attributions 依 (source × polarity) 分層、md5(source:source_id) 穩定排序抽樣（跨 run 可比、
 不受 DB 序影響），固定清單存 data/eval/golden_set.json。
 
-跑判決走 **production 同一條路**（prejudge.to_findings，非診斷路徑），不落庫、不動 judgments；
+跑初判走 **production 同一條路**（prejudge.to_findings，非診斷路徑），不落庫、不動 attributions；
 強制關 exact-cache 讀取（否則第二跑全命中快取＝地板假 100%）。LLM token 走 user_settings（--user）。
 
 用法（scripts/ 未掛載容器，先 docker cp）：
@@ -71,7 +71,7 @@ def build_golden(n: int) -> None:
         rows = c.execute(
             text(
                 "SELECT source, source_id, max(polarity) AS polarity "
-                "FROM judgments WHERE polarity IS NOT NULL GROUP BY source, source_id"
+                "FROM attributions WHERE polarity IS NOT NULL GROUP BY source, source_id"
             )
         ).all()
     strata: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -79,7 +79,7 @@ def build_golden(n: int) -> None:
         strata.setdefault((src, pol), []).append((src, str(sid)))
     total = sum(len(v) for v in strata.values())
     if not total:
-        raise SystemExit("❌ judgments 無已判資料，無法建金標集")
+        raise SystemExit("❌ attributions 無已初判資料，無法建金標集")
     items: list[dict] = []
     for (_src, pol), members in sorted(strata.items()):
         k = max(1, round(n * len(members) / total))  # 比例配額（每層至少 1）
@@ -123,7 +123,7 @@ def _summarize(findings: list) -> dict:
 
 
 def run_once(tag: str, user_email: str, workers: int) -> None:
-    """金標集全量走 production 判決路徑（to_findings；不落庫），結果存 runs/<tag>.json。"""
+    """金標集全量走 production 初判路徑（to_findings；不落庫），結果存 runs/<tag>.json。"""
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     u = db.get_user_by_email(user_email)
     if not u:

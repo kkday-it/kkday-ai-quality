@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 導出實時進度條（純展示；問題列表 / 判決規則 / 圖表 PDF 三處共用）。
+ * 導出實時進度條（純展示；問題列表 / 初判規則 / 圖表 PDF 三處共用）。
  *
  * 進度與狀態由父層驅動（後端 job 走 useExportJob 的 SSE；PDF 走前端逐區塊回報）；本元件只負責畫
  * 進度條 + 停止按鈕 + 文字，emit cancel 讓父層決定如何停止（後端 cancelExport / 前端 shouldCancel 旗標）。
@@ -50,7 +50,10 @@ const stopDisabled = computed(() => props.status === 'cancelling' || props.statu
   <div class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
     <div class="flex items-center gap-3">
       <a-progress class="flex-1" :percent="pct / 100" :status="barStatus" />
-      <a-popconfirm content="確定停止導出？已產生部分不保留，可稍後重新導出。" @ok="$emit('cancel')">
+      <a-popconfirm
+        content="確定停止導出？已產生部分不保留，可稍後重新導出。"
+        @ok="$emit('cancel')"
+      >
         <a-button size="small" status="danger" :disabled="stopDisabled">
           {{ status === 'cancelling' ? '停止中…' : '停止' }}
         </a-button>

@@ -251,7 +251,7 @@ def _mk_result(sid: str, l2: str) -> dict:
 
 
 def test_runs_compare_keeps_error_items_out_of_metrics(temp_db, roles_cfg) -> None:
-    """run-vs-run 對比：error item 保留於 items（帶 error 標記，不靜默消失——草稿造成判決失敗
+    """run-vs-run 對比：error item 保留於 items（帶 error 標記，不靜默消失——草稿造成初判失敗
     正是對比最該凸顯的訊號），但不計入 metrics；單邊獨有 item 另一側為 null。"""
     from app.api.main import app
 
@@ -284,7 +284,7 @@ def test_runs_compare_keeps_error_items_out_of_metrics(temp_db, roles_cfg) -> No
     with TestClient(app) as client:
         tok = {"Authorization": f"Bearer {_register_and_login(client, 'someone@kkday.com')}"}
         r = client.get(
-            f"/api/v1/judgment/prompt-sandbox/runs/compare?a={run_a}&b={run_b}", headers=tok
+            f"/api/v1/prejudge/prompt-sandbox/runs/compare?a={run_a}&b={run_b}", headers=tok
         )
         assert r.status_code == 200
         body = r.json()
@@ -324,7 +324,7 @@ def test_run_detail_compare_metrics(temp_db, roles_cfg) -> None:
     )
     with TestClient(app) as client:
         tok = {"Authorization": f"Bearer {_register_and_login(client, 'someone@kkday.com')}"}
-        r = client.get(f"/api/v1/judgment/prompt-sandbox/runs/{run_id}", headers=tok)
+        r = client.get(f"/api/v1/prejudge/prompt-sandbox/runs/{run_id}", headers=tok)
         assert r.status_code == 200
         body = r.json()
         assert body["compare"] is True and body["drafts"] == {"prompt_C-1": "# md"}

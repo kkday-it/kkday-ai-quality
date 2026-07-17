@@ -1,7 +1,7 @@
 """③ OpenAI Batch API 封裝：組 Batch JSONL request 行的純函式。
 
 適用邊界（誠實）：Batch API 是**無狀態單次請求批**，適合「單階段、全量、無分支」的大批量呼叫
-（如 polarity 全量預篩、或用固定 prompt 對上萬條歷史資料重判某一步）。**不直接適用**於初判歸因的
+（如 polarity 全量預篩、或用固定 prompt 對上萬條歷史資料重新初判某一步）。**不直接適用**於初判歸因的
 多階段管線（polarity→attribute 有「負向才 attribute」的條件分支，無法在一個 batch request 內表達）。
 
 省成本定位：Batch −50% 與 prompt caching −50% 是不同機制、場景互補——caching 適即時（靜態法典前綴
@@ -22,7 +22,7 @@ def build_batch_line(
     Args:
         custom_id: 該筆唯一識別（回下載結果時對回原 item，如 source_id）。
         model/system/user: chat 參數。
-        schema: 傳入時走 Structured Outputs（json_schema strict），與即時判決同格式。
+        schema: 傳入時走 Structured Outputs（json_schema strict），與即時初判同格式。
 
     Returns:
         Batch JSONL 單行 dict（{custom_id, method, url, body}）。

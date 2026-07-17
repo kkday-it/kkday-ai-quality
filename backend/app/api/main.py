@@ -43,7 +43,7 @@ from app.api.routers import (  # noqa: E402
 )
 
 for _r in (
-    v1_router,  # /api/v1（攝取 + 判決）
+    v1_router,  # /api/v1（攝取 + 初判）
     rules_router.router,  # /api/judge-rules（規則版本化）
     exports_router.router,  # /api/exports（通用導出 job）
     auth_router.router,  # /api/auth

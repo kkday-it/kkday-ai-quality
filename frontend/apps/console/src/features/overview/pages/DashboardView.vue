@@ -11,7 +11,13 @@ import { useAiJudgeOverview } from '../composables';
 import { resolveChartData } from '../utils';
 import dashboard from '@config/overview/dashboard.json';
 import mock3 from '../mock/overview.mock3.json';
-import type { ChartSpec, DashboardConfig, Overview3, SectionSpec, ViewSpec } from '../dashboard.types';
+import type {
+  ChartSpec,
+  DashboardConfig,
+  Overview3,
+  SectionSpec,
+  ViewSpec,
+} from '../dashboard.types';
 
 const config = dashboard as unknown as DashboardConfig;
 // 縮窄真接（2026-07-07 拍板）：AI 法官指標（引擎卡/intake_content_ratio/laggingTrend）patch 真值；
@@ -40,7 +46,10 @@ const specsOf = (section: SectionSpec): ChartSpec[] =>
     .map((id) => {
       const spec = config.charts[id];
       // dashboard.json 為業務可編輯 config；chart id 打錯會靜默缺圖，warn 出來便於定位 typo（非拿掉）
-      if (!spec) console.warn(`[overview] dashboard.json 區塊「${section.title}」引用了不存在的 chart id：${id}`);
+      if (!spec)
+        console.warn(
+          `[overview] dashboard.json 區塊「${section.title}」引用了不存在的 chart id：${id}`,
+        );
       return spec;
     })
     .filter(Boolean);
@@ -66,7 +75,9 @@ const onZoom = (spec: ChartSpec) => {
       </div>
       <div class="flex items-center gap-1.5">
         <a-tag :color="realTag.color" size="small" bordered>{{ realTag.text }}</a-tag>
-        <a-tag color="orange" size="small" bordered>外部指標：示意（Sheet/Tableau/Looker 手動）</a-tag>
+        <a-tag color="orange" size="small" bordered
+          >外部指標：示意（Sheet/Tableau/Looker 手動）</a-tag
+        >
       </div>
     </header>
 

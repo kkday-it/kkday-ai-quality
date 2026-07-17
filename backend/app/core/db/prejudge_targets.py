@@ -1,4 +1,4 @@
-"""初判 / 再判「目標選取」：解析批量判決的標的特徵 id 清單（stage 驅動 + 列表全維度篩選）。"""
+"""初判 / 再判「目標選取」：解析批量初判的標的特徵 id 清單（stage 驅動 + 列表全維度篩選）。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, or_, select
 
 from app.core.db import source_registry
 from app.core.db import tables as T
-from app.core.db._shared import _jg_join_cond, apply_table_filters, read_judgment_config
+from app.core.db._shared import _jg_join_cond, apply_table_filters, read_pipeline_config
 
 
 def prejudge_target_ids(
@@ -35,24 +35,24 @@ def prejudge_target_ids(
 
     選取邏輯（兩分支聯集去重）：
     - stages 含 'unjudged' → 收「無 finding 列」特徵 id（首判）。
-    - stages 含已判階段（judged/pending_review/pending_data）→ 收
-      judgments.stage ∈ 該些階段，並可再收斂 target_polarity / max_confidence /
-      confidence_tier / taxonomy（只重判負向低信心等場景，避免浪費 token 重判已確定者）。
+    - stages 含已初判階段（judged/pending_review/pending_data）→ 收
+      attributions.stage ∈ 該些階段，並可再收斂 target_polarity / max_confidence /
+      confidence_tier / taxonomy（只重新初判負向低信心等場景，避免浪費 token 重新初判已確定者）。
     - 表級篩選（垂直分類/日期區間/關聯 oid/有無外部評論）兩分支皆套，語義與統一問題列表
       同一份 SSOT（_shared.apply_table_filters）——「歸因目標＝列表當前篩得到的東西」。
-      判決級收斂（傾向/信心/歸因分類）只對已判分支有意義（未判列無判決可比對）。
+      初判級收斂（傾向/信心/歸因分類）只對已初判分支有意義（未初判列無初判可比對）。
 
     Args:
         source: 來源 code（None＝全部來源，回空；5 來源全拆表須指定單一來源）。
         product_vertical: 商品垂直分類分組（僅 spec.category_col 存在的來源生效）。
-        stages: 目標判決階段清單（預設 ["unjudged"]）。
-        target_polarity: 已判分支的傾向收斂（多選 IN，如 ["negative"]；None/空＝不收斂）。
-        max_confidence: 已判分支的信心上限（confidence < 此值才收；None＝不收斂）。
+        stages: 目標初判階段清單（預設 ["unjudged"]）。
+        target_polarity: 已初判分支的傾向收斂（多選 IN，如 ["negative"]；None/空＝不收斂）。
+        max_confidence: 已初判分支的信心上限（confidence < 此值才收；None＝不收斂）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'）。
         rec_oid/prod_oid/order_oid: 關聯資料精確篩選（表有對應欄才生效）。
-        confidence_tier: 已判分支的信心分層收斂（auto_accept/jury/needs_review）。
-        taxonomy: 已判分支的歸因分類收斂（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
+        confidence_tier: 已初判分支的信心分層收斂（auto_accept/jury/needs_review）。
+        taxonomy: 已初判分支的歸因分類收斂（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
         has_external: 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。
         within_ids: 範圍收斂——僅在此特徵 id 清單內做目標選取（前端「已選 N 筆內」；
             兩分支皆套；None＝不限、空清單＝空範圍回空）。
@@ -66,7 +66,7 @@ def prejudge_target_ids(
     spec = source_registry.spec_for(source)
     if spec is None:  # 5 來源全拆表；source 必給且須已登記
         return []
-    tbl, jg = spec.table, T.judgments
+    tbl, jg = spec.table, T.attributions
     nk = tbl.c[spec.natural_key]
     j = tbl.outerjoin(jg, _jg_join_cond(spec))
 
@@ -93,12 +93,12 @@ def prejudge_target_ids(
         if want_unjudged:
             s = _scope(select(nk).select_from(j).where(jg.c.finding_id.is_(None)))
             # 排除「最新成功後連續失敗 ≥ max_implicit_retries」的 source_id（防系統性失敗隱式無限重撈；
-            # 顯式 item_ids 重判不經本函式、不受此限）。scope/within_ids 收斂後才過濾，capped 集合通常很小。
+            # 顯式 item_ids 重新初判不經本函式、不受此限）。scope/within_ids 收斂後才過濾，capped 集合通常很小。
             capped = _capped_source_ids(c, source, _max_implicit_retries())
             ids.update(r[0] for r in c.execute(s) if r[0] not in capped)
         if judged_stages:
             s = select(nk).select_from(j).where(jg.c.finding_id.isnot(None))
-            s = s.where(jg.c.stage.in_(judged_stages))
+            s = s.where(jg.c.prejudge_stage.in_(judged_stages))
             if target_polarity:
                 s = s.where(jg.c.polarity.in_(target_polarity))
             if max_confidence is not None:
@@ -118,26 +118,26 @@ def prejudge_target_ids(
 
 
 def _max_implicit_retries() -> int:
-    """隱式（scope=all+unjudged）重撈的連續失敗上限（judgment.json prejudge.max_implicit_retries，預設 3）。"""
+    """隱式（scope=all+unjudged）重撈的連續失敗上限（prejudge.json/verdict.json prejudge.max_implicit_retries，預設 3）。"""
     try:
-        return int(read_judgment_config().get("prejudge", {}).get("max_implicit_retries", 3) or 3)
+        return int(read_pipeline_config().get("prejudge", {}).get("max_implicit_retries", 3) or 3)
     except Exception:  # noqa: BLE001  config 讀取異常不應擋住目標選取
         return 3
 
 
 def _capped_source_ids(c, source: str, max_retries: int) -> set[str]:
-    """「最新一次成功判決後、連續失敗事件數 ≥ max_retries」的 source_id 集合（隱式重撈上限）。
+    """「最新一次成功初判後、連續失敗事件數 ≥ max_retries」的 source_id 集合（隱式重撈上限）。
 
-    失敗筆不落 judgments（仍 finding_id IS NULL），會被 unjudged 分支反覆撈到；本集合把系統性失敗
-    （壞 prompt / 失效 key）排除於隱式批次外——只能靠顯式 item_ids 重判（使用者明確意圖）。成功事件
+    失敗筆不落 attributions（仍 finding_id IS NULL），會被 unjudged 分支反覆撈到；本集合把系統性失敗
+    （壞 prompt / 失效 key）排除於隱式批次外——只能靠顯式 item_ids 重新初判（使用者明確意圖）。成功事件
     天然歸零計數（只算 last 'judgment' 之後的 'failure'；從未成功者算全部 failure）。max_retries<1＝停用。
     """
     if max_retries < 1:
         return set()
-    h = T.judgment_history
+    h = T.attribution_history
     last_ok = (
         select(h.c.source_id, func.max(h.c.created_at).label("ok_at"))
-        .where(and_(h.c.source == source, h.c.kind == "judgment"))
+        .where(and_(h.c.source == source, h.c.kind == "prejudge"))
         .group_by(h.c.source_id)
         .subquery()
     )

@@ -3,8 +3,8 @@
 整列底色依 polarity（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱
 長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）。資料表尾附 C-1~C-6 六域命中欄
 （符合/不符合，供 Excel 篩選）；另附「分類統計」圖表工作表（本次導出的情緒傾向/L1/L2/
-分層/階段/模型分佈，見 export_stats.py）與「Prompts」工作表（判決 prompt active 版本快照，
-判決溯源）。
+分層/階段/模型分佈，見 export_stats.py）與「Prompts」工作表（初判 prompt active 版本快照，
+初判溯源）。
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
         "評論內容",
         "content",
         48,
-    ),  # rec_desc：評論正文（review 級，判決主輸入）；凍結邊界：前 4 欄（編號～評論內容）橫捲固定
+    ),  # rec_desc：評論正文（review 級，初判主輸入）；凍結邊界：前 4 欄（編號～評論內容）橫捲固定
     ("評論星等", "score", 8),
     ("評論時間", "occurred_at", 20),
     ("訂單號", "order_mid", 16),
@@ -61,10 +61,21 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("L1 分類", "l1_label", 14),
     ("L2 分類", "l2_label", 14),
     ("信心度", "confidence", 8),
-    ("判決分層", "confidence_tier", 12),
-    ("判決階段", "judgment_stage", 12),
-    ("判決模型", "model", 14),  # 判決溯源（attr 級；快照模式＝所選輸出版本模型）
-    ("覆核狀態", "status", 10),  # 人工處置軸（待處理/自動確認/已確認/已忽略；attr 級）
+    ("信心分層", "confidence_tier", 12),
+    ("初判階段", "prejudge_stage", 12),
+    ("初判模型", "model", 14),  # 初判溯源（attr 級；快照模式＝所選輸出版本模型）
+    # 初判時間（review 級·合併）：該評論最新初判事件時間（attribution_history created_at，
+    # _attach_prejudge_provenance 注入；未初判空白）
+    ("初判時間", "prejudged_at", 20),
+    # 該歸因所屬域 prompt 的「檔名 + 發版時間戳」（attr 級；初判當時快照 params.prompt_versions，
+    # 舊紀錄缺快照→空白，重新初判即補）；如「03_C-3_supplier v20260716080435」
+    ("Prompt 版本", "prompt_version", 32),
+    # 極性 prompt 版本（review 級·合併）：情緒傾向欄的溯源，如「00_polarity v20260717030553」
+    ("極性 Prompt 版本", "polarity_prompt_version", 28),
+    # ── 判決組（判決軸：對初判結果的裁決；快照模式歷史切片無判決軸，三欄空白屬預期）──
+    ("判決狀態", "status", 10),  # 待判決/自動確認/已確認/已駁回（attr 級）
+    ("判決時間", "verdict_at", 20),  # attr 級；系統判決＝路由當下、人工判決＝操作當下
+    ("判決人", "verdict_by", 20),  # 人工＝email；系統＝system:auto_confirm
 ]
 
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
@@ -75,10 +86,10 @@ _LINE_HEIGHT_PT = 15
 
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/分層/判決階段 code→繁中、情緒分數字化，其餘原樣。"""
+    """導出單格：時間欄正規化、傾向/分層/初判階段 code→繁中、情緒分數字化，其餘原樣。"""
     if value is None or value == "":
         return ""
-    if key == "occurred_at":
+    if key in ("occurred_at", "prejudged_at", "verdict_at"):
         return fmt_datetime(value)
     if key == "go_date":
         return fmt_datetime(value, date_only=True)
@@ -88,7 +99,7 @@ def _export_cell(key: str, value) -> str:
         return str(value)  # 我方情緒分 1-5 純數字，直接字串化
     if key == "confidence_tier":
         return _TIER_LABEL_ZH.get(value, value)
-    if key == "judgment_stage":
+    if key == "prejudge_stage":
         return _STAGE_LABEL_ZH.get(value, value)
     if key == "status":
         return _STATUS_LABEL_ZH.get(value, value)
@@ -107,10 +118,15 @@ def _flat_attr(a: dict) -> dict:
         "l2_label": (a.get("l2") or {}).get("label"),
         "confidence": (a.get("confidence") or {}).get("value"),
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
-        "judgment_stage": a.get("stage"),
+        "prejudge_stage": a.get("stage"),
         "summary": (a.get("content") or {}).get("summary"),
         "model": a.get("model"),
+        "prompt_version": a.get(
+            "prompt_version"
+        ),  # _attach_prejudge_provenance 注入（無紀錄＝缺鍵→空白）
         "status": a.get("status"),
+        "verdict_at": a.get("verdict_at"),
+        "verdict_by": a.get("verdict_by"),
     }
 
 
@@ -133,7 +149,7 @@ def _compare_values(snap_attrs: list[dict]) -> tuple[str, str, str]:
     """某模型某評論的快照歸因陣列 → (情緒分, L1 labels、串接, L2 labels、串接)。
 
     情緒取 primary（或首條）sentiment_score；L1/L2 取 distinct label 保序串接。空陣列（該模型
-    判為 non_issue 或未判）→ 三欄皆空（前端/檔案以空白表達「該模型無歸因」）。
+    判為 non_issue 或未初判）→ 三欄皆空（前端/檔案以空白表達「該模型無歸因」）。
     """
     if not snap_attrs:
         return "", "", ""
@@ -154,14 +170,14 @@ def _join_labels(labels) -> str:
 
 
 def _adapt_snapshot(a: dict, model: str) -> dict:
-    """judgment_history 快照單筆（snapshot_of 形狀）→ attribution_dto 輸出形狀（快照導出用）。
+    """attribution_history 快照單筆（snapshot_of 形狀）→ attribution_dto 輸出形狀（快照導出用）。
 
     - content.summary：快照存原始語系 map → 複用 `_summary_langs` 重算 {summary zh-tw 字串,
-      summary_langs}，與當前判決導出完全同形。
+      summary_langs}，與當前初判導出完全同形。
     - owner：純函式 `_domain_owner(l1.code)` 讀取時派生（與 attribution_dto 同源）。
-    - notes_count＝0：快照 finding_id 是歷史值，重判後與現行 finding_notes 的對應不可靠，
-      且那些備註語義上屬「當時那次判決」——不 join、不冒充。
-    - status＝None：人工覆核軸綁「當前判決」可變狀態，歷史快照是不可變切片，
+    - notes_count＝0：快照 finding_id 是歷史值，重新初判後與現行 finding_notes 的對應不可靠，
+      且那些備註語義上屬「當時那次初判」——不 join、不冒充。
+    - status＝None：人工判決軸綁「當前初判」可變狀態，歷史快照是不可變切片，
       硬塞會產生假象（xlsx 該欄輸出空白屬預期）。
     """
     content = a.get("content") or {}
@@ -233,17 +249,17 @@ def export_problems_xlsx(
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
 
     複用 rule_export._style_header（品牌綠表頭/凍結首列/斑馬/細邊框），與規則導出視覺一致。
-    傾向/分層/判決階段輸出繁中 label。openpyxl / _style_header lazy import。
+    傾向/分層/初判階段輸出繁中 label。openpyxl / _style_header lazy import。
 
     Args:
         source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
         stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid:
             同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分）。
-        snapshot_model: 輸出結果版本——None/空＝當前判決（現行為）；指定模型＝內容替換為該
-            模型的 judgment_history 最新快照（真多模型對比輸出）。篩選仍依**當前判決**圈選
-            評論（表級照常、判決級口徑落差以統計表附註揭露）；該模型未判過的評論整列排除。
-        compare_models: 並排對比模型（可複選）；每個模型在基準（gpt 當前判決或 snapshot_model）
-            右側附一組 review 級欄「情緒·M / L1·M / L2·M」，值取該模型 judgment_history 最新快照。
+        snapshot_model: 輸出結果版本——None/空＝當前初判（現行為）；指定模型＝內容替換為該
+            模型的 attribution_history 最新快照（真多模型對比輸出）。篩選仍依**當前初判**圈選
+            評論（表級照常、初判級口徑落差以統計表附註揭露）；該模型未初判過的評論整列排除。
+        compare_models: 並排對比模型（可複選）；每個模型在基準（gpt 當前初判或 snapshot_model）
+            右側附一組 review 級欄「情緒·M / L1·M / L2·M」，值取該模型 attribution_history 最新快照。
             與 snapshot_model 語義獨立可並用（基準決定 fan-out 內容，compare 只加對比欄）。
         item_ids: 給定時只導這些 review（前端勾選）；比對 fan-out 列的 _group（source_id）。
         ctx: 背景 job 進度把手（可選）；給定時逐 review 回報進度並輪詢取消（背景導出用），
@@ -287,16 +303,16 @@ def export_problems_xlsx(
         rows = [r for r in rows if r.get("_group") in idset]
     stats_note: str | None = None
     if snapshot_model:
-        # 輸出結果版本＝指定模型：內容替換為該模型最新歷史快照（該模型未判過的評論整列排除），
-        # 並同步 row 級 polarity/our_sentiment——否則整列底色/情緒傾向欄仍是當前判決值，
+        # 輸出結果版本＝指定模型：內容替換為該模型最新歷史快照（該模型未初判過的評論整列排除），
+        # 並同步 row 級 polarity/our_sentiment——否則整列底色/情緒傾向欄仍是當前初判值，
         # 與被替換的 L1/L2/摘要（快照值）自相矛盾。
-        from app.core.db.judgment_history import latest_snapshots
+        from app.core.db.attribution_history import latest_snapshots
 
         snaps = latest_snapshots(source or "", snapshot_model)
         matched = [r for r in rows if r.get("_group") in snaps]
         stats_note = (
             f"輸出結果版本＝{snapshot_model}；篩選命中 {len(rows)} 則，"
-            f"其中 {len(matched)} 則有該模型判決紀錄（已排除 {len(rows) - len(matched)} 則）"
+            f"其中 {len(matched)} 則有該模型初判紀錄（已排除 {len(rows) - len(matched)} 則）"
         )
         rows = matched
         for r in rows:
@@ -314,7 +330,7 @@ def export_problems_xlsx(
     # 級處理（合併儲存格、參與行高），無須改動渲染主迴圈。
     cmp_cols: list[tuple[str, str, int]] = []
     if compare_models:
-        from app.core.db.judgment_history import latest_snapshots
+        from app.core.db.attribution_history import latest_snapshots
 
         cmp_cols = _compare_cols(compare_models)
         snaps_by_model = {m: latest_snapshots(source or "", m) for m in compare_models}
@@ -323,17 +339,21 @@ def export_problems_xlsx(
                 snap = snaps_by_model[m].get(r["_group"])
                 sent, l1, l2 = _compare_values(snap["attributions"] if snap else [])
                 r[f"cmp__{m}__sent"], r[f"cmp__{m}__l1"], r[f"cmp__{m}__l2"] = sent, l1, l2
-        cmp_note = "並排對比模型（值＝各模型 judgment_history 最新快照）：" + "、".join(
+        cmp_note = "並排對比模型（值＝各模型 attribution_history 最新快照）：" + "、".join(
             compare_models
         )
         stats_note = f"{stats_note}；{cmp_note}" if stats_note else cmp_note
-    # C-1~C-6 六域命中欄（review 級·合併儲存格）：值＝符合/不符合（未判評論空白），供 Excel
-    # 篩選。以基準內容計（當前判決或 snapshot_model 快照）——置於快照替換後，輸出版本口徑一致；
+    # C-1~C-6 六域命中欄（review 級·合併儲存格）：值＝符合/不符合（未初判評論空白），供 Excel
+    # 篩選。以基準內容計（當前初判或 snapshot_model 快照）——置於快照替換後，輸出版本口徑一致；
     # 欄鍵 dom__{域機器值} 不撞 _attr_keys → fan-out 迴圈自動當 review 級處理。
+    # 初判溯源注入：初判時間（review）＋域/極性 prompt 版本（attribution_history 快照 params）
+    _attach_prejudge_provenance(rows, source)
     dom_cols = _domain_match_cols()
     for r in rows:
         hits = {(a.get("l1") or {}).get("code") for a in (r.get("attributions") or [])}
-        judged = bool(r.get("polarity"))  # polarity 空＝完全未判 → 六欄留空（避免誤讀為判過不符合）
+        judged = bool(
+            r.get("polarity")
+        )  # polarity 空＝完全未初判 → 六欄留空（避免誤讀為判過不符合）
         for _t, key, _w in dom_cols:
             r[key] = ("符合" if key.removeprefix("dom__") in hits else "不符合") if judged else ""
     total = len(rows)
@@ -352,10 +372,13 @@ def export_problems_xlsx(
         "l2_label",
         "confidence",
         "confidence_tier",
-        "judgment_stage",
+        "prejudge_stage",
         "summary",
         "model",
+        "prompt_version",
         "status",
+        "verdict_at",
+        "verdict_by",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
@@ -377,7 +400,7 @@ def export_problems_xlsx(
         merges.append((r_excel, n))
         r_excel += n
     _style_header(ws, [c[2] for c in cols], freeze_cols=4)  # 凍結表頭 + 前 4 欄（編號～評論內容）
-    # polarity 整列底色（正綠/中灰/負紅；未判不上色）。置於「合併前」——此時全為普通 cell，
+    # polarity 整列底色（正綠/中灰/負紅；未初判不上色）。置於「合併前」——此時全為普通 cell，
     # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header 故覆蓋其斑馬紋。
     _pol_fill = {
         "positive": PatternFill("solid", fgColor="DCF3E3"),  # 正向：淡綠
@@ -423,8 +446,10 @@ def export_problems_xlsx(
     from app.core.db.export_stats import append_stats_sheet
 
     append_stats_sheet(wb, rows, note=stats_note)
-    # 尾附「Prompts」工作表：判決 prompt active 版本快照，供事後追溯這份結果用哪版 prompt 產出
+    # 尾附「Prompts」工作表：初判 prompt active 版本快照，供事後追溯這份結果用哪版 prompt 產出
     _append_prompts_sheet(wb)
+    # 最後附「說明」工作表：欄位語義字典（檔案轉發他人時自解釋）
+    _append_legend_sheet(wb, bool(cmp_cols))
     if ctx is not None:
         ctx.report(total, total)  # 組檔完成（save 為單次序列化，無法再細分進度）
     buf = BytesIO()
@@ -474,7 +499,7 @@ def _domain_match_cols() -> list[tuple[str, str, int]]:
 
 
 def _append_prompts_sheet(wb) -> None:
-    """附「Prompts」工作表：導出當下 7 支判決 prompt 的 active 版本快照（判決溯源）。
+    """附「Prompts」工作表：導出當下 7 支初判 prompt 的 active 版本快照（初判溯源）。
 
     版本 meta 取 `judge_rule_versions` active 版（`db.list_rule_meta`）；版本欄顯示**發版時間戳**
     （v20260717031507 形式，UTC）——七支通常同批發版、時間戳一致可讀，per-rule 整數流水號
@@ -514,7 +539,7 @@ def _append_prompts_sheet(wb) -> None:
         version = f"v{created.astimezone(timezone.utc):%Y%m%d%H%M%S}" if created else "檔案默認"
         ws.append(
             [
-                code,
+                pid,  # prompt 檔名 id（與資料表「Prompt 版本」值同詞彙，直接對照）
                 _xlsx_safe(title),
                 version,
                 _xlsx_safe(m.get("note") or ""),
@@ -525,3 +550,141 @@ def _append_prompts_sheet(wb) -> None:
     _style_header(ws, [w for _t, w in cols])  # 已含全表 wrap+頂對齊
     for rr in range(2, ws.max_row + 1):  # 內容列固定高：全文預覽約 8 行，不撐爆版面
         ws.row_dimensions[rr].height = _CONTENT_ROW_PT
+
+
+def _attach_prejudge_provenance(rows: list[dict], source: str | None) -> None:
+    """就地注入初判溯源三件套：review 級 `prejudged_at`/`polarity_prompt_version`、
+    attr 級 `prompt_version`。
+
+    來源＝attribution_history 每評論最新初判快照：`created_at`＝初判事件落庫時間（初判時間；
+    f2a8c4d61e93 已回填故全部已初判評論有值）；`params.prompt_versions`（初判落庫時的 7 支
+    版本快照，見 prejudge_batch._resolve_versions_used）換算為「prompt 檔名 + 發版時間戳」
+    （如「03_C-3_supplier v20260716080435」，與「Prompts」工作表同詞彙可直接對照）。
+    舊紀錄缺版本快照 → 版本欄空白（重新初判即補）；快照/當前兩種輸出版本皆以各歸因
+    自身 model 對應的最新快照為準。
+    """
+    from sqlalchemy import select
+
+    from app.core.db import tables as T
+    from app.core.db.attribution_history import latest_snapshots
+    from app.judge import prompt_source
+
+    models = {a.get("model") for r in rows for a in (r.get("attributions") or []) if a.get("model")}
+    if not models:
+        return
+    # rule_code → prompt 檔名 id（值前綴，讀者可直接對照「Prompts」工作表）
+    rule_pid = dict(zip(prompt_source.PROMPT_RULE_CODES, prompt_source.PROMPT_IDS, strict=True))
+    # (rule_code, 整數版本) → 「pid v發版時間戳」；一次撈全表（prompt_* 版本列僅百級）
+    j = T.judge_rule_versions
+    with T.get_engine().connect() as c:
+        stamp = {
+            (r.rule_code, r.version): rule_pid.get(r.rule_code, r.rule_code)
+            + " "
+            + (
+                f"v{r.created_at.astimezone(timezone.utc):%Y%m%d%H%M%S}"
+                if r.created_at
+                else f"v{r.version}"
+            )
+            for r in c.execute(
+                select(j.c.rule_code, j.c.version, j.c.created_at).where(
+                    j.c.rule_code.like("prompt\\_%")
+                )
+            )
+        }
+
+    def _stamp_of(code: str, vers: dict) -> str | None:
+        """版本快照 dict → 該 rule 的「pid v時間戳」；無紀錄回 None。"""
+        ver = vers.get(code)
+        if ver is None:
+            return None
+        return stamp.get((code, ver), f"{rule_pid.get(code, code)} v{ver}")
+
+    # 域機器值（attributions.l1_code 詞彙表）→ rule_code（prompt_C-N）
+    dom_rule = {
+        pid.split("_", 2)[2]: code
+        for pid, code in zip(prompt_source.PROMPT_IDS, prompt_source.PROMPT_RULE_CODES, strict=True)
+        if pid != prompt_source.POLARITY_ID
+    }
+    polarity_rule = prompt_source.PROMPT_RULE_CODES[
+        prompt_source.PROMPT_IDS.index(prompt_source.POLARITY_ID)
+    ]
+    versions_by_model = {m: latest_snapshots(source or "", m) for m in models}
+    for r in rows:
+        attrs = r.get("attributions") or []
+        if not attrs:
+            continue
+        # 同一評論全部歸因同 model：以首條 model 取該評論最新初判事件
+        snap = versions_by_model.get(attrs[0].get("model"), {}).get(r.get("_group"))
+        if snap:
+            r["prejudged_at"] = snap.get("created_at") or ""  # 初判時間（review 級）
+        vers = (snap or {}).get("params", {}).get("prompt_versions") or {}
+        pol = _stamp_of(polarity_rule, vers)
+        if pol:
+            r["polarity_prompt_version"] = pol  # 極性 prompt 溯源（review 級）
+        for a in attrs:
+            code = dom_rule.get((a.get("l1") or {}).get("code") or "")
+            v = _stamp_of(code, vers) if code else None
+            if v:
+                a["prompt_version"] = v
+
+
+def _append_legend_sheet(wb, has_compare: bool) -> None:
+    """附「說明」工作表：欄位語義字典——檔案轉發給未接觸系統的人也能自解釋。
+
+    內容與資料表欄位定義（_EXPORT_XLSX_COLS/_domain_match_cols）同步維護；新增/改欄時
+    一併更新本表條目（docs-sync 鐵律的檔內對應物）。
+    """
+    from app.core.judge_config.rule_export import _style_header
+
+    ws = wb.create_sheet("說明")
+    ws.append(["項目", "說明"])
+    rows = [
+        (
+            "兩階段模型",
+            "初判分類（AI 管線：極性閘門→六域並行歸因→信心閘門）產出候選歸因；判決歸因（判決軸）對初判結果裁決——系統判決（高信心自動確認）或人工判決（確認/駁回）",
+        ),
+        (
+            "工作表結構",
+            "①資料表（每列＝一條歸因；同評論多歸因時評論級欄合併儲存格）②分類統計（本次導出的分佈圖表）③Prompts（導出當下 7 支初判 prompt 的 active 版本快照）④本說明",
+        ),
+        ("整列底色", "依評論情緒傾向：正向＝淡綠、中立＝淡灰、負向＝淡紅；未初判不上色"),
+        (
+            "評論級 vs 歸因級",
+            "編號～方案名稱、情緒傾向、初判時間、極性 Prompt 版本、C-1~C-6 為評論級（多歸因時合併儲存格）；問題摘要、L1/L2、信心度、信心分層、初判階段、初判模型、Prompt 版本、判決狀態/時間/人為歸因級（逐列各自有值）",
+        ),
+        (
+            "情緒傾向",
+            "我方 LLM 讀評論原文判定的情緒分 1-5（負 1-2／中 3／正 4-5），與外部評論 sentiment 同尺度",
+        ),
+        ("信心分層", "初判信心三層：自動採信／評審複審／人工複審（閾值見系統設定）"),
+        ("初判階段", "AI 初判完成度：已初判／待複審／待數據補充；空白＝尚未初判"),
+        ("初判時間", "該評論最近一次初判事件的落庫時間；空白＝尚未初判"),
+        (
+            "Prompt 版本",
+            "該條歸因所屬「域」prompt 的檔名＋發版時間戳（初判當時所用版本，非導出當下）；空白＝該筆初判早於版本快照機制，重新初判即補",
+        ),
+        ("極性 Prompt 版本", "情緒傾向所用 00_polarity prompt 的版本（語義同上）"),
+        ("判決狀態", "判決軸：待判決／自動確認（系統判決）／已確認／已駁回（人工判決）"),
+        (
+            "判決時間/判決人",
+            "該歸因被裁決的時間與主體：系統判決＝system:auto_confirm＋路由當下；人工判決＝操作者 email＋操作當下；待判決＝空白",
+        ),
+        (
+            "C-1~C-6 六域欄",
+            "該評論是否命中該歸因域：符合／不符合；空白＝尚未初判。可用表頭篩選箭頭快速過濾",
+        ),
+        (
+            "兩個版本語義",
+            "資料表「Prompt 版本」＝該列初判當時所用版本；「Prompts」工作表＝導出當下系統 active 版本——兩者不一致代表該列由較舊版本初判",
+        ),
+    ]
+    if has_compare:
+        rows.append(
+            (
+                "對比模型欄",
+                "情緒·M／L1·M／L2·M＝該模型最新初判快照的並排對比（空白＝該模型未初判或判為無問題；歷史快照無判決軸）",
+            )
+        )
+    for item, desc in rows:
+        ws.append([item, desc])
+    _style_header(ws, [22, 110])  # 已含全表 wrap+頂對齊

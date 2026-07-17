@@ -26,7 +26,7 @@ export const PERM = {
   dataSourceUpload: 'data.source.upload',
   findingReviewUpdate: 'finding.review.update',
   problemListExport: 'problem.list.export',
-  judgmentPrejudgeRun: 'judgment.prejudge.run',
+  prejudgeRun: 'prejudge.run',
 } as const;
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM];

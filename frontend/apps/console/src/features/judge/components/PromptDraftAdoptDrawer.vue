@@ -65,7 +65,7 @@ async function adopt(): Promise<void> {
     } catch {
       Message.warning('已入庫，但草稿清理失敗——可至版本選擇器手動刪除');
     }
-    Message.success(`已入庫為 v${res.version} 並設為 active（判決即時生效）`);
+    Message.success(`已入庫為 v${res.version} 並設為 active（初判即時生效）`);
     emit('adopted', { code: props.code, version: res.version });
     emit('update:visible', false);
   } catch (e) {
@@ -90,7 +90,7 @@ async function adopt(): Promise<void> {
     <template #title>採納草稿入庫 · {{ label }}</template>
     <a-spin :loading="loading" class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div class="mb-2 flex-none text-xs text-[var(--color-text-3)]">
-        入庫後立即成為 active 新版本（正式判決即時採用）；內容＝本次測試驗證過的草稿快照。
+        入庫後立即成為 active 新版本（正式初判即時採用）；內容＝本次測試驗證過的草稿快照。
       </div>
       <MdTextDiff
         class="min-h-0 flex-1"

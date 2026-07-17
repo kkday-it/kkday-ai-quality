@@ -52,10 +52,7 @@ async function loadDiff(): Promise<void> {
   if (verA.value == null || verB.value == null) return;
   loading.value = true;
   try {
-    [textA.value, textB.value] = await Promise.all([
-      fetchText(verA.value),
-      fetchText(verB.value),
-    ]);
+    [textA.value, textB.value] = await Promise.all([fetchText(verA.value), fetchText(verB.value)]);
   } finally {
     loading.value = false;
   }

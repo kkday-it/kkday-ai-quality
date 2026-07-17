@@ -47,7 +47,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   /** 送 patch 給後端並以權威回應同步狀態；剛存的明文機密合併進本地 map（供再編輯）。 */
   async function persist(
     patch: Record<string, unknown>,
-    localSecrets?: { llmTokens?: Record<string, string>; qcPasswords?: Record<string, string> }
+    localSecrets?: { llmTokens?: Record<string, string>; qcPasswords?: Record<string, string> },
   ): Promise<void> {
     const m: SettingsBundle = await saveSettings(patch);
     syncFrom(m);
@@ -57,10 +57,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
 
   // ── LLM ──
   /** 新增/更新一套 LLM config（依 id upsert）；tokenPatch＝{configId: 明文token}（dirty 才帶，per-config）。 */
-  async function saveLlmConfig(
-    cfg: LlmConfig,
-    tokenPatch?: Record<string, string>
-  ): Promise<void> {
+  async function saveLlmConfig(cfg: LlmConfig, tokenPatch?: Record<string, string>): Promise<void> {
     const list = [...llmConfigs.value];
     const idx = list.findIndex((c) => c.id === cfg.id);
     if (idx >= 0) list[idx] = cfg;

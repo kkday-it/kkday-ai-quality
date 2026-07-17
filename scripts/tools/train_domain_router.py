@@ -1,6 +1,6 @@
-"""域路由器離線訓練（升級計畫 P3）——以歷史判決訓練 embedding 候選域分類器。
+"""域路由器離線訓練（升級計畫 P3）——以歷史初判訓練 embedding 候選域分類器。
 
-原理：judgments 的 (source, source_id) 級歷史判決＝免費標註（各案命中哪些 L1 域）；
+原理：attributions 的 (source, source_id) 級歷史初判＝免費標註（各案命中哪些 L1 域）；
 text → OpenAI embedding → 每域一個 LogisticRegression（one-vs-rest, class_weight=balanced）。
 閾值以「holdout recall ≥ --target-recall（預設 0.995）」為硬約束選最鬆可剪點——路由任務是
 **別漏域**（高召回），省多少（precision/prune-rate）是次要結果。
@@ -10,8 +10,8 @@ text → OpenAI embedding → 每域一個 LogisticRegression（one-vs-rest, cla
 - data/reports/router_training_<日期>.md：per-domain recall/precision/剪枝率 + always_on 建議
   ——recall 不達標或正樣本過少（< --min-positives）的域**不給閾值**（runtime 視同 always_on 恆跑）。
 
-僅用負/中立案（judgment.json polarity_gate.attribute_when 才會 fan-out 的傾向）；零域案
-（全域棄權）為全域負樣本。訓練資料會隨判決累積成長，建議每月或大批新判後重訓。
+僅用負/中立案（prejudge.json/verdict.json polarity_gate.attribute_when 才會 fan-out 的傾向）；零域案
+（全域棄權）為全域負樣本。訓練資料會隨初判累積成長，建議每月或大批新判後重訓。
 
 依賴：scikit-learn（backend [dev] extras；容器內 pip install -e '.[dev]'）。
 用法（scripts/ 未掛載容器，先 docker cp）：
@@ -54,14 +54,14 @@ def _md5pct(key: str) -> int:
 
 
 def _load_cases() -> list[dict]:
-    """負/中立已判案 → [{source, source_id, domains: set[str]}]（零域案＝全域負樣本）。"""
+    """負/中立已初判案 → [{source, source_id, domains: set[str]}]（零域案＝全域負樣本）。"""
     when = tuple(prejudge._attribute_when())
     with T.get_engine().connect() as c:
         rows = c.execute(
             text(
                 "SELECT source, source_id, "
                 "array_agg(DISTINCT l1_code) FILTER (WHERE l1_code IS NOT NULL AND l1_code<>'') AS doms "
-                "FROM judgments WHERE polarity = ANY(:when) GROUP BY source, source_id"
+                "FROM attributions WHERE polarity = ANY(:when) GROUP BY source, source_id"
             ),
             {"when": list(when)},
         ).all()
@@ -119,7 +119,7 @@ def main() -> None:
     router_cfg = prejudge._prejudge_cfg().get("domain_router") or {}
     embed_model = str(router_cfg.get("embedding_model") or "")
     if not embed_model:
-        raise SystemExit("❌ judgment.json prejudge.domain_router.embedding_model 未設定")
+        raise SystemExit("❌ prejudge.json/verdict.json prejudge.domain_router.embedding_model 未設定")
 
     cases = _load_cases()
     if args.exclude:
@@ -129,7 +129,7 @@ def main() -> None:
         before = len(cases)
         cases = [c for c in cases if f"{c['source']}:{c['source_id']}" not in keys]
         print(f"▶ 排除評測集 {before - len(cases)} 案（--exclude {args.exclude}）")
-    print(f"▶ 訓練資料 {len(cases)} 案（負/中立已判）· embedding={embed_model}")
+    print(f"▶ 訓練資料 {len(cases)} 案（負/中立已初判）· embedding={embed_model}")
     texts = []
     for cs in cases:
         item = _build_sandbox_item(cs["source"], cs["source_id"])
@@ -138,7 +138,7 @@ def main() -> None:
     dim = len(vecs[0])
 
     is_hold = [_md5pct(f"{c['source']}:{c['source_id']}") < args.holdout for c in cases]
-    # 域詞彙表鐵律：用域機器值（content/supplier…＝judgments.l1_code 同詞彙表），勿用 C-x 碼——
+    # 域詞彙表鐵律：用域機器值（content/supplier…＝attributions.l1_code 同詞彙表），勿用 C-x 碼——
     # 否則 `dom in c["domains"]` 恆 False → 全域零正樣本 → 全 always_on，路由形同虛設。
     domains = sorted(
         {prompt_source._domain_of(pid) for pid in prompt_source.DOMAIN_PROMPT_IDS}
@@ -232,7 +232,7 @@ def main() -> None:
                 f"**holdout 平均候選域數 ≈ {avg_domains:.2f} / 6**（越低省越多；always_on 域恆計 1）",
                 "",
                 "上線閘門：可剪域 recall ≥ 目標且 eval_equivalence 金標集等價過閘後，"
-                "將 judgment.json prejudge.domain_router.enabled 設 true（建議先 shadow_rate 觀察）。",
+                "將 prejudge.json/verdict.json prejudge.domain_router.enabled 設 true（建議先 shadow_rate 觀察）。",
             ]
         )
         + "\n",

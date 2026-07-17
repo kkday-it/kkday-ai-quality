@@ -15,7 +15,7 @@ import pytest
 from app.judge import domain_router, prejudge
 from app.judge.prompt_eval import compute_equivalence_metrics
 
-# 域詞彙表＝機器值（content/supplier…＝judgments.l1_code 同詞彙表；C-x 碼只在檔名/日誌）
+# 域詞彙表＝機器值（content/supplier…＝attributions.l1_code 同詞彙表；C-x 碼只在檔名/日誌）
 _WEIGHTS = {
     "version": 1,
     "embedding_model": "text-embedding-3-small",
@@ -131,7 +131,7 @@ def test_shadow_missed_same_vocabulary(router_env) -> None:
 
 
 def test_report_shadow_swallows_db_errors(router_env, monkeypatch) -> None:
-    """影子留痕 best-effort：DB 不可用也不拋（絕不阻斷判決）。"""
+    """影子留痕 best-effort：DB 不可用也不拋（絕不阻斷初判）。"""
     from app.core.db import tables as T
 
     def _boom():

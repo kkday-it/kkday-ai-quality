@@ -1,7 +1,7 @@
 """overview 首頁 AI 法官真實指標（db.ai_judge_overview_stats + /api/overview/ai-judge）測試。
 
 鎖定「縮窄真接」口徑：distinct (source, source_id) 進線去重（1:N 多歸因不重複計）、
-judged_at 月分組、content 占比計算；空庫優雅回零。需 temp_db（合成拋棄列）。
+created_at 月分組、content 占比計算；空庫優雅回零。需 temp_db（合成拋棄列）。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from app.core import db
 from app.core.schema import TicketFinding
 
 
-def _finding(sid: str, l1_code: str, judged_at: str, suffix: str = "") -> TicketFinding:
+def _finding(sid: str, l1_code: str, created_at: str, suffix: str = "") -> TicketFinding:
     return TicketFinding(
         finding_id=f"fd_product_reviews_{sid}{('__' + suffix) if suffix else ''}",
         ticket_id=sid,
@@ -21,8 +21,8 @@ def _finding(sid: str, l1_code: str, judged_at: str, suffix: str = "") -> Ticket
         confidence=0.9,
         raw_confidence=0.9,
         confidence_tier="auto_accept",
-        judgment_stage="judged",
-        judged_at=judged_at,
+        prejudge_stage="judged",
+        created_at=created_at,
     )
 
 

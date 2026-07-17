@@ -1,4 +1,4 @@
-"""判決核心（prejudge）確定性行為測試——Prompt-as-Source 唯一引擎路徑（legacy 已全數退役）。
+"""初判核心（prejudge）確定性行為測試——Prompt-as-Source 唯一引擎路徑（legacy 已全數退役）。
 
 分兩層，皆不需 LLM key（stub）/ 不碰 DB：
 - **純 helper**：信心分層邊界、階段派生、證據封頂、寬鬆 float 解析、批次 effort 上限。
@@ -46,7 +46,7 @@ def test_tier_for_boundaries(fixed_config) -> None:
 
 
 def test_derive_stage_all_branches() -> None:
-    """判決階段派生（歸因 finding 專用；混合中性歸因與負向同規則）。"""
+    """初判階段派生（歸因 finding 專用；混合中性歸因與負向同規則）。"""
     # 無 L3 或 evidence-cap → pending_data（不分負向/混合中性）
     assert prejudge._derive_stage("negative", "", "auto_accept", False) == "pending_data"
     assert prejudge._derive_stage("neutral", "", "jury", False) == "pending_data"
@@ -99,13 +99,13 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         model="m",
     )
     assert len(fs) == 1 and fs[0].polarity == "neutral" and fs[0].l1_domain_code == "supplier"
-    assert fs[0].judgment_stage == "judged"  # 有 L2+高信心：與負向同規則派生
+    assert fs[0].prejudge_stage == "judged"  # 有 L2+高信心：與負向同規則派生
     # 混合中性但找不到具體問題點 → 純 non_issue（judged，非 pending_data）
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [])
     fs = prejudge.to_findings(
         {"source": "product_reviews", "source_id": "t2", "content": "整體很棒"}, model="m"
     )
-    assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].judgment_stage == "judged"
+    assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].prejudge_stage == "judged"
 
 
 def test_to_findings_gate_excludes_neutral_when_config_negative_only(
@@ -193,7 +193,7 @@ def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
     assert len(out) == 1
     f = out[0]
     assert f.polarity == "positive"
-    assert f.judgment_stage == "judged"
+    assert f.prejudge_stage == "judged"
     assert f.finding_id == "fd_product_reviews_R1"
 
 
@@ -209,7 +209,7 @@ def test_to_findings_negative_unattributed_pending_data(stub_engine) -> None:
     assert len(out) == 1
     f = out[0]
     assert f.polarity == "negative"
-    assert f.judgment_stage == "pending_data"
+    assert f.prejudge_stage == "pending_data"
     assert f.confidence_tier == "needs_review"
     assert f.needs_review is True
 
@@ -221,12 +221,12 @@ def test_to_findings_middling_review_neutral_judged(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "neutral"
     assert f.sentiment_score == 3
-    assert f.judgment_stage == "judged"
+    assert f.prejudge_stage == "judged"
 
 
 # ── 歸因處理正確性（_evidence_grounded / _finalize_attr_l2）─────────────────
 # 這批鎖「LLM 原始輸出 → 淨化 attr」的確定性邏輯——證據接地防編造、白名單校驗、證據封頂——
-# 是判決核心（_attrs_pack 六域並行的合流前處理）的正確性關鍵。
+# 是初判核心（_attrs_pack 六域並行的合流前處理）的正確性關鍵。
 
 # 面向白名單（_sanitize_l2 用；code → (l1_domain, l1_label, l2_label)）。
 _L2_VALID = {
@@ -449,6 +449,8 @@ def test_to_findings_positive_routed_auto_confirmed(stub_engine, monkeypatch) ->
     )
     out = prejudge.to_findings(_item(5, "整體體驗很好值得推薦給朋友"), model="gpt-5-nano")
     assert out[0].status == "auto_confirmed"
+    # 系統判決留痕：判決人＝system:auto_confirm、初判時間非空（可追溯）
+    assert out[0].verdict_by == "system:auto_confirm" and out[0].verdict_at
 
 
 def test_to_findings_negative_pending_stays_new(stub_engine) -> None:

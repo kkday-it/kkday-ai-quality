@@ -5,7 +5,7 @@
 
 維度與 grain：
 - 情緒傾向（評論級）：每則評論一次，count r["polarity"]（正/中/負/不明）。
-- L1 分類 / L2 分類 / 判決分層 / 判決階段 / 判決模型（歸因級）：每條歸因一次。
+- L1 分類 / L2 分類 / 信心分層 / 初判階段 / 初判模型（歸因級）：每條歸因一次。
 
 圖表自動選型：類別數 ≤ 6 → 圓餅圖；> 6 → 橫向長條圖（L2 可達數十類，圓餅會擠）。
 """
@@ -46,8 +46,8 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
     stage_c: Counter = Counter()
     model_c: Counter = Counter()
     for r in rows:
-        pol = r.get("polarity")  # None＝未判（尚未進判決管線，非中立）
-        pol_c[_POLARITY_LABEL_ZH.get(pol, pol) if pol else "未判"] += 1
+        pol = r.get("polarity")  # None＝未初判（尚未進初判管線，非中立）
+        pol_c[_POLARITY_LABEL_ZH.get(pol, pol) if pol else "未初判"] += 1
         for a in r.get("attributions") or []:
             l1 = (a.get("l1") or {}).get("label")
             if l1:
@@ -61,7 +61,7 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
             stage = a.get("stage")
             if stage:
                 stage_c[_STAGE_LABEL_ZH.get(stage, stage)] += 1
-            # 判決模型：當前判決模式反映混合模型佔比；快照模式全同值（誠實反映輸出版本）
+            # 初判模型：當前初判模式反映混合模型佔比；快照模式全同值（誠實反映輸出版本）
             m = a.get("model")
             if m:
                 model_c[m] += 1
@@ -69,9 +69,9 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
         ("情緒傾向分佈（評論級）", pol_c),
         ("L1 分類分佈（歸因級）", l1_c),
         ("L2 分類分佈（歸因級）", l2_c),
-        ("判決分層分佈（歸因級）", tier_c),
-        ("判決階段分佈（歸因級）", stage_c),
-        ("判決模型分佈（歸因級）", model_c),
+        ("信心分層分佈（歸因級）", tier_c),
+        ("初判階段分佈（歸因級）", stage_c),
+        ("初判模型分佈（歸因級）", model_c),
     ]
 
 

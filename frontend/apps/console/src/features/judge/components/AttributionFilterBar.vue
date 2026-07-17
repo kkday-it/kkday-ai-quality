@@ -27,7 +27,7 @@ const props = withDefaults(
     fields: FilterField[];
     /** 歸因分類級聯選項（L1→L2 樹；有 taxonomy 欄時必給，來自 getTaxonomyCascade）。 */
     cascadeOptions?: CascadeNode[];
-    /** 判決模型選項（有 model 欄時必給，來自 getJudgmentModels；注入模式，元件不發請求）。 */
+    /** 初判模型選項（有 model 欄時必給，來自 getPrejudgeModels；注入模式，元件不發請求）。 */
     modelOptions?: { value: string; label: string }[];
     /** recOid 精確查詢 placeholder（依來源業務名詞 + natural_key 客製，見 idPlaceholderFor；未給用泛稱）。 */
     idPlaceholder?: string;
@@ -228,7 +228,7 @@ function applyRecentDays(n: number): void {
           multiple
           :size="size"
           :max-tag-count="1"
-          placeholder="判決階段"
+          placeholder="初判階段"
           class="w-full"
           :options="STAGE_OPTS"
           @change="onChange"
@@ -251,7 +251,7 @@ function applyRecentDays(n: number): void {
           multiple
           :size="size"
           :max-tag-count="1"
-          placeholder="覆核狀態"
+          placeholder="判決狀態"
           class="w-full"
           :options="STATUS_OPTS"
           @change="onChange"
@@ -263,7 +263,7 @@ function applyRecentDays(n: number): void {
           multiple
           :size="size"
           :max-tag-count="1"
-          placeholder="判決模型"
+          placeholder="初判模型"
           class="w-full"
           :options="modelOptions"
           @change="onChange"

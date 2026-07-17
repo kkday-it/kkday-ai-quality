@@ -17,7 +17,7 @@
 | `frontend/.../features/README.md` | 前端 feature 模組地圖 |
 | [config/README.md](../config/README.md) / [constants/README.md](../constants/README.md) | 前後端共用配置 / 常數 SSOT 說明 |
 | [scripts/README.md](../scripts/README.md) | 開發腳本索引 |
-| [prompts/README.md](../prompts/README.md) | 判決引擎契約（7 支 prompt md 如何被讀取/派生結構）+ 調適閉環操作手冊（編→測→歷史→修→存版） |
+| [prompts/README.md](../prompts/README.md) | 初判引擎契約（7 支 prompt md 如何被讀取/派生結構）+ 調適閉環操作手冊（編→測→歷史→修→存版） |
 
 ## archive/ — 封存（僅供追溯，非現行契約）
 

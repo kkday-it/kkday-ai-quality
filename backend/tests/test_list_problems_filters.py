@@ -154,7 +154,7 @@ def test_list_problems_source_registry_date_range_filter(temp_db) -> None:
 
 
 def test_list_problems_source_registry_judged_filter(temp_db) -> None:
-    """source='product_reviews' + judged：僅回有 / 無對應 judgments 列者。"""
+    """source='product_reviews' + judged：僅回有 / 無對應 attributions 列者。"""
     db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
@@ -175,7 +175,7 @@ def test_list_problems_source_registry_judged_filter(temp_db) -> None:
 
 
 def test_prejudge_target_ids_uses_registry_for_product_reviews(temp_db) -> None:
-    """prejudge_target_ids(source='product_reviews') 走專表 join，只回未判 source_id。"""
+    """prejudge_target_ids(source='product_reviews') 走專表 join，只回未初判 source_id。"""
     db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
@@ -234,10 +234,10 @@ def test_get_items_by_ids_none_source_returns_empty(temp_db) -> None:
 
 
 def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
-    """sort_by=confidence 不再 500（scalar 子查詢 correlate_except judgments）＋依 item 最大信心排序。
+    """sort_by=confidence 不再 500（scalar 子查詢 correlate_except attributions）＋依 item 最大信心排序。
 
-    回歸鎖：_paged_fanout 外層 join judgments，confidence 排序子查詢若不指定 correlate 範圍，
-    SQLAlchemy 會把子查詢的 judgments 也 auto-correlate 掉 → 「no FROM clauses」500。
+    回歸鎖：_paged_fanout 外層 join attributions，confidence 排序子查詢若不指定 correlate 範圍，
+    SQLAlchemy 會把子查詢的 attributions 也 auto-correlate 掉 → 「no FROM clauses」500。
     """
     db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
@@ -272,7 +272,7 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
 
 
 def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
-    """prejudge_target_ids 列表全維度篩選：表級（日期/prod_oid）兩分支皆套、判決級（tier/歸因分類）僅已判分支。"""
+    """prejudge_target_ids 列表全維度篩選：表級（日期/prod_oid）兩分支皆套、初判級（tier/歸因分類）僅已初判分支。"""
     db.insert_source_batch(
         "product_reviews",
         [
@@ -281,7 +281,7 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
             _pr_row(rec_oid="R3", rec_scores="1", create_date="2026-07-02 09:00:00", prod_oid="P9"),
         ],
     )
-    # R3 已判（負向 · pending_review · jury · content）；R1/R2 未判
+    # R3 已初判（負向 · pending_review · jury · content）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
             finding_id="fd_product_reviews_R3",
@@ -291,18 +291,18 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
             confidence=0.6,
             raw_confidence=0.6,
             confidence_tier="jury",
-            judgment_stage="pending_review",
+            prejudge_stage="pending_review",
             l1_domain_code="content",
             l1_label="商品內容",
         ),
         "product_reviews",
     )
 
-    # 未判分支 + 日期區間：只 R1（R2 在區間外）
+    # 未初判分支 + 日期區間：只 R1（R2 在區間外）
     assert db.prejudge_target_ids(
         "product_reviews", stages=["unjudged"], date_from="2026-06-15", date_to="2026-07-01"
     ) == ["R1"]
-    # 已判分支 + 判決級收斂（tier/L1 命中）→ R3；tier 不符 → 空
+    # 已初判分支 + 初判級收斂（tier/L1 命中）→ R3；tier 不符 → 空
     assert db.prejudge_target_ids(
         "product_reviews",
         stages=["pending_review"],
@@ -315,7 +315,7 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
         )
         == []
     )
-    # 已判分支 + 表級 prod_oid：R3 有 P9
+    # 已初判分支 + 表級 prod_oid：R3 有 P9
     assert db.prejudge_target_ids("product_reviews", stages=["pending_review"], prod_oid="P9") == [
         "R3"
     ]
@@ -325,22 +325,22 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
 
 
 def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
-    """within_ids 範圍收斂：目標選取僅在勾選列集合內（未判/已判分支皆套；空清單＝空範圍）。"""
+    """within_ids 範圍收斂：目標選取僅在勾選列集合內（未初判/已初判分支皆套；空清單＝空範圍）。"""
     db.insert_source_batch(
         "product_reviews",
         [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
     )
-    # R3 已判（judged）；R1/R2 未判
+    # R3 已初判（judged）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
             finding_id="fd_product_reviews_R3",
             ticket_id="R3",
             recommended_action="no_action",
-            judgment_stage="judged",
+            prejudge_stage="judged",
         ),
         "product_reviews",
     )
-    # 未判分支 + within {R1,R3} → 只 R1（R2 不在範圍、R3 已判）
+    # 未初判分支 + within {R1,R3} → 只 R1（R2 不在範圍、R3 已初判）
     assert db.prejudge_target_ids(
         "product_reviews", stages=["unjudged"], within_ids=["R1", "R3"]
     ) == ["R1"]
@@ -355,7 +355,7 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
 
 
 def test_list_problems_model_filter(temp_db) -> None:
-    """model 篩選（judgments.model IN——當前判決維度）：單選/多選命中、未命中排除。"""
+    """model 篩選（attributions.model IN——當前初判維度）：單選/多選命中、未命中排除。"""
     db.insert_source_batch(
         "product_reviews",
         [_pr_row(rec_oid="M1", rec_scores="2"), _pr_row(rec_oid="M2", rec_scores="1")],

@@ -20,7 +20,7 @@ _EPSILON = 1e-6
 
 
 def _load_attributed() -> list[dict[str, Any]] | None:
-    """從 judgments.data 撈負向 attributed finding（有 l2_code + raw_confidence）。
+    """從 attributions.data 撈負向 attributed finding（有 l2_code + raw_confidence）。
 
     Returns:
         [{finding_id, ticket_id, l2_code, raw_confidence, candidates:{code:score}, l1_domain}]；
@@ -35,8 +35,8 @@ def _load_attributed() -> list[dict[str, Any]] | None:
 
         out: list[dict[str, Any]] = []
         with T.get_engine().connect() as c:
-            jg = T.judgments
-            # 攤平後判決欄皆 typed 欄，直接 select（l2_code / conf_raw / 關聯鍵）
+            jg = T.attributions
+            # 攤平後初判欄皆 typed 欄，直接 select（l2_code / conf_raw / 關聯鍵）
             rows = c.execute(
                 select(jg.c.finding_id, jg.c.source_id, jg.c.l2_code, jg.c.conf_raw).where(
                     jg.c.l2_code.isnot(None), jg.c.l2_code != "", jg.c.conf_raw.isnot(None)
@@ -155,7 +155,7 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
         key=lambda r: r["avg_quality"],
     )[:20]
 
-    # 低品質樣本人審清單（品質分升序 top 50；供人工覆核最可疑歸因）
+    # 低品質樣本人審清單（品質分升序 top 50；供人工判決最可疑歸因）
     order = np.argsort(quality)
     low_quality = [
         {

@@ -1,7 +1,7 @@
 """AI 法官核心資料模型（Pydantic v2）。
 
 對應 folder 2117435397 SD §3 的 TicketFinding；前端對應型別見 frontend/src/types/finding.ts。
-判決邏輯（classify / adequacy / arbiter）沿用 ProductContentAIChecker 的 Python 資產。
+初判邏輯（classify / adequacy / arbiter）沿用 ProductContentAIChecker 的 Python 資產。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ RecommendedAction = Literal[
 
 # ── SSOT v2.7 軸A/軸B 共用型別 ──
 # 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）
-# 判決硬閘依此封鎖：< with_order ⇒ 禁判 ②contract_breach
+# 初判硬閘依此封鎖：< with_order ⇒ 禁判 ②contract_breach
 EvidenceLevel = Literal["symptom_only", "with_product_page", "with_order", "with_both"]
 
 # 嚴重度（軸B · ITIL Priority）
@@ -40,7 +40,7 @@ class AdequacyResult(BaseModel):
 
 
 class TicketFinding(BaseModel):
-    """判決單元（SSOT）。"""
+    """初判單元（SSOT）。"""
 
     finding_id: str = ""
     ticket_id: str = ""
@@ -54,7 +54,7 @@ class TicketFinding(BaseModel):
     ground_truth_quote: str = ""  # 客服對話擷取的正確答案（零幻覺）
     confidence: float = 0.0  # 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）
     raw_confidence: float = 0.0  # arbiter LLM 原始信心（校準輸入；Cleanlab 離線擬合用）
-    is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重判）
+    is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重新初判）
     enhance_model: str = ""  # 複判使用的模型（空＝未複判）
     needs_review: bool = False  # 進人審佇列（校驗兜底 / 低信賴 < jury_low）
     adequacy_check: AdequacyResult | None = None
@@ -67,8 +67,12 @@ class TicketFinding(BaseModel):
     hit_rule_id: str = (
         ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
     )
-    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed=人工覆核
+    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed=人工判決
     status: Literal["new", "auto_confirmed", "confirmed", "dismissed"] = "new"
+    # 判決留痕（判決軸）：系統判決（G1 auto_confirmed）＝system:auto_confirm＋路由當下時間；
+    # 人工判決由 update/batch_update_finding_status 寫入，此處留空
+    verdict_by: str = ""
+    verdict_at: str = ""
     created_at: str = ""
     # 負責單位（owner_role）不存於 finding：改由 db._shared.attribution_dto 讀取時自 l1_code 派生
     # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。
@@ -81,45 +85,43 @@ class TicketFinding(BaseModel):
     trip_stage: str = ""
     product_category: str = ""
     failure_type: str = ""
-    root_cause_candidates: list[str] = Field(default_factory=list)  # 預判候選域（判決前可給）
-    evidence_level: EvidenceLevel = "symptom_only"  # 判決當下實際證據層級
-    # ── 軸B judgment_vector（判決後 evidence-gated；responsible_party 由 domain 推導）──
+    root_cause_candidates: list[str] = Field(default_factory=list)  # 預判候選域（初判前可給）
+    evidence_level: EvidenceLevel = "symptom_only"  # 初判當下實際證據層級
+    # ── 軸B 初判 vector（初判後 evidence-gated；responsible_party 由 domain 推導）──
     root_cause_domain: str = ""  # 收斂單選歸因域 ①~⑦（候選集不足/卡預判時為空）
     sub_cause: str = ""  # 子類（如：集合執行、語言服務）
     severity: Severity = "P3"  # 嚴重度（本期不判斷，保留預設供既有 pipeline 相容）
     responsible_party: str = ""  # 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）
-    judgment_tier: int | None = None  # v3 判定層（1/2/3A/3B）
     # ── config/ai_judge L2 歸因（prejudge 產出；歸因分類後新增的數據）──
     l1_domain_code: str = ""  # L1 域機器碼（content/supplier…；root_cause_domain 為其圈號）
     l1_label: str = ""  # L1 域中文名
     l2_code: str = ""  # L2 面向 C-code（C-x-y）
     l2_label: str = ""  # L2 面向中文名
     polarity: str = ""  # 正負傾向：positive(正向) / negative(負向·問題) / neutral(中立)
-    # 情緒分 1-5（LLM 讀原文細分，夾進 polarity 區間：負面 1-2 / 中立 3 / 正面 4-5）；0＝未判。
+    # 情緒分 1-5（LLM 讀原文細分，夾進 polarity 區間：負面 1-2 / 中立 3 / 正面 4-5）；0＝未初判。
     # 與外部評論 sentiment 同尺度，供評論對比表逐則比對。
     sentiment_score: int = 0
     confidence_tier: str = ""  # 信心分層：auto_accept / jury / needs_review
-    # 判決階段（prejudge 派生；未判＝無 finding 於 enrich 層補）：
-    # judged 已判決 / pending_review 待覆核 / pending_data 待數據補充
-    judgment_stage: str = ""
-    model_used: str = ""  # 判決使用的 LLM 模型（stub 時為 "stub"）
-    judged_at: str = ""  # 判決時間（ISO）
+    # 初判階段（prejudge 派生；未初判＝無 finding 於 enrich 層補）：
+    # judged 已初判 / pending_review 待複審 / pending_data 待數據補充
+    prejudge_stage: str = ""
+    model_used: str = ""  # 初判使用的 LLM 模型（stub 時為 "stub"）
 
     def to_columns(self) -> dict:
-        """判決 payload → judgments typed 欄位 dict（落庫形狀 SSOT）。
+        """初判 payload → attributions typed 欄位 dict（落庫形狀 SSOT）。
 
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
         殘留 / legacy 欄（verdict 軸、symptom_tag、severity、evidence_level…）一律不入庫。finding_id / source /
         source_id / prod_oid / status / created_at / needs_review
-        由 db.findings._finding_values 補齊（來源關聯 + 人工覆核軸）。
+        由 db.findings._finding_values 補齊（來源關聯 + 人工判決軸）。
 
         Returns:
-            判決 payload 欄位 dict（polarity/stage/l1_code…/conf_value/summary/action…）。
+            初判 payload 欄位 dict（polarity/stage/l1_code…/conf_value/summary/action…）。
         """
         return {
             "polarity": self.polarity,
-            "sentiment_score": self.sentiment_score or None,  # 0/未判 → NULL
-            "stage": self.judgment_stage,
+            "sentiment_score": self.sentiment_score or None,  # 0/未初判 → NULL
+            "prejudge_stage": self.prejudge_stage,
             "l1_code": self.l1_domain_code,
             "l1_label": self.l1_label,
             "l2_code": self.l2_code,
@@ -132,5 +134,4 @@ class TicketFinding(BaseModel):
             "action": self.recommended_action,
             "model": self.model_used,
             "is_primary": self.is_primary,
-            "judged_at": self.judged_at,
         }

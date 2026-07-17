@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 7 條判決 prompt 的版本選擇（見 usePromptVersionPicker）：正式判決抽屜、Prompt 測試沙盒共用。
+ * 7 條初判 prompt 的版本選擇（見 usePromptVersionPicker）：正式初判抽屜、Prompt 測試沙盒共用。
  * 沙盒（withDrafts）另支援草稿模式：有 DB 草稿的 prompt 下拉多一個「📝 草稿」選項（選中＝以
  * 草稿內容送測、與基準雙跑對比），每列的編輯鈕開草稿編輯抽屜（無草稿時以當前選定版本為底建新草稿）。
  */
@@ -15,7 +15,7 @@ import {
 
 const props = defineProps<{
   /** true 時每支 prompt 前面多一個開關，控制要不要納入本次測試（Prompt 測試沙盒用）。
-   * 正式判決固定全 7 支恆納入，不傳或傳 false。 */
+   * 正式初判固定全 7 支恆納入，不傳或傳 false。 */
   withToggle?: boolean;
   /** true 時啟用草稿模式（沙盒用）：載入草稿存在狀態 + 下拉「草稿」選項 + 每列編輯鈕。 */
   withDrafts?: boolean;

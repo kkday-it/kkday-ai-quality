@@ -99,7 +99,10 @@ defineExpose({
 
 <template>
   <!-- 外層負責邊框 / 圓角 / 內距 / 高度；內層為 xterm 掛載點（無內距，避免 fit 量測偏差） -->
-  <div class="overflow-hidden rounded-lg border border-[#30363d] bg-[#0d1117] p-2" :style="{ height }">
+  <div
+    class="overflow-hidden rounded-lg border border-[#30363d] bg-[#0d1117] p-2"
+    :style="{ height }"
+  >
     <div ref="elRef" class="h-full w-full" />
   </div>
 </template>

@@ -7,7 +7,7 @@
  * 圖表按 source 差異呈現：星等分布僅有星等欄的來源（SCORE_SOURCES）顯示。
  * 支援導出當前檢視為 PDF 報表（複用 reportPdf，抓頁內 data-report-block 面板）。
  *
- * Phase 2（後端待補，暫不呈現以免造假）：判決分布（judgments 無 verdict 欄）、
+ * Phase 2（後端待補，暫不呈現以免造假）：初判分布（attributions 無 verdict 欄）、
  * 標籤情感（另一資料源）、售前售後進線的訂單/工單/供應商維度（需新聚合端點）。
  */
 import { ref, computed } from 'vue';
@@ -169,7 +169,7 @@ const onExport = async () => {
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <!-- 判決模型篩選（judgments.model 當前判決維度；套用後 KPI 卡揭露口徑，見下方 caption）-->
+      <!-- 初判模型篩選（attributions.model 當前初判維度；套用後 KPI 卡揭露口徑，見下方 caption）-->
       <a-select
         v-model="modelFilter"
         multiple
@@ -177,7 +177,7 @@ const onExport = async () => {
         style="width: 200px"
         :max-tag-count="1"
         allow-clear
-        placeholder="判決模型"
+        placeholder="初判模型"
         :options="modelOptions"
       />
       <a-range-picker
@@ -226,16 +226,21 @@ const onExport = async () => {
           <KpiCard
             :label="modelFiltered ? '已歸因（所選模型）' : '已歸因'"
             :value="kpi.judged"
-            :subtext="modelFiltered ? '所選模型的判決覆蓋' : '已完成初判歸因'"
+            :subtext="modelFiltered ? '所選模型的初判覆蓋' : '已完成初判歸因'"
           />
-          <KpiCard label="問題占比" :value="kpi.problemPct" unit="%" subtext="負向 / 已判" />
-          <KpiCard label="自動採信率" :value="kpi.autoPct" unit="%" subtext="auto_accept / 已判" />
+          <KpiCard label="問題占比" :value="kpi.problemPct" unit="%" subtext="負向 / 已初判" />
+          <KpiCard
+            label="自動採信率"
+            :value="kpi.autoPct"
+            unit="%"
+            subtext="auto_accept / 已初判"
+          />
           <KpiCard label="待人工" :value="kpi.needsReview" subtext="低信心需複核" />
         </div>
-        <!-- 判決模型篩選口徑揭露：judgments 為「當前判決」，每評論僅一個 model 值——
-             與「總反饋」的差額含「未判」與「被其他模型判過但未被選中」兩種情況，非皆未判 -->
+        <!-- 初判模型篩選口徑揭露：attributions 為「當前初判」，每評論僅一個 model 值——
+             與「總反饋」的差額含「未初判」與「被其他模型判過但未被選中」兩種情況，非皆未初判 -->
         <div v-if="modelFiltered" class="mt-2 text-xs text-[var(--color-text-3)]">
-          已套用判決模型篩選：數字為「當前判決＝所選模型」的覆蓋；與「總反饋」的差額包含「未判」與「由其他模型判決」兩種情況，非皆為未判。
+          已套用初判模型篩選：數字為「當前初判＝所選模型」的覆蓋；與「總反饋」的差額包含「未初判」與「由其他模型初判」兩種情況，非皆為未初判。
         </div>
       </CardSection>
 
@@ -275,7 +280,7 @@ const onExport = async () => {
           <CardSection
             data-report-block
             :title="`問題量趨勢（${granLabel}）`"
-            hint="依評論時間聚合 · 已判 vs 負向問題量"
+            hint="依評論時間聚合 · 已初判 vs 負向問題量"
           >
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>
@@ -288,7 +293,7 @@ const onExport = async () => {
           <CardSection
             data-report-block
             title="歸因漏斗"
-            hint="反饋 → 已判 → 負向 → 已歸因，逐級收斂"
+            hint="反饋 → 已初判 → 負向 → 已歸因，逐級收斂"
           >
             <v-chart :option="funnel" class="h-[320px]" autoresize />
           </CardSection>

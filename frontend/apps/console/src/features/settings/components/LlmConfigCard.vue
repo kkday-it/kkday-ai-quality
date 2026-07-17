@@ -30,7 +30,10 @@ defineEmits<{
     <!-- header：自動拼接名（唯讀，不再手動改名）。標題已含 provider+model，故不另加 preview -->
     <template #header>
       <!-- 拖曳把手（SortableJS handle）：@click.stop 防點把手誤觸手風琴展開 -->
-      <IconDragDotVertical class="drag-handle mr-1 shrink-0 cursor-move text-[var(--color-text-3)]" @click.stop />
+      <IconDragDotVertical
+        class="drag-handle mr-1 shrink-0 cursor-move text-[var(--color-text-3)]"
+        @click.stop
+      />
       <span class="truncate font-medium">{{ composeLlmLabel(config) }}</span>
       <!-- 狀態徽章：所有卡片皆顯示，僅顏色/文字依啟用狀態不同（綠＝啟用中 / 灰＝未啟用） -->
       <a-tag class="ml-2" :color="active ? 'green' : 'gray'" size="small">
@@ -41,7 +44,7 @@ defineEmits<{
     <!-- extra 為 header 右側操作區，整體 .stop 避免點按鈕/開關時連帶折疊面板 -->
     <template #extra>
       <a-space :size="8" @click.stop>
-        <!-- 啟用開關：開＝設為當前判決使用的模型；已啟用者 disabled（只能透過開啟另一張卡片來切換，避免無啟用狀態） -->
+        <!-- 啟用開關：開＝設為當前初判使用的模型；已啟用者 disabled（只能透過開啟另一張卡片來切換，避免無啟用狀態） -->
         <a-switch
           :model-value="active"
           :disabled="active"

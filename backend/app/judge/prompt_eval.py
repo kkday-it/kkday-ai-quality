@@ -1,7 +1,7 @@
 """Prompt 評測共用核心：診斷理由 overlay + 沙盒 dry-run 分類 + 純函式指標。
 
 `domain_verdicts()`（六域並行診斷，動態附 reason/abstain_reason schema，B0 overlay，不改 md
-本身、production 判決路徑零影響）供 `sandbox_classify`（Prompt 測試沙盒，使用者可任意勾選
+本身、production 初判路徑零影響）供 `sandbox_classify`（Prompt 測試沙盒，使用者可任意勾選
 prompt 子集、不受正式歸因閘門限制）呼叫。
 
 `compute_domain_metrics`/`compute_polarity_metrics` 為純函式（與 LLM/DB I/O 解耦，可單元測），
@@ -74,14 +74,14 @@ def domain_verdicts(
     （與 production 同一套同(域,面向)去重/信心閘門/排序規則，避免評測與生產兩份實作 drift）。
 
     LLM 呼叫的 stage 帶域名標籤（`attribute:{domain}`，如 `attribute:C-1`）而非固定 `attribute`——
-    stage 純屬 log/usage 記帳標籤、不參與判決 gating 或 exact-cache key（`client.chat_json` 的
+    stage 純屬 log/usage 記帳標籤、不參與初判 gating 或 exact-cache key（`client.chat_json` 的
     `cache_key` 只是 OpenAI `prompt_cache_key` 效能提示，見其 docstring），此改動對判決結果零影響，
     僅讓 llm_usage / run_log 能分域檢視（原固定字串令 7 泳道日誌分不出是哪一域）。
 
     Args:
-        item: 判決輸入 item dict（供 `_finalize_attr_l2` 的證據封頂讀 order_oid 等）。
+        item: 初判輸入 item dict（供 `_finalize_attr_l2` 的證據封頂讀 order_oid 等）。
         text_: 評論文字。
-        model: 判決模型。
+        model: 初判模型。
         polarity: 已判定的整體傾向（negative/neutral，用於填 {POLARITY} 槽）。
         pids: 要跑的域 prompt 子集（預設全六域 `prompt_source.DOMAIN_PROMPT_IDS`，向後相容）。
         versions: {rule_code: 指定歷史版本號}（版本選擇功能）；貫穿至 `prompt_source.load`。預設
@@ -195,9 +195,9 @@ def sandbox_classify(
     stage 已帶域名標籤（見該函式 docstring）。
 
     Args:
-        item: `_build_sandbox_item` 組裝的判決輸入 item dict。
+        item: `_build_sandbox_item` 組裝的初判輸入 item dict。
         prompt_ids: 使用者勾選的 prompt id 子集（`polarity` / `C-1`..`C-6`，`prompt_id_of` 值域）。
-        model: 判決模型。
+        model: 初判模型。
         versions: {rule_code: 指定歷史版本號}（版本選擇功能；`prompt_sandbox._one` 貫穿呼叫）。
             預設 None＝沿用 active，對既有呼叫端零副作用。
         drafts: {rule_code: 草稿 md 全文}（草稿測試功能；同 rule_code 時草稿優先於 versions）。
@@ -277,7 +277,7 @@ def prompt_id_of(arg: str) -> str:
 
 
 def _build_sandbox_item(source: str, source_id: str) -> dict:
-    """單筆判決輸入 item 組裝：取原始資料 → normalize_row → canonical 欄位補齊。
+    """單筆初判輸入 item 組裝：取原始資料 → normalize_row → canonical 欄位補齊。
 
     比照 `prejudge_batch._work_one`——否則 `_text_of` 讀不到 product_reviews 的
     rec_title/rec_desc（在 rec_* 欄，非 content/comment）→ 判空文字。供沙盒測試
@@ -419,7 +419,7 @@ def compute_equivalence_metrics(records: list[dict]) -> dict:
 
     指標（升級計畫 P0 等價閘門五項）：
     - polarity_agree / sentiment_agree：整體傾向 / 情緒分逐筆一致率。
-    - count_equal：findings 數量一致率（附平均絕對差 count_mae——「判決數量不變」的直接量測）。
+    - count_equal：findings 數量一致率（附平均絕對差 count_mae——「初判數量不變」的直接量測）。
     - facet_jaccard_mean：(l1,l2) 集合 Jaccard 均值（兩邊皆空＝1.0）。
     - primary_agree：主歸因 (l1,l2) 一致率（兩邊皆無主歸因＝一致）。
     用法：同管線雙跑 → 噪音地板；改動 vs 基線 → 各指標 ≥ 地板 − 1pp 才過閘。

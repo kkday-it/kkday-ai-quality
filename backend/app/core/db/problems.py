@@ -1,4 +1,4 @@
-"""統一問題列表（來源專表 LEFT JOIN judgments；公共欄由 source_mapping 於回傳層還原）+ 多歸因 fan-out。"""
+"""統一問題列表（來源專表 LEFT JOIN attributions；公共欄由 source_mapping 於回傳層還原）+ 多歸因 fan-out。"""
 
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ from app.core.db._shared import (
     attribution_dto,
 )
 
-# fan-out 需帶回的 judgments typed 判決欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
+# fan-out 需帶回的 attributions typed 初判欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
 _JG_COLS = (
     "finding_id",
     "polarity",
     "sentiment_score",
-    "stage",
+    "prejudge_stage",
     "l1_code",
     "l1_label",
     "l2_code",
@@ -33,12 +33,14 @@ _JG_COLS = (
     "action",
     "model",
     "is_primary",
-    "status",
+    "verdict_status",
+    "verdict_by",
+    "verdict_at",
 )
 
 
 def _jg_unwrap(r: dict) -> dict:
-    """fan-out 列（jg_ 前綴判決欄）→ 無前綴 dict（供 attribution_dto）。"""
+    """fan-out 列（jg_ 前綴初判欄）→ 無前綴 dict（供 attribution_dto）。"""
     return {k: r.get(f"jg_{k}") for k in _JG_COLS}
 
 
@@ -195,7 +197,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "created_at": None,
     }
 
-    # review 級判決摘要欄（詳細 L1-L3/信心/摘要走 attributions[] nested DTO，此處僅留列渲染/篩選/導出用）
+    # review 級初判摘要欄（詳細 L1-L3/信心/摘要走 attributions[] nested DTO，此處僅留列渲染/篩選/導出用）
     base.update(
         {
             "judged": bool(row.get("jg_finding_id")),
@@ -228,7 +230,7 @@ def _derive_stage(dto: dict) -> str:
 
 
 def _attribution_of(r: dict) -> dict:
-    """單筆 judgments fan-out 列（jg_ 前綴 typed 欄）→ 一條歸因的乾淨巢狀 DTO（供列表堆疊 / 導出）。"""
+    """單筆 attributions fan-out 列（jg_ 前綴 typed 欄）→ 一條歸因的乾淨巢狀 DTO（供列表堆疊 / 導出）。"""
     unwrapped = _jg_unwrap(r)
     unwrapped["notes_count"] = r.get("jg_notes_count")  # fan-out subquery 欄（不在 _JG_COLS）
     dto = attribution_dto(unwrapped)
@@ -239,14 +241,14 @@ def _attribution_of(r: dict) -> dict:
 
 def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, offset: int) -> dict:
     """review-based 分頁 + 多歸因 fan-out（1:N）：先在 item（特徵 id）級分頁取本頁 id，
-    再撈這些 item 的**全部**歸因列（judgments 依 (source, source_id) join）→ 每 review 一列 + attributions 陣列。
+    再撈這些 item 的**全部**歸因列（attributions 依 (source, source_id) join）→ 每 review 一列 + attributions 陣列。
 
     分頁固定在 review（特徵 id）級，同 item 歸因永遠同頁連續。
 
     Returns:
         {"rows": [每 review 一列（附 _group/_seq/attributions）], "total": 符合篩選 review 數}。
     """
-    jg = T.judgments
+    jg = T.attributions
     tbl = spec.table
     nk = tbl.c[spec.natural_key]
     src = spec.source
@@ -277,7 +279,7 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         fan = (
             select(
                 tbl,
-                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 判決欄（含 status）
+                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 初判欄（含 status）
                 jg.c.needs_review.label("jg_needs_review"),
                 notes_count,
             )
@@ -327,25 +329,25 @@ def list_problems(
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
-    """統一問題列表（來源專表 LEFT JOIN judgments），分頁。回 {rows, total}。
+    """統一問題列表（來源專表 LEFT JOIN attributions），分頁。回 {rows, total}。
 
     5 來源皆已拆獨立表：source 命中 source_registry 時查該專表（表本身即單一來源，免 WHERE source=）。
     **不做跨表 UNION**——source=None（縱覽全部）無單表可查，直接回空 {rows:[], total:0}
-    （縱覽聚合走 attribution_overview/breakdown 的 judgments 直接聚合，非此列表）。
+    （縱覽聚合走 attribution_overview/breakdown 的 attributions 直接聚合，非此列表）。
 
     Args:
         source: 來源 code 過濾（product_reviews…）。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
-        polarity: 傾向過濾（judgments.data.polarity）。
-        stage: 判決階段多選（judgments.data.judgment_stage；'unjudged'＝無判決，多值 OR）。
+        polarity: 傾向過濾（attributions.data.polarity）。
+        stage: 初判階段多選（attributions.data.prejudge_stage；'unjudged'＝無初判，多值 OR）。
         limit/offset: 分頁。
         product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
-        confidence_tier: 信心分層過濾（judgments.data.confidence_tier；auto_accept/jury/needs_review）。
+        confidence_tier: 信心分層過濾（attributions.data.confidence_tier；auto_accept/jury/needs_review）。
         taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
-        status: 覆核狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
-        model: 判決模型多選（judgments.model IN——當前判決維度；任一歸因命中即列出）。
+        status: 判決狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
+        model: 初判模型多選（attributions.model IN——當前初判維度；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
 
     Returns:
@@ -402,7 +404,7 @@ def _list_problems_spec(
     status: list[str] | None = None,
     model: list[str] | None = None,
 ) -> dict:
-    """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN judgments。
+    """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN attributions。
 
     表本身即單一來源，無需 WHERE source= 過濾；product_vertical/日期區間為此分支專屬篩選。
     """
@@ -410,37 +412,37 @@ def _list_problems_spec(
 
     def _f(stmt):
         """spec 分支篩選：表級（vertical/日期/oid，SSOT＝_shared.apply_table_filters，與初判
-        目標選取共用同一份語義）+ judged/polarity/stage/tier/歸因分類（判決 EXISTS，列表專屬結構）。"""
+        目標選取共用同一份語義）+ judged/polarity/stage/tier/歸因分類（初判 EXISTS，列表專屬結構）。"""
         has_jg = _jg_exists(spec)
         if judged is True:
             stmt = stmt.where(has_jg)
         elif judged is False:
             stmt = stmt.where(~has_jg)
-        jg = T.judgments
+        jg = T.attributions
         if polarity:
-            # 傾向多選（positive/neutral/negative）；直接按 judgments.polarity 篩
+            # 傾向多選（positive/neutral/negative）；直接按 attributions.polarity 篩
             pol_list = [polarity] if isinstance(polarity, str) else polarity
             stmt = stmt.where(_jg_exists(spec, jg.c.polarity.in_(pol_list)))
         if sentiment:
             # 情緒分多選（1-5；我方 sentiment_score 由 polarity 確定性映射 正5/中3/負1）
             stmt = stmt.where(_jg_exists(spec, jg.c.sentiment_score.in_(sentiment)))
         if stage:
-            # 多選階段：'unjudged'＝無判決(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
+            # 多選階段：'unjudged'＝無初判(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
             conds = []
             if "unjudged" in stage:
                 conds.append(~has_jg)
             judged_stages = [s for s in stage if s != "unjudged"]
             if judged_stages:
-                conds.append(_jg_exists(spec, jg.c.stage.in_(judged_stages)))
+                conds.append(_jg_exists(spec, jg.c.prejudge_stage.in_(judged_stages)))
             if conds:
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
         if status:
-            # 覆核狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
-            stmt = stmt.where(_jg_exists(spec, jg.c.status.in_(status)))
+            # 判決狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
+            stmt = stmt.where(_jg_exists(spec, jg.c.verdict_status.in_(status)))
         if model:
-            # 判決模型多選（當前判決維度）；任一歸因命中即列出
+            # 初判模型多選（當前初判維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))
         if taxonomy:
             # 歸因分類多選：任意層級 code，l1/l2_code 任一 IN 命中＝子樹語義
@@ -475,13 +477,13 @@ def _list_problems_spec(
         "score": tbl.c[spec.score_col] if spec.score_col else tbl.c[spec.date_col],
     }
     if sort_by == "confidence":
-        # 該 item 各歸因最大信心的 scalar 子查詢。_paged_fanout 外層也 join judgments，若不指定關聯範圍，
-        # SQLAlchemy 會把子查詢的 judgments 也 auto-correlate 掉 → 「no FROM clauses」500。
-        # correlate_except(judgments)：judgments 留在子查詢 FROM，只把外層 source 表關聯進來。
+        # 該 item 各歸因最大信心的 scalar 子查詢。_paged_fanout 外層也 join attributions，若不指定關聯範圍，
+        # SQLAlchemy 會把子查詢的 attributions 也 auto-correlate 掉 → 「no FROM clauses」500。
+        # correlate_except(attributions)：attributions 留在子查詢 FROM，只把外層 source 表關聯進來。
         sort_expr = (
-            select(func.max(T.judgments.c.conf_value))
+            select(func.max(T.attributions.c.conf_value))
             .where(_jg_join_cond(spec))
-            .correlate_except(T.judgments)
+            .correlate_except(T.attributions)
             .scalar_subquery()
         )
     else:

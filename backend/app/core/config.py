@@ -66,8 +66,8 @@ class Settings(BaseSettings):
         900  # flex tier 單次呼叫 timeout 秒（官方建議 15 分鐘：flex 延遲變動大易逾時）
     )
     # LLM exact-match 結果快取（diskcache·data/llm_cache）：key=model+messages+response_format+effort 的
-    # 雜湊——prompt 內嵌規則正文，規則一改 key 即變（失效粒度自動精準）；命中＝重用先前判決、零 token 零延遲。
-    # 重判密集工作流（規則微調→全量重判）下未變更部分全免費；語義中性（同輸入同規則＝同判決），不影響準確度。
+    # 雜湊——prompt 內嵌規則正文，規則一改 key 即變（失效粒度自動精準）；命中＝重用先前初判、零 token 零延遲。
+    # 重新初判密集工作流（規則微調→全量重新初判）下未變更部分全免費；語義中性（同輸入同規則＝同初判），不影響準確度。
     llm_exact_cache: bool = True
     llm_cache_ttl_days: int = 30  # 快取條目存活天數（過期自動失效；目錄可整刪重生）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
@@ -88,7 +88,7 @@ env = Settings()
 def is_production() -> bool:
     """非 development 一律視為正式環境（含 staging）。
 
-    收斂 auth/crypto/admin_import/judgment 各處散落的 `env.app_env != "development"`
+    收斂 auth/crypto/admin_import/prejudge 各處散落的 `env.app_env != "development"`
     字串比較——環境尺度只此一份，避免各處各寫一次語意漂移（如誤寫 == "production" 漏掉 staging）。
     """
     return env.app_env != "development"

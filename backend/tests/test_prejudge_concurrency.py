@@ -61,7 +61,7 @@ def test_attrs_pack_domain_exhausts_retry_raises(monkeypatch) -> None:
 
 
 def test_domain_retry_reads_config(monkeypatch) -> None:
-    """_domain_retry 讀 judgment.json prejudge.domain_retry；缺則預設 1；負值/None 夾 0。"""
+    """_domain_retry 讀 prejudge.json/verdict.json prejudge.domain_retry；缺則預設 1；負值/None 夾 0。"""
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {"domain_retry": 2})
     assert prejudge._domain_retry() == 2
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
@@ -99,7 +99,7 @@ def test_governor_aimd_backoff_and_probe(monkeypatch) -> None:
 
 
 def test_adaptive_concurrency_config(monkeypatch) -> None:
-    """adaptive_concurrency 讀 judgment.json；預設 enabled=True、backoff=0.5、probe=3、floor=2。"""
+    """adaptive_concurrency 讀 prejudge.json/verdict.json；預設 enabled=True、backoff=0.5、probe=3、floor=2。"""
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
     d = prejudge.adaptive_concurrency()
     assert d == {"enabled": True, "backoff": 0.5, "probe_interval_s": 3.0, "floor": 2}
@@ -165,7 +165,7 @@ def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:
     def ev(sid: str, kind: str, minute: int) -> None:
         with T.get_engine().begin() as c:
             c.execute(
-                sa_insert(T.judgment_history).values(
+                sa_insert(T.attribution_history).values(
                     source=src,
                     source_id=sid,
                     kind=kind,
@@ -175,7 +175,7 @@ def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:
 
     for i in range(3):  # A：3 連續失敗、從未成功 → capped（>=3）
         ev("A", "failure", i)
-    for k, m in [("failure", 0), ("failure", 1), ("judgment", 2), ("failure", 3)]:
+    for k, m in [("failure", 0), ("failure", 1), ("prejudge", 2), ("failure", 3)]:
         ev("B", k, m)  # B：2 失敗→成功→1 失敗；成功後僅 1 failure < 3 → 不 capped
     with T.get_engine().connect() as c:
         assert pt._capped_source_ids(c, src, 3) == {"A"}

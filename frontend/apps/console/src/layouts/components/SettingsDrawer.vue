@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { LlmConnectionsPanel, QcConnectionsPanel, DataImportPanel } from '@/features/settings/pages';
+import {
+  LlmConnectionsPanel,
+  QcConnectionsPanel,
+  DataImportPanel,
+} from '@/features/settings/pages';
 import { ProductVerticalSettingsPanel } from '@/features/judge/components';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';

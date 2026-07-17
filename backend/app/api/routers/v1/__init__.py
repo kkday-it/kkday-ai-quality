@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter
 
-from app.api.routers.v1 import judgment
+from app.api.routers.v1 import prejudge
 
 router = APIRouter(prefix="/api/v1")
-router.include_router(judgment.router)
+router.include_router(prejudge.router)
 
 __all__ = ["router"]

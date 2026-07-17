@@ -1,6 +1,6 @@
-// 7 條判決 prompt 的版本選擇（初判分類指定歷史版本 + Prompt 測試沙盒共用）：每支 prompt 一個
+// 7 條初判 prompt 的版本選擇（初判分類指定歷史版本 + Prompt 測試沙盒共用）：每支 prompt 一個
 // 下拉，選項＝該 rule_code 全版本歷史（getRuleHistory）。沙盒另支援草稿模式（withDrafts）：
-// 有 DB 草稿的 prompt 多一個「草稿」選項，選中即以草稿內容送測（雙跑對比）；正式判決不帶草稿。
+// 有 DB 草稿的 prompt 多一個「草稿」選項，選中即以草稿內容送測（雙跑對比）；正式初判不帶草稿。
 import { computed, ref } from 'vue';
 import {
   getRuleHistory,
@@ -25,11 +25,11 @@ export interface ResolvedPromptSelection {
 }
 
 export function usePromptVersionPicker(opts: {
-  /** true 時每支 prompt 多一個「要不要納入本次測試」開關（Prompt 測試沙盒用；正式判決固定
+  /** true 時每支 prompt 多一個「要不要納入本次測試」開關（Prompt 測試沙盒用；正式初判固定
    * 全 7 支恆納入，不需要這個開關，維持 false）。 */
   withToggle?: boolean;
   /** true 時載入草稿存在狀態：有草稿的 prompt 下拉多一個「草稿」選項（選中＝以草稿送測）。
-   * 僅沙盒用；正式判決不帶草稿，維持 false。 */
+   * 僅沙盒用；正式初判不帶草稿，維持 false。 */
   withDrafts?: boolean;
 }) {
   const store = useJudgeRulesStore();
@@ -101,7 +101,7 @@ export function usePromptVersionPicker(opts: {
     return out;
   }
 
-  /** withToggle 時實際納入本次測試的 rule_code（開關開著的）；非 withToggle（正式判決）恆全 7 支。 */
+  /** withToggle 時實際納入本次測試的 rule_code（開關開著的）；非 withToggle（正式初判）恆全 7 支。 */
   const enabledCodes = computed(() =>
     opts.withToggle ? promptCodes.value.filter((c) => enabled.value[c]) : promptCodes.value,
   );

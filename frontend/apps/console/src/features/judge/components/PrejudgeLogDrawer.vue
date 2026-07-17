@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { IconLoading } from '@arco-design/web-vue/es/icon';
-import { getJudgmentRunLog } from '@/api';
+import { getPrejudgeRunLog } from '@/api';
 import PrejudgeLogView from './PrejudgeLogView.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 
-// 判決歷史回看 LLM 執行日誌快照：GET 落庫快照一次性載入，靜態渲染（無 SSE）。
-// 唯一消費者＝ JudgmentHistoryDrawer（判決歷史「查看 LLM 日誌」入口開）。
+// 歸因歷史回看 LLM 執行日誌快照：GET 落庫快照一次性載入，靜態渲染（無 SSE）。
+// 唯一消費者＝ AttributionHistoryDrawer（歸因歷史「查看 LLM 日誌」入口開）。
 
 const props = defineProps<{
   visible: boolean;
@@ -22,10 +22,11 @@ const streamError = ref('');
 const _openHistory = async (jid: string) => {
   loadingHistory.value = true;
   try {
-    const r = await getJudgmentRunLog(jid);
+    const r = await getPrejudgeRunLog(jid);
     entries.value = r.entries;
   } catch (e: any) {
-    streamError.value = e?.message || '此任務無執行日誌快照（可能為大批量任務或啟用日誌前的舊判決）';
+    streamError.value =
+      e?.message || '此任務無執行日誌快照（可能為大批量任務或啟用日誌前的舊初判）';
   } finally {
     loadingHistory.value = false;
   }
@@ -52,7 +53,12 @@ watch(
     :width="880"
     :footer="false"
     unmount-on-close
-    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px 16px' }"
+    :body-style="{
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      padding: '12px 16px',
+    }"
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
     <template #title>

@@ -26,7 +26,6 @@ export interface Provider {
   reasoning_effort?: string;
 }
 
-
 /**
  * 供應商定義：選供應商一次帶入 base_url 與該供應商的 model 清單。
  * 資料源＝config/global/llm_model.json（GPT model id 對齊 OpenAI 官方 gpt-5.5 / gpt-5.4 / mini / nano）。

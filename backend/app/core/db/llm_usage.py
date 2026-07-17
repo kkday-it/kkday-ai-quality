@@ -41,7 +41,7 @@ def insert_llm_usage_row(row: dict) -> None:
 
 
 def insert_llm_usage_rows(rows: list[dict]) -> int:
-    """批量寫入 AI 使用紀錄（批次判決 job 結束時 flush）；回寫入列數。"""
+    """批量寫入 AI 使用紀錄（批次初判 job 結束時 flush）；回寫入列數。"""
     if not rows:
         return 0
     with T.get_engine().begin() as c:

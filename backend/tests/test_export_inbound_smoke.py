@@ -38,7 +38,7 @@ def _seed_one(temp_db) -> None:
                 confidence=0.9,
                 raw_confidence=0.9,
                 confidence_tier="auto_accept",
-                judgment_stage="judged",
+                prejudge_stage="judged",
             )
         ],
     )
@@ -57,7 +57,7 @@ def test_export_problems_xlsx_happy_path(temp_db) -> None:
     ws = wb.active
     assert ws.max_row >= 2  # 表頭 + 至少一列資料
     headers = [c.value for c in ws[1]]
-    assert "覆核狀態" in headers  # 人工處置軸已入導出
+    assert "判決狀態" in headers  # 人工處置軸已入導出
     cells = [str(c) for row in ws.iter_rows(values_only=True) for c in row if c]
     assert any("描述與實際不符" in c for c in cells)  # 內容確實進了導出
 

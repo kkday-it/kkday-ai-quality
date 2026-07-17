@@ -1,6 +1,6 @@
-"""判決 Prompt 唯一真相源載入層（Prompt-as-Source 架構核心）。
+"""初判 Prompt 唯一真相源載入層（Prompt-as-Source 架構核心）。
 
-架構反轉：判決 prompt 不再由「JSON 規則樹 → 槽位渲染」派生，而是 **7 支完整 md（prompts/
+架構反轉：初判 prompt 不再由「JSON 規則樹 → 槽位渲染」派生，而是 **7 支完整 md（prompts/
 *.md：00_polarity + 01_C-1~06_C-6）＝唯一真相源**——人直接編輯、git 版控、PR 審查。
 
 三溫層：
@@ -165,7 +165,7 @@ def load(
         prompt_id: PROMPT_IDS 之一（如 "00_polarity" / "03_C-3_supplier"）。
         versions: {rule_code: 指定歷史版本號}（版本選擇功能）。命中時讀
             `db.get_rule_version(rule_code, version)` 那個特定版本的內容，**不寫入 `_cache`**
-            （指定版本只服務本次呼叫，不可污染其他並發正式判決/沙盒 job）。
+            （指定版本只服務本次呼叫，不可污染其他並發正式初判/沙盒 job）。
         drafts: {rule_code: md 全文}（草稿測試功能，僅沙盒路徑使用）。命中時直接解析該
             全文（不觸 DB），同樣**不寫入 `_cache`**；同 rule_code 與 versions 並存時
             **drafts 優先**（草稿本就基於某版本編輯，測的是草稿內容）。
@@ -210,7 +210,7 @@ def load(
 
 
 def reload() -> None:
-    """清 prompt 解析快取（RuleManager 存檔 / seed / 恢復默認後呼叫，使判決即時採新版）。"""
+    """清 prompt 解析快取（RuleManager 存檔 / seed / 恢復默認後呼叫，使初判即時採新版）。"""
     _cache.clear()
 
 

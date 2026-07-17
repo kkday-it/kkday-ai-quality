@@ -106,7 +106,7 @@ def get_current_user(
 
 # ── 輕量 RBAC（config 白名單驅動·零 migration）─────────────────────────────
 # 角色每請求由 config/global/roles.json 即時派生（非 JWT claim）：改名單免重簽 token 即生效。
-# 兩級：admin（規則發布 / 恢復默認）｜qc（覆核 / 查看 / 上傳）。
+# 兩級：admin（規則發布 / 恢復默認）｜qc（判決 / 查看 / 上傳）。
 _ROLES_CACHE: dict | None = None
 
 

@@ -446,7 +446,7 @@ def _persist(user_id: str, data: dict) -> None:
 def resolve_provider_token(eff: dict) -> str:
     """由 effective LLM dict 解出該配置實際生效的 token（per-config api_token 優先，fallback env）。
 
-    與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（judgment router /
+    與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（prejudge router /
     prejudge_batch 第二道防線）據此判斷「本次批量是否將落為 stub 假判」，兩處邏輯合一防漂移
     （曾因 env 空值覆蓋致 stub 假判覆蓋 1,452 筆真歸因）。
 

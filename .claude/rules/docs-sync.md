@@ -17,7 +17,7 @@ paths:
 | 改了什麼 | 必須同步更新 |
 |---|---|
 | **API 端點**（新增/刪除/改路徑/改參數）| 根 `README.md` API 一覽表 + `backend/app/api/README.md` + Swagger docstring |
-| **核心流程 / 架構**（來源表、判決管線、資料流）| 根 `README.md` 核心流程 + 架構要點 |
+| **核心流程 / 架構**（來源表、初判管線、資料流）| 根 `README.md` 核心流程 + 架構要點 |
 | **資料夾結構 / 模組**（移檔、拆包、新增/刪除模組）| 該資料夾 `README.md` + 上層 `README.md` 結構表 + 受影響的 barrel/import 說明 |
 | **`config/` `constants/` 檔案**（新增/刪除/改語義/改位置）| `config/README.md` / `constants/README.md` 對應條目 |
 | **DB schema / 遷移**（表、欄、關聯鍵）| `backend/app/core/db/README.md` + 根 README 架構要點（若對外可見）|

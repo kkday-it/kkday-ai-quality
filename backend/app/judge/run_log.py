@@ -4,7 +4,7 @@
 快照攜帶 → ThreadPool worker 內 emit 自動歸入同一 job。僅小批量 job 收集（LOG_JOB_MAX_ITEMS），
 大批量不收（記憶體/效能考量）。內容：各階段訊息 + LLM 突出資訊（輸入參數 / prompt 全文 /
 原始輸出）；token 等機密絕不入日誌。entry 索引穩定（滿了丟「新」條目並計數，不移舊），
-SSE 端點以 offset 增量讀取（見 v1/judgment.py prejudge_log_stream）。
+SSE 端點以 offset 增量讀取（見 v1/prejudge.py prejudge_log_stream）。
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def bind(job_id: str) -> None:
 def emit(
     kind: str, stage: str, message: str, data: dict | None = None, *, label: str | None = None
 ) -> None:
-    """追加一筆日誌（未 bind＝no-op；任何失敗不阻斷判決）。
+    """追加一筆日誌（未 bind＝no-op；任何失敗不阻斷初判）。
 
     kind：stage（一般階段）｜llm_request｜llm_prompt｜llm_response｜llm_note｜error。
     label：同一次 LLM 調用的分組鍵（前端據此把 request/prompt/response 聚合成一個 tab；
@@ -64,7 +64,7 @@ def emit(
                 box["dropped"] += 1
                 return
             box["entries"].append(entry)
-    except Exception:  # noqa: BLE001  日誌純輔助，絕不阻斷判決
+    except Exception:  # noqa: BLE001  日誌純輔助，絕不阻斷初判
         pass
 
 

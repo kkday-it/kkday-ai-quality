@@ -33,8 +33,8 @@ from app.core.config import env
 
 metadata = MetaData()
 
-judgments = Table(
-    "judgments",
+attributions = Table(
+    "attributions",
     metadata,
     Column("finding_id", Text, primary_key=True),
     # ── 來源複合鍵 (source, source_id)：關聯回來源表（source 定表、source_id 對該表特徵 id）──
@@ -48,9 +48,9 @@ judgments = Table(
     # ── 傾向 / 階段 ──
     Column("polarity", Text),  # positive | negative | neutral
     # 情緒分 1-5（LLM 讀原文判；與 polarity 同段輸出：負面1-2/中立3/正面4-5）——與外部評論 sentiment
-    # 同尺度，供評論對比表逐則比對；null＝未判。
+    # 同尺度，供評論對比表逐則比對；null＝未初判。
     Column("sentiment_score", Integer),
-    Column("stage", Text),  # judged / pending_review / pending_data
+    Column("prejudge_stage", Text),  # judged / pending_review / pending_data（初判完成度）
     # ── 歸因分類 L1→L2（code + 中文 label；label 與 code 同存＝SSOT 即資料本身）──
     Column("l1_code", Text),
     Column("l1_label", Text),
@@ -60,35 +60,36 @@ judgments = Table(
     Column("conf_value", Float),  # 最終信心（校準後）
     Column("conf_raw", Float),  # arbiter LLM 原始信心
     Column("conf_tier", Text),  # auto_accept / jury / needs_review
-    # ── 判決內容 ──
+    # ── 初判內容 ──
     Column(
         "summary", JSONB
     ),  # 反饋摘要（語系→簡明摘要 map；務必含 zh-tw·表格只顯示 zh-tw；逐字原文佐證另存 evidence）
     Column("evidence", Text),  # 佐證原文（evidence_quote）
     Column("action", Text),  # 建議行動（recommended_action）
     # ── 元數據 ──
-    Column("model", Text),  # 判決模型（stub 時為 "stub"）
+    Column("model", Text),  # 初判模型（stub 時為 "stub"）
     Column("is_primary", Boolean, server_default="false"),  # 多歸因主歸因旗標
-    Column("judged_at", Text),  # 判決時間（ISO）
-    # ── 人工覆核軸 ──
-    Column("status", Text),  # new / auto_confirmed(G1 自動確認) / confirmed / dismissed
-    # 人工覆核 audit：誰、何時最後改了 status（人工確認/忽略/撤銷）——非系統自動路由；
-    # 完整轉移軌跡在 judgment_history（kind='status'）。
-    Column("status_updated_by", Text),  # 最後改 status 的操作者 email（系統自動路由不寫）
-    Column("status_updated_at", Text),  # 最後改 status 的時間（ISO 字串，與 created_at 同形態）
+    # ── 人工判決軸 ──
+    Column(
+        "verdict_status", Text
+    ),  # 判決狀態：new / auto_confirmed(系統判決) / confirmed / dismissed
+    # 人工判決 audit：誰、何時最後改了 status（人工確認/忽略/撤銷）——非系統自動路由；
+    # 完整轉移軌跡在 attribution_history（kind='verdict'）。
+    Column("verdict_by", Text),  # 判決人：人工＝email；系統判決＝system:auto_confirm
+    Column("verdict_at", Text),  # 初判時間（ISO 字串，與 created_at 同形態）
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
-    Index("idx_judgments_source", "source"),
+    Index("idx_attributions_source", "source"),
     # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件
-    Index("idx_judgments_source_id", "source", "source_id"),
+    Index("idx_attributions_source_id", "source", "source_id"),
     # 列表深化篩選熱路徑（typed 欄直接 btree 索引，取代舊 JSONB expression 索引）
-    Index("idx_judgments_polarity", "polarity"),
-    Index("idx_judgments_stage", "stage"),
-    Index("idx_judgments_l1", "l1_code"),
+    Index("idx_attributions_polarity", "polarity"),
+    Index("idx_attributions_prejudge_stage", "prejudge_stage"),
+    Index("idx_attributions_l1", "l1_code"),
     # L2 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/sentiment 全表掃）
-    Index("idx_judgments_l2", "l2_code"),
-    Index("idx_judgments_sentiment", "sentiment_score"),
-    Index("idx_judgments_tier", "conf_tier"),
+    Index("idx_attributions_l2", "l2_code"),
+    Index("idx_attributions_sentiment", "sentiment_score"),
+    Index("idx_attributions_tier", "conf_tier"),
 )
 
 # ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────
@@ -102,7 +103,7 @@ product_reviews = Table(
     Column("member_uuid", Text),
     Column("create_date", Text),  # canonical occurred_at
     Column("rec_title", Text),  # canonical title
-    Column("rec_desc", Text),  # canonical content（判決主輸入）
+    Column("rec_desc", Text),  # canonical content（初判主輸入）
     Column("rec_scores", Text),  # canonical score
     Column("traveller_type", Text),
     Column("lang_code", Text),  # canonical lang
@@ -197,7 +198,7 @@ app_feedback = Table(
     Column("created_datetime", Text),  # canonical occurred_at
     Column("comment", Text),  # canonical content
     Column("score", Text),  # canonical score
-    Column("source", Text),  # 來源渠道（app 端，與 judgments.source 不同語意）
+    Column("source", Text),  # 來源渠道（app 端，與 attributions.source 不同語意）
     Column("lang_code", Text),  # canonical lang
     Column("version", Text),
     Index("idx_app_feedback_created", "created_datetime"),
@@ -261,7 +262,7 @@ user_settings = Table(
     Column("updated_at", Text),
 )
 
-# ── 判決規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
+# ── 初判規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
 # 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
 # prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
@@ -289,7 +290,7 @@ judge_rule_versions = Table(
     ),
 )
 
-# 判決 Prompt 草稿（prompt_polarity / prompt_C-1~6 每 rule_code 一份共享草稿）。與 judge_rule_versions
+# 初判 Prompt 草稿（prompt_polarity / prompt_C-1~6 每 rule_code 一份共享草稿）。與 judge_rule_versions
 # 分離：版本表維持「存檔即 active」單一語意；草稿＝未入庫的編輯中內容——沙盒可直接送測（雙跑對比），
 # 驗證滿意後一鍵入庫成新 active 版（隨後刪本列），或捨棄。併發=last-write-wins，
 # updated_by/updated_at 供前端顯示編輯線索；base_version 供 stale 偵測（< active 版本號時提示分叉過時）。
@@ -306,12 +307,12 @@ prompt_drafts = Table(
 )
 
 # 歸因備註（append-only 歷史；每條歸因 finding_id 可累積多則備註，記備註人/時間/內容）。
-# 獨立表：重判（replace_source_findings 刪+插 judgments）不影響備註（依 finding_id 關聯，同域重判 id 不變）。
+# 獨立表：重新初判（replace_source_findings 刪+插 attributions）不影響備註（依 finding_id 關聯，同域重新初判 id 不變）。
 finding_notes = Table(
     "finding_notes",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("finding_id", Text, nullable=False),  # 對應 judgments.finding_id（該條歸因分類）
+    Column("finding_id", Text, nullable=False),  # 對應 attributions.finding_id（該條歸因分類）
     Column("author", Text, nullable=False),  # 備註人（user email）
     Column("content", Text, nullable=False),  # 備註內容
     Column("created_at", DateTime(timezone=True), server_default=func.now()),  # 備註時間
@@ -335,7 +336,7 @@ llm_usage = Table(
     Column("cached_tokens", Integer),  # prompt 中命中 prompt cache 的部分（折扣計價）
     Column("total_tokens", Integer),  # prompt + completion
     Column("cost_usd", Float),  # pricing.cost_usd 換算（含 cache 折扣）
-    Column("source", Text),  # 判決來源（product_reviews…；ad-hoc 呼叫可空）
+    Column("source", Text),  # 初判來源（product_reviews…；ad-hoc 呼叫可空）
     Column("source_id", Text),  # 該來源特徵 id（可空）
     Column("job_id", Text),  # 批次任務 id（單次呼叫為空）
     Column("created_at", DateTime(timezone=True), server_default=func.now()),  # 呼叫時間
@@ -344,11 +345,11 @@ llm_usage = Table(
     Index("idx_llm_usage_stage", "stage"),
 )
 
-# 歸因歷史（run 級：每次觸發 LLM 歸因的動作——批量初判 / 選取多筆 / 單筆重判——落一列）。
+# 歸因歷史（run 級：每次觸發 LLM 歸因的動作——批量初判 / 選取多筆 / 單筆重新初判——落一列）。
 # 與 llm_usage（call 級）以 job_id 關聯：run 存業務語境（誰/何時/範圍/參數/結果統計），
 # per-stage token/費用明細由 llm_usage 聚合（job 結束 flush 後可查）。寫入點＝prejudge_batch。
-judgment_runs = Table(
-    "judgment_runs",
+prejudge_runs = Table(
+    "prejudge_runs",
     metadata,
     Column("job_id", Text, primary_key=True),  # 批次任務 id（pj_*；與 llm_usage.job_id 對齊）
     Column(
@@ -356,9 +357,9 @@ judgment_runs = Table(
     ),  # 觸發型態：batch（scope=all 目標選取）/ selected（顯式多筆）/ single（單筆）
     Column(
         "rejudge", Boolean
-    ),  # 標的先前已有判決 → 重判（single/selected 查 judgments；batch 依 stages 含已判階段）
+    ),  # 標的先前已有初判 → 重新初判（single/selected 查 attributions；batch 依 stages 含已初判階段）
     Column("source", Text),  # 反饋來源 code（product_reviews…）
-    Column("model", Text),  # 主判決模型
+    Column("model", Text),  # 主初判模型
     Column("params", JSONB),  # 發起參數快照（stages/verticals/傾向/信心上限…；item_ids 只留樣本）
     Column("status", Text, nullable=False),  # running/paused/cancelling → 終態 done/error/cancelled
     Column("total", Integer),  # 標的筆數
@@ -371,43 +372,53 @@ judgment_runs = Table(
     Column("started_at", DateTime(timezone=True), server_default=func.now()),
     Column("finished_at", DateTime(timezone=True)),  # 終態時間（執行中為空）
     # run_log.read(job_id) 快照（entries 陣列）：僅小批量 job 有收集（見 run_log.LOG_JOB_MAX_ITEMS），
-    # job 結束落庫供判決歷史「查看 LLM 日誌」事後回看；仿 prompt_sandbox_runs.log 同一模式。
+    # job 結束落庫供歸因歷史「查看 LLM 日誌」事後回看；仿 prompt_sandbox_runs.log 同一模式。
     Column("log", JSONB),
-    Index("idx_judgment_runs_started_at", "started_at"),
+    Index("idx_prejudge_runs_started_at", "started_at"),
 )
 
-# 判決歷史（評論級 append-only：每則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註）。
-# 補 judgments「刪+插」重判不留痕的缺口（judgment_runs 是 run 級、llm_usage 是 call 級，皆無法
-# 重建單一評論的判決演進）。寫入點：judgment（replace_source_findings 同交易去重寫入，model+params
+# 歸因歷史（評論級 append-only：每則評論 (source, source_id) 的歷次初判快照 / 判決轉移 / 備註）。
+# 補 attributions「刪+插」重新初判不留痕的缺口（prejudge_runs 是 run 級、llm_usage 是 call 級，皆無法
+# 重建單一評論的初判演進）。寫入點：judgment（replace_source_findings 同交易去重寫入，model+params
 # +result_digest 全同前一筆即 skip）/ status（update_finding_status 轉移時）/ note（使用者手動）。
-# 無 FK：finding_id 重判會更換，比照 finding_notes/judgment_runs 慣例以邏輯鍵關聯。
-judgment_history = Table(
-    "judgment_history",
+# 無 FK：finding_id 重新初判會更換，比照 finding_notes/prejudge_runs 慣例以邏輯鍵關聯。
+attribution_history = Table(
+    "attribution_history",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("source", Text, nullable=False),  # 反饋來源 code（product_reviews…）
     Column("source_id", Text, nullable=False),  # 該來源特徵 id（評論級鍵）
     Column(
         "kind", Text, nullable=False
-    ),  # 事件類型：judgment（判決快照）/ status（覆核轉移）/ note
-    Column("model", Text),  # 判決模型（kind=judgment；stub 同 judgments.model 語意）
+    ),  # 事件類型：judgment（初判快照）/ status（判決轉移）/ note
+    Column("model", Text),  # 初判模型（kind=judgment；stub 同 attributions.model 語意）
     # 事件細節：judgment 存 {model, …}（精餾小字典，回填列為 {"backfilled": true}）；
     # status 存 {finding_id, from, to}（評論級表不加 finding_id 欄，避免對 judgment/note 恆 NULL 的稀疏欄）。
     Column("params", JSONB),
-    Column("attributions", JSONB),  # 判決快照（attribution_dto 形狀陣列；kind=judgment 才有）
-    Column("result_digest", Text),  # 快照全欄位（排 judged_at）正規化 sha256，供去重比對
-    Column("job_id", Text),  # 觸發批次（與 judgment_runs.job_id 對齊；status/note 為空）
+    Column("attributions", JSONB),  # 初判快照（attribution_dto 形狀陣列；kind=judgment 才有）
+    Column("result_digest", Text),  # 快照全欄位（排時間戳）正規化 sha256，供去重比對
+    Column("job_id", Text),  # 觸發批次（與 prejudge_runs.job_id 對齊；status/note 為空）
     Column("triggered_by", Text),  # 觸發人（user email；kind=judgment）
     Column("author", Text),  # 操作者/備註人（kind=status/note）
     Column("content", Text),  # 備註內容（kind=note）
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
     # 評論時間軸查詢熱路徑：(source, source_id) 定位 + created_at 排序
-    Index("idx_judgment_history_source_id", "source", "source_id", "created_at"),
-    Index("idx_judgment_history_created_at", "created_at"),
+    Index("idx_attribution_history_source_id", "source", "source_id", "created_at"),
+    Index("idx_attribution_history_created_at", "created_at"),
+    # latest_snapshots（DISTINCT ON）快照查詢熱路徑 partial index——登記於 metadata 使
+    # create_all（空庫路徑）與 migration（既有庫路徑）產出一致，消弭兩路徑 schema drift
+    Index(
+        "idx_attribution_history_snapshot",
+        "source",
+        "model",
+        "source_id",
+        text("created_at DESC"),
+        postgresql_where=text("kind = 'prejudge'"),
+    ),
 )
 
-# 歸因列表 Prompt 測試沙盒歷史（與 judgments/judgment_history/judgment_runs 完全分離——沙盒測試
-# 不落正式判決，只落此表）。一 run＝對 item_ids 逐筆跑 prompt_ids 子集的一次沙盒測試，results 含
+# 歸因列表 Prompt 測試沙盒歷史（與 attributions/attribution_history/prejudge_runs 完全分離——沙盒測試
+# 不落正式初判，只落此表）。一 run＝對 item_ids 逐筆跑 prompt_ids 子集的一次沙盒測試，results 含
 # 逐筆逐 prompt 結果，log 為該次 run_log 快照（供事後回看完整 LLM log；run_log 本身純記憶體不落庫）。
 prompt_sandbox_runs = Table(
     "prompt_sandbox_runs",
@@ -422,7 +433,7 @@ prompt_sandbox_runs = Table(
     Column("item_count", Integer, nullable=False),
     Column("results", JSONB, nullable=False),  # 逐筆 × 各 prompt 結果（sandbox_classify 輸出集合）
     Column("log", JSONB, nullable=False),  # run_log.read(job_id) 快照（entries 陣列）
-    Column("model", Text),  # 判決模型
+    Column("model", Text),  # 初判模型
     Column("triggered_by", Text),  # 觸發人（user email）
     Column("job_id", Text),  # 對應 run_log job_id（供除錯追溯；log 已快照，非用於即時查詢）
     Column("created_at", DateTime(timezone=True), server_default=func.now()),

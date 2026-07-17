@@ -59,10 +59,10 @@ def get_problems(
     """統一問題列表（intake + 歸因 即時 join，**伺服器端分頁**）。回 {rows, total}。
 
     公共欄位於回傳層由 source_mapping 從 raw 還原；judged 篩已/未歸因；polarity 篩傾向。
-    商品垂直分類 product_verticals / 判決階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
-    confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2_code 任一 IN 命中＝子樹語義）為多值判決過濾。
-    status（覆核狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
-    model（判決模型 CSV 多選：judgments.model IN——當前判決維度）。
+    商品垂直分類 product_verticals / 初判階段 stage / 歸因分類 taxonomy 走前端 CSV（逗號串）傳入，此處拆回清單再轉 db。
+    confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2_code 任一 IN 命中＝子樹語義）為多值初判過濾。
+    status（判決狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
+    model（初判模型 CSV 多選：attributions.model IN——當前初判維度）。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
@@ -102,14 +102,14 @@ class ExportProblemsIn(BaseModel):
     product_verticals: list[str] | None = None
     date_from: str | None = None
     date_to: str | None = None
-    # 與列表頁篩選對齊（導出＝所見即所得）：情緒分 / 判決階段 / 信心分層 / 歸因分類 / 有無外部評論 / 精確 id
+    # 與列表頁篩選對齊（導出＝所見即所得）：情緒分 / 初判階段 / 信心分層 / 歸因分類 / 有無外部評論 / 精確 id
     sentiment: list[int] | None = None
     stage: list[str] | None = None
     confidence_tier: str | None = None
     taxonomy: list[str] | None = None
     status: list[str] | None = None
-    # 判決模型篩選（當前判決維度，圈選哪些評論）；snapshot_model＝輸出結果版本（內容替換成
-    # 該模型的 judgment_history 最新快照）——兩者語義獨立，可並用。
+    # 初判模型篩選（當前初判維度，圈選哪些評論）；snapshot_model＝輸出結果版本（內容替換成
+    # 該模型的 attribution_history 最新快照）——兩者語義獨立，可並用。
     model: list[str] | None = None
     snapshot_model: str | None = None
     # 並排對比模型（可複選）：每模型在基準右側附一組欄「情緒·M/L1·M/L2·M」，值取該模型最新快照。
@@ -180,7 +180,7 @@ def get_attribution_overview(
 
     可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）；
     product_verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）；
-    model（逗號串，判決模型多選——當前判決維度，僅套判決級指標，total_intake 不受影響）。
+    model（逗號串，初判模型多選——當前初判維度，僅套初判級指標，total_intake 不受影響）。
     """
     return db.attribution_overview(
         source=source,
@@ -202,7 +202,7 @@ def get_attribution_breakdown(
     model: str | None = None,
     _user: dict = Depends(auth.get_current_user),
 ) -> dict:
-    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類 + 判決模型（CSV 多選）。"""
+    """某 L1 歸因域下的 L2/L3 細項分布（縱覽長條下鑽·懶載）；可選 date_from/date_to 區間 + 全局商品垂直分類 + 初判模型（CSV 多選）。"""
     return db.attribution_breakdown(
         source=source,
         l1=l1,

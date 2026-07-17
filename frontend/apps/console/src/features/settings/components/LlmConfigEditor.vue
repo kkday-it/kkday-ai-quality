@@ -203,7 +203,8 @@ watch(testResult, async (r) => {
       />
       <template #extra>
         <span class="text-xs text-[#86909c]">
-          此配置專用 token（每套配置各自獨立）、只存後端（user_settings，DB），不入 git，前端僅遮罩顯示。
+          此配置專用 token（每套配置各自獨立）、只存後端（user_settings，DB），不入
+          git，前端僅遮罩顯示。
         </span>
       </template>
     </a-form-item>
@@ -232,7 +233,11 @@ watch(testResult, async (r) => {
           <a-space>
             <a-switch v-model="useTemp" :disabled="tempLocked" />
             <span class="text-xs text-[#86909c]">{{
-              tempLocked ? '鎖定 1（Thinking 開啟）' : useTemp ? '自訂' : 'API 預設（gpt-5 系列鎖定）'
+              tempLocked
+                ? '鎖定 1（Thinking 開啟）'
+                : useTemp
+                  ? '自訂'
+                  : 'API 預設（gpt-5 系列鎖定）'
             }}</span>
             <a-slider
               v-if="useTemp && !tempLocked"
@@ -242,7 +247,7 @@ watch(testResult, async (r) => {
               :step="0.1"
               class="w-[180px]"
             />
-            <span v-if="useTemp">{{ tempLocked ? 1 : form.temperature ?? 0 }}</span>
+            <span v-if="useTemp">{{ tempLocked ? 1 : (form.temperature ?? 0) }}</span>
           </a-space>
         </a-form-item>
       </a-col>
@@ -250,7 +255,9 @@ watch(testResult, async (r) => {
         <a-form-item field="thinking" label="思考模式 Thinking">
           <a-space>
             <a-switch v-model="form.thinking" checked-value="on" unchecked-value="off" />
-            <span class="text-xs text-[#86909c]">{{ form.thinking === 'on' ? '開啟' : '關閉' }}</span>
+            <span class="text-xs text-[#86909c]">{{
+              form.thinking === 'on' ? '開啟' : '關閉'
+            }}</span>
           </a-space>
         </a-form-item>
       </a-col>
@@ -273,7 +280,9 @@ watch(testResult, async (r) => {
     </a-form-item>
 
     <a-space align="center" :size="8">
-      <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
+      <a-button type="primary" status="success" :loading="testing" @click="onTest"
+        >測試連線</a-button
+      >
       <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
       <a-button @click="emit('cancel')">取消</a-button>
       <span class="text-xs text-[#86909c]">測試＝即時測當前表單（不寫入）；儲存＝寫入此套配置</span>

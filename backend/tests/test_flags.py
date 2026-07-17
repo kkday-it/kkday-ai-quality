@@ -1,4 +1,4 @@
-"""OpenFeature 判決閾值介面（core.flags）測試：provider 解析 confidence_tiers + 預設回退 + 型別邊界。
+"""OpenFeature 初判閾值介面（core.flags）測試：provider 解析 confidence_tiers + 預設回退 + 型別邊界。
 
 不碰 DB（monkeypatch judgment 配置讀取）；驗證 threshold() 走 OpenFeature 標準且反映 DB active 值、
 reload() 清 cache、provider 僅處理 float（其餘型別回 default·不越權）。
@@ -24,7 +24,7 @@ def test_threshold_reads_confidence_tiers(monkeypatch) -> None:
     """threshold() 反映 judgment 配置 confidence_tiers（DB active 值，經 provider）。"""
     monkeypatch.setattr(
         _shared,
-        "read_judgment_config",
+        "read_pipeline_config",
         lambda: {"confidence_tiers": {"auto_accept": 0.9, "jury_low": 0.4, "jury_high": 0.6}},
     )
     flags.reload()
@@ -36,7 +36,7 @@ def test_threshold_reads_confidence_tiers(monkeypatch) -> None:
 def test_threshold_default_for_unknown_tier(monkeypatch) -> None:
     """配置缺該 tier → 回呼叫端 default（provider DEFAULT reason）。"""
     monkeypatch.setattr(
-        _shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.8}}
+        _shared, "read_pipeline_config", lambda: {"confidence_tiers": {"auto_accept": 0.8}}
     )
     flags.reload()
     assert flags.threshold("nonexistent", 0.42) == 0.42
@@ -44,7 +44,7 @@ def test_threshold_default_for_unknown_tier(monkeypatch) -> None:
 
 def test_threshold_builtin_default_when_no_tiers(monkeypatch) -> None:
     """配置無 confidence_tiers → 內建預設（auto_accept=0.8），不至於 0。"""
-    monkeypatch.setattr(_shared, "read_judgment_config", lambda: {})
+    monkeypatch.setattr(_shared, "read_pipeline_config", lambda: {})
     flags.reload()
     assert flags.threshold("auto_accept", 0.0) == 0.8
 
@@ -52,7 +52,7 @@ def test_threshold_builtin_default_when_no_tiers(monkeypatch) -> None:
 def test_provider_float_only(monkeypatch) -> None:
     """provider 僅 float 職責：boolean/string 旗標回 default（不越權）。"""
     monkeypatch.setattr(
-        _shared, "read_judgment_config", lambda: {"confidence_tiers": {"auto_accept": 0.9}}
+        _shared, "read_pipeline_config", lambda: {"confidence_tiers": {"auto_accept": 0.9}}
     )
     flags.reload()
     c = flags._client()

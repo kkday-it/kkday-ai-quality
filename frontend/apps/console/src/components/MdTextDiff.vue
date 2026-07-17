@@ -65,13 +65,21 @@ function buildRows(): void {
         i++; // 已消化下一段 added
       } else {
         for (const text of dels) {
-          out.push({ left: { type: 'del', text }, right: { type: 'empty', text: '' }, changed: true });
+          out.push({
+            left: { type: 'del', text },
+            right: { type: 'empty', text: '' },
+            changed: true,
+          });
         }
       }
     } else {
       // 落單 added（前一段非 removed）
       for (const text of splitLines(p.value)) {
-        out.push({ left: { type: 'empty', text: '' }, right: { type: 'add', text }, changed: true });
+        out.push({
+          left: { type: 'empty', text: '' },
+          right: { type: 'add', text },
+          changed: true,
+        });
       }
     }
   }

@@ -8,7 +8,7 @@ paths:
   - "**/import_jobs.py"
 ---
 
-# 資料包（datapack）匯出/匯入數據一致性（改 DB schema / 判決規則內容形狀時必查）
+# 資料包（datapack）匯出/匯入數據一致性（改 DB schema / 初判規則內容形狀時必查）
 
 **核心原則：資料包＝全庫可攜快照，任何改動 DB 結構或改變已落庫 JSONB 內容形狀的邏輯，都要同步考慮匯出/匯入是否還能正確往返，不能只顧當下 schema 改動本身。** 踩過的坑：`judge_rule_versions.content`（Prompt-as-Source 重構期間同一天多次 reseed / 形狀調整）— 資料包本身 round-trip 機制沒壞，但「匯出時機」與「當前前端消費端預期的內容形狀」不一致時，會靜默呈現空白而非報錯（見 `datapack-import-stale-store-fix-2026-07-15` memory）。
 

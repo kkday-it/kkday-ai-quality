@@ -29,7 +29,9 @@ const submit = async () => {
   try {
     if (mode.value === 'login') await auth.login(form.email.trim(), form.password);
     else await auth.register(form.email.trim(), form.password);
-    Message.success(mode.value === 'login' ? t('auth.login.successLogin') : t('auth.login.successRegister'));
+    Message.success(
+      mode.value === 'login' ? t('auth.login.successLogin') : t('auth.login.successRegister'),
+    );
     router.push('/');
   } catch (e) {
     Message.error(translateApiError(e) || t('auth.login.failFallback'));

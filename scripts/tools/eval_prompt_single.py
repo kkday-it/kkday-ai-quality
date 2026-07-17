@@ -1,10 +1,10 @@
-"""單支 Prompt 評測 harness — 對 7 支判決 prompt（polarity / C-1~C-6）逐支獨立驗證調適效果。
+"""單支 Prompt 評測 harness — 對 7 支初判 prompt（polarity / C-1~C-6）逐支獨立驗證調適效果。
 
 定位：Prompt-as-Source 調適閉環的驗證端。改單支 prompt（prompts/*.md 或線上熱編 DB
-active 版）後，只跑這一支對 N 則參照集驗證，出該支指標——不跑其他六支、不動 production 判決管線。
-prompt 直接讀 **prompt_source**（判決引擎同源 SSOT：DB active→檔案 fallback），天然與線上一致。
+active 版）後，只跑這一支對 N 則參照集驗證，出該支指標——不跑其他六支、不動 production 初判管線。
+prompt 直接讀 **prompt_source**（初判引擎同源 SSOT：DB active→檔案 fallback），天然與線上一致。
 
-參照集：judgments 現行判決為參照（本域正/他域負各半），量測「與現行判決一致度」。
+參照集：attributions 現行初判為參照（本域正/他域負各半），量測「與現行初判一致度」。
 
 指標（純函式，SSOT＝後端 app.judge.prompt_eval.compute_*_metrics，UI「測試」端點共用）：
     域 prompt：primary 一致率 / 棄權正確率 / 命中率 / 多報率。
@@ -66,7 +66,7 @@ def _domain_of_prompt(arg: str) -> str:
 
 # ─────────────────────────── 取文字 ───────────────────────────
 def _review_texts(ids: list[str]) -> dict[str, str]:
-    """rec_oid → 評論文字（title + desc，對齊判決輸入）。"""
+    """rec_oid → 評論文字（title + desc，對齊初判輸入）。"""
     if not ids:
         return {}
     with T.get_engine().connect() as c:
@@ -82,7 +82,7 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
 
 # ─────────────────────────── 抽樣 ───────────────────────────
 def _sample_domain(dom_machine: str, n: int) -> list[dict]:
-    """域參照：judgments 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
+    """域參照：attributions 判過本域（含 primary）與判過他域（棄權分母）各半，md5 穩定排序。
 
     回統一參照記錄：{id, text, polarity, ref_l2s, ref_primary}。
     """
@@ -90,7 +90,7 @@ def _sample_domain(dom_machine: str, n: int) -> list[dict]:
     with T.get_engine().connect() as c:
         pos = c.execute(
             text(
-                "SELECT source_id, min(polarity) AS polarity FROM judgments "
+                "SELECT source_id, min(polarity) AS polarity FROM attributions "
                 "WHERE source=:s AND l1_code=:d AND polarity IN ('negative','neutral') "
                 "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
             ),
@@ -98,10 +98,10 @@ def _sample_domain(dom_machine: str, n: int) -> list[dict]:
         ).all()
         neg = c.execute(
             text(
-                "SELECT j.source_id, min(j.polarity) AS polarity FROM judgments j "
+                "SELECT j.source_id, min(j.polarity) AS polarity FROM attributions j "
                 "WHERE j.source=:s AND j.polarity IN ('negative','neutral') "
                 "AND j.l1_code IS NOT NULL AND j.l1_code <> '' AND j.l1_code <> :d "
-                "AND NOT EXISTS (SELECT 1 FROM judgments x WHERE x.source=:s "
+                "AND NOT EXISTS (SELECT 1 FROM attributions x WHERE x.source=:s "
                 "  AND x.source_id=j.source_id AND x.l1_code=:d) "
                 "GROUP BY j.source_id ORDER BY md5(j.source_id) LIMIT :k"
             ),
@@ -110,7 +110,7 @@ def _sample_domain(dom_machine: str, n: int) -> list[dict]:
         prod = c.execute(
             text(
                 "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
-                "FROM judgments WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
+                "FROM attributions WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
             ),
             {"s": _SOURCE, "d": dom_machine, "ids": [r[0] for r in pos] + [r[0] for r in neg]},
         ).all()
@@ -134,7 +134,7 @@ def _sample_polarity(n: int) -> list[dict]:
             rows = c.execute(
                 text(
                     "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
-                    "FROM judgments WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
+                    "FROM attributions WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
                     "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
                 ),
                 {"s": _SOURCE, "p": pol, "k": per},

@@ -3,7 +3,7 @@
  * 沙盒結果「左右並排對比卡片」（純展示佈局）：單 run 雙跑（基準 vs 草稿）與測試歷史
  * run-vs-run（A vs B）共用——同一套 source_id 表頭＋差異 tag＋兩欄各自 label/極性/條目
  * （差異高亮委派 SandboxPromptEntries diffAgainst）。單邊缺席（run-vs-run 對不齊）顯示
- * 空狀態；單邊判決失敗（error）顯示錯誤而非整條消失。
+ * 空狀態；單邊初判失敗（error）顯示錯誤而非整條消失。
  */
 import { computed } from 'vue';
 import type { PromptSandboxItemResult, PromptSandboxVariantResult } from '@/api';

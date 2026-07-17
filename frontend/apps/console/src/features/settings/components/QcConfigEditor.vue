@@ -48,10 +48,13 @@ const testing = ref(false);
 const hasPassword = computed(() => !!(props.password || (pwDirty.value && form.value.password)));
 
 const dbSelectOptions = computed(() =>
-  [...new Set([...dbOptions.value, ...form.value.names])].map((d) => ({ label: d, value: d }))
+  [...new Set([...dbOptions.value, ...form.value.names])].map((d) => ({ label: d, value: d })),
 );
 const schemaSelectOptions = computed(() =>
-  [...new Set([...schemaOptions.value, ...form.value.schemas])].map((x) => ({ label: x, value: x }))
+  [...new Set([...schemaOptions.value, ...form.value.schemas])].map((x) => ({
+    label: x,
+    value: x,
+  })),
 );
 
 // 切換環境：回填 host，清空舊環境的庫/schema 選取與清單（不同 server 須重測）；綁定區不收起
@@ -121,7 +124,7 @@ const onTest = async () => {
       schemaOptions.value = r.schemas ?? [];
       bindingUnlocked.value = true;
       Message.success(
-        `連線成功，載入 ${dbOptions.value.length} 個資料庫、${schemaOptions.value.length} 個 schema`
+        `連線成功，載入 ${dbOptions.value.length} 個資料庫、${schemaOptions.value.length} 個 schema`,
       );
     } else {
       Message.error('連線失敗：' + (r.error || '未知錯誤'));
@@ -145,7 +148,7 @@ watch(testResult, async (r) => {
   if (r.target) t.writeln(`${ANSI.dim}# ${r.target}${ANSI.reset}`);
   if (r.ok && r.databases)
     t.writeln(
-      `${ANSI.dim}# 共 ${r.databases.length} 個資料庫、${r.schemas?.length ?? 0} 個 schema 可選${ANSI.reset}`
+      `${ANSI.dim}# 共 ${r.databases.length} 個資料庫、${r.schemas?.length ?? 0} 個 schema 可選${ANSI.reset}`,
     );
   if (r.error) t.writeln(`${ANSI.red}✗ ${r.error}${ANSI.reset}`);
 });
@@ -243,7 +246,9 @@ watch(testResult, async (r) => {
     </template>
 
     <a-space align="center" :size="8">
-      <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
+      <a-button type="primary" status="success" :loading="testing" @click="onTest"
+        >測試連線</a-button
+      >
       <a-button type="primary" :loading="saving" :disabled="!form.names.length" @click="onSave">
         儲存
       </a-button>

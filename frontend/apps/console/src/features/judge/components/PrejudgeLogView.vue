@@ -3,7 +3,7 @@
  * 執行日誌渲染（純展示，無 SSE 邏輯）：每一次 LLM 調用（polarity / C-1..C-6）聚合成獨立 tab，
  * tab 內以「時間軸」由上至下（時間遞增）呈現該調用的生命週期——請求（完整輸入參數，100% 對齊
  * 實際送 API 的 kwargs）→ Prompt 全文 → 回應（原始輸出 + 用量）；非 LLM 的流程階段（載資料 /
- * 落庫 / 錯誤）收在「流程」tab 的時間軸。抽自 `PrejudgeLogDrawer.vue`，供該抽屜（判決歷史回看落庫快照）與
+ * 落庫 / 錯誤）收在「流程」tab 的時間軸。抽自 `PrejudgeLogDrawer.vue`，供該抽屜（歸因歷史回看落庫快照）與
  * Prompt 測試沙盒（即時 SSE + 歷史回看快照）共用同一份渲染，避免 drift。
  *
  * Tab 固定 + 內容捲動：交給公共元件 `StickyTabs`（`@/components`，見
@@ -145,10 +145,10 @@ interface FindingDigest {
 const findingsOf = (e: LogEntry): FindingDigest[] =>
   Array.isArray(e.data?.findings) ? (e.data?.findings as FindingDigest[]) : [];
 
-/** 「開始判決」entry 的原文標題（source-schema `title`；評論類來源如 product_reviews 才有值）。 */
+/** 「開始初判」entry 的原文標題（source-schema `title`；評論類來源如 product_reviews 才有值）。 */
 const titleOf = (e: LogEntry): string => String(e.data?.title || '');
 
-/** 「開始判決」entry 的內容輪次：依來源 schema contentMode（conversations＝dialogue）解析 [ROLE]:
+/** 「開始初判」entry 的內容輪次：依來源 schema contentMode（conversations＝dialogue）解析 [ROLE]:
  * 前綴成輪次，同 AttributionList 渲染邏輯；非對話來源或解析失敗回 null → fallback 原樣全文。 */
 const dialogueTurnsOf = (e: LogEntry): DialogueTurn[] | null => {
   const source = String(e.data?.source || '');

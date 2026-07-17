@@ -1,4 +1,4 @@
-"""判決規則管理端點（RULE_CODES：product_vertical + source_mapping + prompt_* 的 live + 版本化；
+"""初判規則管理端點（RULE_CODES：product_vertical + source_mapping + prompt_* 的 live + 版本化；
 judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
@@ -7,7 +7,7 @@ drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reloa
 全端點 JWT 守衛。
 
 註：判準走 prompt_C-1~6（不經此端點管理 schema 樹）；global_rule（極性閘門 + 證據政策）走
-judgment.json 靜態設定檔，亦不經本端點。
+prejudge.json/verdict.json 靜態設定檔，亦不經本端點。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ _VALID_CODES = set(db.RULE_CODES)
 
 
 def _reload_judge_cache() -> None:
-    """規則寫入後重載 judge loader 快取，使判決／候選分類「菜單」+ judgment 配置（極性閘門/證據
+    """規則寫入後重載 judge loader 快取，使初判／候選分類「菜單」+ judgment 配置（極性閘門/證據
     政策/信心閾值/顯示 label/prejudge 旋鈕）即時反映新規則（對齊 config.py；reload 失敗不阻斷已
     成功的寫入）。"""
     try:
@@ -36,11 +36,11 @@ def _reload_judge_cache() -> None:
         from app.judge import prejudge, prompt_source
 
         ai_judge.reload()
-        _shared.reload_judgment_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
+        _shared.reload_pipeline_cfg()  # 顯示 label + 信心閾值（attribution/export 就地生效）
         prejudge.reload()  # 極性閘門/證據政策/prejudge 旋鈕快取
-        flags.reload()  # OpenFeature 判決閾值 cache（auto_accept/jury_*）
+        flags.reload()  # OpenFeature 初判閾值 cache（auto_accept/jury_*）
         source_mapping.reload()  # 上傳表頭校驗 + 欄位映射（/inbound/validate 即時採新版）
-        prompt_source.reload()  # 初判 Prompt md 解析快取（判決引擎即時採新版 prompt）
+        prompt_source.reload()  # 初判 Prompt md 解析快取（初判引擎即時採新版 prompt）
     except Exception:  # noqa: BLE001  reload 失敗不應吞掉寫入成功事實
         pass
 
@@ -137,7 +137,7 @@ def _validate(code: str, content: dict) -> None:
             )
         return
     if code == "judgment":
-        # 判決配置（顯示 label / 信心閾值 / prejudge 旋鈕）非 L1-L3 歸因樹 → 不套歸因 schema；輕量結構驗。
+        # 初判配置（顯示 label / 信心閾值 / prejudge 旋鈕）非 L1-L3 歸因樹 → 不套歸因 schema；輕量結構驗。
         tiers = content.get("confidence_tiers")
         if not isinstance(tiers, dict) or not all(
             isinstance(tiers.get(k), (int, float)) for k in ("auto_accept", "jury_low", "jury_high")
@@ -165,7 +165,7 @@ def _validate(code: str, content: dict) -> None:
 
 @router.get("")
 def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """列所有判決規則的 active 版 meta（rule_code/version/author/note/created_at）。"""
+    """列所有初判規則的 active 版 meta（rule_code/version/author/note/created_at）。"""
     return db.list_rule_meta()
 
 
@@ -194,9 +194,9 @@ def list_drafts(user: dict = Depends(auth.get_current_user)) -> list[dict]:
 # 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。
 @router.post("/export")
 def export_prompts_zip(user: dict = Depends(auth.get_current_user)) -> dict:
-    """啟動判決 prompt 包導出背景 job → {job_id, filename}（立即回，背景組檔）。
+    """啟動初判 prompt 包導出背景 job → {job_id, filename}（立即回，背景組檔）。
 
-    Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md，本導出直接打包該目錄
+    Prompt-as-Source 架構下初判 prompt 唯一真相源＝prompts/*.md，本導出直接打包該目錄
     （7 支 prompt md ＋ 引擎契約 README ＋ 基線 BASELINE）為 zip，供離線交付 / 版本留存 / 手動 diff。
     以磁碟現行檔為準（見 rule_export.build_prompts_zip_bytes）。改背景 job：與問題列表導出共用
     /api/exports 進度串流 / 停止 / 取檔。
@@ -284,7 +284,7 @@ def put_draft(
 ) -> dict:
     """寫入/覆蓋草稿（last-write-wins）。刻意寬鬆只驗 text 非空——草稿允許存半成品，
     送測（prompt-sandbox drafts）與入庫（save_rule）才走 prompt_source.validate 強驗。
-    草稿不影響判決管線，故不需 _reload_judge_cache。"""
+    草稿不影響初判管線，故不需 _reload_judge_cache。"""
     _check_prompt_code(code)
     text = body.content.get("text")
     if not isinstance(text, str) or not text.strip():

@@ -1,14 +1,14 @@
 """初判歸因單條引擎：一條進線資料 → TicketFinding（極性閘門 → 歸因）。
 
-**Prompt-as-Source（唯一引擎）**：判決 prompt 唯一真相源＝prompts/*.md（DB active 版可
+**Prompt-as-Source（唯一引擎）**：初判 prompt 唯一真相源＝prompts/*.md（DB active 版可
 線上熱編，見 prompt_source）。Stage1 極性吃 00_polarity（`_pack_polarity`）；歸因段六支域 prompt
 （01_C-1~06_C-6）ThreadPool 並行，各判本域問題（`_attrs_pack`）→合流過共用閘門
 （`_resolve_attrs_multi` 尾段）。判準與結構皆源自 prompt 本身（見 ai_judge.py）。
 
 管線：
-- Stage 1 極性閘門：進歸因傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral
+- Stage 1 極性閘門：進歸因傾向由 prejudge.json/verdict.json polarity_gate.attribute_when 決定（預設 negative+neutral
   ——混合中性評論的問題點也歸因）；不在清單者 non_issue 收尾。
-- 域路由剪枝（domain_router；judgment.json prejudge.domain_router，預設關閉＝全 6 域）：embedding
+- 域路由剪枝（domain_router；prejudge.json/verdict.json prejudge.domain_router，預設關閉＝全 6 域）：embedding
   學習式候選域 → 只並行命中的域；候選全空手時自動補跑其餘域（兜底＝現行全跑，見 _resolve_attrs_multi）。
 - 歸因合流閘門（_resolve_attrs_multi 尾段）：同(域,面向)去重（保信心最高，同 L1 多 L2 並列）+ 排序 + attr_min/secondary_min。
 - G1 自動確認路由、證據封頂、grounding 壓信心、stub 雙防線等 code-side 機制不屬 prompt。
@@ -30,21 +30,21 @@ from app.core import ai_judge
 from app.core.schema import RecommendedAction, TicketFinding
 from app.judge.llm import client
 
-# ── config（judgment.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
+# ── config（prejudge.json/verdict.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
 _cfg_cache: dict | None = None
 
 
 def _cfg() -> dict:
-    """讀 judgment 判決配置（信心閾值 + prejudge 旋鈕）；lazy 快取。
+    """讀 judgment 初判配置（信心閾值 + prejudge 旋鈕）；lazy 快取。
 
-    走 `_shared.read_judgment_config`（DB active 'judgment' 版優先、缺版本回退 seed 檔——judgment 讀取
+    走 `_shared.read_pipeline_config`（DB active 'judgment' 版優先、缺版本回退 seed 檔——judgment 讀取
     單一入口）。存檔後由 rules._reload_judge_cache 呼叫 reload() 清快取即時生效。
     """
     global _cfg_cache
     if _cfg_cache is None:
         from app.core.db import _shared
 
-        _cfg_cache = _shared.read_judgment_config()
+        _cfg_cache = _shared.read_pipeline_config()
     return _cfg_cache
 
 
@@ -55,7 +55,7 @@ def reload() -> None:
 
 
 def _tiers() -> dict:
-    """判決信心閾值（走 OpenFeature 標準介面 flags.threshold 避免鎖定；provider 讀 judgment DB active
+    """初判信心閾值（走 OpenFeature 標準介面 flags.threshold 避免鎖定；provider 讀 judgment DB active
     confidence_tiers、module 級快取，Phase 7 換 Flagsmith 呼叫端零改）。"""
     from app.core import flags
 
@@ -71,20 +71,20 @@ def _prejudge_cfg() -> dict:
 
 
 def _evidence_policy() -> dict:
-    """證據政策（judgment.json evidence_policy：attr_min_confidence / secondary_min_confidence /
-    require_quote_grounded；2026-07-13 併入原 global_rule.json，減少判決 config 檔案數）。"""
+    """證據政策（prejudge.json/verdict.json evidence_policy：attr_min_confidence / secondary_min_confidence /
+    require_quote_grounded；2026-07-13 併入原 global_rule.json，減少初判 config 檔案數）。"""
     return _cfg().get("evidence_policy", {})
 
 
 def _polarity_gate_cfg() -> dict:
-    """極性閘門（judgment.json polarity_gate：哪些整體傾向進歸因；同上併入 judgment.json）。"""
+    """極性閘門（prejudge.json/verdict.json polarity_gate：哪些整體傾向進歸因；同上併入 prejudge.json/verdict.json）。"""
     return _cfg().get("polarity_gate", {})
 
 
 def _stage_effort(key: str) -> str | None:
-    """讀 judgment.json prejudge 的 per-stage reasoning_effort 旋鈕（None＝沿用主 config·零行為改變）。
+    """讀 prejudge.json/verdict.json prejudge 的 per-stage reasoning_effort 旋鈕（None＝沿用主 config·零行為改變）。
 
-    成本病灶實測（2026-07-06 llm_usage：3716 筆全量重判 ~$21，reasoning tokens 佔總費 ~62%）——
+    成本病灶實測（2026-07-06 llm_usage：3716 筆全量重新初判 ~$21，reasoning tokens 佔總費 ~62%）——
     gpt-5 系列預設 reasoning effort（medium）在極性三分類 / 域選擇這類窄任務上大量空轉。
     QC 可分段調降（"minimal"/"low"）省 completion；降 effort 可能傷準確度，須先以 A/B 驗準再調。
     """
@@ -103,7 +103,7 @@ def _polarity_effort() -> str | None:
 
 
 def _auto_confirm_cfg() -> dict:
-    """G1 自動確認路由旋鈕（judgment.json auto_confirm；DB active 可熱更新）。"""
+    """G1 自動確認路由旋鈕（prejudge.json/verdict.json auto_confirm；DB active 可熱更新）。"""
     return _cfg().get("auto_confirm", {"enabled": True, "audit_sample_rate": 0.05})
 
 
@@ -112,7 +112,7 @@ def _route_status(tier: str, stage: str) -> str:
 
     auto_accept + judged（高信心已判定）→ `auto_confirmed`（自動採信、不進人工佇列）；每
     audit_sample_rate 比例抽樣回 `new` 交人工複核（防自動化偏誤：研究指 LLM 高召回低精確，全自動易漏錯）。
-    其餘（jury / needs_review / 未定論階段）→ `new`（需人工/覆核）。停用時一律 new（回退舊行為）。
+    其餘（jury / needs_review / 未定論階段）→ `new`（待人工判決）。停用時一律 new（回退舊行為）。
     """
     ac = _auto_confirm_cfg()
     if ac.get("enabled", True) and tier == "auto_accept" and stage == "judged":
@@ -126,7 +126,10 @@ def _route_status(tier: str, stage: str) -> str:
 def _route(findings: list[TicketFinding]) -> list[TicketFinding]:
     """對整組 finding 套用 G1 自動確認路由（依各自 tier+stage 設 status）。就地改並回傳同清單。"""
     for f in findings:
-        f.status = _route_status(f.confidence_tier, f.judgment_stage)
+        f.status = _route_status(f.confidence_tier, f.prejudge_stage)
+        if f.status == "auto_confirmed":  # 系統判決留痕（人工判決由判決端點寫入）
+            f.verdict_by = "system:auto_confirm"
+            f.verdict_at = _now_iso()
     return findings
 
 
@@ -135,12 +138,12 @@ _VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendedAction))
 
 
 def _now_iso() -> str:
-    """UTC ISO 時間（判決/建立時間戳）。"""
+    """UTC ISO 時間（初判/建立時間戳）。"""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _text_of(item: dict) -> str:
-    """取判決主輸入文字：優先 comment（intake_items）/ content（canonical 主文），回退 raw 內常見文字欄。
+    """取初判主輸入文字：優先 comment（intake_items）/ content（canonical 主文），回退 raw 內常見文字欄。
 
     有 canonical title（product_reviews rec_title / freshdesk subject）時前置「標題：」一行——
     標題常單獨承載問題點（標題罵、內文短），一併送判並讓 evidence_quote 可自標題落地。
@@ -171,7 +174,7 @@ def _action_for(l1_domain: str) -> str:
 
 
 def _tier_for(conf: float) -> str:
-    """信心 → 分層：>=auto_accept 自動採信 / <jury_low 待人審 / 之間 評審覆核。"""
+    """信心 → 分層：>=auto_accept 自動採信 / <jury_low 待人審 / 之間 評審複審。"""
     t = _tiers()
     if conf >= t.get("auto_accept", 0.8):
         return "auto_accept"
@@ -183,7 +186,7 @@ def _tier_for(conf: float) -> str:
 def _evidence_gated_domains() -> frozenset[str]:
     """需外部訂單佐證才可高信心的域清單——自各域 `## Taxonomy` root 的 `evidence_gated`（ai_judge 派生）。
 
-    「這域要不要外部佐證」＝該域自己的語義，寫在自己 prompt 的 taxonomy root（取代 judgment.json
+    「這域要不要外部佐證」＝該域自己的語義，寫在自己 prompt 的 taxonomy root（取代 prejudge.json/verdict.json
     硬編碼 evidence_gated_domains）；要納入他域只改該域 prompt。
     """
     return ai_judge.evidence_gated_domains()
@@ -192,7 +195,7 @@ def _evidence_gated_domains() -> frozenset[str]:
 def _evidence_capped(l1_domain: str, item: dict) -> bool:
     """是否因缺外部佐證觸發證據封頂（evidence_gated_domains 內的域缺 order_oid）。
 
-    判決階段派生用此旗標把「需外部資料才能定論」的案子導向 pending_data（待數據補充）。
+    初判階段派生用此旗標把「需外部資料才能定論」的案子導向 pending_data（待數據補充）。
     """
     has_order = bool(item.get("order_oid") or (item.get("raw") or {}).get("order_oid"))
     return l1_domain in _evidence_gated_domains() and not has_order
@@ -210,12 +213,12 @@ def _evidence_cap(l1_domain: str, item: dict, raw_conf: float) -> float:
 
 
 def _derive_stage(polarity: str, landing: str, tier: str, evidence_capped: bool) -> str:
-    """判決階段派生（歸因 finding 專用；non_issue 於 _non_issue_finding 直接設 stage）。
+    """初判階段派生（歸因 finding 專用；non_issue 於 _non_issue_finding 直接設 stage）。
 
     歸因列不分整體傾向（負向或混合中性的問題面向同規則）：
-    - judged 已判決：歸到 L2+高信心+未觸 cap。
+    - judged 已初判：歸到 L2+高信心+未觸 cap。
     - pending_data 待數據補充：L2 空(abstain) 或 evidence-cap 觸發(缺訂單/商品頁)——需外部佐證、能救。
-    - pending_review 待覆核：有 L2+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
+    - pending_review 待複審：有 L2+信心不足(jury/needs_review)+未觸 cap——有候選、靠人審。
     """
     if evidence_capped or not landing:
         return "pending_data"
@@ -310,24 +313,23 @@ def _as_float(v: Any, default: float = 0.0) -> float:
 
 # ── finding 組裝 ────────────────────────────────────────────────────────────
 def _base_kwargs(item: dict) -> dict:
-    """TicketFinding 共用簿記欄（id/來源/時間/oid）。ticket_id 存特徵 id（source_id），供 db 落 judgments.source_id。"""
+    """TicketFinding 共用簿記欄（id/來源/時間/oid）。ticket_id 存特徵 id（source_id），供 db 落 attributions.source_id。"""
     source = item.get("source", "")
     source_id = item.get("source_id", "")
     now = _now_iso()
     return {
-        "finding_id": f"fd_{source}_{source_id}",  # 冪等：重判整組替換（見 db.replace_source_findings）
+        "finding_id": f"fd_{source}_{source_id}",  # 冪等：重新初判整組替換（見 db.replace_source_findings）
         "ticket_id": source_id,  # ＝特徵 id（product_reviews→rec_oid…）
         "prod_oid": item.get("prod_oid", "") or "",
         "pkg_oid": item.get("pkg_oid", "") or "",
         "order_oid": item.get("order_oid", "") or "",
         "status": "new",
         "created_at": now,
-        "judged_at": now,
     }
 
 
 def _non_issue_finding(item: dict, polarity: str, model: str, sentiment: int = 0) -> TicketFinding:
-    """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。sentiment＝情緒分 1-5（0＝未判）。"""
+    """正向/中性 → 不歸 L1-L3、不進問題清單（純非問題）。sentiment＝情緒分 1-5（0＝未初判）。"""
     return TicketFinding(
         **_base_kwargs(item),
         recommended_action="no_action",
@@ -336,7 +338,7 @@ def _non_issue_finding(item: dict, polarity: str, model: str, sentiment: int = 0
         confidence=1.0,
         raw_confidence=1.0,
         confidence_tier="auto_accept",
-        judgment_stage="judged",
+        prejudge_stage="judged",
         model_used=model,
     )
 
@@ -357,7 +359,7 @@ def _attributed_finding(
     """
     conf = attr["confidence"]
     tier = _tier_for(conf)
-    # 判決落點＝L2 面向（prompt_pack 只判到 L2；高信心 L2 歸因走 judged/G1 路由，空 L2 才 pending_data）。
+    # 初判落點＝L2 面向（prompt_pack 只判到 L2；高信心 L2 歸因走 judged/G1 路由，空 L2 才 pending_data）。
     landing = attr["l2_code"]
     stage = _derive_stage(polarity, landing, tier, attr.get("evidence_capped", False))
     return TicketFinding(
@@ -372,7 +374,7 @@ def _attributed_finding(
         confidence=conf,
         raw_confidence=attr.get("raw_confidence", conf),
         confidence_tier=tier,
-        judgment_stage=stage,
+        prejudge_stage=stage,
         needs_review=tier == "needs_review",
         is_enhanced=enhanced,
         enhance_model=model if enhanced else "",
@@ -452,7 +454,7 @@ def _gate_attrs(attrs: list[dict], max_n: int) -> list[dict]:
     """歸因合流尾段共用閘門：同(域,面向)去重（信心最高）+ 過濾全 abstain + attr_min/secondary_min 信心閘門 + 排序 + cap。
 
     純函式（與產生來源解耦——`_resolve_attrs_multi` 餵 `_attrs_pack` 產出、Prompt 評測診斷路徑可餵
-    自己的診斷 attrs），確保「這條歸因會不會被判決採信」的規則只有一份，不因生產/評測兩條路徑
+    自己的診斷 attrs），確保「這條歸因會不會被初判採信」的規則只有一份，不因生產/評測兩條路徑
     各自實作而 drift。
 
     去重粒度＝(l1_domain, l2_code)：同一 L1 下不同 L2 面向各自成一條獨立歸因（一則反饋常同時
@@ -500,7 +502,7 @@ def _resolve_attrs_multi(
     不會比不剪枝更差（三層防線第 2 層，見 domain_router）。
 
     診斷理由（reason/abstain_reason）僅 Prompt 測試沙盒（診斷 overlay）提供；
-    production 判決不收集、不落庫。
+    production 初判不收集、不落庫。
     """
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
         return []
@@ -524,9 +526,9 @@ def to_findings(
 ) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
-    全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、判決階段、
-    action），落庫為 judgments 獨立列（見 db.replace_source_findings）。
-    進歸因的傾向由 judgment.json polarity_gate.attribute_when 決定（預設 negative+neutral——
+    全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、初判階段、
+    action），落庫為 attributions 獨立列（見 db.replace_source_findings）。
+    進歸因的傾向由 prejudge.json/verdict.json polarity_gate.attribute_when 決定（預設 negative+neutral——
     混合中性評論的具體問題點也要歸因，kiki 2026-07-06 反饋）：
     - 正向/純好評/不在 gate 清單 → [單一 non_issue finding]（不歸因）。
     - 負向/混合中性且有歸因 → 每(域,面向)一條 finding（信心最高標 is_primary；列 polarity＝整則傾向；
@@ -538,7 +540,7 @@ def to_findings(
 
     Args:
         item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
-        model: 主判決模型；stub 走啟發式極性、負向回未歸因單筆。
+        model: 主初判模型；stub 走啟發式極性、負向回未歸因單筆。
         versions: 版本選擇功能（{rule_code: 指定版本號}），透傳給 `prompt_source.load`；不帶時
             行為與既有 production 路徑完全一致（皆讀 DB active）。
 
@@ -552,11 +554,11 @@ def to_findings(
 
     # 各 return 皆過 _route：依 finding 的 tier+stage 設 status（G1 自動確認路由）。
     polarity, sentiment = _stage1_polarity(item, text, model, versions=versions)
-    if polarity not in _attribute_when():  # config 驅動（judgment.json polarity_gate）
+    if polarity not in _attribute_when():  # config 驅動（prejudge.json/verdict.json polarity_gate）
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
 
-    # 域路由剪枝（judgment.json prejudge.domain_router；預設關閉 → decision.pids=None＝全 6 域）。
-    # shadow 抽樣時強制全跑（production 輸出零風險），事後虛擬比對路由預測、漏域落 judgment_history。
+    # 域路由剪枝（prejudge.json/verdict.json prejudge.domain_router；預設關閉 → decision.pids=None＝全 6 域）。
+    # shadow 抽樣時強制全跑（production 輸出零風險），事後虛擬比對路由預測、漏域落 attribution_history。
     from app.judge import domain_router
 
     decision = domain_router.decide(text, polarity)
@@ -579,7 +581,7 @@ def to_findings(
         f = _non_issue_finding(
             item, "negative", used_model, sentiment=sentiment
         )  # 負向但全無法歸類 → 單筆未歸因（pending_data）
-        f.judgment_stage = "pending_data"
+        f.prejudge_stage = "pending_data"
         f.confidence_tier = "needs_review"
         f.needs_review = True
         f.evidence_quote = text[:200]
@@ -599,7 +601,7 @@ def to_findings(
 
 
 def _attribute_when() -> frozenset[str]:
-    """哪些整體傾向進歸因（judgment.json polarity_gate.attribute_when；SSOT＝該靜態檔）。
+    """哪些整體傾向進歸因（prejudge.json/verdict.json polarity_gate.attribute_when；SSOT＝該靜態檔）。
 
     容錯：字串（legacy attribute_only_when 單值）與清單皆收；只認 negative/neutral（positive
     恆 non_issue，防 config 誤填放行好評歸因）；config 缺失/全無效 → 回退 {"negative"}（保守舊行為）。
@@ -614,10 +616,10 @@ def _attribute_when() -> frozenset[str]:
 
 
 def batch_service_tier(n_items: int) -> str | None:
-    """批次判決的 serving tier（judgment.json prejudge.batch_service_tier；None＝標準）。
+    """批次初判的 serving tier（prejudge.json/verdict.json prejudge.batch_service_tier；None＝標準）。
 
     "flex"＝OpenAI flex processing：計價 -50%（Batch 同級）換變動延遲，適合背景批次；
-    小批次（< flex_min_items，如單筆重判＝使用者在等結果）不套 flex 保互動延遲。
+    小批次（< flex_min_items，如單筆重新初判＝使用者在等結果）不套 flex 保互動延遲。
     僅 OpenAI provider 生效（client 端依 base_url 反推守門），429 資源不足自動回退標準 tier。
 
     Args:
@@ -647,7 +649,7 @@ _EFFORT_RANK: dict[str, int] = {
 
 
 def cap_batch_reasoning_effort(effort: str | None) -> str | None:
-    """批次 job 的 reasoning_effort 硬上限（judgment.json prejudge.batch_max_reasoning_effort）。
+    """批次 job 的 reasoning_effort 硬上限（prejudge.json/verdict.json prejudge.batch_max_reasoning_effort）。
 
     制度性防呆：使用者 active LLM 檔位若設 xhigh（診斷/小樣本用），全量批次誤用會讓 reasoning
     token 暴增 ~6x、費用近 10x（2026-07 實測 gpt-5.4-mini xhigh vs gpt-5-mini）——批次啟動時將
@@ -669,11 +671,11 @@ def cap_batch_reasoning_effort(effort: str | None) -> str | None:
 
 
 def max_workers_for(model: str) -> int:
-    """該 model 的批次併發上限（judgment.json prejudge.max_workers_by_model；缺則 max_workers_default）。
+    """該 model 的批次併發上限（prejudge.json/verdict.json prejudge.max_workers_by_model；缺則 max_workers_default）。
 
     切旗艦模型（帳號 TPM/RPM tier 通常較低）時自動降併發，避免撞 OpenAI rate limit。此為軟上限，呼叫端
     （prejudge_batch）再與製程級硬天花板 env.prejudge_max_workers 取 min，只能往下收斂、不會超過全域
-    Semaphore 容量。手動維護表（不自動查帳號 tier）：切模型前於 judgment.json 更新對應值；缺表或缺該
+    Semaphore 容量。手動維護表（不自動查帳號 tier）：切模型前於 prejudge.json/verdict.json 更新對應值；缺表或缺該
     model 時回 max_workers_default。
 
     Args:
@@ -689,7 +691,7 @@ def max_workers_for(model: str) -> int:
 
 
 def _domain_retry() -> int:
-    """單域 LLM 呼叫失敗的有界重試次數（judgment.json prejudge.domain_retry，預設 1；0＝關閉）。
+    """單域 LLM 呼叫失敗的有界重試次數（prejudge.json/verdict.json prejudge.domain_retry，預設 1；0＝關閉）。
 
     P1 後單域一次呼叫已含 SDK max_retries 指數退避、耗盡才真失敗；此為「其餘域都成功、僅該域瞬時失利」
     情境的止血——省下整筆 6 域重打的浪費。耗盡仍讓整筆 fail-loud（見 _attrs_pack；不改完整性保證）。
@@ -698,7 +700,7 @@ def _domain_retry() -> int:
 
 
 def adaptive_concurrency() -> dict:
-    """自適應併發（AIMD）參數（judgment.json prejudge.adaptive_concurrency）；enabled 預設 True。
+    """自適應併發（AIMD）參數（prejudge.json/verdict.json prejudge.adaptive_concurrency）；enabled 預設 True。
 
     ceiling＝`max_workers_for`（呼叫端再 min env 硬天花板）；item 因 429 失敗 → limit*=`backoff`（乘性
     收縮），清空 `probe_interval_s` 秒無 429 → limit+=1（加性回升），不低於 `floor`。關閉即回退固定
@@ -769,7 +771,7 @@ def _finalize_attr_l2(
 
 
 # ── Prompt-as-Source 引擎：極性 + 六域並行歸因 ────────────────────────────
-# 判決 prompt 唯一真相源＝prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
+# 初判 prompt 唯一真相源＝prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
 def _render_pack_user(template: str, text: str, polarity: str) -> str:
     """填 prompt user 模板槽位（{TEXT}/{POLARITY}）。
 

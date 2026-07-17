@@ -15,7 +15,9 @@ defineProps<{ rows: SourceRow[] }>();
       <a-table-column title="指標" data-index="metric" :width="200" />
       <a-table-column title="類型" :width="100">
         <template #cell="{ record }">
-          <a-tag size="small" :color="record.kind === '落後指標' ? 'red' : 'arcoblue'">{{ record.kind }}</a-tag>
+          <a-tag size="small" :color="record.kind === '落後指標' ? 'red' : 'arcoblue'">{{
+            record.kind
+          }}</a-tag>
         </template>
       </a-table-column>
       <a-table-column title="DAP 資料來源">
@@ -25,7 +27,13 @@ defineProps<{ rows: SourceRow[] }>();
       </a-table-column>
       <a-table-column title="外部儀表板" :width="160">
         <template #cell="{ record }">
-          <a-link v-if="record.url" :href="record.url" target="_blank" :hoverable="false" class="text-xs">
+          <a-link
+            v-if="record.url"
+            :href="record.url"
+            target="_blank"
+            :hoverable="false"
+            class="text-xs"
+          >
             {{ record.dashboard }}<icon-launch class="ml-0.5" />
           </a-link>
           <span v-else class="text-xs text-[#c9cdd4]">—</span>

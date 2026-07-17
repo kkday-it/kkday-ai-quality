@@ -14,7 +14,11 @@ const emit = defineEmits<{ (e: 'navigate', route: string): void }>();
 
 /** P 級對應色：P0 紅、P1 橙、其餘灰。 */
 const pColor = computed(() => ({ P0: 'red', P1: 'orange' })[props.engine.pLevel] ?? 'gray');
-const sparkColor = computed(() => ({ ai_review: '#165dff', ai_writing: '#00b42a', ai_judge: '#ff7d00' })[props.engine.id] ?? '#165dff');
+const sparkColor = computed(
+  () =>
+    ({ ai_review: '#165dff', ai_writing: '#00b42a', ai_judge: '#ff7d00' })[props.engine.id] ??
+    '#165dff',
+);
 const sparkOption = computed(() => buildSparkOption(props.engine.spark, sparkColor.value));
 </script>
 
