@@ -11,6 +11,7 @@
 - `roles.json` — 輕量 RBAC 白名單（admins email 清單 + defaultRole；後端 auth.role_for 每請求即時派生，改名單免重登入）
 - `role_permissions.json` — 角色 → business-key 權限集合 SSOT（admin `["*"]` 全量、qc 質檢子集；key 定義見 `backend/app/core/permissions/permission_keys.py`；LocalPermissionProvider 讀此）
 - `auth.config.json` — 權限 provider 切換開關（`provider`=local｜be2·唯一替換點）+ `whiteList`（be2 免權限路徑預留）+ `businessListTtlMs`（前端權限清單快取 TTL）
+- `export.json` — 導出行為配置（前端消費）：`gdrive_upload_folder_url`＝導出完成通知「打開 Google Drive 上傳」捷徑的**全域預設**共用資料夾 URL（使用者可於帳號抽屜「導出偏好」per-user 覆寫，存 user_settings；皆空＝退回個人 my-drive）
 
 ## ai_judge/（判準領域）
 > **判準文字唯一真相源為 `prompts/*.md`**（Prompt-as-Source 架構，7 支：00_polarity +

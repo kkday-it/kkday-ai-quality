@@ -148,6 +148,17 @@ def test_settings_masked_with_stub_mode(client, auth_headers) -> None:
     assert r.json()["stub_mode"] is True  # 測試無 token → stub
 
 
+def test_settings_gdrive_upload_folder_url_roundtrip(client, auth_headers) -> None:
+    """導出偏好（per-user）：存 URL → 讀回；存空字串＝清除（回 None，前端退全域 config 預設）。"""
+    url = "https://drive.google.com/drive/folders/abc123"
+    r = client.post("/api/settings", json={"gdrive_upload_folder_url": url}, headers=auth_headers)
+    assert r.status_code == 200 and r.json()["gdrive_upload_folder_url"] == url
+    r = client.get("/api/settings", headers=auth_headers)
+    assert r.json()["gdrive_upload_folder_url"] == url
+    r = client.post("/api/settings", json={"gdrive_upload_folder_url": ""}, headers=auth_headers)
+    assert r.status_code == 200 and r.json()["gdrive_upload_folder_url"] is None
+
+
 # ── findings：狀態覆核 ──────────────────────────────────────
 def _seed_one_finding() -> str:
     """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態端點成功路徑測試）。"""

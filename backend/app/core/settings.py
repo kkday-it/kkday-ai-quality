@@ -110,6 +110,8 @@ _NEW_DEFAULT: dict = {
     "qc_passwords": {},  # { config_id: password } per-config 機密
     "overview_boards": [],  # 概覽自訂組合看板 [{id,label,chartIds[]}]（非機密）
     "active_overview_board_id": None,
+    # 導出偏好（非機密）：「打開 Google Drive 上傳」目的資料夾 URL；None＝未設（前端退全域 config 預設）
+    "gdrive_upload_folder_url": None,
 }
 
 # 舊 flat 格式的指紋 key：load 時偵測到即觸發 _migrate_legacy。
@@ -137,6 +139,7 @@ def _blank_settings() -> dict:
         "qc_passwords": {},
         "overview_boards": [],
         "active_overview_board_id": None,
+        "gdrive_upload_folder_url": None,
     }
 
 
@@ -364,6 +367,10 @@ def save_settings(user_id: str, patch: dict) -> dict:
         cur["overview_boards"] = [_ensure_id(b) for b in (patch["overview_boards"] or [])]
     if "active_overview_board_id" in patch:
         cur["active_overview_board_id"] = patch["active_overview_board_id"]
+
+    # ── 導出偏好（非機密）：空字串＝清除（存 None，前端退全域 config 預設）──
+    if "gdrive_upload_folder_url" in patch:
+        cur["gdrive_upload_folder_url"] = (patch["gdrive_upload_folder_url"] or "").strip() or None
 
     _sanitize(cur)
     _persist(user_id, cur)

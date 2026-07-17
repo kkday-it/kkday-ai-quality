@@ -2,7 +2,27 @@
 // 共用同一套進度/停止互動，故下沉為 composable，呼叫端只需提供「starter（回 job_id）」與下載檔名。
 import { computed, h, ref } from 'vue';
 import { Message, Notification } from '@arco-design/web-vue';
-import { cancelExport, downloadExport, exportStreamUrl, type ExportJobSnapshot } from '@/api';
+import exportCfg from '@config/global/export.json';
+import {
+  cancelExport,
+  downloadExport,
+  exportStreamUrl,
+  getSettings,
+  type ExportJobSnapshot,
+} from '@/api';
+
+/** 「打開 Google Drive 上傳」全域預設：團隊共用資料夾（config SSOT）；未配置退個人雲端硬碟根。 */
+const _GDRIVE_UPLOAD_URL =
+  exportCfg.gdrive_upload_folder_url || 'https://drive.google.com/drive/my-drive';
+
+/** 取「打開 Google Drive 上傳」目的地：個人偏好（帳號抽屜可設）優先，未設/讀取失敗退全域預設。 */
+const _gdriveUploadUrl = async (): Promise<string> => {
+  try {
+    return (await getSettings()).gdrive_upload_folder_url || _GDRIVE_UPLOAD_URL;
+  } catch {
+    return _GDRIVE_UPLOAD_URL; // 設定讀取失敗不阻斷通知
+  }
+};
 
 /** SSE 終態集合（見到即停止串流）。 */
 const _TERMINAL = new Set(['done', 'error', 'cancelled']);
@@ -41,19 +61,15 @@ export function useExportJob() {
       es.onerror = finish; // 連線中斷（含 done 後 server 關流）；狀態非終態則於下方判定為中斷
     });
 
-  /** 下載完成通知：附「打開 Google Drive」捷徑（手動拖曳上傳，無需帳號綁定/OAuth）。 */
-  const _notifyDownloaded = (successMessage: string) => {
+  /** 下載完成通知：附「打開 Google Drive」捷徑（個人偏好資料夾優先，手動拖曳上傳，無需帳號綁定/OAuth）。 */
+  const _notifyDownloaded = async (successMessage: string) => {
+    const href = await _gdriveUploadUrl();
     Notification.success({
       title: successMessage,
       content: () =>
         h(
           'a',
-          {
-            href: 'https://drive.google.com/drive/my-drive',
-            target: '_blank',
-            rel: 'noopener',
-            style: 'color: rgb(var(--primary-6))',
-          },
+          { href, target: '_blank', rel: 'noopener', style: 'color: rgb(var(--primary-6))' },
           '打開 Google Drive 上傳 →',
         ),
       duration: 8000,
@@ -88,7 +104,7 @@ export function useExportJob() {
         a.download = downloadName;
         a.click();
         URL.revokeObjectURL(url);
-        _notifyDownloaded(successMessage);
+        await _notifyDownloaded(successMessage);
       } else if (status.value === 'cancelled') {
         Message.info('已停止導出');
       } else if (status.value === 'error') {

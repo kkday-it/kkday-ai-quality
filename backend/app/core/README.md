@@ -9,7 +9,7 @@
 | `judge_config/` | **判準 config loader**（package）：ai_judge / product_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
 | `schema.py` | Pydantic 領域模型（`TicketFinding` 判決單元 + `AdequacyResult`）；判決引擎與 db 兩側平行消費。 |
 | `export_jobs.py` | 通用導出背景 job registry（in-mem 進度快照 + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 判決規則導出共用，端點見 `api/routers/exports.py`。 |
-| `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |
+| `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態、導出偏好 `gdrive_upload_folder_url`）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |
 | `crypto.py` | 機密 at-rest 加密（Fernet；key＝env `AIQ_SECRET_KEY`，未設明文直通可回滾）。密文帶 `enc:v1:` 前綴、舊明文列直通；既有列遷移用 `scripts/tools/encrypt_user_secrets.py`。 |
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout / DB 連線池…），全專案最底層依賴。 |
 | `errors.py` | API 錯誤 code 統一入口 `raise_api_error(code, message, status_code)` → HTTPException(detail={code, message})。前端據 code 對映 i18n 翻譯（見前端 `src/i18n`）；漸進採用 touch-when-edit。 |

@@ -73,6 +73,8 @@ class SettingsIn(BaseModel):
     # 概覽自訂看板（非機密）
     overview_boards: list[dict] | None = None  # [{id,label,chartIds[]}]
     active_overview_board_id: str | None = None
+    # 導出偏好（非機密）：Google Drive 上傳資料夾 URL；傳空字串＝清除（endpoint exclude_none，None 不動）
+    gdrive_upload_folder_url: str | None = None
 
 
 @router.get("/api/settings")

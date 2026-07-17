@@ -36,6 +36,8 @@ export interface SettingsBundle {
   qc_configs?: QcConfig[];
   active_qc_config_id?: string | null;
   qc_passwords?: Record<string, string>;
+  /** 導出偏好：Google Drive 上傳資料夾 URL（null/缺省＝未設，退全域 config 預設）。 */
+  gdrive_upload_folder_url?: string | null;
   stub_mode?: boolean;
   has_token?: boolean;
   has_qc_db_password?: boolean;
