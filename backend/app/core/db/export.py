@@ -1,13 +1,16 @@
 """問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。
 
 整列底色依 polarity（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱
-長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）；另附「歸因統計」圖表工作表
-（本次導出的情緒傾向/L1/L2/分層/階段/模型分佈，見 export_stats.py）。
+長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）。資料表尾附 C-1~C-6 六域命中欄
+（符合/不符合，供 Excel 篩選）；另附「分類統計」圖表工作表（本次導出的情緒傾向/L1/L2/
+分層/階段/模型分佈，見 export_stats.py）與「Prompts」工作表（判決 prompt active 版本快照，
+判決溯源）。
 """
 
 from __future__ import annotations
 
 import re
+from datetime import timezone
 from typing import TYPE_CHECKING
 
 from app.core.db._shared import (
@@ -324,10 +327,19 @@ def export_problems_xlsx(
             compare_models
         )
         stats_note = f"{stats_note}；{cmp_note}" if stats_note else cmp_note
+    # C-1~C-6 六域命中欄（review 級·合併儲存格）：值＝符合/不符合（未判評論空白），供 Excel
+    # 篩選。以基準內容計（當前判決或 snapshot_model 快照）——置於快照替換後，輸出版本口徑一致；
+    # 欄鍵 dom__{域機器值} 不撞 _attr_keys → fan-out 迴圈自動當 review 級處理。
+    dom_cols = _domain_match_cols()
+    for r in rows:
+        hits = {(a.get("l1") or {}).get("code") for a in (r.get("attributions") or [])}
+        judged = bool(r.get("polarity"))  # polarity 空＝完全未判 → 六欄留空（避免誤讀為判過不符合）
+        for _t, key, _w in dom_cols:
+            r[key] = ("符合" if key.removeprefix("dom__") in hits else "不符合") if judged else ""
     total = len(rows)
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
-    cols = _EXPORT_XLSX_COLS + cmp_cols
+    cols = _EXPORT_XLSX_COLS + dom_cols + cmp_cols
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
@@ -406,11 +418,13 @@ def export_problems_xlsx(
                 if key in _attr_keys:  # 歸因級欄逐列有值、不合併
                     lines = max(lines, _wrapped_lines(ws.cell(row=rr, column=ci).value, w))
             ws.row_dimensions[rr].height = lines * _LINE_HEIGHT_PT
-    # 緊接資料表後附「歸因統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段/模型分佈；
+    # 緊接資料表後附「分類統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段/模型分佈；
     # 所見即所得——快照模式下 rows 已替換為所選模型內容，統計自動跟隨；note 揭露輸出版本口徑）
     from app.core.db.export_stats import append_stats_sheet
 
     append_stats_sheet(wb, rows, note=stats_note)
+    # 尾附「Prompts」工作表：判決 prompt active 版本快照，供事後追溯這份結果用哪版 prompt 產出
+    _append_prompts_sheet(wb)
     if ctx is not None:
         ctx.report(total, total)  # 組檔完成（save 為單次序列化，無法再細分進度）
     buf = BytesIO()
@@ -441,3 +455,73 @@ def _wrapped_lines(value, col_width: int) -> int:
         width = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in seg)
         lines += max(1, -(-width // usable))  # ceil
     return lines
+
+
+def _domain_match_cols() -> list[tuple[str, str, int]]:
+    """C-1~C-6 六域命中欄定義（標題, 欄鍵, 欄寬）：標題如「C-1 商品內容」。
+
+    欄序/域機器值/中文 label 皆取 `prompt_source.structure()`（六域結構 SSOT，隨 prompt 改動
+    自動跟隨，程式碼零 taxonomy 假設）；C-N 碼由 prompt_id（如 01_C-1_content）派生。
+    """
+    from app.judge import prompt_source
+
+    domains = prompt_source.structure()["domains"]
+    cols: list[tuple[str, str, int]] = []
+    for pid, d in zip(prompt_source.DOMAIN_PROMPT_IDS, domains, strict=True):
+        cn = pid.split("_")[1]  # "01_C-1_content" → "C-1"
+        cols.append((f"{cn} {d['domain_label']}", f"dom__{d['domain']}", 13))
+    return cols
+
+
+def _append_prompts_sheet(wb) -> None:
+    """附「Prompts」工作表：導出當下 7 支判決 prompt 的 active 版本快照（判決溯源）。
+
+    版本 meta 取 `judge_rule_versions` active 版（`db.list_rule_meta`）；版本欄顯示**發版時間戳**
+    （v20260717031507 形式，UTC）——七支通常同批發版、時間戳一致可讀，per-rule 整數流水號
+    （v19 之類）各支不齊、對閱讀者無意義，不輸出。內容全文 DB active 優先，無 DB 版
+    （如全新環境）回退 `prompts/*.md` 檔案默認並於版本欄標「檔案默認」。
+    內容逾 Excel 單格 32767 字元上限時截斷並標註（現行 prompt 最大約 2 萬字元，屬防禦）。
+    """
+    from app.core import db, paths
+    from app.core.judge_config.rule_export import _style_header
+    from app.judge import prompt_source
+
+    _CELL_MAX = 32000  # Excel 單格字元上限 32767，留緩衝
+    _CONTENT_ROW_PT = 120  # 內容列固定高（約 8 行預覽；全文點入儲存格檢視）
+    meta = {m["rule_code"]: m for m in db.list_rule_meta()}
+    ws = wb.create_sheet("Prompts")
+    cols = [
+        ("Prompt", 16),
+        ("名稱", 18),
+        ("版本", 10),
+        ("版本說明", 28),
+        ("發版時間", 20),
+        ("內容全文", 100),
+    ]
+    ws.append([t for t, _w in cols])
+    for pid, code in zip(prompt_source.PROMPT_IDS, prompt_source.PROMPT_RULE_CODES, strict=True):
+        m = meta.get(code) or {}
+        active = db.get_rule_active(code)
+        if active and isinstance(active.get("text"), str) and active["text"].strip():
+            text = active["text"]
+        else:  # 無 DB active 版（全新環境）→ 檔案默認
+            text = (paths.PROMPTS_DIR / f"{pid}.md").read_text(encoding="utf-8")
+        if len(text) > _CELL_MAX:
+            text = text[:_CELL_MAX] + "\n…（逾 Excel 單格上限，全文見系統「規則配置」）"
+        title = m.get("label") or prompt_source.load(pid).get("title") or pid
+        # 版本＝發版時間戳（UTC；judge_rule_versions.created_at 為 timestamptz datetime）
+        created = m.get("created_at")
+        version = f"v{created.astimezone(timezone.utc):%Y%m%d%H%M%S}" if created else "檔案默認"
+        ws.append(
+            [
+                code,
+                _xlsx_safe(title),
+                version,
+                _xlsx_safe(m.get("note") or ""),
+                fmt_datetime(m.get("created_at")) if m.get("created_at") else "",
+                _xlsx_safe(text),
+            ]
+        )
+    _style_header(ws, [w for _t, w in cols])  # 已含全表 wrap+頂對齊
+    for rr in range(2, ws.max_row + 1):  # 內容列固定高：全文預覽約 8 行，不撐爆版面
+        ws.row_dimensions[rr].height = _CONTENT_ROW_PT

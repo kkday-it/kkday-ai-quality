@@ -119,7 +119,7 @@ def test_export_snapshot_selects_that_models_view(temp_db) -> None:
     assert rows[0][_col(headers, "問題摘要")] == "gpt 觀點"  # 舊模型快照，非當前判決（seed）
     # 統計表 A2 揭露輸出版本口徑
     wb = load_workbook(io.BytesIO(blob))
-    a2 = wb["歸因統計"]["A2"].value
+    a2 = wb["分類統計"]["A2"].value
     assert "gpt-5-mini" in a2 and "已排除 0 則" in a2
 
 

@@ -112,7 +112,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/判決階段(多選)/信心分層/覆核狀態(status 多選)/判決模型(model 多選·當前判決維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
 | GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩判決模型——當前判決維度，僅套判決級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |
-| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 judgment_history 最新快照（未判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
+| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格；欄尾附 C-1~C-6 六域命中欄〔符合/不符合·未判留空·供篩選〕；另附「分類統計」與「Prompts」〔判決 prompt active 版本快照〕工作表）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 judgment_history 最新快照（未判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
 | POST | `/api/judge-rules/export` | 啟動判決 Prompt 包 zip 導出背景 job（打包 prompts/ 目錄）→ {job_id} |
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `judgment.prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|

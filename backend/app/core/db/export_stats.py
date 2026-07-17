@@ -1,4 +1,4 @@
-"""導出歸因統計：由導出的 in-memory rows 直接算各維度分佈，附「歸因統計」圖表工作表。
+"""導出分類統計：由導出的 in-memory rows 直接算各維度分佈，附「分類統計」圖表工作表。
 
 統計＝**本次導出資料所見即所得**（不另發 DB 查詢、不走 attribution_overview 的獨立篩選，
 避免與導出集合 drift；勾選導出 item_ids 時亦精確對齊）。
@@ -76,7 +76,7 @@ def _distributions(rows: list[dict]) -> list[tuple[str, Counter]]:
 
 
 def append_stats_sheet(wb: Workbook, rows: list[dict], note: str | None = None) -> None:
-    """在 wb 追加「歸因統計」工作表：六維度各一資料塊（分類 / 數量 / 佔比）+ 分佈圖。
+    """在 wb 追加「分類統計」工作表：六維度各一資料塊（分類 / 數量 / 佔比）+ 分佈圖。
 
     圖表自動選型（≤6 類圓餅、>6 類橫向長條）；某維度無資料則只留標題不畫圖。全維度皆空則不附表。
     note：口徑附註（快照導出時標「輸出結果版本＝模型 X；篩選命中/排除筆數」，不受 sheet
@@ -88,7 +88,7 @@ def append_stats_sheet(wb: Workbook, rows: list[dict], note: str | None = None) 
     if not any(counter for _, counter in dists):  # 全批無歸因且無 polarity → 不附空表
         return
 
-    ws = wb.create_sheet("歸因統計")
+    ws = wb.create_sheet("分類統計")
     ws["A1"] = "歸因數據統計（本次導出）"
     ws["A1"].font = Font(bold=True, size=13)
     ws["A2"] = f"評論 {len(rows)} 則" + (f"　·　{note}" if note else "")
