@@ -1,4 +1,9 @@
-"""帳號系統端點（註冊 / 登入 / 當前使用者）；prefix 自帶 /api/auth。"""
+"""帳號系統端點（註冊 / 登入 / 當前使用者）；prefix 自帶 /api/auth。
+
+自建帳號體系定位（be2-ready 架構）：**dev fallback**——production 正式路徑＝be2 SSO
+（authProvider=be2，見 core/auth_verifiers.py）。be2 驗簽契約接通後：production 的
+register/login 全退役（bootstrap admin 改 be2 角色綁定）、本檔僅供本地開發離線登入。
+"""
 
 from __future__ import annotations
 

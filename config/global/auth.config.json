@@ -1,6 +1,13 @@
 {
-  "_comment": "權限 provider 切換開關（唯一替換點）。provider='local' 走 config 白名單（roles.json + role_permissions.json）；日後 provider='be2' 走中央 Auth SVC（需先實作 backend/app/core/permissions/be2_provider.py）。whiteList 預留 be2 base controller 白名單路徑（免權限端點），現行 local 未使用。",
+  "_comment": "認證/授權切換開關（前後端同讀 SSOT）。authProvider＝登入身分驗證（local=自建 JWT｜be2=中央 Auth Service token）；provider＝權限來源（local=roles.json+role_permissions.json 白名單｜be2=Auth SVC business-list）——兩鍵獨立可分開切換（先切登入、後切權限）。be2 段為接入佔位：authSvcUrl=Auth Service（refresh-token/login 走此）、be2LoginUrl=SSO 整頁跳轉入口、apiLangUrl/langPlatform=挖字 api-lang 端點與租戶（platform 待註冊）。實值待 auth team platform 註冊後回填；正式環境依環境覆蓋。",
+  "authProvider": "local",
   "provider": "local",
   "whiteList": [],
-  "businessListTtlMs": 43200000
+  "businessListTtlMs": 86400000,
+  "be2": {
+    "authSvcUrl": "https://auth.sit.kkday.com",
+    "be2LoginUrl": "REPLACE_ME/v2/auth/login",
+    "apiLangUrl": "https://api-gateway.sit.kkday.com/api-lang",
+    "langPlatform": "REPLACE_ME_ai-quality"
+  }
 }
