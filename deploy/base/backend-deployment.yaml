@@ -1,0 +1,69 @@
+# AI 法官後端 Deployment（草稿·供 cloud team review；正式版落 kkday-it/kkday-k8s-apps）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiq-backend
+  labels:
+    app: aiq-backend
+  annotations:
+    # config-manager 維護的 ConfigMap/Secret 變動時自動 rolling restart（公司慣例）
+    reloader.stakater.com/auto: "true"
+spec:
+  # ⚠️ Recreate + replicas:1（非典型，刻意）：4 套 job registry（export/import/prejudge/upload）
+  # 為 in-mem dict，多 replica / RollingUpdate 下 job 進度、SSE、下載會分裂到不同 pod。
+  # 代價＝部署更新有短暫空窗（舊 pod 終止→新 pod 就緒），與「滾動更新無 5xx」DoD 存在張力，
+  # 需與 SRE 對齊可接受空窗（詳見 deploy/README.md）。P1 遷 Redis/PG 後可改多 replica。
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: aiq-backend
+  template:
+    metadata:
+      labels:
+        app: aiq-backend
+    spec:
+      # 須 > uvicorn --timeout-graceful-shutdown 30（backend/Dockerfile CMD）；
+      # timeout 鏈：uvicorn 30 < compose 35（docker-compose.yml）< 本值 40
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: app
+          image: REPLACE_ME_ECR/aiq-backend:latest # ECR repo 名稱待 DevOps 提供（Step 1）
+          ports:
+            - containerPort: 8100
+          envFrom:
+            # 命名依公司慣例 <svc>-config / <svc>-secret / <svc>-cloud-secret；
+            # 實際值由 config-manager 平台維護（此處僅引用，key 清單見 configmap/secret 範例檔）
+            - configMapRef:
+                name: aiq-backend-config
+            - secretRef:
+                name: aiq-backend-secret
+            - secretRef:
+                name: aiq-backend-cloud-secret
+          resources:
+            # 初估（I/O bound：LLM 呼叫走網路等待為主，prejudge 64 threads 非算力密集）；
+            # 未經壓測，上線後依 Grafana/Prometheus 實測修正
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # 三層 probe（公司慣例：readiness=HTTP /api/status、liveness=TCP）：
+          # startup 預算 5 分鐘涵蓋 entrypoint 內 alembic upgrade 可能耗時
+          startupProbe:
+            httpGet:
+              path: /api/status
+              port: 8100
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8100
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8100
+            periodSeconds: 15

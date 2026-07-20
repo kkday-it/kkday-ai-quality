@@ -1,0 +1,13 @@
+# prod overlay（草稿）：namespace 與環境差異待 cloud team 定（SIT/STAGE overlay 屆時比照增設）
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: REPLACE_ME-namespace
+resources:
+  - ../../base
+# 環境差異範例（待定後啟用）：
+# patches:
+#   - target: {kind: Ingress, name: aiq}
+#     patch: |-
+#       - op: replace
+#         path: /spec/rules/0/host
+#         value: aiq.kkday.com

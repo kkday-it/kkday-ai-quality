@@ -1,0 +1,30 @@
+# AI 法官 Ingress（草稿·path-based routing：/api → backend、/ → frontend）
+# frontend/nginx.conf 內的 /api proxy_pass 為 docker-compose 專屬（k8s 下 Ingress 先攔 /api 打不到，保留不動）。
+# ingressClassName / annotations（scheme、group、certificate）與 host 命名待 SRE 確認：
+# 慣例 SIT=<svc>.sit.kkday.com / STAGE=<svc>.stage.kkday.com / PROD=<svc>.kkday.com。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiq
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal # 內部工具，走 private ALB（待 SRE 確認）
+spec:
+  ingressClassName: alb # 佔位（EKS 常見 AWS Load Balancer Controller；實際 class 待 SRE）
+  rules:
+    - host: REPLACE_ME.kkday.com # 待 Step 1 domain 申請
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: aiq-backend
+                port:
+                  number: 8100
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiq-frontend
+                port:
+                  number: 80

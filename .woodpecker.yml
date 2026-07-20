@@ -1,0 +1,29 @@
+# Woodpecker CI 草稿（公司標準：merge 後 build image 推 ECR；首版慣例由 DevOps 發 PR 校正）。
+# 分工：GitHub Actions（.github/workflows/ci.yml）續任 PR gate（lint/test）；
+#       Woodpecker 專職 tag 觸發 build→ECR（避免兩套 CI 重複維運）——分工待與 DevOps 確認。
+# repo secrets（aws 憑證等）由 DevOps 於 Step 1 設定；registry/repo 名稱佔位待提供。
+when:
+  event: tag # 打 tag 觸發 build（公司慣例；SIT 可由 Jenkins branch-build 跳過打 tag）
+
+steps:
+  build-backend:
+    image: plugins/docker
+    settings:
+      registry: REPLACE_ME.dkr.ecr.ap-northeast-1.amazonaws.com # PROD ECR 東京；SIT/STAGE ap-southeast-1
+      repo: REPLACE_ME.dkr.ecr.ap-northeast-1.amazonaws.com/aiq-backend
+      dockerfile: backend/Dockerfile
+      context: . # build context 為 repo 根（需 COPY config/ constants/ prompts/）
+      tags:
+        - ${CI_COMMIT_TAG}
+        - latest
+
+  build-frontend:
+    image: plugins/docker
+    settings:
+      registry: REPLACE_ME.dkr.ecr.ap-northeast-1.amazonaws.com
+      repo: REPLACE_ME.dkr.ecr.ap-northeast-1.amazonaws.com/aiq-frontend
+      dockerfile: frontend/Dockerfile
+      context: .
+      tags:
+        - ${CI_COMMIT_TAG}
+        - latest

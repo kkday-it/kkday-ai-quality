@@ -1,0 +1,14 @@
+# AI 法官前端 Service（草稿）
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiq-frontend
+  labels:
+    app: aiq-frontend
+spec:
+  selector:
+    app: aiq-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
