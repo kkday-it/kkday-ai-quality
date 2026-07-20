@@ -610,3 +610,16 @@ def get_job(job_id: str) -> dict | None:
     with _jobs_lock:
         snap = _jobs.get(job_id)
         return dict(snap) if snap else None
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在 running / paused 的初判 job 標 interrupted。
+
+    已判 finding 已即時落庫保留；重啟後對「剩餘未判」重新發起（scope=all）即可續作——
+    與 judgment_runs 的 interrupted 語義一致（server 重啟後 in-mem 快照不在）。
+    """
+    with _jobs_lock:
+        hit = [jid for jid, snap in _jobs.items() if snap.get("status") in ("running", "paused")]
+        for jid in hit:
+            _jobs[jid]["status"] = "interrupted"
+    return hit

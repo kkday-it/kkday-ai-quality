@@ -34,4 +34,6 @@ ENTRYPOINT ["./docker-entrypoint.sh"]
 # ⚠️ 單 worker：4 套 job registry（export/import/prejudge/upload）為 module 級 in-mem dict，
 # 多 worker（獨立 process 無共享記憶體）下 job 啟動 / SSE 進度 / 下載會落到不同 worker → 「job 不存在」/
 # 下載 404，且 prejudge Semaphore 併發上限被 ×worker 數放大。P1 將 job 狀態遷共享儲存（Redis/PG）後恢復多 worker。
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8100", "--workers", "1"]
+# --timeout-graceful-shutdown 30：SIGTERM 後 drain in-flight 請求的上限秒數。
+# timeout 鏈（遞增·改任一須同步）：本值 30 < compose stop_grace_period 35 < k8s terminationGracePeriodSeconds 40。
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8100", "--workers", "1", "--timeout-graceful-shutdown", "30"]

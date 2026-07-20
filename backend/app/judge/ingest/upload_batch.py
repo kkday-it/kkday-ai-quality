@@ -240,3 +240,12 @@ def get_job(job_id: str) -> dict | None:
             "sheets": [dict(s) for s in snap["sheets"]],
             "invalid": list(snap.get("invalid", [])),
         }
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在 running 的上傳落庫 job 標 interrupted（語義同 export_jobs）。"""
+    with _jobs_lock:
+        hit = [jid for jid, snap in _jobs.items() if snap.get("status") == "running"]
+        for jid in hit:
+            _jobs[jid]["status"] = "interrupted"
+    return hit

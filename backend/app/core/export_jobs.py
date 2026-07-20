@@ -187,3 +187,15 @@ def pop_result(job_id: str) -> bytes | None:
         if data is not None:
             _jobs.pop(job_id, None)
         return data
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在 running 的導出 job 標 interrupted，回被標記的 job_id。
+
+    SIGTERM 後 uvicorn drain 期間，輪詢進度的請求可拿到明確終態而非等連線被斷；
+    daemon thread 隨 process 消逝無法回收（單 worker in-mem registry 既定限制）。
+    """
+    hit = [jid for jid, snap in _jobs.items() if snap.get("status") == "running"]
+    for jid in hit:
+        _jobs[jid]["status"] = "interrupted"
+    return hit

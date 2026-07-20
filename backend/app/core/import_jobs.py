@@ -112,3 +112,14 @@ def get_job(job_id: str) -> dict | None:
         if snap is None:
             return None
         return {k: v for k, v in snap.items() if not k.startswith("_")}
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在 running 的匯入 job 標 interrupted（語義同 export_jobs）。
+
+    匯入為單一 DB 交易，process 中斷時交易自動 rollback——標記僅供進度輪詢端顯示終態。
+    """
+    hit = [jid for jid, snap in _jobs.items() if snap.get("status") == "running"]
+    for jid in hit:
+        _jobs[jid]["status"] = "interrupted"
+    return hit

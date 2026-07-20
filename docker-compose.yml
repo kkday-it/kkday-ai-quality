@@ -36,6 +36,8 @@ services:
     image: kkday-ai-quality-backend:prod
     container_name: kkday-ai-quality-backend-prod
     restart: unless-stopped
+    # 須 > uvicorn --timeout-graceful-shutdown 30（Dockerfile CMD），否則 docker SIGKILL 搶先於 drain 完成
+    stop_grace_period: 35s
     environment:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?須設定 POSTGRES_PASSWORD}@db:5432/kkdb_ai_quality
