@@ -9,7 +9,7 @@
 | `base.py` | `PermissionProvider` Protocol（`get_permissions(user)` / `check(user, perm)`）；fail-closed 為介面契約。 |
 | `permission_keys.py` | business-key 具名常數（be2 風格 `module.sub-function.action`）+ `ALL_KEYS`。禁在 router 散寫字面字串。 |
 | `local_provider.py` | `LocalPermissionProvider`：`auth.role_for(email)` 派生角色 → 讀 `config/global/role_permissions.json`（admin `'*'` 展全量）。 |
-| `be2_provider.py` | `Be2PermissionProvider` 空殼（NotImplementedError + 整合點文檔）；僅 `provider='be2'` 時選用。 |
+| `be2_provider.py` | `Be2PermissionProvider` **過渡實作**：get_permissions/check 委派 local role map（行為安全等價·fail-closed），支撐「登入先切 be2、授權後切」漸進路徑；正式 Auth SVC 契約接通後只改本檔內部（兩條路徑見檔頭）。 |
 | `deps.py` | `require_permission(key)`（FastAPI 依賴工廠·fail-closed 403）+ `get_provider()`（讀 `auth.config.json['provider']`·唯一分流點）+ `business_list_ttl_ms()`。 |
 
 ## 用法（router）
@@ -33,9 +33,15 @@ def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVI
 
 角色→key 映射 SSOT＝`config/global/role_permissions.json`；provider 切換＝`config/global/auth.config.json`。
 
-## 換 be2（日後·唯一改動點）
-1. 實作 `be2_provider.py`（token get/refresh、權限清單來源、check 策略——見檔頭 3 整合面）。
-2. `config/global/auth.config.json` 的 `provider` 由 `local` 改 `be2`。
-3. 前端 `api/permission.api.ts::fetchPermissions` 改讀 be2 SDK/localStorage。
+## 換 be2（漸進路徑·唯一改動點）
+
+**登入與授權兩鍵獨立**（auth.config.json：`authProvider`=登入／`provider`=授權），可分開切換：
+
+1. **先切登入**：`authProvider='be2'`（core/auth_verifiers.py Be2TokenVerifier——email 自動
+   provision；驗簽契約接通前 production 啟用即拒）；授權續用 local map 或 be2 過渡委派，行為不變。
+2. **後切授權**：auth team business-list 契約到位後，改 `be2_provider.py` 內部（登入 response
+   businessList 透傳 or 每請求 verify，見該檔檔頭）＋ `provider='be2'`。
+3. 前端 `api/permission.api.ts::fetchPermissions` 改讀 be2 SDK/localStorage（快取 wrapper
+   已對齊 be2 `{value, ttl, startTime}` 形狀，同網域可互通）。
 
 router / 前端 store / directive / router 守衛 / 選單全不動。

@@ -129,3 +129,18 @@ def test_anonymous_401_on_prejudge_and_read_endpoints(temp_db) -> None:
         assert client.get("/api/problems/attribution_overview").status_code == 401
         assert client.get("/api/problems/attribution_breakdown?l1=content").status_code == 401
         assert client.get("/api/overview/ai-judge").status_code == 401
+
+
+def test_be2_provider_transitional_delegation(temp_db, roles_cfg) -> None:
+    """be2 provider 過渡實作：get_permissions/check 與 LocalProvider 安全等價（正式契約前委派）。"""
+    from app.core.permissions.be2_provider import Be2PermissionProvider
+    from app.core.permissions.local_provider import LocalPermissionProvider
+
+    user = {"user_id": "u1", "email": "someone@kkday.com"}
+    assert Be2PermissionProvider().get_permissions(
+        user
+    ) == LocalPermissionProvider().get_permissions(user)
+    assert Be2PermissionProvider().check(user, "finding.review.update") is True
+    assert (
+        Be2PermissionProvider().check(user, "judge-rule.version.manage") is False
+    )  # qc 無 admin key
