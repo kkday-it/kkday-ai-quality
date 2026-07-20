@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     )
     # ── 服務 / 部署（可 env 覆蓋，免改碼）──
     cors_allow_origins: str = "http://localhost:5273"  # 逗號分隔多 origin；對齊 vite dev port 5273
+    # kklog 服務識別鍵（Kibana log_type.keyword 查詢用；正式名稱與 DevOps 對齊 kkday-k8s-apps 慣例後 env 覆蓋）
+    log_type: str = "aiq-backend"
     # 全庫資料包匯入開關（破壞性：清空並覆蓋整庫）。None＝依環境（development 開、其餘關）；
     # 顯式 true/false 覆蓋。防生產誤觸；上線收緊 admin 閘後仍建議留此環境級保險。
     aiq_allow_data_import: bool | None = None

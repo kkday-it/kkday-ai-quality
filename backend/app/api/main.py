@@ -14,9 +14,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # config 先載入：import 時即讀 backend/.env 並建 env 單例（機密集中管理）。
 from app.core import config, db  # noqa: F401
+from app.core.logging_setup import RequestContextMiddleware, configure_logging
+
+# kklog JSON stdout：於 app 模組載入時套用（uvicorn 自身 dictConfig 先跑、本配置後蓋前）。
+configure_logging()
 
 app = FastAPI(title="kkday-ai-quality", version="0.0.1")
 
+# 每請求 X-Request-Id 關聯鍵（kklog request.uuid）。先 add＝內層——CORS 須最外層
+# （add_middleware 為 stack，後 add 者在外），錯誤回應才保有 CORS header。
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     # 部署換 domain / 加 staging 免改碼：env CORS_ALLOW_ORIGINS 逗號分隔（預設對齊 vite dev 5273）

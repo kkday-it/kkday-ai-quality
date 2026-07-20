@@ -12,6 +12,7 @@
 | `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態、導出偏好 `gdrive_upload_folder_url`）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |
 | `crypto.py` | 機密 at-rest 加密（Fernet；key＝env `AIQ_SECRET_KEY`，未設明文直通可回滾）。密文帶 `enc:v1:` 前綴、舊明文列直通；既有列遷移用 `scripts/tools/encrypt_user_secrets.py`。 |
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout / DB 連線池…），全專案最底層依賴。 |
+| `logging_setup.py` | kklog 結構化 stdout 日誌（公司 Kibana/Filebeat 契約）：`KklogJsonFormatter`（單行 JSON·@timestamp 逐筆即時——Filebeat 停收坑迴歸鎖）+ `RequestContextMiddleware`（X-Request-Id 生成/沿用/回填→`request.uuid`）+ `configure_logging()`（dictConfig 接管 root+uvicorn 三支；access log 排除 `/api/status` probe 噪音）。`log_type`＝`config.env.log_type`（Kibana 查詢鍵）。 |
 | `errors.py` | API 錯誤 code 統一入口 `raise_api_error(code, message, status_code)` → HTTPException(detail={code, message})。前端據 code 對映 i18n 翻譯（見前端 `src/i18n`）；漸進採用 touch-when-edit。 |
 | `paths.py` | 路徑 SSOT（REPO_ROOT / CONFIG_DIR / AI_JUDGE_DIR / GLOBAL_DIR），全專案唯一算一次。 |
 | `auth.py` | JWT 簽發/驗證 + 密碼雜湊 + 角色派生（`role_for`：角色由 `config/global/roles.json` 白名單每請求即時派生，admin/qc 兩級、零 migration）。正式環境缺/弱 JWT secret（<32 bytes）拒啟動。端點授權改由 `permissions/` 負責（見下）。 |
