@@ -46,6 +46,8 @@ start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入
 docker-compose.yml           # 生產編排（PG + backend 單worker + frontend nginx）
 docker-compose.dev.yml       # 開發編排（hot reload：source volume + uvicorn --reload + vite HMR）
 docker/                      # seed/（首啟自動還原）· README.md（Docker 命令大全 + 疑難排解）
+deploy/                      # EKS 部署草稿（Kustomize base+overlays·供 cloud team review，見 deploy/README.md）
+.woodpecker.yml              # 公司 CI 草稿（tag → build → ECR；GH Actions 續任 PR lint/test gate）
 backend/Dockerfile · frontend/Dockerfile · frontend/Dockerfile.dev   # 各服務 image
 ```
 
