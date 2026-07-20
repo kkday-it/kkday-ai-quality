@@ -11,6 +11,11 @@ export const i18n = createI18n({
   locale: DEFAULT_LOCALE,
   fallbackLocale: DEFAULT_LOCALE,
   messages: {}, // 由 setupI18n 經 loader 載入（唯一替換接縫）
+  // 缺 key 佔位（對齊 be2 admin「Lang Key Not Set」慣例·顯眼利於 QA 抓漏挖）；
+  // errors 域另有後端中文訊息回退（apiError.util translateApiError），不受此影響
+  missing: (_locale, key) => `[MISSING: ${key}]`,
+  missingWarn: false,
+  fallbackWarn: false,
 });
 
 /**
