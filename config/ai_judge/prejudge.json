@@ -7,6 +7,32 @@
       "neutral"
     ]
   },
+  "pii_mask": {
+    "_comment": "PII 輸入端遮罩（送雲端 LLM 前，於 prejudge._text_of 唯一出口套用；公司慣例：含 PII 外送雲端 AI API 需資安確認，此為工程防護佐證）。rules 依序套用；pattern=Python regex；刻意不遮訂單號/OID（判決佐證要用，phone 以 10 位以上連號鎖定避免誤傷 8-9 位 OID）。enabled=false 即整段停用。",
+    "enabled": true,
+    "rules": [
+      {
+        "name": "email",
+        "pattern": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+        "replacement": "[email]"
+      },
+      {
+        "name": "phone_tw_mobile",
+        "pattern": "(?<!\\d)(?:\\+?886[\\s-]?)?09\\d{2}[\\s-]?\\d{3}[\\s-]?\\d{3}(?!\\d)",
+        "replacement": "[phone]"
+      },
+      {
+        "name": "phone_intl",
+        "pattern": "(?<!\\d)\\+\\d{1,3}[\\s-]?\\d{8,12}(?!\\d)",
+        "replacement": "[phone]"
+      },
+      {
+        "name": "long_digits",
+        "pattern": "(?<![\\dA-Za-z])\\d{10,16}(?![\\dA-Za-z])",
+        "replacement": "[number]"
+      }
+    ]
+  },
   "evidence_policy": {
     "_comment": "require_quote_grounded：evidence_quote 須為進線原文逐字片段才採信。attr_min_confidence：整條歸因最低信心，低於即丟棄（0＝關閉）。secondary_min_confidence：非 primary 條目最低信心，低於只留主因（0＝關閉）。證據閘域清單在各域 prompt `## Taxonomy` root evidence_gated。",
     "attr_min_confidence": 0.2,

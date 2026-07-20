@@ -163,8 +163,14 @@ def _text_of(item: dict) -> str:
                 break
     title = str(item.get("title") or "").strip()
     if title and title not in txt:
-        return f"標題：{title}\n{txt}" if txt else f"標題：{title}"
-    return txt
+        out = f"標題：{title}\n{txt}" if txt else f"標題：{title}"
+    else:
+        out = txt
+    # PII 輸入端遮罩（唯一出口）：本函式回傳值＝送 LLM 的 text＝evidence grounding 驗證基準，
+    # 在此遮罩保兩者一致——LLM 引用遮罩後文字時 evidence_quote 仍逐字落地。規則見 prejudge.json pii_mask。
+    from app.judge import pii_mask
+
+    return pii_mask.mask_pii(out, _cfg().get("pii_mask") or {})
 
 
 def _action_for(l1_domain: str) -> str:
