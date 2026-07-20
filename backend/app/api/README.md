@@ -5,8 +5,8 @@ HTTP 邊界層：路由 → 委派 `app/core/db` + `app/judge`。薄層（業務
 
 | 項目 | 內容 |
 |---|---|
-| `main.py` | 僅 app 組裝：CORS + `db.init_db()`/`seed_rules_from_files()` + 掛載全部 router（端點實作分散於 `routers/`，各自帶完整 /api 路徑）。 |
-| `routers/auth.py` | 帳號系統（/api/auth：register / login / me / **permissions**）。GET `/api/auth/permissions` 回當前 user 的 business-key 權限清單（be2 `auth.business-list` 契約形狀 `{value, ttl, startTime}`，供前端 v-auth / 選單 / 守衛）。 |
+| `main.py` | 僅 app 組裝：CORS + `db.init_db()`/`seed_rules_from_files()` + 掛載全部 router（端點實作分散於 `routers/`，各自帶完整 /api 路徑）。`docs_kwargs()` 環境閘：production 關閉 /docs /redoc /openapi.json（schema 面不對未認證流量公開），dev/SIT 保留。 |
+| `routers/auth.py` | 帳號系統（/api/auth：register / login / me / **permissions**）。GET `/api/auth/permissions` 回當前 user 的 business-key 權限清單（be2 `auth.business-list` **wire 契約 `{value, ttl}`**；前端快取層自記 `startTime` 成 be2 Cache wrapper 形狀，見 `permission.api.ts`），供前端 v-auth / 選單 / 守衛。 |
 | `routers/inbound.py` | 資料錄入（/api/inbound：validate / upload / upload/stream SSE）+ 批次清單（/api/batches）。 |
 | `routers/settings.py` | 設定（/api/settings：get/update/raw/test-llm）+ QC DB 連線測試（/api/datasource/qc-db/test）；含 `load_user_context` 守衛 + `_activate_settings`（contextvar 注入 judge 路徑）。 |
 | `routers/findings.py` | 歸因人工動作（PATCH /api/findings/{id}/verdict 單筆判決〔confirmed/dismissed/new＝撤銷·同值冪等〕｜PATCH /api/findings/batch/verdict 批量判決〔勾選評論的全部歸因，單交易 diff〕｜備註 notes｜級聯樹 GET /api/findings/taxonomy-cascade〔L1→L2 巢狀，供歸因列表篩選 cascader〕，**需登入**·記操作者/時間 audit）+ 評論級歸因歷史（GET /api/attribution-history 時間軸〔prejudge/verdict/note 三類事件〕、POST /api/attribution-history/notes 評論級備註、GET /api/attribution-history/models 歷來初判過的模型清單〔篩選/導出下拉〕）。 |
