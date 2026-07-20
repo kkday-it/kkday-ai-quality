@@ -100,6 +100,10 @@ docker compose logs -f backend
 **首次部署 bootstrap admin（必做，否則無人能登入）**：production 預設關閉自助註冊（`/api/auth/register` 回 403）。
 流程：①臨時多帶 `AIQ_ALLOW_SELF_REGISTER=true` 啟動 → ②以 `config/global/roles.json` `admins` 名單內的
 email 註冊帳號 → ③移除該變數重啟（自助註冊即恢復關閉）。之後新帳號由 admin 以相同臨時開關代建，或待接 be2。
+**be2 接通後（`auth.config.json` `authProvider=be2`）本段整個免除**：登入走 be2 SSO，首登以 claims email 自動
+provision users row，bootstrap admin＝把該 email 加進 `config/global/roles.json` `admins` 名單即可（零註冊流程）；
+self-register 端點屆時依退役計畫移除（見 `backend/app/api/routers/auth.py` docstring）。
+⚠️ production 設 `authProvider=be2` 需先完成 be2 token 驗簽（auth team server-to-server 契約）——未完成前後端啟動即拒（防未驗簽 token 上線）。
 
 **TLS**：`frontend/nginx.conf` 僅 `listen 80`——由外部 LB / 反向代理 / Ingress 終止 TLS 後轉發 8080，本檔不需改。
 

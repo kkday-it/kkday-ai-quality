@@ -14,6 +14,7 @@
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout / DB 連線池…），全專案最底層依賴。 |
 | `logging_setup.py` | kklog 結構化 stdout 日誌（公司 Kibana/Filebeat 契約）：`KklogJsonFormatter`（單行 JSON·@timestamp 逐筆即時——Filebeat 停收坑迴歸鎖）+ `RequestContextMiddleware`（X-Request-Id 生成/沿用/回填→`request.uuid`）+ `configure_logging()`（dictConfig 接管 root+uvicorn 三支；access log 排除 `/api/status` probe 噪音）。`log_type`＝`config.env.log_type`（Kibana 查詢鍵）。 |
 | `shutdown.py` | graceful shutdown 收尾：`mark_running_jobs_interrupted()` 彙總標記 4 套 in-mem registry（export/import/prejudge/upload）進行中 job 為 interrupted（main.py lifespan 唯一呼叫點）。timeout 鏈：uvicorn 30s < compose 35s < k8s 40s（三處互註解交叉引用）。 |
+| `auth_verifiers.py` | 登入身分驗證 provider 化（authentication 接縫·對齊 permissions 三件套模式）：`get_verifier()` 依 auth.config.json `authProvider` 分流——`LocalJwtVerifier`（自建 JWT·現行）/ `Be2TokenVerifier`（be2 accessToken claims decode＋exp＋email 自動 provision 方案 A；**驗簽 TODO 待 auth team 契約·production 啟用即拒**）。get_current_user 經此分流，router 零改。 |
 | `errors.py` | API 錯誤 code 統一入口 `raise_api_error(code, message, status_code)` → HTTPException(detail={code, message})。前端據 code 對映 i18n 翻譯（見前端 `src/i18n`）；漸進採用 touch-when-edit。 |
 | `paths.py` | 路徑 SSOT（REPO_ROOT / CONFIG_DIR / AI_JUDGE_DIR / GLOBAL_DIR），全專案唯一算一次。 |
 | `auth.py` | JWT 簽發/驗證 + 密碼雜湊 + 角色派生（`role_for`：角色由 `config/global/roles.json` 白名單每請求即時派生，admin/qc 兩級、零 migration）。正式環境缺/弱 JWT secret（<32 bytes）拒啟動。端點授權改由 `permissions/` 負責（見下）。 |
