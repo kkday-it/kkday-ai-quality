@@ -32,6 +32,12 @@ spec:
           image: REPLACE_ME_ECR/aiq-backend:latest # ECR repo 名稱待 DevOps 提供（Step 1）
           ports:
             - containerPort: 8100
+          # preStop sleep 5 ＋ uvicorn drain 30 ＝ 35 < terminationGracePeriodSeconds 40（鏈上限守住）：
+          # 先讓 ALB/endpoint 摘除傳播，再進 uvicorn graceful drain（sake 慣例）
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           envFrom:
             # 命名依公司慣例 <svc>-config / <svc>-secret / <svc>-cloud-secret；
             # 實際值由 config-manager 平台維護（此處僅引用，key 清單見 configmap/secret 範例檔）

@@ -5,6 +5,11 @@ metadata:
   name: aiq-backend
   labels:
     app: aiq-backend
+    # Prometheus 抓取標記（比照 sake service 慣例）；本服務 metrics 與 app 同 port 8100
+    # 路徑 GET /metrics（FastAPI instrumentator，PHP fpm-exporter 的 Python 等效）——
+    # scrape 配置細節（ServiceMonitor/annotations）待 SRE 依站內慣例定
+    monitor: "true"
+    monitor-endpoint: http
 spec:
   selector:
     app: aiq-backend

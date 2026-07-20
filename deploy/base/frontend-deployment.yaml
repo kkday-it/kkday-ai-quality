@@ -17,11 +17,18 @@ spec:
       labels:
         app: aiq-frontend
     spec:
+      # TBD（SRE 定案）：Grafana nginx metrics 若需比照 sake，加 nginx-prometheus-exporter
+      # sidecar（:9145）＋Service exporter port；純靜態 SPA 流量低，是否必要待討論
       containers:
         - name: nginx
           image: REPLACE_ME_ECR/aiq-frontend:latest # ECR repo 名稱待 DevOps 提供
           ports:
             - containerPort: 80
+          # RollingUpdate 下先摘除 endpoint 再等 in-flight 收斂（sake 慣例 preStop sleep drain）
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           resources:
             requests:
               cpu: 50m

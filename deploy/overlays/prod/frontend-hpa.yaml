@@ -1,0 +1,28 @@
+# frontend HPA（比照 sake prod overlay：min2/max6、cpu 85% / memory 80%）。
+# ⚠️ 僅 frontend（無狀態靜態站）——backend 為 Recreate + replicas:1（4 套 in-mem job registry
+# 刻意設計，見 base/backend-deployment.yaml 註解），不套 HPA/PDB/antiAffinity；
+# P1 將 job 狀態遷 Redis/PG 後再評估 backend 水平擴展。
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aiq-frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aiq-frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 85
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

@@ -34,8 +34,8 @@ from app.core import config
 _request_uuid_var: ContextVar[str] = ContextVar("request_uuid", default="")
 _trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
 
-# access log 排除路徑（probe 噪音；健康檢查契約端點見 main.py /api/status）
-_ACCESS_LOG_EXCLUDE = ("/api/status",)
+# access log 排除路徑（probe/scrape 噪音；健康檢查契約端點與 Prometheus metrics 見 main.py）
+_ACCESS_LOG_EXCLUDE = ("/api/status", "/metrics")
 
 
 def get_request_uuid() -> str:

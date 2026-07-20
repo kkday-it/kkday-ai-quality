@@ -82,6 +82,12 @@ for _r in (
 
 db.seed_rules_from_files()  # 初次播種：無 DB 版的 rule 以默認檔建 v1 active（冪等）
 
+# Prometheus /metrics（EKS Step 6 Grafana 驗收契約；PHP fpm-exporter 的 Python 等效）。
+# 免 auth（Prometheus scrape 不帶憑證）、不進 OpenAPI schema、access log 排除見 logging_setup。
+from prometheus_fastapi_instrumentator import Instrumentator  # noqa: E402
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
 
 @app.get("/api/status")
 def status() -> dict[str, str]:

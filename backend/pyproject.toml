@@ -22,6 +22,9 @@ dependencies = [
     "sqlalchemy>=2.0.0",       # 資料層（PostgreSQL only；Core + Alembic 遷移）
     "alembic>=1.13.0",         # schema 版本遷移
     "psycopg2-binary>=2.9.0",  # PostgreSQL driver（app 操作庫 + QC DB 連線測試共用）
+    # EKS 上線監控契約（Step 6 Grafana metrics 驗收）：FastAPI 版 Prometheus 標準 instrumentation
+    # ＝PHP 服務 fpm-exporter 的 Python 等效方案（GET /metrics·免 auth·排除 access log）
+    "prometheus-fastapi-instrumentator>=7.0.0",
 ]
 
 [project.optional-dependencies]

@@ -1,13 +1,40 @@
-# prod overlay（草稿）：namespace 與環境差異待 cloud team 定（SIT/STAGE overlay 屆時比照增設）
+# prod overlay（草稿）：namespace / host / image tag 佔位待 Step 1 定案後回填。
+# SIT/STAGE overlay 屆時比照增設（SIT 需雙 Ingress + cluster 編號、STAGE host <svc>.stage.kkday.com）。
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: REPLACE_ME-namespace
 resources:
   - ../../base
-# 環境差異範例（待定後啟用）：
-# patches:
-#   - target: {kind: Ingress, name: aiq}
-#     patch: |-
-#       - op: replace
-#         path: /spec/rules/0/host
-#         value: aiq.kkday.com
+  - frontend-hpa.yaml
+  - frontend-budget.yaml
+images:
+  # PROD image tag 由 Jenkins 部署時改寫（正式版 v* 無 -rc）；此處佔位供首次 render
+  - name: REPLACE_ME_ECR/aiq-backend
+    newTag: latest
+  - name: REPLACE_ME_ECR/aiq-frontend
+    newTag: latest
+patches:
+  # PROD host（<svc>.kkday.com 慣例；值待 Step 1 domain 申請定案）
+  - target:
+      kind: Ingress
+      name: aiq
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: REPLACE_ME.kkday.com
+  # frontend 多 replica 分散不同節點（比照 sake prod podAntiAffinity；僅 frontend，backend 單 replica 不適用）
+  - target:
+      kind: Deployment
+      name: aiq-frontend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: aiq-frontend
+                  topologyKey: kubernetes.io/hostname

@@ -420,3 +420,10 @@ def test_status_contract(client) -> None:
 def test_old_health_endpoint_removed(client) -> None:
     """/health 已 cutover 至 /api/status，舊路徑不應殘留（防雙端點漂移）。"""
     assert client.get("/health").status_code == 404
+
+
+def test_metrics_endpoint_for_prometheus(client) -> None:
+    """Prometheus /metrics 契約：免認證 200、exposition 格式（EKS Step 6 Grafana 驗收基礎）。"""
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "http_request" in r.text  # instrumentator 預設 metric 前綴存在即格式正確
