@@ -49,12 +49,24 @@ function getBe2RefreshToken(): string | null {
   }
 }
 
+// single-flight：並發多請求同時收到 403+AU9404 時共用同一次 refresh 呼叫——
+// be2 端若做 refresh-token 輪替，各自 refresh 會拿同一把舊 RT 競態互踩（後到者失敗→誤登出）
+let _refreshing: Promise<boolean> | null = null;
+
 /**
  * be2 token 續期（骨架·照抄 be2 系攔截 pattern）：403＋`x-kkday-auth-svc-status: AU9404`
- * 觸發 → `PATCH {authSvcUrl}/api/v1/refresh-token/{rt}` → 寫回新 token。
+ * 觸發 → `PATCH {authSvcUrl}/api/v1/refresh-token/{rt}` → 寫回新 token。single-flight 保護見上。
  * @returns 續期成功回 true（呼叫端重放原請求一次）；失敗 false（走登出導轉）。
  */
-async function tryBe2Refresh(): Promise<boolean> {
+function tryBe2Refresh(): Promise<boolean> {
+  _refreshing ??= doBe2Refresh().finally(() => {
+    _refreshing = null;
+  });
+  return _refreshing;
+}
+
+/** 實際續期請求（僅經 tryBe2Refresh 進入，確保同時間至多一發）。 */
+async function doBe2Refresh(): Promise<boolean> {
   const rt = getBe2RefreshToken();
   const base = BE2_CONFIG.authSvcUrl;
   if (!rt || !base) return false;

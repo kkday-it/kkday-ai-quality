@@ -10,8 +10,9 @@ type LocaleMessages = Record<string, unknown>;
 const BE2 = (authConfig as { be2?: { apiLangUrl?: string; langPlatform?: string } }).be2 ?? {};
 const LANG_PLATFORM_READY = !!BE2.apiLangUrl && !!BE2.langPlatform && !BE2.langPlatform.includes('REPLACE_ME');
 
-/** Klingon 模式 flag（對齊 be2 慣例 key；`localStorage['locale.klingon-active']='1'` 開啟）。 */
-export const isKlingonActive = (): boolean => localStorage.getItem('locale.klingon-active') === '1';
+/** Klingon 模式 flag（對齊 be2 慣例 key；`localStorage['locale.klingon-active']='1'` 開啟）。非瀏覽器環境（測試/SSR）一律 off。 */
+export const isKlingonActive = (): boolean =>
+  typeof localStorage !== 'undefined' && localStorage.getItem('locale.klingon-active') === '1';
 
 // eager：build 時靜態打包（zh-TW 目前唯一語系·體積小）。多語系 + 懶載時改 { eager: false } 動態 import。
 const MODULES = import.meta.glob('../locales/*/*.json', { eager: true }) as Record<

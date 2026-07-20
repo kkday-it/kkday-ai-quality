@@ -35,7 +35,17 @@ async def lifespan(_app: FastAPI):
     mark_running_jobs_interrupted()
 
 
-app = FastAPI(title="kkday-ai-quality", version="0.0.1", lifespan=lifespan)
+def docs_kwargs() -> dict:
+    """production 收斂 API schema 面：關閉 /docs /redoc /openapi.json。
+
+    內部 private ALB 之上再加一層——完整 API schema 不對未認證流量公開；dev/SIT 保留供除錯。
+    """
+    if config.is_production():
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+app = FastAPI(title="kkday-ai-quality", version="0.0.1", lifespan=lifespan, **docs_kwargs())
 
 # 每請求 X-Request-Id 關聯鍵（kklog request.uuid）。先 add＝內層——CORS 須最外層
 # （add_middleware 為 stack，後 add 者在外），錯誤回應才保有 CORS header。
