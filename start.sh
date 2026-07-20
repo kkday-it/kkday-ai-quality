@@ -196,7 +196,7 @@ _backend_ready() {
   if [ "$MODE" = "prod" ]; then
     [ "$(docker inspect -f '{{.State.Health.Status}}' kkday-ai-quality-backend-prod 2>/dev/null || echo starting)" = "healthy" ]
   else
-    _probe "http://localhost:${BACKEND_PORT:-8100}/health"
+    _probe "http://localhost:${BACKEND_PORT:-8100}/api/status"
   fi
 }
 printf "   等待服務就緒"

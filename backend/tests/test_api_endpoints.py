@@ -407,3 +407,16 @@ def test_prompt_sandbox_runs_list_and_detail(client, auth_headers):
 def test_prompt_sandbox_run_detail_unknown_404(client, auth_headers):
     r = client.get("/api/v1/prejudge/prompt-sandbox/runs/psbx_不存在", headers=auth_headers)
     assert r.status_code == 404
+
+
+# ── /api/status（公司健康檢查契約）──────────────────────────────────
+def test_status_contract(client) -> None:
+    """公司 EKS 上線驗證契約：免認證 200 + 精確 body（k8s readiness probe 引用同一路徑）。"""
+    r = client.get("/api/status")  # 無 Authorization header
+    assert r.status_code == 200
+    assert r.json() == {"status": "0000", "message": "success"}
+
+
+def test_old_health_endpoint_removed(client) -> None:
+    """/health 已 cutover 至 /api/status，舊路徑不應殘留（防雙端點漂移）。"""
+    assert client.get("/health").status_code == 404

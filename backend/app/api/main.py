@@ -60,6 +60,12 @@ for _r in (
 db.seed_rules_from_files()  # 初次播種：無 DB 版的 rule 以默認檔建 v1 active（冪等）
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/api/status")
+def status() -> dict[str, str]:
+    """公司健康檢查契約：`GET /api/status` → `{"status":"0000","message":"success"}`。
+
+    對齊 KKday EKS 上線驗證與 k8s readiness probe 慣例（路徑固定 /api/status、
+    不掛認證——本專案認證走 per-route Depends 非全域 middleware，新端點天然免 auth）。
+    access log 排除見 logging_setup 的 uvicorn.access filter（避免 probe 噪音進 Kibana）。
+    """
+    return {"status": "0000", "message": "success"}

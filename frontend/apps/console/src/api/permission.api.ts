@@ -7,15 +7,18 @@ import { BASE, j } from './http.api';
 export const AUTH_BUSINESS_LIST_KEY = 'auth.business-list';
 
 /**
- * 權限清單回傳（be2 `auth.business-list` 形狀）。
+ * 權限清單回傳（be2 `auth.business-list` wire 契約形狀——僅 value/ttl 兩欄）。
  * @property value permission-string 陣列（module.sub-function.action）
  * @property ttl 快取存活毫秒
- * @property startTime 發放時間（epoch ms），配 ttl 判過期
  */
 export interface BusinessList {
   value: string[];
   ttl: number;
-  startTime: number;
+}
+
+/** 本地快取書記形狀（非 be2 契約欄位）：cachedAt 由前端寫入當下自記，配 ttl 判過期。 */
+interface CachedBusinessList extends BusinessList {
+  cachedAt: number;
 }
 
 /** business-key 常數（對齊後端 permission_keys.py；be2 風格 module.sub-function.action）。 */
@@ -35,9 +38,10 @@ export type PermissionKey = (typeof PERM)[keyof typeof PERM];
 export const fetchPermissions = (): Promise<BusinessList> =>
   j<BusinessList>(`${BASE}/auth/permissions`);
 
-/** 寫入 localStorage（be2 契約形狀，供跨頁 / 重整快取）。 */
+/** 寫入 localStorage（wire 契約＋前端自記 cachedAt，供跨頁 / 重整快取過期判斷）。 */
 export function cacheBusinessList(bl: BusinessList): void {
-  localStorage.setItem(AUTH_BUSINESS_LIST_KEY, JSON.stringify(bl));
+  const cached: CachedBusinessList = { ...bl, cachedAt: Date.now() };
+  localStorage.setItem(AUTH_BUSINESS_LIST_KEY, JSON.stringify(cached));
 }
 
 /**
@@ -48,9 +52,9 @@ export function readCachedPermissions(): string[] | null {
   const raw = localStorage.getItem(AUTH_BUSINESS_LIST_KEY);
   if (!raw) return null;
   try {
-    const bl = JSON.parse(raw) as BusinessList;
+    const bl = JSON.parse(raw) as CachedBusinessList;
     if (!Array.isArray(bl.value)) return null;
-    if (bl.ttl && bl.startTime && Date.now() > bl.startTime + bl.ttl) return null; // 已過期
+    if (bl.ttl && bl.cachedAt && Date.now() > bl.cachedAt + bl.ttl) return null; // 已過期
     return bl.value;
   } catch {
     return null;

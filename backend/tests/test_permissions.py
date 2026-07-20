@@ -41,7 +41,7 @@ def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
         admin_body = client.get("/api/auth/permissions", headers=_auth(admin)).json()
 
         # be2 契約形狀
-        assert set(qc_body.keys()) == {"value", "ttl", "startTime"}
+        assert set(qc_body.keys()) == {"value", "ttl"}  # be2 wire 契約僅兩欄（startTime 已移除）
         assert isinstance(qc_body["value"], list) and qc_body["ttl"] > 0
 
         qc_perms, admin_perms = set(qc_body["value"]), set(admin_body["value"])

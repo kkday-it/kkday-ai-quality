@@ -107,7 +107,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## API 一覽（主要）
 | method | path | 說明 |
 |---|---|---|
-| GET | `/health` | 健康檢查 |
+| GET | `/api/status` | 健康檢查（公司契約：回 `{"status":"0000","message":"success"}`·免認證·k8s probe 用）|
 | POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
 | GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/初判階段(多選)/信心分層/判決狀態(status 多選)/初判模型(model 多選·當前初判維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
 | GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩初判模型——當前初判維度，僅套初判級指標（total_intake 不受影響）。需登入 |
