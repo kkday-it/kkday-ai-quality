@@ -1,20 +1,26 @@
 {
-  "_comment": "QC DB（PostgreSQL）連線預設——跨語言共用非機密單一真相源（前端 @config/global/qc_db.json、後端 settings.py 同讀）。機密（密碼）走 backend/.env / user_settings，勿放這裡。port/schema 為跨環境共用；環境（SIT/Stage）各帶 host + bootstrap database（測試連線/列舉 database 用的起手庫）。實際抽取的 database 由前端多選，存 user_settings。",
+  "_comment": "QC DB（PostgreSQL）連線預設——跨語言共用非機密單一真相源（前端 @config/global/qc_db.json、後端 settings.py 同讀）。機密（密碼）走 backend/.env / user_settings，勿放這裡。port/schema 為跨環境共用；環境（sit/stage/production）各帶 host + bootstrap database（測試連線/列舉 database 用的起手庫）。起手庫統一用 postgres（必存在、不受 QC qcNNN 實例輪替影響；qc201 下線曾致舊起手庫連線失敗）。實際抽取的 database 由前端多選，存 user_settings。",
   "port": 5432,
   "schema": "public",
   "defaultEnv": "sit",
   "environments": [
     {
       "id": "sit",
-      "label": "SIT",
+      "label": "sit",
       "host": "postgresql-qc.sit.kkday.com",
-      "name": "qc201_kkdb_product"
+      "name": "postgres"
     },
     {
       "id": "stage",
-      "label": "Stage",
+      "label": "stage",
       "host": "postgresql-qc.stage.kkday.com",
-      "name": "kkdb_product"
+      "name": "postgres"
+    },
+    {
+      "id": "production",
+      "label": "production",
+      "host": "postgresql-snapshot.kkday.com",
+      "name": "postgres"
     }
   ]
 }

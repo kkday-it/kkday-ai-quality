@@ -4,6 +4,13 @@ import { IconDragDotVertical } from '@arco-design/web-vue/es/icon';
 import QcConfigEditor from './QcConfigEditor.vue';
 import type { QcConfig } from '../types';
 
+/** 環境標籤配色（sit=藍 / stage=紫 / production=紅示警）；未知環境灰底兜底。 */
+const ENV_TAG_COLORS: Record<string, string> = {
+  sit: 'arcoblue',
+  stage: 'purple',
+  production: 'red',
+};
+
 // 單一 QC config 卡片：以手風琴面板（a-collapse-item）呈現。
 // header＝label（唯讀）+ 環境標籤 + 狀態徽章 + 收合時的連線 preview；extra＝啟用開關 / 刪除；
 // body＝展開即為 QcConfigEditor 表單本身（無「編輯」中間步驟，展開＝可編輯；改名走表單內「連線名稱」欄）。
@@ -45,8 +52,8 @@ defineEmits<{
       <span class="inline-flex flex-col">
         <span class="inline-flex items-center">
           <span class="truncate font-medium">{{ config.label }}</span>
-          <a-tag class="ml-2" size="small" :color="config.env === 'sit' ? 'arcoblue' : 'purple'">
-            {{ config.env.toUpperCase() }}
+          <a-tag class="ml-2" size="small" :color="ENV_TAG_COLORS[config.env] ?? 'gray'">
+            {{ config.env }}
           </a-tag>
           <!-- 狀態徽章：所有卡片皆顯示，僅顏色/文字依啟用狀態不同（綠＝啟用中 / 灰＝未啟用） -->
           <a-tag class="ml-1" :color="active ? 'green' : 'gray'" size="small">

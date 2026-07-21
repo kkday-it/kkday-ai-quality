@@ -18,7 +18,7 @@ export interface LlmConfig {
 export interface QcConfig {
   id: string;
   label: string;
-  env: string; // sit | stage
+  env: string; // sit | stage | production
   host: string;
   port: number | null;
   user: string;

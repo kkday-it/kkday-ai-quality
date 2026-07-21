@@ -8,6 +8,8 @@ export interface QcDbTestResult {
   databases?: string[];
   /** 連線成功時起手庫的使用者 schema 清單（排除系統 schema）。 */
   schemas?: string[];
+  /** 已綁定但伺服器上已不存在的庫（如 QC 實例輪替下線），供前端改綁提示。 */
+  stale_names?: string[];
   error?: string;
 }
 

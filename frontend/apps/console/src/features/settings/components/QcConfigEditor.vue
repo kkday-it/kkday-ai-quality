@@ -8,8 +8,9 @@ import { Terminal } from '@/components';
 import { configStamp } from '../utils';
 import type { QcConfig } from '../types';
 
-// 單套 QC DB config 編輯器（modal 內容）：props 注入 config + 已知 password，emit save 由父元件持久化。
-// 從舊 DatasourceSettings.vue 重構：保留 SIT/Stage 環境切換、漸進式揭露 db/schema 多選、即時測試（Terminal）。
+// 單套 QC DB config 編輯器：props 注入 config + 已知 password，emit save 由父元件持久化。
+// 環境完全隔離：連線所屬環境由父層環境 tab 決定（新增即繼承、建立後不可變），
+// 編輯器不提供環境選擇——跨環境殘值從結構上不存在；host 預設值仍按所屬環境帶入。
 const QC = qcDefaults;
 const ENVS = QC.environments;
 const DEFAULT_ENV = QC.defaultEnv;
@@ -56,16 +57,6 @@ const schemaSelectOptions = computed(() =>
     value: x,
   })),
 );
-
-// 切換環境：回填 host，清空舊環境的庫/schema 選取與清單（不同 server 須重測）；綁定區不收起
-const onEnvChange = (envId: string | number | boolean) => {
-  form.value.host = envOf(String(envId)).host;
-  form.value.names = [];
-  form.value.schemas = [QC.schema];
-  dbOptions.value = [];
-  schemaOptions.value = [];
-  testResult.value = null;
-};
 
 /** 組出當前表單的 QcConfig（保留 id）。 */
 const buildConfig = (): QcConfig => ({
@@ -126,6 +117,10 @@ const onTest = async () => {
       Message.success(
         `連線成功，載入 ${dbOptions.value.length} 個資料庫、${schemaOptions.value.length} 個 schema`,
       );
+      // 綁定庫健檢：已綁定但伺服器上已不存在的庫（如 QC 實例輪替下線）→ 提示改綁，不靜默
+      if (r.stale_names?.length) {
+        Message.warning(`已綁定的庫不存在：${r.stale_names.join('、')}（請重新勾選後儲存）`);
+      }
     } else {
       Message.error('連線失敗：' + (r.error || '未知錯誤'));
     }
@@ -137,7 +132,13 @@ const onTest = async () => {
   }
 };
 
-const ANSI = { reset: '\x1b[0m', green: '\x1b[32m', red: '\x1b[31m', dim: '\x1b[90m' } as const;
+const ANSI = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  dim: '\x1b[90m',
+} as const;
 watch(testResult, async (r) => {
   if (!r) return;
   await nextTick();
@@ -150,6 +151,8 @@ watch(testResult, async (r) => {
     t.writeln(
       `${ANSI.dim}# 共 ${r.databases.length} 個資料庫、${r.schemas?.length ?? 0} 個 schema 可選${ANSI.reset}`,
     );
+  if (r.ok && r.stale_names?.length)
+    t.writeln(`${ANSI.yellow}⚠ 綁定庫已不存在：${r.stale_names.join('、')}（請重新勾選）${ANSI.reset}`);
   if (r.error) t.writeln(`${ANSI.red}✗ ${r.error}${ANSI.reset}`);
 });
 </script>
@@ -158,12 +161,6 @@ watch(testResult, async (r) => {
   <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
     <a-form-item field="label" label="連線名稱">
       <a-input v-model="form.label" placeholder="可自訂名稱（預設 QC DB + 時間戳）" allow-clear />
-    </a-form-item>
-
-    <a-form-item field="env" label="環境">
-      <a-radio-group v-model="form.env" type="button" @change="onEnvChange">
-        <a-radio v-for="e in ENVS" :key="e.id" :value="e.id">{{ e.label }}</a-radio>
-      </a-radio-group>
     </a-form-item>
 
     <a-row :gutter="12">
