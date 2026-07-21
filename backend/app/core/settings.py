@@ -35,7 +35,7 @@ LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
 
 
 def qc_db_env_name(env_id: str | None) -> str:
-    """回某 QC DB 環境（sit/stage）的 bootstrap database 名（測試連線/列舉 database 的起手庫）。
+    """回某 QC DB 環境（sit/stage/production）的 bootstrap database 名（測試連線/列舉 database 的起手庫）。
 
     未知 env_id 回退 defaultEnv 的；環境表為空回空字串。供 main.py 測試連線決定 bootstrap dbname。
     """
@@ -444,20 +444,31 @@ def _persist(user_id: str, data: dict) -> None:
 
 
 def resolve_provider_token(eff: dict) -> str:
-    """由 effective LLM dict 解出該配置實際生效的 token（per-config api_token 優先，fallback env）。
+    """由 effective LLM dict 解出該配置實際生效的 token（per-config api_token 優先，OpenAI 才 fallback env）。
 
     與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（prejudge router /
     prejudge_batch 第二道防線）據此判斷「本次批量是否將落為 stub 假判」，兩處邏輯合一防漂移
     （曾因 env 空值覆蓋致 stub 假判覆蓋 1,452 筆真歸因）。
 
+    後備分流（provider-aware）：`env.openai_api_key` 只是 **OpenAI** 的 infra 後備；gemini / bytedance
+    等非 OpenAI provider 若無 per-config token 一律回空（視為未配置），否則會誤拿 OpenAI key 使 stub
+    硬閘誤判「已配置」放行，實際卻拿 OpenAI key 打非 OpenAI 端點 → 逐筆 401/403。provider 由 base_url
+    反推（未知/自訂端點歸 openai，保留其 env 後備）。
+
     Args:
         eff: effective LLM dict（`effective_llm_dict()` 產出或 contextvar `current()` 讀出，
-            含該配置自身的 api_token；缺鍵視為空）。
+            含該配置自身的 api_token 與 base_url；缺鍵視為空）。
 
     Returns:
         實際生效 token；解不出任何 token 回空字串（呼叫端以 falsy 判 stub）。
     """
     from app.core.config import env  # 函式內 import：維持 settings 不在頂層依賴 config
 
-    # per-config：直接取該配置自身 token（effective_llm_dict 已解出 api_token）；fallback env（infra 後備）
-    return eff.get("api_token") or env.openai_api_key
+    # per-config：直接取該配置自身 token（effective_llm_dict 已解出 api_token）
+    per_config = eff.get("api_token")
+    if per_config:
+        return per_config
+    # env 後備僅限 OpenAI（含未知/自訂 OpenAI 相容端點，provider_id_for 預設歸 openai）
+    if provider_id_for(eff.get("base_url") or "") == "openai":
+        return env.openai_api_key
+    return ""

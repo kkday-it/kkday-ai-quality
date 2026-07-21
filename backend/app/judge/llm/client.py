@@ -351,8 +351,10 @@ def _reasoning_kwargs(cfg: dict) -> dict:
 def _resolve() -> dict:
     """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。
 
-    token 取「當前 provider（由 base_url 反推）對應的 provider_tokens 條目」，fallback env；
-    確保 token 永遠對齊當前 base_url 的 provider，不會用到別家 provider 的 key。
+    token 取該配置自身的 per-config token（`effective_llm_dict` 解出的 api_token，即
+    `llm_tokens[config.id]`），僅 OpenAI（含未知/自訂相容端點）在無 per-config token 時 fallback
+    `env.openai_api_key`——見 `settings.resolve_provider_token` 的 provider-aware 分流；確保 token
+    永遠對齊當前 base_url 的 provider，非 OpenAI 缺 token 即視為未配置（不會誤用別家 provider 的 key）。
     """
     cfg = _settings.current()
     base_url = (cfg.get("base_url") or "").strip()

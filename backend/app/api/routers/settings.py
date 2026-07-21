@@ -142,9 +142,14 @@ def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
     if form_tok and "***" not in str(form_tok) and "…" not in str(form_tok):
         token = form_tok
     else:
-        token = (saved.get("llm_tokens") or {}).get(
-            body.config_id or ""
-        ) or config.env.openai_api_key
+        # 空/遮罩 → 沿用已儲存該套 token；仍無則走 provider-aware env 後備（僅 OpenAI），
+        # 與 judge 路徑共用 resolve_provider_token 一份判定，避免非 OpenAI 配置誤拿 OpenAI key 測連線
+        token = app_settings.resolve_provider_token(
+            {
+                "api_token": (saved.get("llm_tokens") or {}).get(body.config_id or ""),
+                "base_url": (body.base_url or "").strip(),
+            }
+        )
     cfg = {
         "token": token,
         "base_url": (body.base_url or "").strip(),
@@ -172,12 +177,11 @@ class QcDbTestIn(BaseModel):
 def _qc_db_bootstrap_name(cfg: dict) -> str:
     """決定測試連線/列舉 database 用的 bootstrap dbname。
 
-    優先取已多選清單首項（已知可連的庫）；尚未選取時回退 env（sit/stage）的預設 database。
-    PostgreSQL 連任一庫即可 SELECT pg_database 列出全部，故起手庫只需任選其一。
+    一律用 env 的預設起手庫（postgres——必存在、不受 QC 實例輪替影響），不測具體綁定庫：
+    綁定庫可能已隨實例輪替下線（如 qc201），以其起手會讓「測試連線」本身失敗，
+    使用者反而無法重載清單改綁（死循環）。PostgreSQL 連任一庫即可 SELECT pg_database 列出全部；
+    綁定庫是否仍存在改由測試結果的 stale_names 標注。
     """
-    names = cfg.get("names") or []
-    if names:
-        return names[0]
     from app.core.settings import qc_db_env_name
 
     return qc_db_env_name(cfg.get("env"))
@@ -236,7 +240,9 @@ def _try_qc_db_connect(cfg: dict) -> dict:
                 schemas = [r[0] for r in cur.fetchall()]
         finally:
             conn.close()
-        return {"ok": True, "databases": databases, "schemas": schemas}
+        # 綁定庫健檢：已綁定但已不存在的庫（如 QC 實例輪替下線）標注回前端，供改綁提示
+        stale = [n for n in (cfg.get("names") or []) if n not in databases]
+        return {"ok": True, "databases": databases, "schemas": schemas, "stale_names": stale}
     except Exception as e:  # 只回錯誤首行（避免洩漏連線細節 / 密碼）
         return {"ok": False, "error": str(e).splitlines()[0][:200]}
 
