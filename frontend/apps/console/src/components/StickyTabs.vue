@@ -6,7 +6,8 @@
  *
  * 透明轉發：不宣告任何 props/emits，`$attrs`（含 `v-model:active-key`、`type`、`size` 等一切
  * a-tabs 原生 props/events）直接 `v-bind` 到內部 a-tabs；預設 slot 透傳，`<a-tab-pane>` 寫法
- * 與直接用 `a-tabs` 完全一致，替換零學習成本。
+ * 與直接用 `a-tabs` 完全一致，替換零學習成本。另轉發 `extra` 具名 slot（Arco tab 列右側附加區），
+ * 消費端可把「新增」等工具按鈕掛在 active tab 同列，語境內聚（見 Llm/Qc 連線面板）。
  *
  * 消費端前提：根元素需在有實際高度的容器內（drawer 走 `:body-style` 撐滿、頁面走 `h-full`），
  * 本元件才能 `flex:1` 撐滿並讓內容區正確捲動——內容區（`.arco-tabs-content`）恆為**唯一**捲動
@@ -64,6 +65,8 @@ defineExpose({
 <template>
   <div ref="root" class="sticky-tabs">
     <a-tabs v-bind="$attrs">
+      <!-- tab 列右側附加區（Arco 原生 extra 槽）：消費端可掛「新增」等工具按鈕，與 active tab 同列、語境內聚 -->
+      <template v-if="$slots.extra" #extra><slot name="extra" /></template>
       <slot />
     </a-tabs>
   </div>

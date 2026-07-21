@@ -8,9 +8,10 @@ import { MODEL_MIN_VERSION, PROVIDERS, REASONING } from '../constants';
 import { composeLlmLabel, deriveProviderId, modelMeetsMin } from '../utils';
 import type { LlmConfig } from '../types';
 
-// 單套 LLM config 編輯器（modal 內容）：props 注入 config + 已知 token map，emit save 由父元件持久化。
-// 從舊 Settings.vue 重構：保留 provider 切換 / model 動態清單 / 即時測試（Terminal）；
-// 移除單一配置時代的 localStorage 快取與 per-model 旋鈕記憶（多 config 下「config 本身即真相源」）。
+// 單套 LLM config 編輯器：props 注入 config + 已知 token map，emit save 由父元件持久化。
+// 供應商完全隔離：配置所屬供應商由父層供應商 tab 決定（新增即繼承、建立後不可變），
+// 編輯器不提供供應商選擇——token / 旋鈕跨供應商殘值從結構上不存在；model 清單按所屬供應商帶出，
+// base_url 仍可自訂（自訂端點屬同供應商內的端點細節）。
 const props = defineProps<{
   /** 編輯中的 config（新建時由父元件帶 id + 預設值）。 */
   modelValue: LlmConfig;
@@ -32,7 +33,10 @@ const form = ref({
     : 'medium',
   api_token: '',
 });
-const selectedProvider = ref(deriveProviderId(props.modelValue.base_url));
+// 供應商固定＝config 落庫 provider 欄（缺值由 base_url 反推兜底）；編輯期間不可變。
+const selectedProvider = computed(
+  () => props.modelValue.provider || deriveProviderId(props.modelValue.base_url),
+);
 const useTemp = ref(!isNil(props.modelValue.temperature));
 /** 思考模式開啟時 temperature 鎖定為 1、不可修改（OpenAI reasoning model 僅接受預設 1，其他值回 400）。
  *  僅 OpenAI 有此限制；Gemini / ByteDance 開啟 thinking 仍可自訂 temperature，不強制鎖定。 */
@@ -66,18 +70,6 @@ const modelOptions = computed(() => {
   const all = form.value.model && !has ? [...curated, { id: form.value.model }] : curated;
   return all.filter((m) => modelMeetsMin(m.id, MODEL_MIN_VERSION));
 });
-
-// 切換供應商：帶入 base_url / 該 provider 已知 token / 預設 model + 旋鈕 preset
-const selectProvider = (id: unknown) => {
-  const p = PROVIDERS.find((x) => x.id === String(id));
-  if (!p) return;
-  selectedProvider.value = p.id;
-  form.value.base_url = p.base_url;
-  // per-config token：切換供應商不動 token（token 屬此套配置，非跟著 provider 還原）
-  form.value.model = p.defaultModel ?? p.defaultModels[0]?.id ?? '';
-  if (p.thinking !== undefined) form.value.thinking = p.thinking === 'on' ? 'on' : 'off';
-  if (p.reasoning_effort !== undefined) form.value.reasoning_effort = p.reasoning_effort;
-};
 
 /** 組出當前表單的 LlmConfig（保留 id）。label 由參數自動拼接（provider/model/reasoning），不再手動命名。 */
 const buildConfig = (): LlmConfig => ({
@@ -184,16 +176,6 @@ watch(testResult, async (r) => {
 
 <template>
   <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
-    <a-form-item field="provider" label="供應商">
-      <a-select
-        :model-value="selectedProvider"
-        placeholder="選擇供應商，自動帶入 base_url 與 model 清單"
-        @change="selectProvider"
-      >
-        <a-option v-for="p in PROVIDERS" :key="p.id" :value="p.id">{{ p.label }}</a-option>
-      </a-select>
-    </a-form-item>
-
     <a-form-item field="api_token" label="API Token">
       <a-input-password
         v-model="form.api_token"
