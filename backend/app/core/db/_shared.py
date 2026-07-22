@@ -149,12 +149,17 @@ def attribution_dto(r: dict) -> dict:
             "summary_langs": summary_langs,
             "evidence": r.get("evidence"),
             "action": r.get("action"),
+            # 訂單佐證摘要（判決當時注入 prompt 的文字；稽核 C-1/C-6 分流用）
+            "evidence_citation": r.get("evidence_citation"),
         },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
         "owner": _domain_owner(l1_code or ""),
         "model": r.get("model"),  # 初判模型（stub / ensemble 同 attributions.model 語意）
         "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
+        # 佐證取數狀態（fetched/cache_hit/degraded_*…；null＝未走佐證流程的舊資料）
+        "evidence_status": r.get("evidence_status"),
+        "evidence_fetched_at": r.get("evidence_fetched_at"),
         "status": r.get("verdict_status"),  # 判決狀態（徽章用；wire 鍵維持 status）
         "verdict_by": r.get("verdict_by"),  # 判決人（人工＝email；系統＝system:auto_confirm）
         "verdict_at": r.get("verdict_at"),  # 判決時間（ISO；未判決 None）

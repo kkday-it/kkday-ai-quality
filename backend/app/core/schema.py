@@ -106,6 +106,10 @@ class TicketFinding(BaseModel):
     # judged 已初判 / pending_review 待複審 / pending_data 待數據補充
     prejudge_stage: str = ""
     model_used: str = ""  # 初判使用的 LLM 模型（stub 時為 "stub"）
+    # ── 判決佐證留痕（訂單佐證閉環；prejudge 於取數後回填，落 attributions 同名欄）──
+    evidence_status: str = ""  # 佐證取數結果（fetched/cache_hit/no_order_oid/…；空＝未走佐證流程）
+    evidence_citation: str = ""  # 注入 prompt 的佐證摘要文字（空＝無佐證）
+    evidence_fetched_at: str = ""  # 佐證取數時刻（ISO）
 
     def to_columns(self) -> dict:
         """初判 payload → attributions typed 欄位 dict（落庫形狀 SSOT）。
@@ -134,4 +138,7 @@ class TicketFinding(BaseModel):
             "action": self.recommended_action,
             "model": self.model_used,
             "is_primary": self.is_primary,
+            "evidence_status": self.evidence_status or None,
+            "evidence_citation": self.evidence_citation or None,
+            "evidence_fetched_at": self.evidence_fetched_at or None,
         }

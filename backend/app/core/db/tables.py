@@ -79,6 +79,14 @@ attributions = Table(
     Column("verdict_at", Text),  # 初判時間（ISO 字串，與 created_at 同形態）
     Column("needs_review", Boolean, server_default="false"),  # 人審佇列
     Column("created_at", Text),
+    # ── 判決佐證留痕（訂單佐證閉環）：這條判決當時有沒有拿到訂單佐證、引用了什麼 ──
+    Column(
+        "evidence_status", Text
+    ),  # fetched/cache_hit/no_order_oid/not_found/degraded_unavailable/error
+    Column(
+        "evidence_citation", Text
+    ),  # 注入 prompt 的佐證摘要文字（白名單欄位拼接；稽核 C-1/C-6 分流用）
+    Column("evidence_fetched_at", Text),  # 佐證取數時刻（ISO；供人工複核判斷資料新鮮度，R6）
     Index("idx_attributions_source", "source"),
     # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件
     Index("idx_attributions_source_id", "source", "source_id"),
