@@ -46,9 +46,9 @@ fi
 sec "② backend/.env"
 if [ -f backend/.env ]; then
   ok "backend/.env 已存在"
-  grep -qE '^AIQ_JWT_SECRET=.+' backend/.env || warn "AIQ_JWT_SECRET 未填（dev 用 fallback；staging/production 缺此值會拒啟動）"
+  grep -qE '^AIQ_SECRET_KEY=.+' backend/.env || warn "AIQ_SECRET_KEY 未填（dev 可空；staging/production 缺此值會拒啟動）"
 elif fix "cp backend/.env.example → backend/.env"; then
-  cp backend/.env.example backend/.env && warn "已生成 backend/.env，請填 AIQ_JWT_SECRET / OPENAI_API_KEY 等機密"
+  cp backend/.env.example backend/.env && warn "已生成 backend/.env，請填 AIQ_SECRET_KEY / OPENAI_API_KEY 等機密"
 fi
 
 # ── 3. 依賴（venv + backend[dev]、frontend frozen-lockfile；冪等）─────────────

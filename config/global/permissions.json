@@ -1,0 +1,19 @@
+{
+  "_comment": "權限直接授予（無角色·對齊 be2 business-list）：user 權限 = default ∪ grants[email]（\"*\" 展開 ALL_KEYS）。取代舊 roles.json + role_permissions.json（已退役）。key 定義見 backend/app/core/permissions/permission_keys.py。日後接 be2 中央 Auth SVC 時由 be2_provider 取代本檔（見 permissions/README.md）。",
+  "no_auth_grant_all": true,
+  "_no_auth_grant_all_comment": "本地已廢除帳戶登錄系統（register/login/切換帳號全移除，單機內網環境）→ 無法辨識使用者身分，一律全通過（ALL_KEYS）。be2 SSO 接入後改 false，改由 default ∪ grants[email] 判斷「進入頁面只顯示有權限的部分」。",
+  "default": [
+    "prejudge.run",
+    "finding.review.update",
+    "problem.list.export",
+    "data.source.upload",
+    "data.datapack.export",
+    "data.datapack.import",
+    "settings.llm-area-default.write"
+  ],
+  "_default_comment": "有身分時（be2 接入後）所有登入者的基礎權限：日常操作（跑初判/審核/導出/匯入）+ 調功能區默認旋鈕。敏感權限（改連線/看密文）不在此，只授 grants。",
+  "grants": {
+    "alvin.bian@kkday.com": ["*"]
+  },
+  "_grants_comment": "特定 email 額外授權；\"*\" 展 ALL_KEYS（全權）。"
+}

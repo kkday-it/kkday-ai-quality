@@ -18,7 +18,7 @@ from . import permission_keys
 from .base import PermissionProvider
 from .deps import business_list_ttl_ms, get_provider, require_permission
 from .deps import reload as reload_auth_config
-from .local_provider import reload as reload_role_permissions
+from .local_provider import reload as reload_permissions
 from .permission_keys import ALL_KEYS
 
 __all__ = [
@@ -28,6 +28,6 @@ __all__ = [
     "get_provider",
     "permission_keys",
     "reload_auth_config",
-    "reload_role_permissions",
+    "reload_permissions",
     "require_permission",
 ]

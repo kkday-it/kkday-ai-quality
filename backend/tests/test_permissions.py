@@ -1,137 +1,110 @@
-"""可替換權限框架測試：/api/auth/permissions 契約 + require_permission 分級（qc/admin/匿名）。
+"""可替換權限框架測試：/api/auth/permissions 契約 + require_permission 分級（default/grants）。
 
-驗證 LocalPermissionProvider 依 role_permissions.json 派生權限：admin '*' 全量、qc 為質檢子集；
-端點 require_permission 對 qc 擋 admin-tier（403）、放行 qc-tier（非 403），匿名一律 401。
+驗證 LocalPermissionProvider 依 permissions.json 派生權限（無角色，email 直接對照 default ∪
+grants[email]）：no_auth_grant_all=true 全通過；false 時 default 為基礎集、grants[email] 疊加、
+"*" 展全量。端點 require_permission 對缺權限一律 403；本地模式無登入系統，不帶 Authorization
+header 一律成功身分解析（非 401）——存取控制交給權限層，非「有無 token」。
 """
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
-
-@pytest.fixture
-def roles_cfg(monkeypatch):
-    """固定角色名單（boss=admin·其餘 qc），與實檔 roles.json 解耦。"""
-    monkeypatch.setattr(
-        "app.core.auth._roles_cfg",
-        lambda: {"admins": ["boss@kkday.com"], "defaultRole": "qc"},
-    )
+# permissions_cfg / as_user fixtures 定義於 conftest.py（跨測試檔共用）。
 
 
-def _auth(tok: str) -> dict:
-    return {"Authorization": f"Bearer {tok}"}
-
-
-def _login(client: TestClient, email: str) -> str:
-    r = client.post("/api/auth/register", json={"email": email, "password": "secret1"})
-    assert r.status_code == 200, r.text
-    return r.json()["token"]
-
-
-def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
-    """/api/auth/permissions 回 be2 business-list 形狀；qc 為質檢子集、admin 全量且為超集。"""
+def test_permissions_endpoint_shape_and_default_vs_grants(
+    temp_db, permissions_cfg, as_user
+) -> None:
+    """/api/auth/permissions 回 be2 business-list 形狀；default 用戶為子集、grants("*") 為全量超集。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        qc = _login(client, "someone@kkday.com")
-        admin = _login(client, "boss@kkday.com")
-
-        qc_body = client.get("/api/auth/permissions", headers=_auth(qc)).json()
-        admin_body = client.get("/api/auth/permissions", headers=_auth(admin)).json()
+        as_user("someone@kkday.com")
+        default_body = client.get("/api/auth/permissions").json()
+        as_user("boss@kkday.com")
+        grant_body = client.get("/api/auth/permissions").json()
 
         # be2 契約形狀
-        assert set(qc_body.keys()) == {"value", "ttl"}  # be2 wire 契約僅兩欄（startTime 已移除）
-        assert isinstance(qc_body["value"], list) and qc_body["ttl"] > 0
+        assert set(default_body.keys()) == {"value", "ttl"}
+        assert isinstance(default_body["value"], list) and default_body["ttl"] > 0
 
-        qc_perms, admin_perms = set(qc_body["value"]), set(admin_body["value"])
-        # qc 有質檢作業權限（含資料包導入導出——業務拍板：登入即可用全部資料導入功能）、無 admin-tier
-        assert "finding.review.update" in qc_perms
-        assert "data.source.upload" in qc_perms
-        assert "data.datapack.import" in qc_perms
-        assert "judge-rule.version.manage" not in qc_perms
-        # admin 全量且為 qc 超集
-        assert qc_perms <= admin_perms
-        assert "judge-rule.version.manage" in admin_perms
+        default_perms, grant_perms = set(default_body["value"]), set(grant_body["value"])
+        # default 有質檢作業權限（含資料包導入導出）、無僅 grants 授權的敏感 key
+        assert "finding.review.update" in default_perms
+        assert "data.source.upload" in default_perms
+        assert "data.datapack.import" in default_perms
+        assert "judge-rule.version.manage" not in default_perms
+        assert "settings.llm-config.manage" not in default_perms
+        # grants("*") 全量且為 default 超集
+        assert default_perms <= grant_perms
+        assert "judge-rule.version.manage" in grant_perms
 
 
-def test_qc_forbidden_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
-    """qc 打 admin-tier 端點（規則管理）一律 403。"""
+def test_default_forbidden_on_grants_only_endpoints(temp_db, permissions_cfg, as_user) -> None:
+    """default 用戶打僅 grants 授權的端點（規則管理）一律 403。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        qc = _auth(_login(client, "someone@kkday.com"))
-        assert client.post("/api/judge-rules/C-1/reset-default", headers=qc).status_code == 403
-        assert client.post("/api/judge-rules/reset-default-all", headers=qc).status_code == 403
+        as_user("someone@kkday.com")
+        assert client.post("/api/judge-rules/C-1/reset-default").status_code == 403
+        assert client.post("/api/judge-rules/reset-default-all").status_code == 403
 
 
-def test_qc_allowed_on_datapack_import(temp_db, roles_cfg) -> None:
-    """qc 打資料包匯入端點非 401/403（登入即可用全部資料導入功能；壞 zip 為 handler 內 4xx 非權限擋）。"""
+def test_default_allowed_on_datapack_import(temp_db, permissions_cfg, as_user) -> None:
+    """default 用戶打資料包匯入端點非 401/403（壞 zip 為 handler 內 4xx 非權限擋）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        qc = _auth(_login(client, "someone@kkday.com"))
-        r = client.post("/api/admin/import/validate", files={"file": ("x.zip", b"x")}, headers=qc)
+        as_user("someone@kkday.com")
+        r = client.post("/api/admin/import/validate", files={"file": ("x.zip", b"x")})
         assert r.status_code not in (401, 403), r.text
 
 
-def test_qc_allowed_on_qc_tier_endpoints(temp_db, roles_cfg) -> None:
-    """qc 打 qc-tier 端點（問題列表導出）非 401/403（通過權限，進入 handler）。"""
+def test_default_allowed_on_default_tier_endpoints(temp_db, permissions_cfg, as_user) -> None:
+    """default 用戶打 default-tier 端點（問題列表導出）非 401/403（通過權限，進入 handler）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        qc = _auth(_login(client, "someone@kkday.com"))
-        r = client.post("/api/problems/export", json={}, headers=qc)
+        as_user("someone@kkday.com")
+        r = client.post("/api/problems/export", json={})
         assert r.status_code not in (401, 403), r.text
 
 
-def test_admin_allowed_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
-    """admin 打 admin-tier 端點非 403（進入 handler；結果依默認檔存在與否為 200/404）。"""
+def test_grants_allowed_on_grants_only_endpoints(temp_db, permissions_cfg, as_user) -> None:
+    """grants("*") 用戶打 grants-only 端點非 403（進入 handler；結果依默認檔存在與否為 200/404）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        admin = _auth(_login(client, "boss@kkday.com"))
-        assert client.post("/api/judge-rules/C-1/reset-default", headers=admin).status_code != 403
+        as_user("boss@kkday.com")
+        assert client.post("/api/judge-rules/C-1/reset-default").status_code != 403
 
 
-def test_anonymous_gets_401_not_403(temp_db) -> None:
-    """匿名（無 token）打受權限端點一律 401（先過認證），非 403。"""
+def test_local_mode_never_401_unauthenticated(temp_db) -> None:
+    """本地模式無登入系統：即使不帶 Authorization header 也一律成功身分解析（非 401）——
+    走現行實際部署設定（config/global/permissions.json no_auth_grant_all=true），存取控制
+    交給權限層本身，不是「有無 token」。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        assert client.post("/api/problems/export", json={}).status_code == 401
-        assert client.post("/api/judge-rules/C-1/reset-default").status_code == 401
+        assert client.post("/api/problems/export", json={}).status_code != 401
+        assert client.post("/api/judge-rules/C-1/reset-default").status_code != 401
         assert (
-            client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code == 401
+            client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code != 401
         )
 
 
-def test_qc_allowed_on_prejudge_run(temp_db, roles_cfg) -> None:
-    """qc 打批量初判啟動端點非 401/403（prejudge.run 為 qc 日常主功能）。"""
+def test_default_allowed_on_prejudge_run(temp_db, permissions_cfg, as_user) -> None:
+    """default 用戶打批量初判啟動端點非 401/403（prejudge.run 為日常主功能）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
-        qc = _auth(_login(client, "someone@kkday.com"))
-        r = client.post("/api/v1/prejudge", json={"item_ids": []}, headers=qc)
+        as_user("someone@kkday.com")
+        r = client.post("/api/v1/prejudge", json={"item_ids": []})
         assert r.status_code not in (401, 403), r.text
 
 
-def test_anonymous_401_on_prejudge_and_read_endpoints(temp_db) -> None:
-    """匿名打 prejudge 全系列與 problems/overview 讀端點一律 401（登入最低門檻）。"""
-    from app.api.main import app
-
-    with TestClient(app) as client:
-        assert client.post("/api/v1/prejudge", json={}).status_code == 401
-        assert client.post("/api/v1/prejudge/pause?job_id=x").status_code == 401
-        assert client.post("/api/v1/prejudge/resume?job_id=x").status_code == 401
-        assert client.post("/api/v1/prejudge/cancel?job_id=x").status_code == 401
-        assert client.get("/api/problems").status_code == 401
-        assert client.get("/api/problems/attribution_overview").status_code == 401
-        assert client.get("/api/problems/attribution_breakdown?l1=content").status_code == 401
-        assert client.get("/api/overview/ai-judge").status_code == 401
-
-
-def test_be2_provider_transitional_delegation(temp_db, roles_cfg) -> None:
+def test_be2_provider_transitional_delegation(temp_db, permissions_cfg) -> None:
     """be2 provider 過渡實作：get_permissions/check 與 LocalProvider 安全等價（正式契約前委派）。"""
     from app.core.permissions.be2_provider import Be2PermissionProvider
     from app.core.permissions.local_provider import LocalPermissionProvider
@@ -143,4 +116,31 @@ def test_be2_provider_transitional_delegation(temp_db, roles_cfg) -> None:
     assert Be2PermissionProvider().check(user, "finding.review.update") is True
     assert (
         Be2PermissionProvider().check(user, "judge-rule.version.manage") is False
-    )  # qc 無 admin key
+    )  # default 無此 key
+
+
+def test_no_auth_grant_all_bypasses_everything(monkeypatch) -> None:
+    """no_auth_grant_all=true（現行實際部署狀態）→ 任何 email 皆全權，含未在 grants 名單者。"""
+    monkeypatch.setattr(
+        "app.core.permissions.local_provider._permissions_cfg",
+        lambda: {"no_auth_grant_all": True, "default": [], "grants": {}},
+    )
+    from app.core.permissions.local_provider import LocalPermissionProvider
+    from app.core.permissions.permission_keys import ALL_KEYS
+
+    assert LocalPermissionProvider().get_permissions({"email": "nobody@kkday.com"}) == set(ALL_KEYS)
+
+
+def test_permissions_cfg_missing_file_falls_back_to_empty(monkeypatch) -> None:
+    """permissions.json 缺失 → 全員無任何權限（fail-closed），不阻斷請求本身。"""
+    from pathlib import Path
+
+    from app.core.permissions import local_provider
+
+    monkeypatch.setattr(local_provider, "_CACHE", None)
+    monkeypatch.setattr(local_provider, "GLOBAL_DIR", Path("/nonexistent"))
+    local_provider.reload()
+    assert (
+        local_provider.LocalPermissionProvider().get_permissions({"email": "x@kkday.com"}) == set()
+    )
+    local_provider.reload()  # 還原快取供後續測試讀回真檔

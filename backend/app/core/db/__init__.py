@@ -80,7 +80,6 @@ from app.core.db.users import (
     DuplicateEmailError,
     create_user,
     get_user_by_email,
-    get_user_by_id,
     load_user_settings,
     save_user_settings,
 )
@@ -99,7 +98,6 @@ __all__ = [
     "get_rule_active",
     "get_rule_version",
     "get_user_by_email",
-    "get_user_by_id",
     "init_db",
     "insert_finding",
     "insert_source_batch",

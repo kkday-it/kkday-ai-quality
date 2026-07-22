@@ -1,8 +1,8 @@
 """be2 中央 Auth SVC provider（過渡實作）——僅 auth.config.json provider='be2' 時選用。
 
-**過渡策略**：正式 business-list 契約接通前，get_permissions 委派 local role map
-（roles.json email 白名單 → role_permissions.json）——與 LocalProvider 行為安全等價、
-fail-closed 不變。這讓「登入先切 be2（authProvider）、授權沿用 local map」的漸進路徑可行，
+**過渡策略**：正式 business-list 契約接通前，get_permissions 委派 `LocalPermissionProvider`
+（email 直接對照 `permissions.json` 的 `default ∪ grants[email]`）——與 LocalProvider 行為安全
+等價、fail-closed 不變。這讓「登入先切 be2（authProvider）、授權沿用 local）」的漸進路徑可行，
 待 auth team 契約到位後只改本檔內部實作，router 與前端 store/directive/guard 全不動
 （此檔 + auth.config.json 為**唯一改動點**）。
 
@@ -26,10 +26,10 @@ _log = logging.getLogger(__name__)
 
 
 class Be2PermissionProvider:
-    """be2 provider（過渡：委派 local role map；正式契約接通後改打 Auth SVC——見檔頭）。"""
+    """be2 provider（過渡：委派 local 直接授予；正式契約接通後改打 Auth SVC——見檔頭）。"""
 
     def get_permissions(self, user: dict) -> set[str]:
-        """取 user 權限集。過渡期委派 LocalProvider（email 白名單 role map），行為安全等價。
+        """取 user 權限集。過渡期委派 LocalProvider（email 直接對照 permissions.json），行為安全等價。
 
         TODO(auth-team 契約)：改為向中央 Auth SVC 取該 user 的 business-list
         （server-to-server 驗證規格待索取），與 permission_keys.ALL_KEYS 交集後回傳。

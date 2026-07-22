@@ -1,4 +1,5 @@
-"""帳號系統（users）+ per-user 設定（user_settings）持久化。"""
+"""users 表（僅供 be2 首登 email 自動 provision）+ 全項目共享設定（user_settings，固定 __global__
+row，見 core/settings.py）持久化。"""
 
 from __future__ import annotations
 
@@ -33,14 +34,6 @@ def create_user(user_id: str, email: str, password_hash: str) -> dict:
 def get_user_by_email(email: str) -> dict | None:
     """以 email 取使用者（含 password_hash，供登入驗證）；無則 None。"""
     stmt = select(T.users).where(T.users.c.email == email)
-    with T.get_engine().connect() as c:
-        row = c.execute(stmt).mappings().first()
-    return dict(row) if row else None
-
-
-def get_user_by_id(user_id: str) -> dict | None:
-    """以 user_id 取使用者；無則 None。"""
-    stmt = select(T.users).where(T.users.c.user_id == user_id)
     with T.get_engine().connect() as c:
         row = c.execute(stmt).mappings().first()
     return dict(row) if row else None

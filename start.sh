@@ -151,7 +151,6 @@ EOF
   fi
   chmod 600 .env
   _ensure_secret POSTGRES_PASSWORD 24
-  _ensure_secret AIQ_JWT_SECRET 32
   _ensure_secret AIQ_SECRET_KEY 32
 
   # 5p. 啟動（prod 一律 --build：依賴層有快取，改 code 重 build 秒級）

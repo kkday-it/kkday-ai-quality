@@ -1,7 +1,8 @@
 """登入 verifier 分流（auth_verifiers）測試。
 
-鎖：①authProvider 分流與 production be2 硬閘 ②Be2 token decode（exp/email）③email 自動
-provision＋併發 race ④local 路徑與舊行為等價（既有 test_api_endpoints 已覆蓋端到端）。
+鎖：①production be2 硬閘 ②Be2 token decode（exp/email）③email 自動 provision＋併發 race。
+local 模式已不經過 get_verifier（見 auth.get_current_user 直接回固定身分，
+test_permissions.py::test_local_mode_never_401_unauthenticated 已覆蓋端到端）。
 """
 
 from __future__ import annotations
@@ -21,21 +22,18 @@ def _fake_be2_token(claims: dict) -> str:
     return f"{enc({'alg': 'none'})}.{enc(claims)}.x"
 
 
-def test_provider_dispatch_local_default(monkeypatch) -> None:
-    monkeypatch.setattr("app.core.permissions.deps.auth_config", lambda: {"authProvider": "local"})
-    assert isinstance(av.get_verifier(), av.LocalJwtVerifier)
-
-
 def test_be2_blocked_in_production(monkeypatch) -> None:
-    """production 選 be2（驗簽契約未接）→ 拒啟用（防未驗簽 token 進正式環境）。"""
-    monkeypatch.setattr("app.core.permissions.deps.auth_config", lambda: {"authProvider": "be2"})
+    """production 呼叫 get_verifier（驗簽契約未接）→ 拒啟用（防未驗簽 token 進正式環境）。
+
+    get_verifier 只在 auth.get_current_user 已判定 authProvider=be2 時才被呼叫（見該函式），
+    故本函式自身不再讀 authProvider，只憑 is_production() 決定是否放行。
+    """
     monkeypatch.setattr(av, "is_production", lambda: True)
     with pytest.raises(RuntimeError, match="auth team"):
         av.get_verifier()
 
 
 def test_be2_allowed_in_development(monkeypatch) -> None:
-    monkeypatch.setattr("app.core.permissions.deps.auth_config", lambda: {"authProvider": "be2"})
     monkeypatch.setattr(av, "is_production", lambda: False)
     assert isinstance(av.get_verifier(), av.Be2TokenVerifier)
 

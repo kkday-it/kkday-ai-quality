@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core import db
+from app.core import auth, db
 from app.core import source_mapping as srcmap
 from app.core.permissions import permission_keys, require_permission
 from app.judge.ingest import entry, upload_batch
@@ -126,12 +126,12 @@ async def upload_inbound_stream(job_id: str) -> StreamingResponse:
 
 
 @router.get("/api/batches")
-def get_batches() -> list[dict]:
+def get_batches(_: dict = Depends(auth.get_current_user)) -> list[dict]:
     """上傳批次清單（新到舊）。"""
     return db.list_batches()
 
 
 @router.get("/api/batches/{batch_id}/items")
-def get_batch_items(batch_id: str) -> list[dict]:
+def get_batch_items(batch_id: str, _: dict = Depends(auth.get_current_user)) -> list[dict]:
     """某批次錄入明細（5 來源拆表後源表不帶 batch_id，故不再逐批次列出，回空）。"""
     return []

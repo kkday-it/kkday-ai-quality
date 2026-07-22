@@ -2,7 +2,7 @@
 # 機密經 .env / secret manager 注入（compose 會讀同目錄 .env），勿寫死於此檔。
 #
 #   啟動：   ./start.sh prod    （零配置：首次自動生成機密寫入 .env，冪等永不覆蓋既有值）
-#   或手動： POSTGRES_PASSWORD=... AIQ_JWT_SECRET=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
+#   或手動： POSTGRES_PASSWORD=... AIQ_SECRET_KEY=... OPENAI_API_KEY=... docker compose up -d --build
 #   停止：   docker compose down                    （資料保留於 pgdata volume）
 #   看 log： docker compose logs -f backend
 #
@@ -41,10 +41,8 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?須設定 POSTGRES_PASSWORD}@db:5432/kkdb_ai_quality
-      # production 缺 JWT 秘鑰會拒啟動（auth.py）；未注入即在此報錯，不帶病啟動
-      AIQ_JWT_SECRET: ${AIQ_JWT_SECRET:?須設定 AIQ_JWT_SECRET（≥32 bytes；python -c "import secrets;print(secrets.token_urlsafe(32))"）}
-      # user_settings 機密 at-rest 加密 key；未設則 provider token / QC 密碼明文落庫（crypto.py 正式環境拒啟動）
-      AIQ_SECRET_KEY: ${AIQ_SECRET_KEY:?須設定 AIQ_SECRET_KEY（同上方式生成）}
+      # user_settings 機密 at-rest 加密 key；未設則 llm token / QC 密碼明文落庫（crypto.py 正式環境拒啟動）
+      AIQ_SECRET_KEY: ${AIQ_SECRET_KEY:?須設定 AIQ_SECRET_KEY（python -c "import secrets;print(secrets.token_urlsafe(32))"）}
       # LLM key（fallback；使用者可於設定面板配 per-provider token）。可空啟動，但 production
       # 有 stub 硬閘：解不出任何 token 的批量判決一律 403（防 stub 假判覆蓋真歸因）
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

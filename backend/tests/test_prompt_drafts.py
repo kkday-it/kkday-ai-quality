@@ -9,8 +9,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core import auth, db
+from app.core import db
 from app.judge import prompt_eval, prompt_source
+
+# permissions_cfg / as_user fixtures 定義於 conftest.py（跨測試檔共用）。
 
 # ── 測試用最小合法 prompt md（滿足 validate：三節 + {TEXT}；polarity 無 Taxonomy）──
 POLARITY_MD = """# 測試極性
@@ -30,19 +32,6 @@ you are a judge
 {"type": "object", "properties": {"polarity": {"type": "string"}}, "required": ["polarity"]}
 ```
 """
-
-
-@pytest.fixture
-def roles_cfg(monkeypatch):
-    """固定角色名單（與 roles.json 內容解耦）。"""
-    monkeypatch.setattr(
-        auth, "_roles_cfg", lambda: {"admins": ["Boss@KKday.com"], "defaultRole": "qc"}
-    )
-
-
-def _register_and_login(client: TestClient, email: str) -> str:
-    r = client.post("/api/auth/register", json={"email": email, "password": "secret1"})
-    return r.json()["token"]
 
 
 # ─────────────────────────── db 層 ───────────────────────────
@@ -178,13 +167,14 @@ def test_sandbox_pair_metrics_shapes() -> None:
 
 
 # ─────────────────────────── API 端點 ───────────────────────────
-def test_draft_api_full_loop(temp_db, roles_cfg) -> None:
+def test_draft_api_full_loop(temp_db, permissions_cfg, as_user) -> None:
     """GET(null) → PUT → GET → drafts 列表 → validate（合法/非法）→ DELETE 全閉環；
     非 prompt code 一律 404。"""
     from app.api.main import app
 
+    as_user("boss@kkday.com")  # grants("*")：草稿寫入端點需 judge-rule.version.manage
+    admin: dict = {}
     with TestClient(app) as client:
-        admin = {"Authorization": f"Bearer {_register_and_login(client, 'boss@kkday.com')}"}
         # 無草稿：200 + draft: null
         r = client.get("/api/judge-rules/prompt_polarity/draft", headers=admin)
         assert r.status_code == 200 and r.json()["draft"] is None
@@ -250,7 +240,7 @@ def _mk_result(sid: str, l2: str) -> dict:
     }
 
 
-def test_runs_compare_keeps_error_items_out_of_metrics(temp_db, roles_cfg) -> None:
+def test_runs_compare_keeps_error_items_out_of_metrics(temp_db) -> None:
     """run-vs-run 對比：error item 保留於 items（帶 error 標記，不靜默消失——草稿造成初判失敗
     正是對比最該凸顯的訊號），但不計入 metrics；單邊獨有 item 另一側為 null。"""
     from app.api.main import app
@@ -282,10 +272,7 @@ def test_runs_compare_keeps_error_items_out_of_metrics(temp_db, roles_cfg) -> No
         }
     )
     with TestClient(app) as client:
-        tok = {"Authorization": f"Bearer {_register_and_login(client, 'someone@kkday.com')}"}
-        r = client.get(
-            f"/api/v1/prejudge/prompt-sandbox/runs/compare?a={run_a}&b={run_b}", headers=tok
-        )
+        r = client.get(f"/api/v1/prejudge/prompt-sandbox/runs/compare?a={run_a}&b={run_b}")
         assert r.status_code == 200
         body = r.json()
         items = {it["source_id"]: it for it in body["items"]}
@@ -296,7 +283,7 @@ def test_runs_compare_keeps_error_items_out_of_metrics(temp_db, roles_cfg) -> No
         assert body["metrics"]["facet_jaccard_mean"] == 0.0  # C-1-2 vs C-1-3 無交集
 
 
-def test_run_detail_compare_metrics(temp_db, roles_cfg) -> None:
+def test_run_detail_compare_metrics(temp_db) -> None:
     """雙跑對比 run 詳情：動態附 metrics（僅 compare item 進 pairs；error item 排除）。"""
     from app.api.main import app
 
@@ -323,29 +310,25 @@ def test_run_detail_compare_metrics(temp_db, roles_cfg) -> None:
         }
     )
     with TestClient(app) as client:
-        tok = {"Authorization": f"Bearer {_register_and_login(client, 'someone@kkday.com')}"}
-        r = client.get(f"/api/v1/prejudge/prompt-sandbox/runs/{run_id}", headers=tok)
+        r = client.get(f"/api/v1/prejudge/prompt-sandbox/runs/{run_id}")
         assert r.status_code == 200
         body = r.json()
         assert body["compare"] is True and body["drafts"] == {"prompt_C-1": "# md"}
         assert body["metrics"]["n"] == 1 and body["metrics"]["facet_jaccard_mean"] == 1.0
 
 
-def test_draft_write_requires_admin(temp_db, roles_cfg) -> None:
-    """qc 對草稿寫入端點 → 403；讀端點放行（比照規則管理權限分界）。"""
+def test_draft_write_requires_admin(temp_db, permissions_cfg, as_user) -> None:
+    """default 用戶（無 judge-rule.version.manage）對草稿寫入端點 → 403；讀端點放行。"""
     from app.api.main import app
 
+    as_user("someone@kkday.com")  # default only：無 judge-rule.version.manage
     with TestClient(app) as client:
-        qc = {"Authorization": f"Bearer {_register_and_login(client, 'someone@kkday.com')}"}
         assert (
             client.put(
                 "/api/judge-rules/prompt_polarity/draft",
                 json={"content": {"text": "x"}, "base_version": 1},
-                headers=qc,
             ).status_code
             == 403
         )
-        assert (
-            client.delete("/api/judge-rules/prompt_polarity/draft", headers=qc).status_code == 403
-        )
-        assert client.get("/api/judge-rules/prompt_polarity/draft", headers=qc).status_code == 200
+        assert client.delete("/api/judge-rules/prompt_polarity/draft").status_code == 403
+        assert client.get("/api/judge-rules/prompt_polarity/draft").status_code == 200

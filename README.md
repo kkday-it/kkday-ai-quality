@@ -82,10 +82,10 @@ docker compose -f docker-compose.dev.yml down -v              # ⚠️ 毀滅性
 
 **生產部署**（後端單 worker + nginx 靜態；前端 http://localhost:8080）：
 ```bash
-./start.sh prod   # 零配置一鍵：首次自動生成必要機密（POSTGRES_PASSWORD / AIQ_JWT_SECRET / AIQ_SECRET_KEY）
+./start.sh prod   # 零配置一鍵：首次自動生成必要機密（POSTGRES_PASSWORD / AIQ_SECRET_KEY）
                   # 寫入 repo 根 .env（chmod 600·gitignore·冪等），之後 up -d --build；⚠️ 生成後請異地備份 .env
-# 或手動注入（CI / secret manager）：三者皆必填（缺/弱即拒啟動），生成：python -c "import secrets;print(secrets.token_urlsafe(32))"
-POSTGRES_PASSWORD=<pg-pass> AIQ_JWT_SECRET=<jwt-secret> AIQ_SECRET_KEY=<enc-key> docker compose up -d --build
+# 或手動注入（CI / secret manager）：兩者皆必填（缺/弱即拒啟動），生成：python -c "import secrets;print(secrets.token_urlsafe(32))"
+POSTGRES_PASSWORD=<pg-pass> AIQ_SECRET_KEY=<enc-key> docker compose up -d --build
 ```
 > 後端目前單 worker：4 套背景 job registry（導出/導入/初判/上傳）為 in-mem，多 worker 會使 job/SSE/下載落到不同 process；job 狀態遷共享儲存（Redis/PG）後恢復多 worker。容器啟動時自動對齊 schema：**空庫** create_all + stamp head、**既有庫** `alembic upgrade head`（migration 鏈不從零跑，見 `backend/docker-entrypoint.sh`）。
 
@@ -125,7 +125,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照/判決轉移/備註三類事件；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
 | CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯/歷史/恢復默認/導出）+ Prompt 草稿暫存（`/drafts`·`/{code}/draft`，沙盒送測/雙跑對比用）+ `/{code}/validate` dry-run 驗證（不落庫）|
 | PATCH | `/api/findings/{id}/verdict` · `/batch/verdict` | 單筆/批量歸因人工判決（確認/駁回/new＝撤銷回待判決；同值冪等、轉移記入歸因歷史）。需權限，記判決人/判決時間 audit |
-| POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（register 受 `AIQ_ALLOW_SELF_REGISTER` 環境閘：僅 development 預設開放；登入身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`）（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
+| GET | `/api/auth/me`·`/permissions` | 當前身分（本地固定身分，無登入系統）+ 當前 user 權限清單（身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`；be2 `auth.business-list` 形狀 `{value,ttl}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
 | POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。登入即可用（qc+admin 皆有 `data.datapack.import`）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
 
@@ -136,7 +136,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、初判階段），列表右側堆疊呈現、導出 fan-out。
 - **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
-- **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
+- **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；無角色，email 直接授予 `config/global/permissions.json` 的 `default ∪ grants[email]`，`no_auth_grant_all=true` 時無條件全通過）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（pilot：auth login + AUTH.* error code），詳見 `frontend/apps/console/src/i18n/README.md`。
 - **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，prejudge 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重新初判時規則未變動部分零 token 重用，顯式單筆重新初判不吃快取）。
 - **設定全項目共享（去帳戶隔離）**：`user_settings` 固定讀寫 `__global__` row（`app/core/settings.py::GLOBAL_SETTINGS_KEY`），非 per-user；LLM 連線層 `llm_connections`（每供應商一條 base_url，openai/gemini/bytedance）+ `llm_tokens`（per-provider 機密）與旋鈕層 `llm_area_defaults`（每功能區一份團隊共用默認：prejudge/prompt_debug/sandbox）分離，`effective_llm_dict(s, area=, overrides=)` 為唯一收斂點；QC DB 同構 `qc_connections`（每環境一條，sit/stage/production）+ `qc_passwords`。

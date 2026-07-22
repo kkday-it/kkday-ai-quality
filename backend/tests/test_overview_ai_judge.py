@@ -88,19 +88,14 @@ def test_empty_db_graceful(temp_db) -> None:
 
 
 def test_endpoint_smoke(temp_db) -> None:
-    """/api/overview/ai-judge 端點回同形狀；匿名 401（讀端點最低登入門檻，對齊 problems 系列）。"""
+    """/api/overview/ai-judge 端點回同形狀（本地模式無登入系統，不帶 token 直接成功）。"""
     from fastapi.testclient import TestClient
 
     from app.api.main import app
 
     _seed(temp_db)
     with TestClient(app) as client:
-        assert client.get("/api/overview/ai-judge").status_code == 401  # 匿名被守衛擋
-        reg = client.post(
-            "/api/auth/register", json={"email": "ov@kkday.com", "password": "secret1"}
-        )
-        headers = {"Authorization": f"Bearer {reg.json()['token']}"}
-        r = client.get("/api/overview/ai-judge", headers=headers)
+        r = client.get("/api/overview/ai-judge")
     assert r.status_code == 200
     body = r.json()
     assert body["totals"]["judged_items"] == 5 and len(body["monthly"]) == 2

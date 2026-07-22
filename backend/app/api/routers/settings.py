@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import auth, config, db  # noqa: F401  config import 觸發 .env 載入
+from app.core.permissions import get_provider, permission_keys, require_permission
 from app.judge.llm import client as llm_client
 
 router = APIRouter()
@@ -87,19 +88,48 @@ def get_settings(user: dict = Depends(load_user_context)) -> dict:
     return data
 
 
+# patch 內含這些欄位任一者 → 需對應敏感權限（欄位級：同一 PATCH 端點涵蓋多種敏感度，
+# 不能整包用單一 require_permission 卡死，否則員工存功能區默認旋鈕也會被擋）。
+_SENSITIVE_PATCH_FIELDS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("llm_connections", "llm_tokens", "provider_models"),
+        permission_keys.SETTINGS_LLM_CONFIG_MANAGE,
+    ),
+    (("qc_connections", "qc_passwords"), permission_keys.SETTINGS_QC_CONFIG_MANAGE),
+)
+
+
+def _check_patch_permissions(user: dict, patch: dict) -> None:
+    """欄位級權限檢查：patch 觸及敏感欄位群時要求對應 key；fail-closed（判定異常一律擋）。"""
+    perms = get_provider().get_permissions(user)
+    for fields, key in _SENSITIVE_PATCH_FIELDS:
+        if any(f in patch for f in fields) and key not in perms:
+            raise HTTPException(status_code=403, detail=f"缺少權限：{key}")
+
+
 @router.post("/api/settings")
 def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -> dict:
-    """更新全項目共享設定（空/遮罩 token 不覆蓋既有）。"""
+    """更新全項目共享設定（空/遮罩 token 不覆蓋既有）。
+
+    llm_area_defaults（存功能區默認旋鈕）/ overview_boards / gdrive_upload_folder_url 為日常操作
+    （settings.llm-area-default.write 入 default，登入即可用）；llm_connections/llm_tokens/
+    provider_models（改 LLM 連線）與 qc_connections/qc_passwords（改 QC 連線）為敏感操作，
+    僅 grants 授予者可用（見 _check_patch_permissions）。
+    """
     from app.core import settings as app_settings
 
-    data = app_settings.save_settings(body.model_dump(exclude_none=True))
+    patch = body.model_dump(exclude_none=True)
+    _check_patch_permissions(user, patch)
+    data = app_settings.save_settings(patch)
     _activate_settings(user["user_id"])  # 反映新 token（stub_mode）
     data["stub_mode"] = llm_client.is_stub()
     return data
 
 
 @router.get("/api/settings/raw")
-def get_settings_raw(user: dict = Depends(load_user_context)) -> dict:
+def get_settings_raw(
+    user: dict = Depends(require_permission(permission_keys.SETTINGS_SECRET_READ)),
+) -> dict:
     """全項目共享的完整配置（api_token 明文）——供設定面板眼睛切換顯示全文。
 
     ⚠️ 明文回傳 token：僅限受信任的本地 / 內網環境，勿暴露於公網。
@@ -128,7 +158,10 @@ class TestLlmIn(BaseModel):
 
 
 @router.post("/api/settings/test-llm")
-def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
+def test_llm(
+    body: TestLlmIn,
+    user: dict = Depends(require_permission(permission_keys.SETTINGS_LLM_CONFIG_MANAGE)),
+) -> dict:
     """即時測試 LLM 連線：用「當前表單值」（body，非已儲存）送極短 prompt，**不寫入** user_settings。
 
     token 為空 / 遮罩時沿用已儲存該供應商（provider）明文 llm_tokens（per-provider，免重輸）。
@@ -225,7 +258,10 @@ def _try_qc_db_connect(cfg: dict) -> dict:
 
 
 @router.post("/api/datasource/qc-db/test")
-def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dict:
+def test_qc_db(
+    body: QcDbTestIn,
+    user: dict = Depends(require_permission(permission_keys.SETTINGS_QC_CONFIG_MANAGE)),
+) -> dict:
     """測試某環境 QC DB 連線的純連通性：以該環境已存連線為底，body 覆蓋表單值。
 
     password 空/遮罩 → 反查 qc_passwords[env]（免重輸）。

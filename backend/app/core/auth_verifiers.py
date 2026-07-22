@@ -1,13 +1,11 @@
 """登入身分驗證 provider 化（authentication 層的可替換接縫）。
 
-對齊權限層三件套模式（permissions/deps.get_provider）：`auth.config.json['authProvider']`
-分流 local / be2，`get_current_user` 只經 `get_verifier().resolve_user(token)` 取使用者，
-換 be2 登入時 router 與下游（user_settings / verdict_by / role_for）全不動。
+去帳戶系統（2026-07-22）：本地模式（authProvider=local）不再驗證任何 token——
+`auth.get_current_user` 直接回固定身分，本模組僅在 `authProvider=be2` 時才介入。
 
-- **LocalJwtVerifier**：現行自建 JWT（HS256·sub=user_id）——dev 與過渡期 production 用。
 - **Be2TokenVerifier**：be2 中央 Auth Service accessToken（Cookie authToken 的 JWT）。
   身分解析＝方案 A：claims email → 以 email 查/建本地 users row（自動 provision·password_hash
-  置空），`user_settings` 沿用本地 user_id 為鍵、業務表身分留痕（email）零遷移。
+  置空），`user_settings` 全項目共享（去帳戶隔離·見 core/settings.py），業務表身分留痕（email）零遷移。
 
 ⚠️ Be2 驗簽待補（TODO·不臆造）：be2 系前端全部只做 payload base64 decode（kkday-auth-sdk-js
 `parseClaims` 同）、真驗證在 Auth Service / api-gateway（Entry Config＋`x-kkday-auth-svc-status`）。
@@ -34,18 +32,6 @@ class AuthVerifier(Protocol):
 
     def resolve_user(self, token: str) -> dict | None:  # pragma: no cover - Protocol
         ...
-
-
-class LocalJwtVerifier:
-    """自建 JWT（HS256·sub=user_id）→ users 表查使用者。現行預設路徑，行為與舊 get_current_user 等價。"""
-
-    def resolve_user(self, token: str) -> dict | None:
-        from app.core import auth  # 函式內 import：auth 於 get_current_user 反向依賴本模組
-
-        user_id = auth.decode_access_token(token)
-        if not user_id:
-            return None
-        return db.get_user_by_id(user_id)
 
 
 class Be2TokenVerifier:
@@ -85,23 +71,21 @@ class Be2TokenVerifier:
 
 
 def get_verifier() -> AuthVerifier:
-    """依 auth.config.json['authProvider'] 選登入 verifier——換 be2 登入的**唯一後端分流點**。
+    """be2 模式登入 verifier（唯一實作接縫）——production 未接妥驗簽契約即拒用。
+
+    只在 `authProvider=be2` 時被呼叫（見 `auth.get_current_user`；local 模式不經過此函式，
+    直接回固定身分）。日後若 be2 驗簽方式有變或新增其他 SSO，僅改本函式與其實作類別。
 
     Raises:
-        RuntimeError: production 選 be2 但驗簽契約未接（Be2TokenVerifier 尚無簽章驗證）——
+        RuntimeError: production 環境但驗簽契約未接（Be2TokenVerifier 尚無簽章驗證）——
             拒啟用防未驗簽 token 進正式環境；development 放行供接入前流程調試。
     """
-    from app.core.permissions.deps import auth_config  # 共用單一 config 讀取器（含 reload 快取）
-
-    name = str(auth_config().get("authProvider") or "local").lower()
-    if name == "be2":
-        if is_production():
-            raise RuntimeError(
-                "authProvider=be2 尚未接上 Auth Service 驗簽契約（見 auth_verifiers.py TODO），"
-                "正式環境禁用；請先向 auth team 取得 server-to-server 驗證規格。"
-            )
-        return Be2TokenVerifier()
-    return LocalJwtVerifier()
+    if is_production():
+        raise RuntimeError(
+            "authProvider=be2 尚未接上 Auth Service 驗簽契約（見 auth_verifiers.py TODO），"
+            "正式環境禁用；請先向 auth team 取得 server-to-server 驗證規格。"
+        )
+    return Be2TokenVerifier()
 
 
 def _decode_jwt_payload_unverified(token: str) -> dict | None:

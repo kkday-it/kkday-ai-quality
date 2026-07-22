@@ -1,8 +1,7 @@
 """API 端點契約測試（FastAPI TestClient + 隔離 PostgreSQL 測試庫）。
 
-建立目前缺失的端點層安全網：auth（註冊/登入/守衛）、settings（遮罩 + stub_mode）、findings
-（狀態覆核，含 404 與成功回填）、problems（列表契約）。此網亦為未來 main.py 拆 router
-（Phase 5）的回歸保障——拆分前後端點行為須一致。
+建立目前缺失的端點層安全網：settings（遮罩 + stub_mode）、findings（狀態覆核，含 404 與成功回填）、
+problems（列表契約）。此網亦為未來 main.py 拆 router（Phase 5）的回歸保障——拆分前後端點行為須一致。
 """
 
 from __future__ import annotations
@@ -24,60 +23,9 @@ def client(temp_db):
 
 @pytest.fixture
 def auth_headers(client):
-    """註冊一個測試帳號並回傳 Bearer header（受保護端點共用）。"""
-    r = client.post("/api/auth/register", json={"email": "qa@kkday.com", "password": "secret1"})
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['token']}"}
-
-
-# ── auth ──────────────────────────────────────────────────────────
-def test_register_returns_token_and_public_user(client) -> None:
-    r = client.post("/api/auth/register", json={"email": "A@KKday.com ", "password": "secret1"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["token"] and body["user"]["email"] == "a@kkday.com"  # normalize 去空白 + 小寫
-    assert "password_hash" not in body["user"]  # 不外洩雜湊
-
-
-def test_register_rejects_bad_email_or_short_password(client) -> None:
-    assert (
-        client.post("/api/auth/register", json={"email": "noat", "password": "secret1"}).status_code
-        == 400
-    )
-    assert (
-        client.post("/api/auth/register", json={"email": "a@b.com", "password": "x"}).status_code
-        == 400
-    )
-
-
-def test_register_duplicate_email_conflict(client) -> None:
-    client.post("/api/auth/register", json={"email": "dup@kkday.com", "password": "secret1"})
-    r = client.post("/api/auth/register", json={"email": "dup@kkday.com", "password": "secret1"})
-    assert r.status_code == 409
-    # 錯誤 code 契約（raise_api_error）：detail = {code, message}，供前端 i18n 對映
-    detail = r.json()["detail"]
-    assert detail["code"] == "AUTH.EMAIL_EXISTS" and detail["message"]
-
-
-def test_register_disabled_in_production(client, monkeypatch) -> None:
-    """production 未顯式開放 → 自助註冊 403（環境自動收緊；dev 不受影響）。"""
-    from app.core import config
-
-    monkeypatch.setattr(config.env, "app_env", "production")
-    monkeypatch.setattr(config.env, "aiq_allow_self_register", None)
-    r = client.post("/api/auth/register", json={"email": "p@kkday.com", "password": "secret1"})
-    assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "AUTH.REGISTER_DISABLED"
-
-
-def test_register_explicit_override_in_production(client, monkeypatch) -> None:
-    """production 顯式 AIQ_ALLOW_SELF_REGISTER=true → 放行（bootstrap admin 用）。"""
-    from app.core import config
-
-    monkeypatch.setattr(config.env, "app_env", "production")
-    monkeypatch.setattr(config.env, "aiq_allow_self_register", True)
-    r = client.post("/api/auth/register", json={"email": "p2@kkday.com", "password": "secret1"})
-    assert r.status_code == 200
+    """本地模式無登入系統（固定身分，不驗 token）：受保護端點測試沿用此 fixture 名稱（回空
+    header 即可，帶不帶 Authorization 行為一致），維持既有測試呼叫端 `headers=auth_headers` 不變。"""
+    return {}
 
 
 def test_start_prejudge_blocked_in_production_without_token(
@@ -113,32 +61,10 @@ def test_start_prejudge_accepts_prompt_versions(client, auth_headers, monkeypatc
     assert r.status_code == 200
 
 
-def test_login_failed_error_code_contract(client) -> None:
-    """帳密錯 → 401 且 detail.code = AUTH.LOGIN_FAILED（error-code i18n 框架契約）。"""
-    r = client.post("/api/auth/login", json={"email": "nope@kkday.com", "password": "x"})
-    assert r.status_code == 401 and r.json()["detail"]["code"] == "AUTH.LOGIN_FAILED"
-
-
-def test_login_success_and_wrong_password(client) -> None:
-    client.post("/api/auth/register", json={"email": "u@kkday.com", "password": "secret1"})
-    assert (
-        client.post(
-            "/api/auth/login", json={"email": "u@kkday.com", "password": "secret1"}
-        ).status_code
-        == 200
-    )
-    assert (
-        client.post(
-            "/api/auth/login", json={"email": "u@kkday.com", "password": "wrong"}
-        ).status_code
-        == 401
-    )
-
-
-def test_me_requires_auth(client, auth_headers) -> None:
-    assert client.get("/api/auth/me").status_code in (401, 403)  # 無 token 被守衛擋
-    r = client.get("/api/auth/me", headers=auth_headers)
-    assert r.status_code == 200 and r.json()["email"] == "qa@kkday.com"
+def test_me_returns_fixed_local_identity(client) -> None:
+    """本地模式無登入系統：/api/auth/me 不帶 Authorization header 也直接回固定身分。"""
+    r = client.get("/api/auth/me")
+    assert r.status_code == 200 and r.json().get("user_id") == "local"
 
 
 # ── settings ──────────────────────────────────────────────────────
@@ -188,11 +114,6 @@ def _seed_one_finding() -> str:
     return fid
 
 
-def test_patch_finding_status_requires_auth(client) -> None:
-    # 匿名（無 Bearer）→ 401，不得改動任何歸因狀態
-    assert client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code == 401
-
-
 def test_patch_finding_status_not_found_and_success(client, auth_headers) -> None:
     assert (
         client.patch(
@@ -238,12 +159,7 @@ def test_problems_status_filter_and_model_in_dto(client, auth_headers) -> None:
     assert miss["total"] == 0
 
 
-# ── findings：備註權限 / 批量初判 ─────────────────────────────────
-def test_get_finding_notes_requires_auth(client) -> None:
-    # 匿名讀備註（內部 QC 討論內容）→ 401（原漏洞：無任何驗證）
-    assert client.get("/api/findings/x/notes").status_code == 401
-
-
+# ── findings：備註 / 批量初判 ─────────────────────────────────
 def test_batch_status_endpoint(client, auth_headers) -> None:
     """批量初判端點：空清單 422；成功回實際更新數（同值冪等跳過語義在 db 層測）。"""
     assert (
@@ -265,20 +181,9 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
     assert body["updated"] == 1 and body["status"] == "confirmed"
 
 
-def test_batch_status_requires_auth(client) -> None:
-    assert (
-        client.patch(
-            "/api/findings/batch/verdict",
-            json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
-        ).status_code
-        == 401
-    )
-
-
 # ── judgment-history（評論級歸因歷史時間軸）──────────────────────
 def test_attribution_history_endpoints(client, auth_headers) -> None:
-    """歷史列表（初判事件）+ 評論級備註新增；匿名一律 401。"""
-    assert client.get("/api/attribution-history?source=x&source_id=y").status_code == 401
+    """歷史列表（初判事件）+ 評論級備註新增。"""
     _seed_one_finding()
     r = client.get(
         "/api/attribution-history?source=product_reviews&source_id=R1", headers=auth_headers
@@ -311,14 +216,6 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
     )
     assert r.status_code == 400
     assert "stub" in r.json()["detail"]
-
-
-def test_prompt_sandbox_start_requires_auth(client):
-    r = client.post(
-        "/api/v1/prejudge/prompt-sandbox",
-        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
-    )
-    assert r.status_code == 401
 
 
 def test_prompt_sandbox_count_item_ids_priority(client, auth_headers):
@@ -357,14 +254,6 @@ def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
     )
     assert r.status_code == 200
     assert r.json()["total"] >= 1
-
-
-def test_prompt_sandbox_count_requires_auth(client):
-    r = client.post(
-        "/api/v1/prejudge/prompt-sandbox/count",
-        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
-    )
-    assert r.status_code == 401
 
 
 def test_prompt_sandbox_status_unknown_job_404(client, auth_headers):

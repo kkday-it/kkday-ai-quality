@@ -30,15 +30,14 @@ class Settings(BaseSettings):
 
     # ── 環境 ──
     app_env: str = (
-        "development"  # development / staging / production；非 development 缺 JWT secret 拒啟動
+        "development"  # development / staging / production；非 development 缺 AIQ_SECRET_KEY 拒啟動
     )
     # ── 認證 ──
-    aiq_jwt_secret: str | None = None
+    # 本地模式固定身分的 email（去帳戶系統後無登入，僅供權限授予查詢/稽核欄位用；未設回通用佔位）。
+    local_user_email: str = ""
     # user_settings 機密（llm_tokens/qc_passwords）at-rest 加密 passphrase；
     # 未設＝明文落庫（dev 相容），設定後新寫入即加密、舊列跑 scripts/tools/encrypt_user_secrets.py。
     aiq_secret_key: str | None = None
-    jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
-    min_password_length: int = 6  # 註冊密碼最短長度（安全政策，可依合規調整）
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
     # 連線池（跨環境可調；prejudge 併發 64 執行緒共享，預設 15 明顯不足 → 拉高。
@@ -55,10 +54,6 @@ class Settings(BaseSettings):
     # 全庫資料包匯入開關（破壞性：清空並覆蓋整庫）。None＝依環境（development 開、其餘關）；
     # 顯式 true/false 覆蓋。防生產誤觸；上線收緊 admin 閘後仍建議留此環境級保險。
     aiq_allow_data_import: bool | None = None
-    # 自助註冊開關。None＝依環境（development 開、其餘關）；顯式 true/false 覆蓋。
-    # 防生產環境任何人自助建帳號即取得 qc 角色全權（含 datapack.import 全庫覆寫）；
-    # prod 首次部署 bootstrap admin 時臨時設 true，建完帳號即移除（見 docker/README.md）。
-    aiq_allow_self_register: bool | None = None
     # ── 初判歸因批量併發（I/O bound LLM；OpenAI 無併發硬上限、僅 RPM/TPM，gpt-5-mini Tier1 500K TPM 足以支撐）──
     prejudge_max_workers: int = 64  # ThreadPool 全域上限；多 job 疊加時由 Semaphore 收斂到此值
     llm_timeout: int = (

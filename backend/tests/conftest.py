@@ -64,3 +64,35 @@ def _no_llm_exact_cache(monkeypatch):
     from app.core.config import env as _env
 
     monkeypatch.setattr(_env, "llm_exact_cache", False)
+
+
+@pytest.fixture
+def permissions_cfg(monkeypatch):
+    """固定 permissions.json 內容（no_auth_grant_all=false，測 default/grants 邊界），與實檔解耦。
+    供多個測試檔共用（無角色權限框架 + 需分 default/grants 兩級的端點測試）。"""
+    monkeypatch.setattr(
+        "app.core.permissions.local_provider._permissions_cfg",
+        lambda: {
+            "no_auth_grant_all": False,
+            "default": [
+                "finding.review.update",
+                "data.source.upload",
+                "data.datapack.export",
+                "data.datapack.import",
+                "problem.list.export",
+                "prejudge.run",
+            ],
+            "grants": {"boss@kkday.com": ["*"]},
+        },
+    )
+
+
+@pytest.fixture
+def as_user(monkeypatch):
+    """固定本地模式當前身分 email（本地模式無登入，email 僅供權限授予查詢/稽核欄位用）。"""
+    from app.core.config import env
+
+    def _set(email: str) -> None:
+        monkeypatch.setattr(env, "local_user_email", email)
+
+    return _set
