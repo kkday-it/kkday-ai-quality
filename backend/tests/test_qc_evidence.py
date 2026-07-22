@@ -172,7 +172,7 @@ def test_get_evidence_disabled(monkeypatch):
 def _isolated_state(monkeypatch, temp_db):
     """隔離 S3 模組級狀態：engine 導向測試庫（conftest temp_db 建表+清空+測後還原），重置熔斷計數。
 
-    快取讀寫走 PG evidence_cache 表——不依賴 temp_db 會寫進 dev 庫（踩過）。
+    快取讀寫走 PG evidence_snapshot 表——不依賴 temp_db 會寫進 dev 庫（踩過）。
     """
     monkeypatch.setattr(qc_evidence, "_breaker_fails", 0)
     monkeypatch.setattr(qc_evidence, "_breaker_opened_at", 0.0)

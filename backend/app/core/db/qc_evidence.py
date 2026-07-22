@@ -15,7 +15,7 @@
   timeout（QueryCanceled）不重試直接降級——共享 snapshot 庫，自我限速優先。
 - **失敗永不拋出**：`get_evidence()` 統一吞錯轉 `EvidenceResult.status`——佐證失敗＝降級判決，
   不得讓佐證問題拖垮判決批次（與判決管線的單筆 fail-loud 原則刻意相反）。
-- **兩級快取落本地 PG**（`evidence_cache` 表；order 短 TTL/商品版本長 TTL）：真相源仍是
+- **兩級快取落本地 PG**（`evidence_snapshot` 表；order 短 TTL/商品版本長 TTL）：真相源仍是
   production snapshot，此表純快取可整表清空重生；刻意不入 datapack（見 tables.py 註記）。
 
 ⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（postgresql-snapshot.kkday.com，共用帳號）純為
@@ -366,7 +366,7 @@ def assert_no_pii_keys(data: Any) -> None:
             assert_no_pii_keys(v)
 
 
-# ── 兩級快取（本地 PG evidence_cache 表；使用者 2026-07-22 拍板由 diskcache 改落 PG）──────
+# ── 兩級快取（本地 PG evidence_snapshot 表；使用者 2026-07-22 拍板由 diskcache 改落 PG）──────
 # 真相源仍是 production snapshot——此表純快取（可整表清空重生）；TTL 懶清理：
 # 讀到過期＝miss 並刪列；寫入時順手清全表過期列（走 expires 索引，量小成本可忽略）。
 def _now_iso() -> str:
@@ -380,7 +380,7 @@ def _cache_get(key: str) -> Any:
 
     from app.core.db import tables as T
 
-    t = T.evidence_cache
+    t = T.evidence_snapshot
     with T.get_engine().begin() as c:
         row = c.execute(select(t.c.payload, t.c.expires_at).where(t.c.cache_key == key)).first()
         if row is None:
@@ -400,7 +400,7 @@ def _cache_set(key: str, kind: str, val: Any, ttl_s: int) -> None:
 
     from app.core.db import tables as T
 
-    t = T.evidence_cache
+    t = T.evidence_snapshot
     now = datetime.now(timezone.utc)
     try:
         with T.get_engine().begin() as c:
