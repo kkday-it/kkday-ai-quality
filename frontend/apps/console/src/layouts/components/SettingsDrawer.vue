@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { watch, onMounted } from 'vue';
+import { watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { LlmConnectionsPanel, QcConnectionsPanel, DataImportPanel } from '@/features/settings/pages';
+import {
+  LlmConnectionsPanel,
+  QcConnectionsPanel,
+  DataImportPanel,
+} from '@/features/settings/pages';
 import { ProductVerticalSettingsPanel } from '@/features/judge/components';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
@@ -36,28 +40,31 @@ watch(tab, (t) => {
   if (visible.value) syncQuery(t);
 });
 
-onMounted(async () => {
-  await router.isReady();
-  const s = route.query.settings; // 深連結：?settings=xxx 自動開抽屜對應分頁
-  if (s === 'qc' || s === 'datasource') {
-    tab.value = 'qc';
-    visible.value = true;
-  } else if (s === 'vertical') {
-    tab.value = 'vertical';
-    visible.value = true;
-  } else if (s === 'import' && can(PERM.dataDatapackImport)) {
-    tab.value = 'import';
-    visible.value = true;
-  } else if (s === 'llm' || s === 'connections' || s === 'config' || s === 'model') {
-    // 'connections' / 'config' / 'model' 為舊分頁名，重構後一律導向 'llm'（兼容舊深連結）
-    tab.value = 'llm';
-    visible.value = true;
-  } else if (s === 'rules' || s === 'taxonomy') {
-    // 規則已移出設定 → 導去 AI 法官主頁路由（兼容舊深連結）
-    router.replace('/judge/rules');
-  }
-  // 'account' 由殼層 AccountDrawer 處理，不在此開
-});
+// 不只處理首次載入：頁面內的「管理連線」會在既有 route 上追加 query，必須即時開抽屜。
+watch(
+  () => route.query.settings,
+  (s) => {
+    if (s === 'qc' || s === 'datasource') {
+      tab.value = 'qc';
+      visible.value = true;
+    } else if (s === 'vertical') {
+      tab.value = 'vertical';
+      visible.value = true;
+    } else if (s === 'import' && can(PERM.dataDatapackImport)) {
+      tab.value = 'import';
+      visible.value = true;
+    } else if (s === 'llm' || s === 'connections' || s === 'config' || s === 'model') {
+      // 'connections' / 'config' / 'model' 為舊分頁名，重構後一律導向 'llm'（兼容舊深連結）
+      tab.value = 'llm';
+      visible.value = true;
+    } else if (s === 'rules' || s === 'taxonomy') {
+      // 規則已移出設定 → 導去 AI 法官主頁路由（兼容舊深連結）
+      router.replace('/judge/rules');
+    }
+    // 'account' 由殼層 AccountDrawer 處理，不在此開
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

@@ -8,6 +8,7 @@
  */
 import { ref, computed, onUnmounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
+import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { useExportJob } from '@/features/judge/composables';
 import { ExportProgressBar } from '@/components';
 import {
@@ -96,7 +97,11 @@ const runImport = async () => {
   importing.value = true;
   snapshot.value = null;
   try {
-    const { job_id } = await importDatapack(file.value, confirmInput.value.trim(), includeSensitive.value);
+    const { job_id } = await importDatapack(
+      file.value,
+      confirmInput.value.trim(),
+      includeSensitive.value,
+    );
     es = new EventSource(importStreamUrl(job_id));
     es.onmessage = (ev) => {
       snapshot.value = JSON.parse(ev.data) as ImportJobSnapshot;
@@ -143,13 +148,15 @@ onUnmounted(closeStream);
 <template>
   <div class="flex flex-col gap-4">
     <a-alert type="normal">
-      資料包 zip 承載全部數據（純資料，非 SQL）。可在此<strong>導出</strong>下載、或<strong>導入</strong>載入他人資料包。
+      資料包 zip 承載全部數據（純資料，非
+      SQL）。可在此<strong>導出</strong>下載、或<strong>導入</strong>載入他人資料包。
       導入為<strong>覆蓋式</strong>：清空並以資料包重建各表。
     </a-alert>
 
     <!-- 共用：是否納入敏感表（導出/導入皆適用）-->
     <a-checkbox v-model="includeSensitive" @change="onToggleSensitive">
-      納入帳號 / 機密表（users、user_settings）—— 導出/導入皆適用；跨環境金鑰須一致，否則機密匯入後失效
+      納入帳號 / 機密表（users、user_settings）——
+      導出/導入皆適用；跨環境金鑰須一致，否則機密匯入後失效
     </a-checkbox>
 
     <!-- 導出區（背景 job + 逐表 SSE 進度）-->
@@ -159,7 +166,9 @@ onUnmounted(closeStream);
           <template #icon><icon-download /></template>
           導出資料包
         </a-button>
-        <span class="text-sm text-[var(--kk-color-text-3)]">下載當前全庫快照 zip，供分發 / 備份</span>
+        <span class="text-sm text-[var(--kk-color-text-3)]"
+          >下載當前全庫快照 zip，供分發 / 備份</span
+        >
       </div>
       <ExportProgressBar
         v-if="exporting"
@@ -194,8 +203,11 @@ onUnmounted(closeStream);
     <template v-else-if="report">
       <!-- schema banner -->
       <a-alert :type="report.schema_ok ? 'success' : 'error'">
-        schema 版本：資料包 {{ report.manifest_head ?? '—' }} / 當前 DB {{ report.current_head ?? '—' }}
-        {{ report.schema_ok ? '（相符）' : '（不符，無法匯入，請先 alembic upgrade head 或重新匯出）' }}
+        schema 版本：資料包 {{ report.manifest_head ?? '—' }} / 當前 DB
+        {{ report.current_head ?? '—' }}
+        {{
+          report.schema_ok ? '（相符）' : '（不符，無法匯入，請先 alembic upgrade head 或重新匯出）'
+        }}
       </a-alert>
       <a-alert v-for="(w, i) in report.warnings" :key="i" type="warning">{{ w }}</a-alert>
       <a-alert v-for="(er, i) in report.errors" :key="`e${i}`" type="error">{{ er }}</a-alert>
@@ -213,9 +225,22 @@ onUnmounted(closeStream);
       <!-- type-to-confirm + 匯入進度 -->
       <template v-if="report.ok">
         <div class="flex items-center gap-2">
-          <span class="whitespace-nowrap">輸入 <code>{{ report.confirm_phrase }}</code> 以確認：</span>
-          <a-input v-model="confirmInput" :placeholder="report.confirm_phrase" class="flex-1" allow-clear />
-          <a-button type="primary" status="danger" :disabled="!canImport" :loading="importing" @click="runImport">
+          <span class="whitespace-nowrap"
+            >輸入 <code>{{ report.confirm_phrase }}</code> 以確認：</span
+          >
+          <a-input
+            v-model="confirmInput"
+            :placeholder="report.confirm_phrase"
+            class="flex-1"
+            allow-clear
+          />
+          <a-button
+            type="primary"
+            status="danger"
+            :disabled="!canImport"
+            :loading="importing"
+            @click="runImport"
+          >
             確認匯入
           </a-button>
         </div>
@@ -224,7 +249,13 @@ onUnmounted(closeStream);
         <div v-if="snapshot" class="flex flex-col gap-1">
           <a-progress
             :percent="snapshot.total_tables ? snapshot.done_tables / snapshot.total_tables : 0"
-            :status="snapshot.status === 'error' ? 'danger' : snapshot.status === 'done' ? 'success' : 'normal'"
+            :status="
+              snapshot.status === 'error'
+                ? 'danger'
+                : snapshot.status === 'done'
+                  ? 'success'
+                  : 'normal'
+            "
           >
             <template #text="{ percent }">{{ (percent * 100).toFixed(2) }}%</template>
           </a-progress>

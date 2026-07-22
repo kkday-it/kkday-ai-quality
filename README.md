@@ -116,6 +116,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | POST | `/api/judge-rules/export` | 啟動判決規則 xlsx 導出背景 job → {job_id} |
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `judgment.prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
+| GET/POST | `/api/v1/judgment/prompt-debug/defaults` · `/prompt-debug/stream` | 售後根因 Prompt 調試台：載入受控分類預設 Prompt，任意 IM session 以 SSE 串流裁決，完成後回傳交叉欄位校驗、token 與單次 USD 估算；不寫正式 judgments |
 | GET | `/api/v1/judgment/runs` · `/runs/{job_id}` | 歸因歷史（run 級 LLM 使用紀錄：批量/選取/單筆重判；詳情含 per-stage token/費用明細）|
 | GET/POST | `/api/judgment-history` · `/notes` · `/models` | 判決歷史（**評論級**時間軸：判決快照/覆核轉移/備註三類事件；重判結果與前次全同時去重不記）· 新增評論級備註 · 歷來判決過的模型清單（篩選/導出下拉選項）。需登入 |
 | CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）|

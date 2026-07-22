@@ -23,6 +23,11 @@ export const judgeRoutes: RouteRecordRaw = {
       meta: { text: '歸因列表' },
     }, // 初判歸因：選來源+模型+數量 → L1~L2 列表 + 導出
     {
+      path: 'prompt-debug',
+      component: () => import('../pages/PromptDebugger.vue'),
+      meta: { text: 'Prompt 調試' },
+    }, // 任意售後對話：可編 Prompt + 臨時模型旋鈕 + 流式 JSON + schema 校驗 + 單次計費
+    {
       path: 'attribution',
       component: () => import('../pages/AttributionOverview.vue'),
       meta: { text: '歸因概覽' },

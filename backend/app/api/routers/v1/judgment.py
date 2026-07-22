@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core import auth, db
 from app.core import settings as app_settings
@@ -145,6 +146,61 @@ class PromptSandboxIn(PrejudgeIn):
     # 版本選擇功能：{rule_code: 指定歷史版本號}（前端 PromptVersionPickerGroup／
     # usePromptVersionPicker）；不帶時全 7 支沿用 DB active。
     versions: dict[str, int] | None = None
+
+
+class PromptDebugOverridesIn(BaseModel):
+    """本次調試臨時旋鈕；不覆寫已保存 LLM 配置。"""
+
+    model: str | None = None
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    thinking: Literal["default", "on", "off"] | None = None
+    reasoning_effort: (
+        Literal["default", "none", "minimal", "low", "medium", "high", "xhigh"] | None
+    ) = None
+
+
+class PromptDebugIn(BaseModel):
+    """任意售後對話 Prompt 調試請求。"""
+
+    text: str = Field(min_length=1, max_length=200_000)
+    system_prompt: str = Field(min_length=1, max_length=300_000)
+    llm_config_id: str | None = None
+    overrides: PromptDebugOverridesIn | None = None
+
+
+@router.get("/prompt-debug/defaults")
+def prompt_debug_defaults(user: dict = Depends(auth.get_current_user)) -> dict:
+    """回傳 Google Doc 分類庫渲染的預設 Prompt、schema 與裁判表摘要。"""
+    from app.judge import prompt_debug
+
+    return prompt_debug.defaults_payload()
+
+
+@router.post("/prompt-debug/stream")
+def prompt_debug_stream(
+    body: PromptDebugIn,
+    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+) -> StreamingResponse:
+    """以 SSE 串流任意文字的結構化裁決、欄位校驗與本次 token/費用。"""
+    from app.judge import prompt_debug
+
+    saved = app_settings.load_settings(user.get("user_id", ""))
+    base = app_settings.effective_llm_dict(saved, config_id=body.llm_config_id)
+    overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
+    effective = prompt_debug.build_effective_config(base, overrides)
+    if not app_settings.resolve_provider_token(effective):
+        raise HTTPException(
+            status_code=400,
+            detail="目前配置沒有可用 API token，請先在「配置 › LLM 模型連線」完成設定",
+        )
+    if not (effective.get("model") or "").strip():
+        raise HTTPException(status_code=400, detail="本次調試未指定 model")
+
+    return StreamingResponse(
+        prompt_debug.stream_frames(body.text, body.system_prompt, effective),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/prompt-sandbox")

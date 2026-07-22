@@ -1,0 +1,512 @@
+{
+  "version": "2026-07-22",
+  "sources": {
+    "knowledge_document": {
+      "title": "根因分類庫_VM版.md",
+      "url": "https://docs.google.com/document/d/1f4aem8FfwwbaEuF8FBeu9_CD2aLu-tocOwDuUk4eRf8/edit?tab=t.0",
+      "document_id": "1f4aem8FfwwbaEuF8FBeu9_CD2aLu-tocOwDuUk4eRf8",
+      "revision_id": "ALtnJHyIWTJqXS2CzQHMLjyK3dqQfQPF1UPFqycfUW3ANhAlwKcYIhHMFVWV6YrWK6NzYNmbywTeWdx8khFNdY8RPKr2Ybp0ZnMCQVzCjVFy"
+    },
+    "field_definitions_document": {
+      "title": "AI 判定其他欄位定義",
+      "url": "https://docs.google.com/document/d/1FFFqsGPUhOd0oVG4uDbSgVfsdqdYYRuy5fLIE0tYpMA/edit?tab=t.dgtni4pwuwq#heading=h.4b4elf24xkdd",
+      "document_id": "1FFFqsGPUhOd0oVG4uDbSgVfsdqdYYRuy5fLIE0tYpMA",
+      "revision_id": "AIroW359TEtFf7xHhjkIiCtJQHWUSyv6IULRUQ6_TqjmhIfioA2gduDTH7r6kmxEkJHfwLsG2Z5KBckKzlckc7hgIvO0Yi83-3NOeIzV5-m-"
+    },
+    "judge_spreadsheet": {
+      "title": "Copy of 售後訊息貼標_260620-260705",
+      "url": "https://docs.google.com/spreadsheets/d/1F3gNXZz69sR3ivPDE-goFeHm-szM3v6MSou8ijvW3O0/edit?gid=0#gid=0",
+      "spreadsheet_id": "1F3gNXZz69sR3ivPDE-goFeHm-szM3v6MSou8ijvW3O0",
+      "sheet_name": "工作表1",
+      "analyzed_rows": 26120,
+      "oot_rows": 9096,
+      "oot_rate": 0.3482,
+      "mean_confidence": 0.9279
+    }
+  },
+  "classification_unit": "IM session（一段完整對話），不是單則訊息",
+  "unclear_rule": "模型無法從對話文字判斷根因時，必須顯式輸出 unclear，不可留空或省略欄位。",
+  "themes": [
+    {
+      "code": "[104]",
+      "label": "訂單確認問題"
+    },
+    {
+      "code": "[101]",
+      "label": "訂單取消"
+    },
+    {
+      "code": "[93]",
+      "label": "訂單申請修改"
+    },
+    {
+      "code": "[COMM]",
+      "label": "連線通訊商品使用問題"
+    },
+    {
+      "code": "[119]",
+      "label": "單據/發票"
+    }
+  ],
+  "categories": [
+    {
+      "id": "C01",
+      "theme_code": "[104]",
+      "theme_label": "訂單確認問題",
+      "name": "憑證/取票資訊未送達或不知如何使用",
+      "definition": "用戶已下單但憑證/取票碼未收到、或收到卻不知如何使用（QR 在哪、要不要換實體票、一票多人怎麼用）",
+      "include": "憑證未收到/延遲、取票代碼何時給、電子轉實體、多人共用一憑證的用法",
+      "exclude": "憑證要「修改內容」→ [93]；憑證因取消要退 → [101]",
+      "examples": "未收到高鐵取票代碼（出發前催）；一次買兩票但憑證只顯示一人",
+      "likely_causes": [
+        "憑證送達延遲",
+        "憑證呈現與取用指引不清",
+        "供應商派單資訊未到",
+        "unclear"
+      ],
+      "product_opportunity": "憑證頁強化取用指引；送達時程可視化",
+      "vertical": "跨 Vertical（Tickets/Tour/Trans 皆有）"
+    },
+    {
+      "id": "C02",
+      "theme_code": "[104]",
+      "theme_label": "訂單確認問題",
+      "name": "出發前履約資訊未到齊，主動催確認",
+      "definition": "出發前用戶不確定成團與否、司機/接送資訊、預訂是否成功，主動來催",
+      "include": "成團狀態確認、司機/導遊資訊未到、接送安排確認、預訂成功與否",
+      "exclude": "資訊「有誤要改」→ [93]",
+      "examples": "出發前尚未收到司機資訊；確認行程是否成團；出團前一天才發司導資訊；當天找不到集合點；飯店接送時間未預告",
+      "likely_causes": [
+        "履約資訊送達時程不透明",
+        "供應商回覆慢",
+        "系統狀態未同步",
+        "unclear"
+      ],
+      "product_opportunity": "履約資訊送達時程透明化、自動催發",
+      "vertical": "Tour / Trans（接送）/ Experience"
+    },
+    {
+      "id": "C03",
+      "theme_code": "[104]",
+      "theme_label": "訂單確認問題",
+      "name": "商品規格/使用規則事前確認",
+      "definition": "商品頁資訊不足，用戶下單後才來問方案含什麼、規則、能否加購",
+      "include": "方案設施範圍、快速通關項目、穿著/注意事項、能否加購、行前須知（穿什麼、幾點到、集合地點、能否寄放貴重物）",
+      "exclude": "確認後要「改」→ [93]",
+      "examples": "快速通關含哪些設施；VIP 方案人數計算；體驗商品行前現場資訊",
+      "likely_causes": [
+        "商品頁資訊不足",
+        "方案規格描述不清",
+        "unclear"
+      ],
+      "product_opportunity": "商品頁資訊補強、常見問題前置、行前資訊結構化",
+      "vertical": "Tickets / Experience"
+    },
+    {
+      "id": "C04",
+      "theme_code": "[104]",
+      "theme_label": "訂單確認問題",
+      "name": "第三方官方 App 綁定/報到失敗",
+      "definition": "用戶已取得憑證，但在第三方官方 App（迪士尼/Go City/JR）綁定、線上 check-in、掃碼領取時失敗",
+      "include": "訂單編號無法連結官方 App、線上 check-in 失敗、憑證掃描顯示無法領取",
+      "exclude": "平台自身 App 問題 → 系統類；商品到當地才用不了 → 商品使用支援（非本類）",
+      "examples": "訂單編號+Email 無法連結 Go City App；JR PASS 掃描顯示無法領取",
+      "likely_causes": [
+        "第三方 App 資料同步延遲",
+        "綁定資訊不符",
+        "操作指引缺失",
+        "unclear"
+      ],
+      "product_opportunity": "第三方串接的報到指引、資料同步狀態揭露",
+      "vertical": "Tickets（樂園/通行證）"
+    },
+    {
+      "id": "C05",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "退款進度/狀態不透明",
+      "definition": "退款時程長（7–45 天）＋ App 狀態未同步，用戶反覆進線催",
+      "include": "退款何時到、進度到哪、訂單狀態沒更新（仍顯示「即將到來」）",
+      "exclude": "尚未申請取消的一般諮詢 → 視情境",
+      "examples": "退款要 45 天；已退款作業但仍顯示「即將到來」",
+      "likely_causes": [
+        "退款作業時程長",
+        "訂單狀態未即時同步",
+        "供應商退款慢",
+        "unclear"
+      ],
+      "product_opportunity": "退款進度可視化、狀態即時同步",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C06",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "取消政策本身僵化",
+      "definition": "規則就是不可退或手續費過高，用戶知道規則但認為不合理而進線爭取",
+      "include": "不可退想爭取、取消手續費過高爭議（用戶清楚規則，爭的是合理性）",
+      "exclude": "下單前不知規則 → 「取消政策揭露不清」；不可抗力特例 → 「不可抗力特例申請無通道」",
+      "examples": "改樂園→海洋要收手續費；規則明訂不可退用戶不服",
+      "likely_causes": [
+        "規則就是不可退用戶不滿",
+        "手續費過高爭議",
+        "unclear"
+      ],
+      "product_opportunity": "取消政策合理性檢視、手續費級距透明",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C07",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "取消政策揭露不清",
+      "definition": "可退或有條件退，但用戶下單前不知道規則，事後才發現",
+      "include": "下單前不知取消規則、規則揭露位置不明顯",
+      "exclude": "用戶知道規則但嫌不合理 → 「取消政策本身僵化」",
+      "examples": "以為可免費取消、結果有條件；沒注意到不可退條款",
+      "likely_causes": [
+        "下單前不知取消規則",
+        "規則揭露位置不明顯",
+        "unclear"
+      ],
+      "product_opportunity": "取消政策白話前置、下單流程明顯揭露",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C08",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "不可抗力特例申請無通道",
+      "definition": "颱風/天災/傷病等特例想爭取退款，但無自助管道，需人工個案處理",
+      "include": "颱風天災傷病想爭取但無自助管道、特例需人工個案；天候特例的事前詢問（屆時取消是否收費/能否退）",
+      "exclude": "一般規則爭議（非特例）→ 上面兩類",
+      "examples": "颱風/傷病申請特例退款；颱風可能發海警，事前問取消是否收費",
+      "likely_causes": [
+        "颱風天災傷病想爭取但無自助管道",
+        "特例需人工個案處理",
+        "unclear"
+      ],
+      "product_opportunity": "不可抗力特例自助申請通道",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C09",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "供應商端無法履約，被迫取消",
+      "definition": "非用戶意願，因售罄/未成團/店休/整修導致取消",
+      "include": "結帳同時售罄（超賣）、未達成團人數、現場店休整修",
+      "exclude": "用戶自身因素取消 → 上面各類",
+      "examples": "結帳時售罄自動退；沒成團退款；指定用餐日店休 3 天",
+      "likely_causes": [
+        "庫存與下單不同步（超賣）",
+        "未達成團門檻",
+        "供應商臨時停業",
+        "unclear"
+      ],
+      "product_opportunity": "庫存即時同步防超賣、成團狀態提前告知",
+      "vertical": "Tour / Experience / Tickets"
+    },
+    {
+      "id": "C10",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "不可改→被迫取消重訂",
+      "definition": "用戶原想改（日期/內容），因不可改而被導向取消重訂",
+      "include": "改期需取消重訂、選錯方案需取消重下",
+      "exclude": "可改但用戶不會操作 → [93] 修改流程類",
+      "examples": "高鐵假期不可改期只能取消重訂；eSIM 買錯天數取消重下",
+      "likely_causes": [
+        "商品不支援原單修改",
+        "規則不允許改期",
+        "unclear"
+      ],
+      "product_opportunity": "開放原單修改、減少取消重訂",
+      "vertical": "跨 Vertical（Trans/Tour 尤多）"
+    },
+    {
+      "id": "C11",
+      "theme_code": "[101]",
+      "theme_label": "訂單取消",
+      "name": "商品瑕疵要求退款",
+      "definition": "商品未能正常使用（如 eSIM 壞、SIM 未寄達），用戶因瑕疵要求退款",
+      "include": "eSIM 無法啟用要退、實體 SIM 未按時送達要退",
+      "exclude": "純技術排除、未談退款 → [COMM] 連線類；純技術諮詢 → [COMM]",
+      "examples": "一張 eSIM 無法安裝要退；SIM 未在出發前送達",
+      "likely_causes": [
+        "商品品質瑕疵",
+        "物流未達",
+        "unclear"
+      ],
+      "product_opportunity": "瑕疵自助退款、物流時效保證",
+      "vertical": "Communication（eSIM/SIM）"
+    },
+    {
+      "id": "C12",
+      "theme_code": "[93]",
+      "theme_label": "訂單申請修改",
+      "name": "修改受限（商品規則/供應商政策不允許改）",
+      "definition": "用戶想改日期/內容，但商品規則或供應商政策不允許，被迫進線或取消重訂",
+      "include": "不可改期、班次不可改、房型/樓層無法再調",
+      "exclude": "可改但用戶不會操作 → 修改流程摩擦類",
+      "examples": "回程高鐵不可改；高鐵假期不可改期需取消重訂",
+      "likely_causes": [
+        "商品規則不允許改",
+        "供應商政策限制",
+        "無自助改單入口",
+        "unclear"
+      ],
+      "product_opportunity": "商品頁前置揭露可改性、開放自助改單",
+      "vertical": "Trans / Tour / Hotel"
+    },
+    {
+      "id": "C13",
+      "theme_code": "[93]",
+      "theme_label": "訂單申請修改",
+      "name": "特殊需求/加購無自助入口",
+      "definition": "加購、房型偏好、接送、備註等需求無結構化欄位，只能請真人轉達供應商且不保證",
+      "include": "加床、加購座椅/人數、1人1室、同行單備註、素食需求",
+      "exclude": "資料「填錯要改」→ 資料修正類",
+      "examples": "補差價改 1 人 1 室（不保證）；加購嬰兒汽座",
+      "likely_causes": [
+        "系統缺特殊需求欄位",
+        "需人工轉達供應商",
+        "供應商不保證",
+        "unclear"
+      ],
+      "product_opportunity": "結構化「特殊需求/加購」自助入口",
+      "vertical": "Hotel / Tour / Experience"
+    },
+    {
+      "id": "C14",
+      "theme_code": "[93]",
+      "theme_label": "訂單申請修改",
+      "name": "旅客/聯絡人資料修正",
+      "definition": "訂單旅客資料/聯絡方式填錯或需更新，進線請客服改",
+      "include": "姓名更正、Email/電話修改、補提供聯絡方式",
+      "exclude": "系統預設錯改不了（如系統帶錯國籍）→ 屬產品缺陷，於 likely_cause 標記「系統預設錯」",
+      "examples": "姓名變更；補提供 Line 給導遊",
+      "likely_causes": [
+        "用戶自填錯",
+        "系統預設錯（產品缺陷）",
+        "無自助修改入口",
+        "unclear"
+      ],
+      "product_opportunity": "開放旅客資料自助修改",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C15",
+      "theme_code": "[93]",
+      "theme_label": "訂單申請修改",
+      "name": "修改流程摩擦（追進度/確認能否改）",
+      "definition": "修改需求已提出但需等待，用戶反覆追問進度；或不確定能否改先來問",
+      "include": "追問修改處理進度、確認此商品能否修改",
+      "exclude": "已確定不可改 → 修改受限類",
+      "examples": "持續追問跳傘改時間能否確認",
+      "likely_causes": [
+        "處理需等供應商",
+        "進度不透明",
+        "可改性不明",
+        "unclear"
+      ],
+      "product_opportunity": "修改申請進度可視化",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C16",
+      "theme_code": "[COMM]",
+      "theme_label": "連線通訊商品使用問題",
+      "name": "連線商品無法啟用或安裝失敗",
+      "definition": "商品在「開始使用前」就卡住（掃碼/安裝失敗、實名認證卡關、領取問題）",
+      "include": "eSIM 無法安裝或掃碼失敗、實名/KYC 認證卡關、WiFi 分享器領取/取機問題",
+      "exclude": "已裝好但連不上 → 「已啟用但無法連線」；純問怎麼裝（未故障）→ 「使用方式或設定諮詢」",
+      "examples": "",
+      "likely_causes": [
+        "eSIM無法安裝或掃碼失敗",
+        "實名認證卡關",
+        "WiFi機領取問題",
+        "unclear"
+      ],
+      "product_opportunity": "安裝/認證自助排障指引、失敗碼對應說明",
+      "vertical": "Communication"
+    },
+    {
+      "id": "C17",
+      "theme_code": "[COMM]",
+      "theme_label": "連線通訊商品使用問題",
+      "name": "連線商品已啟用但無法連線",
+      "definition": "已安裝/啟用完成，但實際無訊號、需調設定才通",
+      "include": "裝好無訊號、需調漫遊/網路設定、APN 設定問題",
+      "exclude": "連得上但速度慢/與方案不符 → 「連線品質不佳或與方案不符」；根本沒裝成功 → 「無法啟用或安裝失敗」",
+      "examples": "",
+      "likely_causes": [
+        "裝好無訊號",
+        "需調漫遊或網路設定",
+        "APN設定問題",
+        "unclear"
+      ],
+      "product_opportunity": "連線後自助檢測、APN/漫遊一鍵設定引導",
+      "vertical": "Communication"
+    },
+    {
+      "id": "C18",
+      "theme_code": "[COMM]",
+      "theme_label": "連線通訊商品使用問題",
+      "name": "連線品質不佳或與方案不符",
+      "definition": "連得上但速度/流量/天數與購買方案不符或體驗不佳",
+      "include": "速度慢或限速、提前斷網、天數或流量算法與預期不符",
+      "exclude": "完全連不上 → 「已啟用但無法連線」；要求退款為主體 → [101] 商品瑕疵要求退款",
+      "examples": "",
+      "likely_causes": [
+        "速度慢或限速",
+        "提前斷網",
+        "天數或流量算法與預期不符",
+        "unclear"
+      ],
+      "product_opportunity": "方案規格（速度/流量/天數）商品頁前置揭露、限速門檻透明",
+      "vertical": "Communication"
+    },
+    {
+      "id": "C19",
+      "theme_code": "[COMM]",
+      "theme_label": "連線通訊商品使用問題",
+      "name": "連線商品使用方式或設定諮詢",
+      "definition": "商品未故障，用戶純問怎麼用、何時開通、使用規則",
+      "include": "純問使用方式（未故障）、開通時機與規則諮詢",
+      "exclude": "一問就是裝不上/連不上 → 對應故障類；問完轉退款 → [101] 商品瑕疵要求退款",
+      "examples": "",
+      "likely_causes": [
+        "純問怎麼用未故障",
+        "開通時機與規則諮詢",
+        "unclear"
+      ],
+      "product_opportunity": "商品頁/使用說明前置、開通時機自動提示",
+      "vertical": "Communication"
+    },
+    {
+      "id": "C20",
+      "theme_code": "[COMM]",
+      "theme_label": "連線通訊商品使用問題",
+      "name": "連線技術故障延伸退費訴求",
+      "definition": "排障未果、對話尾段浮現退費訴求，但主體仍是技術故障（若主體已是退款爭議應改歸 [101] 商品瑕疵要求退款）",
+      "include": "",
+      "exclude": "",
+      "examples": "",
+      "likely_causes": [
+        "排障未果轉退費",
+        "unclear"
+      ],
+      "product_opportunity": "",
+      "vertical": "Communication"
+    },
+    {
+      "id": "C21",
+      "theme_code": "[119]",
+      "theme_label": "單據/發票",
+      "name": "統編/抬頭補登・修改無自助入口",
+      "definition": "下單時漏填或填錯統編/抬頭/買受人/Email 等標準單據欄位，或事後需修正，因無自助入口只能進線，並常撞「僅限修改一次」限制",
+      "include": "統編補登、抬頭補登/更正、買受人更正、Email 收件位址修改（即使需作廢重開亦屬本類）",
+      "exclude": "不知單據何時到/沒收到 → 「開立時程與送達不透明」；問能否報帳/該開哪種 → 「單據形式/報帳適用性困惑」；要求標準單據沒有的客製欄位 → 「單據客製加註需求」",
+      "examples": "忘填統編要補登；改收據買受人與統編；重開更正代收轉付收據買受人",
+      "likely_causes": [
+        "下單流程統編/抬頭欄位易漏填或誤填",
+        "無自助修改入口（須真人）",
+        "僅限修改一次限制造成時間壓力",
+        "unclear"
+      ],
+      "product_opportunity": "單據欄位自助補登/修改頁；下單流程統編欄位強化；重估「僅改一次」限制",
+      "vertical": "跨 Vertical（Tickets/Trans/Communication 最密集）"
+    },
+    {
+      "id": "C22",
+      "theme_code": "[119]",
+      "theme_label": "單據/發票",
+      "name": "收據/發票開立時程與送達不透明",
+      "definition": "用戶不知代收轉付收據/發票何時開立、開了沒、寄到哪、如何取得，或未收到需重寄",
+      "include": "何時收到收據、開立進度查詢、如何取得/索取/下載、未收到需重寄",
+      "exclude": "要改單據內容 → 「補登・修改無自助入口」；問報帳適用性 → 「形式/報帳適用性困惑」；要客製加註 → 「客製加註需求」",
+      "examples": "幾時收到收據；如何索取電子收據；尚未收到代收轉付收據；多筆訂單只有部分收據寄達",
+      "likely_causes": [
+        "開立時程不透明",
+        "送達狀態不可自助查詢",
+        "無重寄自助入口",
+        "申請入口受時程 gating 不可見",
+        "系統批次開立失敗漏開",
+        "unclear"
+      ],
+      "product_opportunity": "開立進度可視化、自助重寄、批次開立漏單監控",
+      "vertical": "跨 Vertical"
+    },
+    {
+      "id": "C23",
+      "theme_code": "[119]",
+      "theme_label": "單據/發票",
+      "name": "單據形式/報帳適用性困惑",
+      "definition": "用戶搞不清代收轉付收據 vs 電子發票 vs 三聯式的差異、及能否用於公司報帳",
+      "include": "為何只有收據沒發票、這格式能不能報帳、能不能開三聯式、購買證明索取",
+      "exclude": "單純補統編/改抬頭 → 「補登・修改無自助入口」；要客製加註 → 「客製加註需求」",
+      "examples": "為何只給收據不給發票；收據無法報帳能否開三聯式；怎樣取得可報帳的收據",
+      "likely_causes": [
+        "代收轉付收據性質未於下單/商品頁說明",
+        "報帳適用性揭露不清",
+        "用戶對發票/收據/三聯式概念混淆",
+        "unclear"
+      ],
+      "product_opportunity": "下單頁/幫助中心前置說明「你會拿到哪種單據、能否報帳」",
+      "vertical": "跨 Vertical（Communication/Tickets 因報帳需求高而密集）"
+    },
+    {
+      "id": "C24",
+      "theme_code": "[119]",
+      "theme_label": "單據/發票",
+      "name": "單據客製加註需求（標準單據無法承載）",
+      "definition": "用戶清楚要什麼，但報帳需要標準單據結構上沒有的資訊（出發/使用日、拆分票價明細、指定旅客姓名、行程文字），只能請真人在備註硬塞，部分需求受單據格式限制根本無法承載",
+      "include": "備註加註出發/使用日、來回票價明細拆分、加註旅客姓名/行程、套裝金額拆分；收據開立日≠使用日而要求備註使用日",
+      "exclude": "只是補正標準欄位（統編/抬頭/買受人/Email）→ 「補登・修改無自助入口」；只是不懂該開哪種單據 → 「形式/報帳適用性困惑」",
+      "examples": "註記來回票價明細；補充出發日期於收據；備註加註行程字樣；收據日期改成使用日",
+      "likely_causes": [
+        "標準單據僅單一備註欄可承載客製",
+        "需求超出單據格式可承載範圍",
+        "無自助加註入口＋撞「僅改一次」",
+        "收據開立日與使用日不一致只能備註補",
+        "unclear"
+      ],
+      "product_opportunity": "下單頁增設結構化「報帳合規備註」欄；格式不可承載者購買前明確揭露；重估「僅改一次」對備註類修改是否放寬",
+      "vertical": "跨 Vertical（Trans/住宿/Tour 較密集）"
+    },
+    {
+      "id": "C25",
+      "theme_code": "[119]",
+      "theme_label": "單據/發票",
+      "name": "單據問題錯置到供應商線",
+      "definition": "用戶向供應商詢問單據，但代收轉付收據由平台開立、供應商無權限，供應商只能轉手或推回平台，形成多一手的錯置進線",
+      "include": "供應商收單據訴求後轉相關部門、供應商請用戶聯繫平台、供應商與平台在同一 session 接力處理單據",
+      "exclude": "供應商自營票據自行開立（如專車接送特例，私下轉帳後供應商自開發票）→ 屬另一開票邏輯，非錯置",
+      "examples": "供應商回「發票需聯繫平台客服」；供應商「已幫您申請，請耐心等待官方開具」",
+      "likely_causes": [
+        "開票責任歸屬與進線路由不匹配",
+        "供應商無單據處理權限但仍收到訴求",
+        "用戶無法區分該向誰問單據",
+        "unclear"
+      ],
+      "product_opportunity": "前端偵測到單據意圖時導向平台單據自助頁；供應商工作台加「單據問題一鍵轉平台」",
+      "vertical": "供應商為主的 Vertical（Trans 專車接送、Communication）最常見"
+    }
+  ],
+  "modify_target_options": [
+    "改日期/時段/班次",
+    "改方案/房型/票種",
+    "改人數/加購",
+    "改旅客或聯絡人資料",
+    "改特殊需求",
+    "其他"
+  ],
+  "oot_subtype_options": [
+    "對話殘段/無實質",
+    "售前_商品資訊詢問",
+    "售後_商品資訊詢問",
+    "純技術操作",
+    "其他"
+  ]
+}
