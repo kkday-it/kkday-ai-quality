@@ -19,6 +19,10 @@ services:
     environment:
       POSTGRES_DB: kkdb_ai_quality
       POSTGRES_HOST_AUTH_METHOD: trust  # dev 免密；生產走 secret
+    # GUI/host 工具直連容器庫用（host 5432 常被本機殘留原生 PG 佔用——GUI 連 5432 會看到
+    # 全容器化前的殭屍舊庫〔仍有 judgments 等舊表名〕，真庫一律連 localhost:5433）
+    ports:
+      - "5433:5432"
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
       # 有 seed 則首啟自動還原；空則空庫（前台導入資料包）。先 ./scripts/dev/fetch-seed.sh 取得。
