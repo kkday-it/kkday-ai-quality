@@ -59,6 +59,9 @@ services:
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
       - ./prompts:/app/prompts               # 判決 Prompt 唯一真相源（prompts/*.md；熱編即生效，image 未含此處補上）
+      # runtime 派生產物（llm_cache / evidence_cache / reports）：掛 host 免重建容器即清空——
+      # 佐證/LLM 快取單筆重建成本 2.5~8.8s，重啟歸零會反覆打 production（訂單佐證閉環一併補此既有缺口）
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy

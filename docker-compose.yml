@@ -50,6 +50,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # 前端對外網域（逗號分隔多個）；預設對齊本 compose 的 frontend 埠
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080}
+    volumes:
+      # runtime 派生產物（llm_cache / evidence_cache / reports）持久化：不掛則每次部署快取歸零，
+      # 佐證/LLM 快取重建需重打 production snapshot（單筆 2.5~8.8s）——修既有缺口（訂單佐證閉環）
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy

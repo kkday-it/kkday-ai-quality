@@ -9,7 +9,7 @@
 ## 引擎契約（初判程式碼如何讀這 7 支檔）
 
 - **格式**：域 prompt 固定四節、polarity 三節——`## System`（judge 人設 + `<facet_catalog>` 例句 +
-  `<domain_boundary>` 判準例句；**模型面向**）、`## User`（模板，含 `{TEXT}`；域 prompt 另需 `{POLARITY}`）、
+  `<domain_boundary>` 判準例句；**模型面向**）、`## User`（模板，含 `{TEXT}`；域 prompt 另需 `{POLARITY}`；evidence_ref 域另有 `{ORDER_SNAPSHOT}` 訂單佐證槽——無佐證時替換為空字串，模板措辭需自然容納「為空時依原文判斷」）、
   `## Taxonomy`（```json 域分類樹；**機器面向、域 prompt 專有**）、`## Schema`（該支輸出 JSON Schema；域
   prompt 的 `attributions[].l2_code` **不手寫 enum**——由 `## Taxonomy` 派生注入）。
 - **`## Taxonomy`＝分類唯一源**（```json，與 `## Schema` 同機器契約、同圍欄解析，**不送 LLM**）：域節點
@@ -62,3 +62,9 @@ RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）�
   附加 schema 欄位），不寫入本目錄 md、production 初判路徑零影響；若日後驗證 reason 對判準本身
   有幫助，可考慮正式寫進 md（v2 觀察項）。
 - md（含 `## Taxonomy`）是分類**類別＋層級＋域 metadata＋證據閘**唯一源（中文名/action/owner 全進各域 `## Taxonomy` root）。
+
+## 訂單佐證槽（{ORDER_SNAPSHOT}·訂單佐證閉環）
+
+- **哪些域有**：`## Taxonomy` root 標 `"evidence_ref":true` 的域（現 C-1/C-3/C-4/C-5/C-6；C-2 近 N/A 不注入）。`evidence_ref`（要不要注入佐證文字）與 `evidence_gated`（缺 order_oid 時信心封頂）是**兩個獨立語義**，勿混用。
+- **內容**：`prejudge._summarize_evidence` 產出的下單當時快照摘要（訂單/商品/退改政策/頁面文案模組/供應商；欄位映射 SSOT＝Confluence 2195652717），總長受 `config/ai_judge/evidence.json` summary 旋鈕封頂。
+- **填槽機制**：`_render_pack_user` 用 `.replace`——無槽模板天然 no-op；polarity 閘門不注入（初判不取佐證）。
