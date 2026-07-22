@@ -28,6 +28,8 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -342,6 +344,106 @@ def assert_no_pii_keys(data: Any) -> None:
             assert_no_pii_keys(v)
 
 
+# ── 兩級 diskcache（獨立於 llm_cache 命名空間；可整刪重生）───────────────────────────────
+_cache_lock = threading.Lock()
+_cache: Any = None
+
+
+def _get_cache():
+    """佐證 payload 磁碟快取單例（lazy；size-based LRU + per-key TTL）。"""
+    global _cache
+    if _cache is None:
+        with _cache_lock:
+            if _cache is None:
+                from diskcache import Cache  # 重依賴 lazy import
+
+                mb = int((_cfg().get("cache") or {}).get("size_limit_mb", 512))
+                _cache = Cache(str(paths.EVIDENCE_CACHE_DIR), size_limit=mb << 20)
+    return _cache
+
+
+def _order_ttl_s() -> int:
+    """order 級 TTL（短——order_status/price_refund 易變，拿舊值會判錯方向，R6）。"""
+    return int(float((_cfg().get("cache") or {}).get("order_ttl_hours", 6)) * 3600)
+
+
+def _product_ttl_s() -> int:
+    """商品級 TTL（長——prod_version 鎖版理論不可變；未取得書面 immutable 保證前防禦性有限期，R5）。"""
+    return int(float((_cfg().get("cache") or {}).get("product_ttl_days", 30)) * 86400)
+
+
+# ── single-flight（in-process；單 worker 制度性保證，見 Dockerfile --workers 1 註記）──────
+_inflight_lock = threading.Lock()
+_inflight: dict[str, Future] = {}
+
+
+def _singleflight(key: str, fn: Callable[[], Any]) -> Any:
+    """同 key 併發請求合併為一次底層執行；follower 共享 leader 的結果或例外。
+
+    批次 ThreadPool 多 worker 撞同一 order/product key 時，避免各自打一次 production
+    （首輪 distinct 商品比率實測 88/99——重複 key 不多但單次成本 3~5s，值得合併）。
+    """
+    with _inflight_lock:
+        fut = _inflight.get(key)
+        leader = fut is None
+        if leader:
+            fut = Future()
+            _inflight[key] = fut
+    if not leader:
+        return fut.result(timeout=float(_cfg().get("singleflight_wait_timeout_s", 20)))
+    try:
+        result = fn()
+    except Exception as e:
+        fut.set_exception(e)
+        with _inflight_lock:
+            _inflight.pop(key, None)
+        raise
+    fut.set_result(result)
+    with _inflight_lock:
+        _inflight.pop(key, None)
+    return result
+
+
+# ── 熔斷器（R13：維護窗口/掐線時整批快速降級，不讓 964 筆各撞 timeout 卡數小時）──────────
+_breaker_lock = threading.Lock()
+_breaker_fails = 0  # 連續失敗數（成功即清零）
+_breaker_opened_at = 0.0  # 開啟時刻（0＝關閉）
+
+
+class BreakerOpen(Exception):
+    """熔斷開啟中——呼叫端直接降級，不觸 DB。"""
+
+
+def _breaker_allow() -> None:
+    """DB 存取前檢查：開啟且未過冷卻 → 拋 BreakerOpen；過冷卻放行一次探測（half-open）。
+
+    Raises:
+        BreakerOpen: 熔斷開啟且冷卻未到。
+    """
+    global _breaker_opened_at
+    with _breaker_lock:
+        if _breaker_opened_at <= 0:
+            return
+        cooldown = float((_cfg().get("db") or {}).get("breaker_cooldown_s", 60))
+        if time.time() - _breaker_opened_at < cooldown:
+            raise BreakerOpen
+        _breaker_opened_at = 0.0  # half-open：放行本次探測；失敗會再度累積開啟
+
+
+def _breaker_record(ok: bool) -> None:
+    """記錄 DB 存取結果：連續失敗達閾值即開啟熔斷；成功清零。"""
+    global _breaker_fails, _breaker_opened_at
+    with _breaker_lock:
+        if ok:
+            _breaker_fails = 0
+            return
+        _breaker_fails += 1
+        threshold = int((_cfg().get("db") or {}).get("breaker_threshold", 5))
+        if _breaker_fails >= threshold and _breaker_opened_at <= 0:
+            _breaker_opened_at = time.time()
+            _log.warning("evidence breaker OPEN（連續 %d 次 DB 失敗）", _breaker_fails)
+
+
 # ── 對外結果型別與唯一入口 ────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class EvidenceResult:
@@ -356,14 +458,113 @@ class EvidenceResult:
     data: dict | None = None
 
 
+def _fetch_order_bundle(creds: dict, oid: str) -> dict | None:
+    """order 級 DB 實查（order_tbl+order_lst 合併；cache miss 時經 single-flight 呼叫）。
+
+    Returns:
+        order dict；訂單不存在或關聯鏈斷回 None（呼叫端轉 not_found，不快取）。
+    """
+    _breaker_allow()
+    ot = _query(creds, _SQL_ORDER_TBL, {"oid": oid})
+    if ot is None:
+        _breaker_record(True)  # 查詢成功、單純無此單——不是 infra 失敗
+        return None
+    order_mid, order_status, price_pay, lang_code, crt_dt = ot
+    ol = _query(creds, _SQL_ORDER_LST, {"oid": oid})
+    _breaker_record(True)
+    if ol is None:
+        return None
+    (
+        prod_oid,
+        prod_version,
+        pkg_oid,
+        item_oid,
+        supplier_oid,
+        lst_dt_go,
+        tz,
+        pkg_name,
+        prod_desc,
+    ) = ol
+    return {
+        "order_oid": int(oid),
+        "order_mid": order_mid,
+        "order_status": order_status,
+        "price_pay": _jsonable(price_pay),
+        "lang_code": lang_code,
+        "crt_dt": _jsonable(crt_dt),
+        "prod_oid": prod_oid,
+        "prod_version": prod_version,
+        "pkg_oid": pkg_oid,
+        "item_oid": item_oid,
+        "supplier_oid": supplier_oid,
+        "lst_dt_go": _jsonable(lst_dt_go),
+        "timezone": tz,
+        "package_name": pkg_name,
+        "prod_desc": prod_desc,
+    }
+
+
+def _fetch_product_bundle(creds: dict, order: dict, lang: str) -> dict:
+    """商品版本級 DB 實查（4 表投影；同 (prod,ver,lang,pkg) 的多筆訂單共用快取）。"""
+    _breaker_allow()
+    common = {
+        "prod_oid": order["prod_oid"],
+        "ver": order["prod_version"],
+        "pkg_oid": order["pkg_oid"],
+        "lang": lang,
+    }
+    pl = _query(creds, _SQL_PROD_LANG, common)
+    ps = _query(creds, _SQL_PROD_SETTING, common)
+    pb = _query(creds, _SQL_PKG_BASIC, common)
+    ms = _query(creds, _SQL_MODULE_SETTING, common, many=True)
+    _breaker_record(True)
+    return {
+        "product_lang": pl[0] if pl else None,
+        "product_setting": ps[0] if ps else None,
+        "pkg_basic": ({"cancel_policy_client": pb[0], "tour_duration": pb[1]} if pb else None),
+        "module_setting": ({str(r[0]): r[1] for r in ms} if ms else None),
+    }
+
+
+def _fetch_supplier_bundle(creds: dict, supplier_oid) -> dict | None:
+    """supplier 級 DB 實查（名稱/處理單位；低變動，共用商品級 TTL）。"""
+    _breaker_allow()
+    sup = _query(creds, _SQL_SUPPLIER, {"sup": supplier_oid})
+    _breaker_record(True)
+    if sup is None:
+        return None
+    return {"supplier_name": sup[0], "order_handler": sup[1], "msg_handler": sup[2]}
+
+
+def _cached(key: str, ttl_s: int, fetch: Callable[[], Any]) -> tuple[Any, bool]:
+    """快取優先讀取：命中直接回（不進 single-flight，減少鎖爭用）；miss 經 single-flight 實查。
+
+    Returns:
+        (value, cache_hit)。fetch 回 None（如查無此單）不落快取——避免暫態誤判長駐。
+    """
+    cache = _get_cache()
+    val = cache.get(key)
+    if val is not None:
+        return val, True
+
+    def _do() -> Any:
+        v = fetch()
+        if v is not None:
+            cache.set(key, v, expire=ttl_s)
+        return v
+
+    return _singleflight(key, _do), False
+
+
 def get_evidence(order_oid: str | int | None) -> EvidenceResult:
-    """判決歸因唯一取數入口：allow-list 投影點查 production，統一吞錯降級（不對外拋）。
+    """判決歸因唯一取數入口：兩級快取 + single-flight + 熔斷 + allow-list 投影點查。
 
     Args:
         order_oid: 訂單 oid；空值回 no_order_oid。
 
     Returns:
-        EvidenceResult；status != "fetched" 時 data 為 None，呼叫端以空佐證降級判決。
+        EvidenceResult；status ∈ {fetched, cache_hit} 時帶 data，其餘 data=None
+        （呼叫端以空佐證降級判決，永不阻斷批次）。
     """
     import psycopg2
     from psycopg2 import errors as pg_errors
@@ -380,81 +581,57 @@ def get_evidence(order_oid: str | int | None) -> EvidenceResult:
 
     t0 = time.time()
     try:
-        ot = _query(creds, _SQL_ORDER_TBL, {"oid": oid})
-        if ot is None:
+        order, hit_order = _cached(
+            f"order:{oid}", _order_ttl_s(), lambda: _fetch_order_bundle(creds, oid)
+        )
+        if order is None:
             _audit(oid, "not_found", t0)
             return EvidenceResult("not_found")
-        order_mid, order_status, price_pay, lang_code, crt_dt = ot
 
-        ol = _query(creds, _SQL_ORDER_LST, {"oid": oid})
-        if ol is None:
-            _audit(oid, "not_found", t0)
-            return EvidenceResult("not_found")
-        (
-            prod_oid,
-            prod_version,
-            pkg_oid,
-            item_oid,
-            supplier_oid,
-            lst_dt_go,
-            tz,
-            pkg_name,
-            prod_desc,
-        ) = ol
-
-        lang = (lang_code or "").strip() or str(
+        lang = (order.get("lang_code") or "").strip() or str(
             (_cfg().get("summary") or {}).get("lang_fallback", "zh-tw")
         )
-        common = {"prod_oid": prod_oid, "ver": prod_version, "pkg_oid": pkg_oid, "lang": lang}
+        prod_key = f"prod:{order['prod_oid']}:{order['prod_version']}:{lang}:{order['pkg_oid']}"
+        prod, hit_prod = _cached(
+            prod_key, _product_ttl_s(), lambda: _fetch_product_bundle(creds, order, lang)
+        )
+        sup, hit_sup = _cached(
+            f"sup:{order['supplier_oid']}",
+            _product_ttl_s(),
+            lambda: _fetch_supplier_bundle(creds, order["supplier_oid"]),
+        )
 
-        pl = _query(creds, _SQL_PROD_LANG, common)
-        ps = _query(creds, _SQL_PROD_SETTING, common)
-        pb = _query(creds, _SQL_PKG_BASIC, common)
-        ms = _query(creds, _SQL_MODULE_SETTING, common, many=True)
-        sup = _query(creds, _SQL_SUPPLIER, {"sup": supplier_oid})
-
+        all_hit = hit_order and hit_prod and hit_sup
         data = {
-            "order": {
-                "order_oid": int(oid),
-                "order_mid": order_mid,
-                "order_status": order_status,
-                "price_pay": _jsonable(price_pay),
-                "lang_code": lang_code,
-                "crt_dt": _jsonable(crt_dt),
-                "prod_oid": prod_oid,
-                "prod_version": prod_version,
-                "pkg_oid": pkg_oid,
-                "item_oid": item_oid,
-                "supplier_oid": supplier_oid,
-                "lst_dt_go": _jsonable(lst_dt_go),
-                "timezone": tz,
-                "package_name": pkg_name,
-                "prod_desc": prod_desc,
-            },
-            "product_lang": pl[0] if pl else None,
-            "product_setting": ps[0] if ps else None,
-            "pkg_basic": ({"cancel_policy_client": pb[0], "tour_duration": pb[1]} if pb else None),
-            "module_setting": ({str(r[0]): r[1] for r in ms} if ms else None),
-            "supplier": (
-                {"supplier_name": sup[0], "order_handler": sup[1], "msg_handler": sup[2]}
-                if sup
-                else None
-            ),
+            "order": order,
+            **(prod or {}),
+            "supplier": sup,
             "meta": {
                 "lang": lang,
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "source": "qc-snapshot",  # 過渡管道標記；服務帳號接線後改 replica 標記
+                "cache": {"order": hit_order, "product": hit_prod, "supplier": hit_sup},
             },
         }
         # 第二道防線：只掃自組區塊（商品目錄內容豁免，見 PII_GUARD_SECTIONS 註解）
         assert_no_pii_keys({k: data.get(k) for k in PII_GUARD_SECTIONS})
-        _audit(oid, "fetched", t0)
-        return EvidenceResult("fetched", data)
+        status = "cache_hit" if all_hit else "fetched"
+        _audit(oid, status, t0)
+        return EvidenceResult(status, data)
+    except BreakerOpen:
+        _audit(oid, "breaker_open", t0)
+        return EvidenceResult("degraded_unavailable")
     except pg_errors.QueryCanceled:
+        _breaker_record(False)
         _audit(oid, "timeout", t0)
         return EvidenceResult("degraded_unavailable")
     except (psycopg2.OperationalError, psycopg2.InterfaceError, pg_pool.PoolError):
+        _breaker_record(False)
         _audit(oid, "conn_fail", t0)
+        return EvidenceResult("degraded_unavailable")
+    except TimeoutError:
+        # single-flight follower 等 leader 逾時（leader 卡死/池耗盡）——降級不重試
+        _audit(oid, "singleflight_timeout", t0)
         return EvidenceResult("degraded_unavailable")
     except Exception:
         _log.exception("evidence fetch unexpected error order_oid=%s", oid)

@@ -165,3 +165,231 @@ def test_get_evidence_disabled(monkeypatch):
     monkeypatch.setattr(qc_evidence, "_cfg_cache", {**qc_evidence._cfg(), "enabled": False})
     r = qc_evidence.get_evidence("123")
     assert r.status == "degraded_unavailable"
+
+
+# ── S3：single-flight / 熔斷 / 兩級快取 ─────────────────────────────────────────────────
+@pytest.fixture()
+def _isolated_state(monkeypatch, tmp_path):
+    """隔離 S3 模組級狀態：快取目錄導向 tmp、重置快取單例與熔斷計數。"""
+    monkeypatch.setattr(qc_evidence.paths, "EVIDENCE_CACHE_DIR", tmp_path / "ec")
+    monkeypatch.setattr(qc_evidence, "_cache", None)
+    monkeypatch.setattr(qc_evidence, "_breaker_fails", 0)
+    monkeypatch.setattr(qc_evidence, "_breaker_opened_at", 0.0)
+    yield
+    qc_evidence.set_current(None)
+
+
+def test_singleflight_merges_concurrent_calls(_isolated_state):
+    """同 key 併發 → 底層 fn 只執行一次，所有呼叫者共享同一結果。"""
+    import threading as th
+
+    calls = []
+    gate = th.Event()
+
+    def slow_fn():
+        calls.append(1)
+        gate.wait(timeout=2)
+        return "value"
+
+    results = []
+    threads = [
+        th.Thread(target=lambda: results.append(qc_evidence._singleflight("k1", slow_fn)))
+        for _ in range(5)
+    ]
+    for t in threads:
+        t.start()
+    import time as _t
+
+    _t.sleep(0.2)  # 等 follower 全部掛上 future
+    gate.set()
+    for t in threads:
+        t.join(timeout=5)
+    assert len(calls) == 1, "底層 fn 應只執行一次"
+    assert results == ["value"] * 5
+
+
+def test_singleflight_propagates_leader_exception(_isolated_state):
+    """leader 拋例外 → follower 原樣收到（不靜默吞掉）。"""
+    import threading as th
+
+    gate = th.Event()
+
+    def bad_fn():
+        gate.wait(timeout=2)
+        raise RuntimeError("boom")
+
+    errors = []
+
+    def _follower():
+        try:
+            qc_evidence._singleflight("k2", bad_fn)
+        except RuntimeError as e:
+            errors.append(str(e))
+
+    threads = [th.Thread(target=_follower) for _ in range(3)]
+    for t in threads:
+        t.start()
+    import time as _t
+
+    _t.sleep(0.2)
+    gate.set()
+    for t in threads:
+        t.join(timeout=5)
+    assert errors == ["boom"] * 3
+
+
+def test_breaker_opens_after_threshold_and_half_opens(_isolated_state, monkeypatch):
+    """連續失敗達閾值 → BreakerOpen；冷卻過後放行一次探測（half-open）；成功清零。"""
+    threshold = int((qc_evidence._cfg().get("db") or {}).get("breaker_threshold", 5))
+    for _ in range(threshold):
+        qc_evidence._breaker_record(ok=False)
+    with pytest.raises(qc_evidence.BreakerOpen):
+        qc_evidence._breaker_allow()
+    # 冷卻已過（把開啟時刻撥回過去）→ 放行探測
+    monkeypatch.setattr(qc_evidence, "_breaker_opened_at", 1.0)
+    qc_evidence._breaker_allow()  # 不拋＝half-open 放行
+    qc_evidence._breaker_record(ok=True)
+    assert qc_evidence._breaker_fails == 0
+
+
+def _stub_bundles(monkeypatch, counters):
+    """打樁三個 DB 實查 bundle（計數呼叫次數，不觸網）。"""
+    monkeypatch.setattr(
+        qc_evidence,
+        "_fetch_order_bundle",
+        lambda creds, oid: (
+            counters.__setitem__("order", counters["order"] + 1)
+            or {
+                "order_oid": int(oid),
+                "order_mid": "26KK1",
+                "order_status": "GO",
+                "price_pay": 1.0,
+                "lang_code": "zh-tw",
+                "crt_dt": "2026-01-01T00:00:00",
+                "prod_oid": 11,
+                "prod_version": 22,
+                "pkg_oid": 33,
+                "item_oid": 44,
+                "supplier_oid": 55,
+                "lst_dt_go": "2026-02-01T00:00:00",
+                "timezone": "Asia/Taipei",
+                "package_name": "pkg",
+                "prod_desc": "desc",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        qc_evidence,
+        "_fetch_product_bundle",
+        lambda creds, order, lang: (
+            counters.__setitem__("prod", counters["prod"] + 1)
+            or {
+                "product_lang": {"item_summary": []},
+                "product_setting": {"category": "M01"},
+                "pkg_basic": None,
+                "module_setting": None,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        qc_evidence,
+        "_fetch_supplier_bundle",
+        lambda creds, sup_oid: (
+            counters.__setitem__("sup", counters["sup"] + 1)
+            or {"supplier_name": "s", "order_handler": "KKDAY", "msg_handler": "KKDAY"}
+        ),
+    )
+
+
+def test_get_evidence_two_level_cache_hit(_isolated_state, monkeypatch):
+    """首查 fetched（實查一次）；重查 cache_hit（DB 零觸碰）；meta.cache 旗標正確。"""
+    counters = {"order": 0, "prod": 0, "sup": 0}
+    _stub_bundles(monkeypatch, counters)
+    qc_evidence.set_current(
+        {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
+    )
+
+    r1 = qc_evidence.get_evidence("123")
+    assert r1.status == "fetched"
+    assert counters == {"order": 1, "prod": 1, "sup": 1}
+
+    r2 = qc_evidence.get_evidence("123")
+    assert r2.status == "cache_hit"
+    assert counters == {"order": 1, "prod": 1, "sup": 1}, "快取命中不得再觸 DB"
+    assert r2.data["meta"]["cache"] == {"order": True, "product": True, "supplier": True}
+
+
+def test_get_evidence_product_cache_shared_across_orders(_isolated_state, monkeypatch):
+    """同商品版本的另一張訂單：order 級實查、商品級/供應商級快取共用（兩級去重語義）。"""
+    counters = {"order": 0, "prod": 0, "sup": 0}
+    _stub_bundles(monkeypatch, counters)
+    qc_evidence.set_current(
+        {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
+    )
+
+    qc_evidence.get_evidence("123")
+    r2 = qc_evidence.get_evidence("456")  # 不同 order_oid、stub 回同 prod/ver/pkg
+    assert r2.status == "fetched"  # order 級是新查
+    assert counters["order"] == 2
+    assert counters["prod"] == 1, "同商品版本應命中商品級快取"
+    assert counters["sup"] == 1
+
+
+def test_get_evidence_not_found_not_cached(_isolated_state, monkeypatch):
+    """查無此單不落快取：資料補上後重查應能查到（避免暫態 not_found 長駐）。"""
+    state = {"exists": False}
+    monkeypatch.setattr(
+        qc_evidence,
+        "_fetch_order_bundle",
+        lambda creds, oid: ({"order_oid": 1} | _minimal_order()) if state["exists"] else None,
+    )
+    qc_evidence.set_current(
+        {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
+    )
+    assert qc_evidence.get_evidence("999").status == "not_found"
+    state["exists"] = True
+    _stub_rest(monkeypatch)
+    assert qc_evidence.get_evidence("999").status == "fetched"
+
+
+def _minimal_order() -> dict:
+    """not_found 測試用最小 order dict。"""
+    return {
+        "order_mid": "26KK9",
+        "order_status": "GO",
+        "price_pay": 1.0,
+        "lang_code": "zh-tw",
+        "crt_dt": "t",
+        "prod_oid": 1,
+        "prod_version": 2,
+        "pkg_oid": 3,
+        "item_oid": 4,
+        "supplier_oid": 5,
+        "lst_dt_go": "t",
+        "timezone": "tz",
+        "package_name": "p",
+        "prod_desc": "d",
+    }
+
+
+def _stub_rest(monkeypatch):
+    """補 stub 商品/供應商 bundle（not_found 測試後半用）。"""
+    monkeypatch.setattr(
+        qc_evidence,
+        "_fetch_product_bundle",
+        lambda creds, order, lang: {
+            "product_lang": None,
+            "product_setting": None,
+            "pkg_basic": None,
+            "module_setting": None,
+        },
+    )
+    monkeypatch.setattr(
+        qc_evidence, "_fetch_supplier_bundle", lambda creds, sup_oid: {"supplier_name": "s"}
+    )
+
+
+def test_ttl_knobs_read_config():
+    """兩級 TTL 讀 config：order 短（小時級）、product 長（天級）——R6 差異化政策。"""
+    assert qc_evidence._order_ttl_s() == 6 * 3600
+    assert qc_evidence._product_ttl_s() == 30 * 86400
