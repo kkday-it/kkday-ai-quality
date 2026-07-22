@@ -103,6 +103,8 @@ export interface AttributionContent {
   summary_langs?: Record<string, string>;
   evidence?: string;
   action?: string;
+  /** 判決當時注入 prompt 的訂單佐證摘要（稽核 C-1/C-6 分流用；空＝無佐證）。 */
+  evidence_citation?: string;
 }
 
 /**
@@ -127,6 +129,10 @@ export interface Attribution {
   is_primary?: boolean;
   /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——初判徽章用。 */
   status?: string;
+  /** 佐證取數狀態（fetched/cache_hit/degraded_*…；null＝未走佐證流程的舊資料）。 */
+  evidence_status?: string;
+  /** 佐證取數時刻（ISO；人工複核判斷資料新鮮度）。 */
+  evidence_fetched_at?: string;
 }
 
 /**
