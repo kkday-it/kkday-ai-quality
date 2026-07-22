@@ -44,6 +44,21 @@ def test_assert_no_pii_keys_ignores_values():
     qc_evidence.assert_no_pii_keys({"desc": "請聯繫 contact_email 客服信箱"})  # 不拋即通過
 
 
+def test_pii_guard_scope_exempts_product_content():
+    """防線只掃自組區塊：商品目錄 JSONB 的 spec 標籤（如 passportNo）不得誤殺（Phase A 實測教訓）。"""
+    assert "product_lang" not in qc_evidence.PII_GUARD_SECTIONS
+    assert "product_setting" not in qc_evidence.PII_GUARD_SECTIONS
+    assert set(qc_evidence.PII_GUARD_SECTIONS) == {"order", "supplier", "meta"}
+    # 模擬 get_evidence 的作用域裁剪：商品內容含 passportNo spec 標籤 → 通過
+    data = {
+        "order": {"order_mid": "26KK1"},
+        "supplier": {"supplier_name": "s"},
+        "meta": {"lang": "zh-tw"},
+        "product_setting": {"item_summary": [{"spec": {"passportNo": {"required": True}}}]},
+    }
+    qc_evidence.assert_no_pii_keys({k: data.get(k) for k in qc_evidence.PII_GUARD_SECTIONS})
+
+
 # ── resolve_credentials ──────────────────────────────────────────────────────────────────
 def _settings_with(env: str, *, password: str = "pw") -> dict:
     """組一份含單一 active QC config 的 user settings 樣板。"""

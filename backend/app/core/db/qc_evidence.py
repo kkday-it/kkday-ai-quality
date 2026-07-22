@@ -295,6 +295,12 @@ PII_KEYWORDS: tuple[str, ...] = (
     "access_token",
 )
 
+# PII key 防線的作用域：只掃「我們自組」的區塊（order/supplier/meta——欄位由 allow-list SQL
+# 決定，出現 PII 關鍵字＝投影被誤改）。商品內容區塊（product_lang/product_setting/pkg_basic/
+# module_setting）豁免——那是商品目錄 JSONB，key 由商品方自訂，`passportNo` 等字樣是「要求旅客
+# 填護照」的 spec 欄位標籤（商品內容非旅客個資），Phase A 實測 44% 誤殺率，故不掃。
+PII_GUARD_SECTIONS: tuple[str, ...] = ("order", "supplier", "meta")
+
 # 模組內全部投影 SQL（tests 掃描入口；新增點查必須登記於此，否則 PII 斷言測試會漏掃）。
 ALL_PROJECTION_SQL: tuple[str, ...] = (
     _SQL_ORDER_TBL,
@@ -440,7 +446,8 @@ def get_evidence(order_oid: str | int | None) -> EvidenceResult:
                 "source": "qc-snapshot",  # 過渡管道標記；服務帳號接線後改 replica 標記
             },
         }
-        assert_no_pii_keys(data)  # 第二道防線：投影被誤改時 fail-loud（轉 error 降級）
+        # 第二道防線：只掃自組區塊（商品目錄內容豁免，見 PII_GUARD_SECTIONS 註解）
+        assert_no_pii_keys({k: data.get(k) for k in PII_GUARD_SECTIONS})
         _audit(oid, "fetched", t0)
         return EvidenceResult("fetched", data)
     except pg_errors.QueryCanceled:
