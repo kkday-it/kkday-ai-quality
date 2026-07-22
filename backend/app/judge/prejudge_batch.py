@@ -23,6 +23,7 @@ from contextvars import copy_context
 from app.core import db, pricing
 from app.core import settings as app_settings
 from app.core.config import env, is_production
+from app.core.db import qc_evidence
 from app.judge import prejudge, run_log
 from app.judge.llm import client
 
@@ -301,6 +302,7 @@ def _run(
     cache_read: bool = True,
     triggered_by: str = "",
     prompt_versions: dict[str, int] | None = None,
+    qc_cfg: dict | None = None,
 ) -> None:
     """背景執行整批初判：注入設定 contextvar → 分塊撈 item → 有背壓地逐筆提交（支援暫停/取消）→ 標記結束。"""
     # 正式環境 stub 第二道防線（主閘在 judgment router）：擋繞過 API 直呼 start_job 的路徑
@@ -329,6 +331,12 @@ def _run(
         eff = {**eff, "reasoning_effort": capped_effort}
     # 在背景 thread 的 context 內 set 好 contextvar，稍後每筆任務 copy_context 快照即帶上。
     app_settings.set_current(eff)
+    # 訂單佐證憑證注入（同 contextvar 手法）：啟動前輕量探測，失敗→整批走無佐證降級
+    # （不逐筆撞 timeout，R9/R13 前置防線）；佐證失敗永不阻斷判決批次。
+    if qc_cfg is not None and not qc_evidence.probe(qc_cfg):
+        _log.warning("job=%s 佐證 DB 啟動探測失敗，本批全走無佐證降級", job_id)
+        qc_cfg = None
+    qc_evidence.set_current(qc_cfg)
     # P1b flex 回退量測：job 始末取全域計數差值（多 job 併發時含他 job 流量，量測全域占比可接受）
     flex_before = client.flex_stats()
     # LLM exact-cache 讀取閘：批次開（重用規則未變部分·零 token）；顯式重新初判關（使用者要求真的重打）
@@ -554,6 +562,7 @@ def start_job(
     params: dict | None = None,
     cache_read: bool = True,
     prompt_versions: dict[str, int] | None = None,
+    qc_cfg: dict | None = None,
 ) -> str:
     """註冊並背景啟動一個初判歸因批量任務；立即回 job_id（不阻塞請求）。
 
@@ -570,6 +579,8 @@ def start_job(
         cache_read: LLM exact-cache 讀取閘（批次 True＝重用規則未變部分；顯式單筆/選取重新初判 False＝真的重打。寫入恆開）。
         prompt_versions: 使用者指定的 prompt 版本覆蓋（{rule_code: version}；版本選擇功能，正式初判
             不支援草稿，僅支援指定歷史版本——見 app.judge.prompt_source.load 的 versions 參數）。
+        qc_cfg: 訂單佐證 DB 憑證（qc_evidence.resolve_credentials 產；None＝本批全走
+            無佐證降級）。啟動時已一次性快照密碼，批次中 user 改設定不影響進行中 job。
 
     Returns:
         job_id（前端據此輪詢 get_job）。
@@ -598,7 +609,17 @@ def start_job(
         _log.exception("歸因歷史建檔失敗 job=%s", job_id)
     threading.Thread(
         target=_run,
-        args=(job_id, item_ids, eff, model, source, cache_read, triggered_by, prompt_versions),
+        args=(
+            job_id,
+            item_ids,
+            eff,
+            model,
+            source,
+            cache_read,
+            triggered_by,
+            prompt_versions,
+            qc_cfg,
+        ),
         name=f"prejudge-{job_id}",
         daemon=True,
     ).start()

@@ -313,7 +313,7 @@ def structure() -> dict[str, Any]:
     evidence_gated）+ facet 子樹（可變深度）。程式碼零 taxonomy 假設，prompt 改 → reload → 全換。
 
     Returns:
-        {"domains": [{domain, domain_label, action, owner, evidence_gated, facets:[{code,label}], tree}, ...]}。
+        {"domains": [{domain, domain_label, action, owner, evidence_gated, evidence_ref, facets:[{code,label}], tree}, ...]}。
     """
     out: list[dict[str, Any]] = []
     for pid in DOMAIN_PROMPT_IDS:
@@ -325,6 +325,7 @@ def structure() -> dict[str, Any]:
                 "action": str(root.get("action", "")),
                 "owner": str(root.get("owner", "")),
                 "evidence_gated": bool(root.get("evidence_gated", False)),
+                "evidence_ref": bool(root.get("evidence_ref", False)),
                 "facets": _flatten_taxonomy(root),
                 "tree": root.get("children") or [],
             }

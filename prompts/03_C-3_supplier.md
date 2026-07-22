@@ -197,12 +197,16 @@ NEVER 因「找不到更貼切的面向」而硬歸低信心 code。
 <feedback_text>
 {TEXT}
 </feedback_text>
+<order_snapshot>
+{ORDER_SNAPSHOT}
+</order_snapshot>
+（order_snapshot＝下單當時的訂單/商品快照佐證，可能為空；為空時依反饋原文判斷。反饋與快照有出入時，以快照所載「當時頁面寫了什麼／退改規則為何」為客觀事實錨點，據此區分「頁面確實沒寫/寫錯」與「頁面已寫清、旅客誤讀」。）
 ```
 
 ## Taxonomy
 
 ```json
-{"code":"supplier","label":"供應商履約","action":"penalize_breach","owner":"","evidence_gated":true,
+{"code":"supplier","label":"供應商履約","action":"penalize_breach","owner":"","evidence_gated":true,"evidence_ref":true,
  "children":[
   {"code":"C-3-1","label":"人員服務"},
   {"code":"C-3-2","label":"駕駛接送"},

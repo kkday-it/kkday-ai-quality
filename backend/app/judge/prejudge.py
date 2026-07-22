@@ -500,6 +500,7 @@ def _resolve_attrs_multi(
     *,
     versions: dict[str, int] | None = None,
     candidate_pids: list[str] | None = None,
+    order_snapshot: str = "",
 ) -> list[dict]:
     """負向/混合中性評論 → 多條淨化 attr dict：域並行歸因（`_attrs_pack`）→ 合流尾段共用閘門（`_gate_attrs`）。
 
@@ -512,14 +513,32 @@ def _resolve_attrs_multi(
     """
     if client.is_stub():  # stub 無法真歸因：回空（負向但無違規線 → pending_data）
         return []
-    attrs = _attrs_pack(item, text, model, max_n, polarity, versions=versions, pids=candidate_pids)
+    attrs = _attrs_pack(
+        item,
+        text,
+        model,
+        max_n,
+        polarity,
+        versions=versions,
+        pids=candidate_pids,
+        order_snapshot=order_snapshot,
+    )
     gated = _gate_attrs(attrs, max_n)
     if candidate_pids is not None and not gated:
         from app.judge import prompt_source
 
         rest = [p for p in prompt_source.DOMAIN_PROMPT_IDS if p not in set(candidate_pids)]
         if rest:  # 兜底：候選全空手 → 補跑其餘域（合流時帶上候選域產出一起過閘門）
-            attrs += _attrs_pack(item, text, model, max_n, polarity, versions=versions, pids=rest)
+            attrs += _attrs_pack(
+                item,
+                text,
+                model,
+                max_n,
+                polarity,
+                versions=versions,
+                pids=rest,
+                order_snapshot=order_snapshot,
+            )
             gated = _gate_attrs(attrs, max_n)
     return gated
 
@@ -568,6 +587,10 @@ def to_findings(
     from app.judge import domain_router
 
     decision = domain_router.decide(text, polarity)
+    # 訂單佐證（訂單佐證閉環）：過閘門才取（D1）；失敗永不阻斷（qc_evidence 統一降級）
+    order_snapshot, ev_status, ev_fetched_at = _fetch_order_snapshot_digest(
+        item, None if decision.shadow else decision.pids
+    )
     attrs = _resolve_attrs_multi(
         item,
         text,
@@ -576,14 +599,26 @@ def to_findings(
         polarity,
         versions=versions,
         candidate_pids=None if decision.shadow else decision.pids,
+        order_snapshot=order_snapshot,
     )
     if decision.shadow and decision.pids is not None:
         domain_router.report_shadow(decision, attrs, source=src, source_id=source_id)
+
+    def _stamp(fs: list[TicketFinding]) -> list[TicketFinding]:
+        # 佐證留痕：本 item 的取數結果統一附給所有 findings（item 級事實；稽核 C-1/C-6 分流用）
+        for f in fs:
+            f.evidence_status = ev_status
+            f.evidence_citation = order_snapshot
+            f.evidence_fetched_at = ev_fetched_at
+        return fs
+
     if not attrs:
         if (
             polarity != "negative"
         ):  # 混合中性但未找到具體問題點 → 純 non_issue（整體無礙，無需補數據）
-            return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
+            return _route(
+                _stamp([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
+            )
         f = _non_issue_finding(
             item, "negative", used_model, sentiment=sentiment
         )  # 負向但全無法歸類 → 單筆未歸因（pending_data）
@@ -591,7 +626,7 @@ def to_findings(
         f.confidence_tier = "needs_review"
         f.needs_review = True
         f.evidence_quote = text[:200]
-        return _route([f])
+        return _route(_stamp([f]))
     findings: list[TicketFinding] = []
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同(域,面向)去重
         f = _attributed_finding(
@@ -603,7 +638,7 @@ def to_findings(
         )
         f.is_primary = i == 0  # 信心最高一條為主歸因
         findings.append(f)
-    return _route(findings)
+    return _route(_stamp(findings))
 
 
 def _attribute_when() -> frozenset[str]:
@@ -778,13 +813,109 @@ def _finalize_attr_l2(
 
 # ── Prompt-as-Source 引擎：極性 + 六域並行歸因 ────────────────────────────
 # 初判 prompt 唯一真相源＝prompts/*.md（DB active 版可線上熱編，見 prompt_source）。
-def _render_pack_user(template: str, text: str, polarity: str) -> str:
-    """填 prompt user 模板槽位（{TEXT}/{POLARITY}）。
+def _render_pack_user(template: str, text: str, polarity: str, order_snapshot: str = "") -> str:
+    """填 prompt user 模板槽位（{TEXT}/{POLARITY}/{ORDER_SNAPSHOT}）。
 
     用 replace 而非 str.format——md 未來若在 user 節放 JSON 範例，裸大括號會令 format() 拋錯；
-    replace 只換明確槽位、對其他字元零副作用。
+    replace 只換明確槽位、對其他字元零副作用。{ORDER_SNAPSHOT} 只有 evidence_ref 域的模板
+    有此槽（無槽＝no-op），故統一傳參、呼叫端零域別判斷；polarity 閘門不傳（D1 初判不取佐證）。
     """
-    return template.replace("{TEXT}", text).replace("{POLARITY}", polarity)
+    return (
+        template.replace("{TEXT}", text)
+        .replace("{POLARITY}", polarity)
+        .replace("{ORDER_SNAPSHOT}", order_snapshot)
+    )
+
+
+def _clip(s: str, n: int) -> str:
+    """截斷至 n 字（超長補 …）；摘要器逐欄防爆用。"""
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _summarize_evidence(data: dict) -> str:
+    """佐證 payload → prompt 摘要文字（白名單欄位拼接；逐欄截斷 + 總長封頂）。
+
+    輸出同時作為 finding.evidence_citation 落庫（稽核「判決當時看到什麼」）。
+    欄位缺漏/null（如 sale_time_result）靜默跳過，不拋錯。
+    """
+    from app.core.db import qc_evidence
+
+    scfg = qc_evidence.summary_cfg()
+    per = int(scfg.get("max_chars_per_field", 500))
+    total = int(scfg.get("max_total_chars", 1800))
+    o = data.get("order") or {}
+    lines = ["【訂單佐證（下單當時快照）】"]
+    lines.append(
+        _clip(
+            f"訂單：{o.get('order_mid')}｜狀態 {o.get('order_status')}｜實付 {o.get('price_pay')}"
+            f"｜下單 {o.get('crt_dt')}｜使用日 {o.get('lst_dt_go')}（{o.get('timezone')}）"
+            f"｜下單語系 {o.get('lang_code')}",
+            per,
+        )
+    )
+    lines.append(_clip(f"商品：{o.get('prod_desc')}｜方案：{o.get('package_name')}", per))
+    ps = data.get("product_setting") or {}
+    pb = data.get("pkg_basic") or {}
+    if pb.get("cancel_policy_client") is not None:
+        lines.append(
+            _clip("退改政策：" + json.dumps(pb["cancel_policy_client"], ensure_ascii=False), per)
+        )
+    if pb.get("tour_duration") is not None:
+        lines.append(_clip("行程時長：" + json.dumps(pb["tour_duration"], ensure_ascii=False), per))
+    if ps.get("description_module"):
+        lines.append(
+            _clip(
+                "頁面文案模組（下單語系）："
+                + json.dumps(ps["description_module"], ensure_ascii=False),
+                per,
+            )
+        )
+    sup = data.get("supplier") or {}
+    if sup:
+        lines.append(
+            _clip(
+                f"供應商：{sup.get('supplier_name')}｜訂單處理 {sup.get('order_handler')}"
+                f"｜訊息處理 {sup.get('msg_handler')}",
+                per,
+            )
+        )
+    out = "\n".join(lines)
+    return _clip(out, total)
+
+
+def _fetch_order_snapshot_digest(
+    item: dict, candidate_pids: list[str] | None
+) -> tuple[str, str, str]:
+    """判決歸因前的訂單佐證獲取（D1：僅過 polarity 閘門的 negative/neutral 到此）。
+
+    不取的情況（省 production 點查）：stub 模式（無法真歸因）、全域皆未標 evidence_ref、
+    域路由候選全不在 evidence_ref 清單。
+
+    Returns:
+        (digest_text, evidence_status, fetched_at)；無佐證時 digest 為空字串
+        （{ORDER_SNAPSHOT} 槽替換為空、域 prompt 依「為空時依原文判斷」降級措辭）。
+        evidence_status 空字串＝本筆未走佐證流程（與取數失敗語義分離）。
+    """
+    if client.is_stub():
+        return "", "", ""
+    ref = ai_judge.evidence_ref_domains()
+    if not ref:
+        return "", "", ""
+    if candidate_pids is not None:
+        # pid 形如 "01_C-1_content" → 域機器值＝第三段；全不在 evidence_ref 域 → 不取
+        doms = {p.split("_", 2)[2] for p in candidate_pids if p.count("_") >= 2}
+        if not (doms & ref):
+            return "", "", ""
+    order_oid = str(item.get("order_oid") or (item.get("raw") or {}).get("order_oid") or "").strip()
+    if not order_oid:
+        return "", "no_order_oid", ""
+    from app.core.db import qc_evidence
+
+    result = qc_evidence.get_evidence(order_oid)
+    if result.status not in ("fetched", "cache_hit") or not result.data:
+        return "", result.status, ""
+    fetched_at = (result.data.get("meta") or {}).get("fetched_at", "")
+    return _summarize_evidence(result.data), result.status, fetched_at
 
 
 def _pack_polarity(
@@ -829,6 +960,7 @@ def _attrs_pack(
     *,
     versions: dict[str, int] | None = None,
     pids: list[str] | None = None,
+    order_snapshot: str = "",
 ) -> list[dict]:
     """域並行歸因：各域 prompt 獨立判本域問題 → 合流淨化 attr dict 清單。
 
@@ -871,7 +1003,7 @@ def _attrs_pack(
             try:
                 out = _call(
                     p["system"],
-                    _render_pack_user(p["user_template"], text, polarity),
+                    _render_pack_user(p["user_template"], text, polarity, order_snapshot),
                     "attribute",
                     model,
                     schema=p["schema"],

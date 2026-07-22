@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.core import auth, db
 from app.core import settings as app_settings
 from app.core.config import env, is_production
+from app.core.db import qc_evidence
 from app.core.permissions import permission_keys, require_permission
 from app.judge import prejudge_batch, run_log
 
@@ -281,6 +282,9 @@ def start_prejudge(
     eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
     _guard_not_stub_in_production(eff)
     model = eff.get("model", "")
+    # 訂單佐證憑證（訂單佐證閉環）：env 服務帳號優先 → fallback 觸發者 production QC 連線；
+    # None＝本批全走無佐證降級（不擋批次啟動）
+    qc_cfg = qc_evidence.resolve_credentials(s)
 
     item_ids = _resolve_target_ids(body)
 
@@ -314,6 +318,7 @@ def start_prejudge(
         # exact-cache 讀取閘：批次（scope 目標選取）重用規則未變部分；顯式單筆/選取重新初判＝使用者要求真的重打
         cache_read=(kind == "batch"),
         prompt_versions=body.prompt_versions,
+        qc_cfg=qc_cfg,
     )
     return {
         "job_id": job_id,

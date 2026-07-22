@@ -28,6 +28,9 @@ _domain_owner: dict[
 _domain_evidence_gated: set[str] = (
     set()
 )  # 需外部訂單佐證才可高信心的域（自 `## Taxonomy` root evidence_gated）
+_domain_evidence_ref: set[str] = (
+    set()
+)  # 判決 prompt 注入訂單佐證（{ORDER_SNAPSHOT} 槽）的域（自 `## Taxonomy` root evidence_ref）
 _cascade: list[
     dict[str, Any]
 ] = []  # 前端級聯選項（巢狀 {value,label,children}；L1 value=域機器值，L2 value=面向 code）
@@ -79,6 +82,8 @@ def _ensure_loaded() -> None:
             _domain_owner[domain] = owner
         if d.get("evidence_gated"):  # 域→需外部訂單佐證（自 `## Taxonomy` root）
             _domain_evidence_gated.add(domain)
+        if d.get("evidence_ref"):  # 域→prompt 注入訂單佐證（與 evidence_gated 信心封頂分離）
+            _domain_evidence_ref.add(domain)
         facets = d.get("facets") or []
         for f in facets:
             leaf = _leaf_record(
@@ -133,6 +138,7 @@ def reload() -> None:
     _domain_action.clear()
     _domain_owner.clear()
     _domain_evidence_gated.clear()
+    _domain_evidence_ref.clear()
     _cascade.clear()
     _loaded = False
     from app.judge import prompt_source
@@ -161,6 +167,16 @@ def evidence_gated_domains() -> frozenset[str]:
     """
     _ensure_loaded()
     return frozenset(_domain_evidence_gated)
+
+
+def evidence_ref_domains() -> frozenset[str]:
+    """判決 prompt 注入訂單佐證的域集合（自各域 `## Taxonomy` root 的 evidence_ref）。
+
+    與 evidence_gated（缺 order_oid 信心封頂）語義分離：evidence_ref 只決定該域 user
+    template 是否消費 {ORDER_SNAPSHOT} 槽；prejudge 據此決定要不要打 production 取數。
+    """
+    _ensure_loaded()
+    return frozenset(_domain_evidence_ref)
 
 
 def domain_action(code: str) -> str:

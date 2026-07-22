@@ -64,6 +64,26 @@ def reload() -> None:
         _cfg_cache = None
 
 
+def summary_cfg() -> dict:
+    """摘要器旋鈕（summary 區塊複本；prejudge._summarize_evidence 消費）。"""
+    return dict(_cfg().get("summary") or {})
+
+
+def probe(creds: dict) -> bool:
+    """輕量連線探測（job 啟動前，R9）：SELECT 1；任何失敗回 False（呼叫端整批降級）。
+
+    不經快取/single-flight/熔斷——目的就是驗證「現在連得上嗎」本身。
+    """
+    try:
+        with _borrow(creds) as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:  # noqa: BLE001 —— 探測失敗原因一律記 log 後降級，不拋
+        _log.warning("evidence DB probe failed", exc_info=True)
+        return False
+
+
 # ── 憑證（contextvar：批次啟動時 set 一次，ThreadPool worker 經 copy_context 繼承）──────────
 _current_creds: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "qc_evidence_creds", default=None
