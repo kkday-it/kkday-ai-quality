@@ -127,7 +127,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | PATCH | `/api/findings/{id}/verdict` · `/batch/verdict` | 單筆/批量歸因人工判決（確認/駁回/new＝撤銷回待判決；同值冪等、轉移記入歸因歷史）。需權限，記判決人/判決時間 audit |
 | GET | `/api/auth/me`·`/permissions` | 當前身分（本地固定身分，無登入系統）+ 當前 user 權限清單（身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`；be2 `auth.business-list` 形狀 `{value,ttl}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
-| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。登入即可用（qc+admin 皆有 `data.datapack.import`）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
+| POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。現行 `data.datapack.import` 在 `default`（人人可用）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
 
 > 完整 API：啟動後開 Swagger UI http://localhost:8100/docs
 

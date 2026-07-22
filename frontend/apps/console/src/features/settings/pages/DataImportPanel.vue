@@ -3,7 +3,7 @@
  * 💾 資料導入面板（配置抽屜第 4 tab）。
  * 上傳資料包 zip（由 scripts/tools/dump_datapack.py 產生）→ 乾跑校驗預覽 → type-to-confirm →
  * 背景匯入 + SSE 逐表進度。安全：只灌白名單表、不執行 SQL（見後端 datapack）。
- * 權限：需 data.datapack.import——現 qc+admin 皆有（登入即可用；role_permissions.json 拍板），入口 tab 由
+ * 權限：需 data.datapack.import——現在 permissions.json 的 default 清單中（人人可用），入口 tab 由
  * SettingsDrawer 以 can(PERM.dataDatapackImport) v-if 過濾，後端端點亦掛 require_permission 兜底。
  */
 import { ref, computed, onUnmounted } from 'vue';

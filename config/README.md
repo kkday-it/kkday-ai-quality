@@ -8,9 +8,8 @@
 - `sources.json` — 5 來源 code → label / natural_key（sources loader）
 - `product_vertical.json` — 商品垂直分類分組 → CATEGORY 代碼 + `group_order` 顯示順序（jsonb 不保 key 序，故顯式存；product_vertical 默認 seed）
 - `qc_db.json` — QC DB 連線預設
-- `roles.json` — 輕量 RBAC 白名單（admins email 清單 + defaultRole；後端 auth.role_for 每請求即時派生，改名單免重登入）
-- `role_permissions.json` — 角色 → business-key 權限集合 SSOT（admin `["*"]` 全量、qc 質檢子集；key 定義見 `backend/app/core/permissions/permission_keys.py`；LocalPermissionProvider 讀此）
-- `auth.config.json` — 權限 provider 切換開關（`provider`=local｜be2·唯一替換點）+ `whiteList`（be2 免權限路徑預留）+ `businessListTtlMs`（前端權限清單快取 TTL）
+- `permissions.json` — 無角色，email 直接授予 business-key 權限集合 SSOT：`no_auth_grant_all`（本地無登入時無條件全通過）+ `default`（人人可用的日常操作 key）+ `grants`（email → 額外 key 集合，`'*'` 展開為全量；key 定義見 `backend/app/core/permissions/permission_keys.py`；`LocalPermissionProvider` 讀此，`default ∪ grants[email]`）
+- `auth.config.json` — 認證/權限 provider 切換開關：`authProvider`＝登入身分驗證（local=固定身分不驗 token｜be2=中央 Auth Service token）、`provider`＝權限來源（local=permissions.json 直接授予｜be2=Auth SVC business-list），兩鍵獨立可分開切換；`whiteList`（be2 免權限路徑預留）+ `businessListTtlMs`（前端權限清單快取 TTL）+ `be2` 段接入佔位（`authSvcUrl`/`be2LoginUrl`/`apiLangUrl`/`langPlatform`，實值待 auth team 註冊回填）
 - `export.json` — 導出行為配置（前端消費）：`gdrive_upload_folder_url`＝導出完成通知「打開 Google Drive 上傳」捷徑的**全域預設**共用資料夾 URL（使用者可於帳號抽屜「導出偏好」per-user 覆寫，存 user_settings；皆空＝退回個人 my-drive）
 
 ## ai_judge/（判準領域）
