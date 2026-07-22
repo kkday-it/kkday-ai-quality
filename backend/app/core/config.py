@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
     # ── 認證 ──
     aiq_jwt_secret: str | None = None
-    # user_settings 機密（provider_tokens/qc_passwords）at-rest 加密 passphrase；
+    # user_settings 機密（llm_tokens/qc_passwords）at-rest 加密 passphrase；
     # 未設＝明文落庫（dev 相容），設定後新寫入即加密、舊列跑 scripts/tools/encrypt_user_secrets.py。
     aiq_secret_key: str | None = None
     jwt_ttl_days: int = 7  # JWT 有效期（天）；prod 可縮短
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     llm_cache_ttl_days: int = 30  # 快取條目存活天數（過期自動失效；目錄可整刪重生）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
     # ── 訂單佐證取數服務帳號（R17 憑證抽象層的 env 注入點；SA/SD 核發 kkday_ai_quality_api_user
-    # 後於部署層設定即自動優先於 per-user qc_configs，查詢邏輯零改動。現階段留空＝走 fallback）──
+    # 後於部署層設定即自動優先於全域 qc_connections，查詢邏輯零改動。現階段留空＝走 fallback）──
     evidence_db_host: str = ""
     evidence_db_port: int = 5432
     evidence_db_user: str = ""

@@ -128,7 +128,7 @@ def run_once(tag: str, user_email: str, workers: int) -> None:
     u = db.get_user_by_email(user_email)
     if not u:
         raise SystemExit(f"❌ 找不到 user：{user_email}")
-    eff = app_settings.effective_llm_dict(app_settings.load_settings(u["user_id"]))
+    eff = app_settings.effective_llm_dict(app_settings.load_settings(), area="prejudge")
     app_settings.set_current(eff)
     if client.is_stub():
         raise SystemExit("❌ stub 模式（無 LLM token）不能量測等價性")

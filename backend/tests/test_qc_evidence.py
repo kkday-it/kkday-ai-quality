@@ -61,16 +61,15 @@ def test_pii_guard_scope_exempts_product_content():
 
 # ── resolve_credentials ──────────────────────────────────────────────────────────────────
 def _settings_with(env: str, *, password: str = "pw") -> dict:
-    """組一份含單一 active QC config 的 user settings 樣板。"""
+    """組一份含單一環境 QC 連線的全域 settings 樣板（A schema：qc_connections keyed by env）。"""
     return {
-        "active_qc_config_id": "cfg1",
-        "qc_configs": [{"id": "cfg1", "env": env, "host": "h.example", "port": 5432, "user": "u1"}],
-        "qc_passwords": {"cfg1": password},
+        "qc_connections": {env: {"host": "h.example", "port": 5432, "user": "u1"}},
+        "qc_passwords": {env: password},
     }
 
 
 def test_resolve_credentials_production_fallback():
-    """active config 為 production 且有密碼 → 解出連線參數（dbname 取 evidence.json）。"""
+    """production 環境連線且有密碼 → 解出連線參數（dbname 取 evidence.json）。"""
     creds = qc_evidence.resolve_credentials(_settings_with("production"))
     assert creds is not None
     assert creds["host"] == "h.example"
@@ -80,45 +79,23 @@ def test_resolve_credentials_production_fallback():
 
 
 def test_resolve_credentials_rejects_non_production():
-    """只有 sit config → None（佐證只准連 production，不誤連測試庫）。"""
+    """只有 sit 環境連線 → None（佐證只准連 production，不誤連測試庫）。"""
     assert qc_evidence.resolve_credentials(_settings_with("sit")) is None
 
 
-def test_resolve_credentials_inactive_production_still_resolves():
-    """active 是 sit、另有未啟用的 production config → 仍解析 production（不強迫切 active）。"""
+def test_resolve_credentials_ignores_non_production_even_with_production_present():
+    """同時配 sit 與 production 連線 → 仍只解析 production（環境各自獨立 key，不互相干擾）。"""
     s = {
-        "active_qc_config_id": "sit1",
-        "qc_configs": [
-            {"id": "sit1", "env": "sit", "host": "sit.example", "port": 5432, "user": "u1"},
-            {
-                "id": "prod1",
-                "env": "production",
-                "host": "prod.example",
-                "port": 5432,
-                "user": "u1",
-            },
-        ],
-        "qc_passwords": {"sit1": "pw-sit", "prod1": "pw-prod"},
+        "qc_connections": {
+            "sit": {"host": "sit.example", "port": 5432, "user": "u1"},
+            "production": {"host": "prod.example", "port": 5432, "user": "u1"},
+        },
+        "qc_passwords": {"sit": "pw-sit", "production": "pw-prod"},
     }
     creds = qc_evidence.resolve_credentials(s)
     assert creds is not None
     assert creds["host"] == "prod.example"
     assert creds["password"] == "pw-prod"
-
-
-def test_resolve_credentials_prefers_active_production():
-    """多個 production config 時 active 優先（deterministic 選取）。"""
-    s = {
-        "active_qc_config_id": "prod2",
-        "qc_configs": [
-            {"id": "prod1", "env": "production", "host": "a.example", "port": 5432, "user": "u1"},
-            {"id": "prod2", "env": "production", "host": "b.example", "port": 5432, "user": "u1"},
-        ],
-        "qc_passwords": {"prod1": "pw-a", "prod2": "pw-b"},
-    }
-    creds = qc_evidence.resolve_credentials(s)
-    assert creds is not None
-    assert creds["host"] == "b.example"
 
 
 def test_resolve_credentials_rejects_missing_password():

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""user_settings 機密 at-rest 加密遷移：既有明文 provider_tokens / qc_passwords → Fernet 密文。
+"""user_settings 機密 at-rest 加密遷移：既有明文 llm_tokens / qc_passwords → Fernet 密文。
 
 加解密實作在 backend/app/core/crypto.py（key＝backend/.env 的 AIQ_SECRET_KEY）；本檔掛 backend
 上 sys.path 後逐 user 讀 → 轉 → 寫回。冪等（已加密列跳過）；--decrypt 供回滾（移除 key 前先轉回明文）。
@@ -22,7 +22,7 @@ sys.path.insert(0, str(_ROOT / "backend"))
 
 from app.core import crypto, db  # noqa: E402
 
-_SECRET_KEYS = ("provider_tokens", "qc_passwords")
+_SECRET_KEYS = ("llm_tokens", "qc_passwords")
 
 
 def _list_user_ids() -> list[str]:

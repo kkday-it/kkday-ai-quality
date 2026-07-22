@@ -1,5 +1,5 @@
 {
-  "_comment": "訂單佐證（qc_evidence）子系統旋鈕：production snapshot 連線/快取/摘要參數（快取落本地 PG evidence_snapshot 表，TTL 懶清理）。純後端消費（前端不讀）。改值需重啟 backend（比照 prejudge.json 慣例可後補熱重載）。⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（per-user qc_configs 憑證）純為可行性驗證；終態＝SA/SD 核發專用 replica + 服務帳號（backend/.env AIQ_EVIDENCE_DB_* 注入，見 config.py evidence_db_*）。",
+  "_comment": "訂單佐證（qc_evidence）子系統旋鈕：production snapshot 連線/快取/摘要參數（快取落本地 PG evidence_snapshot 表，TTL 懶清理）。純後端消費（前端不讀）。改值需重啟 backend（比照 prejudge.json 慣例可後補熱重載）。⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（全項目共享 qc_connections 憑證）純為可行性驗證；終態＝SA/SD 核發專用 replica + 服務帳號（backend/.env AIQ_EVIDENCE_DB_* 注入，見 config.py evidence_db_*）。",
   "enabled": true,
   "db": {
     "dbname": "kkdb",

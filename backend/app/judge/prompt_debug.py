@@ -230,20 +230,6 @@ def defaults_payload() -> dict[str, Any]:
     }
 
 
-def build_effective_config(
-    base: dict[str, Any], overrides: dict[str, Any] | None
-) -> dict[str, Any]:
-    """套用本次執行的非機密旋鈕覆蓋；token/base_url 仍由已保存配置提供。"""
-    out = dict(base)
-    for key in ("model", "thinking", "reasoning_effort"):
-        if overrides and overrides.get(key) is not None:
-            out[key] = overrides[key]
-    # temperature=null 有明確語意：本次改用 API 預設，需能覆蓋已保存的數值。
-    if overrides and "temperature" in overrides:
-        out["temperature"] = overrides["temperature"]
-    return out
-
-
 def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[str]:
     """驗 JSON Schema + category 相依欄位；回空陣列代表完整通過。"""
     taxonomy = taxonomy or load_taxonomy()

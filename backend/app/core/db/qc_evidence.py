@@ -4,8 +4,9 @@
 本模組是唯一的 production 取數入口，設計要點：
 
 - **憑證抽象層** `resolve_credentials()`：env 服務帳號優先（`AIQ_EVIDENCE_DB_*`，SA/SD 核發後
-  於部署層注入即自動切換）→ fallback「觸發 job 的 user」的 active production QC 連線
-  （user_settings.qc_configs + 解密 qc_passwords）。job 啟動時一次性快照憑證，不中途重查。
+  於部署層注入即自動切換）→ fallback 全項目共享的 production QC 連線
+  （user_settings.qc_connections["production"] + 解密 qc_passwords["production"]）。
+  job 啟動時一次性快照憑證，不中途重查。
 - **allow-list 投影**：SQL SELECT 層面只取判決消費欄位；個資欄位（contact_email/contact_tel/
   member_uuid…）永不出現在投影 SQL——非取回再過濾（PII 防線，配 tests 斷言鎖定）。
 - **JSONB 伺服器端投影**：`ors_prod_setting` 全塊 avg ~446KB/6.2s → 投影後 ~94KB/0.5s
@@ -124,25 +125,21 @@ def _env_credentials() -> dict | None:
 
 
 def _production_config_credentials(s: dict) -> dict | None:
-    """某 user settings 內的 production QC 憑證（active 優先，否則首個有密碼者；無則 None）。
+    """全域設定的 production QC 連線憑證（無 host/user/password 任一則 None）。
 
-    佐證**只准連 production**，故不要求 user 把 active 切到 production（active 服務的是
-    資料瀏覽/上傳工作流，與佐證取數是不同關注點）。
+    A schema 改造後（2026-07-22）QC 連線由 `qc_configs[]`+`active_qc_config_id` 收斂為
+    `qc_connections`（keyed by env，每環境恰一條），故不再需要「掃多套挑 active/首個」。
     """
-    configs = [c for c in (s.get("qc_configs") or []) if c.get("env") == "production"]
-    aid = s.get("active_qc_config_id")
-    configs.sort(key=lambda c: c.get("id") != aid)  # active 排最前（stable sort）
-    passwords = s.get("qc_passwords") or {}
-    for cfg in configs:
-        pw = passwords.get(cfg.get("id")) or ""
-        if cfg.get("host") and cfg.get("user") and pw:
-            return {
-                **_base_conn(),
-                "host": cfg["host"],
-                "port": cfg.get("port") or 5432,
-                "user": cfg["user"],
-                "password": pw,
-            }
+    conn = (s.get("qc_connections") or {}).get("production") or {}
+    pw = (s.get("qc_passwords") or {}).get("production") or ""
+    if conn.get("host") and conn.get("user") and pw:
+        return {
+            **_base_conn(),
+            "host": conn["host"],
+            "port": conn.get("port") or 5432,
+            "user": conn["user"],
+            "password": pw,
+        }
     return None
 
 

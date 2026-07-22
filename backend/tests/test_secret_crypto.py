@@ -56,18 +56,18 @@ def test_settings_at_rest_encrypted(temp_db, with_key):
     uid = "u-crypto-test"
     app_settings.save_settings(
         {
-            "llm_configs": [{"label": "t", "provider": "openai", "base_url": ""}],
-            "provider_tokens": {"openai": "sk-live-9999xyz"},
+            "llm_connections": {"openai": {"base_url": ""}},
+            "llm_tokens": {"openai": "sk-live-9999xyz"},
         },
     )
     # DB 原始列：密文、無原文
     raw_row = db.load_user_settings(app_settings.GLOBAL_SETTINGS_KEY)
-    stored_tok = raw_row["provider_tokens"]["openai"]
+    stored_tok = raw_row["llm_tokens"]["openai"]
     assert stored_tok.startswith(crypto.ENC_PREFIX)
     assert "sk-live-9999xyz" not in json.dumps(raw_row)
     # load 邊界還原明文
     loaded = app_settings.load_settings(uid)
-    assert loaded["provider_tokens"]["openai"] == "sk-live-9999xyz"
+    assert loaded["llm_tokens"]["openai"] == "sk-live-9999xyz"
     # masked() 遮罩後不含原文也不含密文
     masked = app_settings.masked(uid)
     assert "sk-live-9999xyz" not in json.dumps(masked)
@@ -80,12 +80,13 @@ def test_settings_legacy_plaintext_row_readable(temp_db, with_key):
 
     uid = "u-legacy-plain"
     blank = app_settings._blank_settings()
-    blank["provider_tokens"] = {"openai": "sk-old-plain"}
+    blank["llm_connections"] = {"openai": {"base_url": ""}}
+    blank["llm_tokens"] = {"openai": "sk-old-plain"}
     db.save_user_settings(app_settings.GLOBAL_SETTINGS_KEY, blank)  # 直落明文，模擬加密上線前的舊列
 
     loaded = app_settings.load_settings(uid)
-    assert loaded["provider_tokens"]["openai"] == "sk-old-plain"
+    assert loaded["llm_tokens"]["openai"] == "sk-old-plain"
 
     app_settings.save_settings({})  # 任意 save 觸發重落庫 → 加密
     raw_row = db.load_user_settings(app_settings.GLOBAL_SETTINGS_KEY)
-    assert raw_row["provider_tokens"]["openai"].startswith(crypto.ENC_PREFIX)
+    assert raw_row["llm_tokens"]["openai"].startswith(crypto.ENC_PREFIX)

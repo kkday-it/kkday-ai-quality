@@ -1,6 +1,6 @@
 """機密 at-rest 加密（Fernet 對稱加密；key 來自 backend/.env 的 AIQ_SECRET_KEY）。
 
-user_settings 的 provider_tokens / qc_passwords 落庫前加密、讀出後解密——邊界統一在
+user_settings 的 llm_tokens / qc_passwords 落庫前加密、讀出後解密——邊界統一在
 app/core/settings.py 的 load/save，其餘模組（judge 路徑、端點）永遠只見明文，零改動。
 
 設計：

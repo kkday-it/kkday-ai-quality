@@ -1,17 +1,21 @@
-"""設定持久化（per-user，存 DB user_settings 表）——多套 config + 啟用切換模型。
+"""設定持久化（全項目共享，存 DB user_settings 表固定 __global__ row）——連線層 + 功能區默認旋鈕層。
 
-結構（user_settings.data JSON）：
-- LLM：`llm_configs[]`（每套 {id,label,provider,base_url,model,temperature,thinking,reasoning_effort}）
-  + `active_llm_config_id`；token 不入 config，存跨 config 共用的 `provider_tokens`（per-provider 機密）；
-  `provider_models`（各供應商自訂 model 清單）。
-- QC DB：`qc_configs[]`（每套 {id,label,env,host,port,user}）+ `active_qc_config_id`；
-  password 不入 config，存 `qc_passwords`（per-config 機密，key=config_id）。
+結構（user_settings.data JSON，A schema · 2026-07-22）：
+- LLM 連線層：`llm_connections`（{ provider_id: {base_url} }，每供應商一條：openai/gemini/bytedance）
+  + `llm_tokens`（{ provider_id: token }，per-provider 機密）+ `provider_models`（各供應商自訂 model 清單）。
+- LLM 旋鈕層：`llm_area_defaults`（{ area: {provider,model,thinking,reasoning_effort,temperature} }，
+  每功能區一份團隊共用默認；area ∈ LLM_AREAS = prejudge/prompt_debug/sandbox）。
+- QC DB：`qc_connections`（{ env_id: {host,port,user} }，每環境一條：sit/stage/production）
+  + `qc_passwords`（{ env_id: password }，per-env 機密）——與 LLM 連線同構（連線+機密分離兩張 map）。
 
-機密絕不明文回前端：masked() 逐 key 遮罩 provider_tokens / qc_passwords；raw() 供「眼睛顯示全文」與編輯回填。
-空/遮罩值 save 不覆蓋既有機密。舊單一 active flat 格式由 load_settings 偵測並自動遷移 + 持久化（穩定 uuid）。
+機密絕不明文回前端：masked() 逐 key 遮罩 llm_tokens / qc_passwords；raw() 供「眼睛顯示全文」與編輯回填。
+空/遮罩值 save 不覆蓋既有機密。舊多套 config 結構（A schema 改造前的 llm_configs[]/qc_configs[]）由
+load_settings 偵測並自動遷移 + 持久化一次（連線按 provider/env 去重收斂，旋鈕沿用原 active 套當三區初值）。
 
-judge 路徑（llm client）不傳 user_id，而是透過 contextvar `current()` 取「端點注入的 effective 設定」
-（effective_llm_dict 由 active LLM config + provider_tokens 組出）——故 client.py 零改動。
+judge 路徑（llm client）透過 contextvar `current()` 取「端點注入的 effective 設定」——
+`effective_llm_dict(s, area=..., overrides=...)` 由指定功能區默認旋鈕 + overrides 覆寫 + 對應供應商連線
+組出，保留 client._resolve() 所讀 key（provider/base_url/model/temperature/thinking/reasoning_effort/
+api_token/provider_models），故 client.py 零改動。
 """
 
 from __future__ import annotations
@@ -32,6 +36,50 @@ _LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "llm_model.json").read_text(enco
 LLM_MODEL_MIN_VERSION: str = _LLM_DEFAULTS.get("modelMinVersion", "5.4")
 # LLM 供應商目錄（id/base_url/defaultModels）；model 下拉清單 SSOT，list_models() 讀此（不打 /v1/models）。
 LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
+# 特定 model id 的可配參數能力覆寫（優先於所屬 provider 級預設）；目前三供應商差異僅驗證到 provider
+# 級（見 model_capabilities_for），此表暫為空，留給未來已驗證的個別 model 差異使用。
+LLM_MODEL_CAPABILITIES: dict = _LLM_DEFAULTS.get("modelCapabilities", {})
+# 功能區清單（LLM 消費點）：三個前端旋鈕配置槽，team 共用默認各一份。
+LLM_AREAS: tuple[str, ...] = tuple(
+    _LLM_DEFAULTS.get("areas", ["prejudge", "prompt_debug", "sandbox"])
+)
+# QC DB 環境清單（連線 key）：與 qc_db.json 的 environments 對齊（通常 sit/stage/production）。
+QC_ENVS: tuple[str, ...] = tuple(
+    e["id"] for e in QC_DB_DEFAULTS.get("environments", []) if e.get("id")
+)
+
+
+def model_capabilities_for(model_id: str) -> dict:
+    """回某 model 的可配參數能力：thinking 是否支援 / reasoning_effort 值域 / temperature 鎖定規則。
+
+    能力預設取「該 model 所屬 provider」的 provider 級欄位（見 llm_model.json providers[].
+    supportsThinking 等，目前已驗證的差異僅到 provider 級——OpenAI reasoning model 開 thinking 時
+    temperature 鎖 1，Gemini/ByteDance 不鎖），`modelCapabilities[model_id]` 可對個別 model 覆寫任一欄位
+    （未登記則沿用 provider 預設）。查無所屬 provider（自訂/未知 model）回 openai 預設，取代前端原寫死
+    的 `tempLocked = provider === 'openai'` 與固定 REASONING 值域。
+
+    Args:
+        model_id: LLM model id（如 gpt-5.4-mini）。
+
+    Returns:
+        {supportsThinking, reasoningEffortOptions, temperatureLockedWhenThinking, lockedTemperatureValue}。
+    """
+    owner = next(
+        (
+            p
+            for p in LLM_PROVIDERS
+            if any(m.get("id") == model_id for m in p.get("defaultModels") or [])
+        ),
+        None,
+    ) or next((p for p in LLM_PROVIDERS if p.get("id") == "openai"), {})
+    base = {
+        "supportsThinking": owner.get("supportsThinking", True),
+        "reasoningEffortOptions": owner.get("reasoningEffortOptions")
+        or _LLM_DEFAULTS.get("reasoning", []),
+        "temperatureLockedWhenThinking": owner.get("temperatureLockedWhenThinking", False),
+        "lockedTemperatureValue": owner.get("lockedTemperatureValue", 1),
+    }
+    return {**base, **LLM_MODEL_CAPABILITIES.get(model_id, {})}
 
 
 def qc_db_env_name(env_id: str | None) -> str:
@@ -51,7 +99,7 @@ def qc_db_env_name(env_id: str | None) -> str:
 def provider_id_for(base_url: str) -> str:
     """由 base_url 反推 provider id（openai/gemini/bytedance），與前端 deriveProviderId 對齊。
 
-    provider_tokens 以此為 key；judge 路徑 _resolve 亦以此取當前 provider 的 token。
+    llm_connections/llm_tokens 以此為 key；judge 路徑 _resolve 亦以此取當前 provider 的 token。
     自訂 / 未知 base_url 一律歸 openai（OpenAI 相容端點為大宗）。
     """
     base = (base_url or "").strip()
@@ -77,18 +125,11 @@ def _is_masked(v: object) -> bool:
     return "***" in s or "…" in s
 
 
-def _ensure_id(cfg: dict) -> dict:
-    """補 uuid id（前端新建留空時）；回新 dict，不就地改入參。"""
-    if cfg.get("id"):
-        return dict(cfg)
-    return {**cfg, "id": str(uuid.uuid4())}
-
-
-# 單套 LLM config 的非機密預設：新建 config 的底，effective_llm_dict 在 active 失效時亦回退至此。
+# 單套 LLM 旋鈕的非機密預設：area 默認缺項時的底，effective_llm_dict 查無 area 默認時亦回退至此。
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
     "base_url": "",  # 空＝OpenAI 預設端點
-    "model": (_LLM_DEFAULTS.get("providers") or [{}])[0].get(
+    "model": (LLM_PROVIDERS or [{}])[0].get(
         "defaultModel", "gpt-5-mini"
     ),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
@@ -96,34 +137,26 @@ _DEFAULT_LLM: dict = {
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
 }
 
-# 多 config 結構的 key 模板（值僅作型別樣板；實際以 _blank_settings() 產深複本）。
-# llm_configs[]：每套 {id,label, + _DEFAULT_LLM 欄位}；token 不入 config，存共用 provider_tokens。
-# qc_configs[]：每套 {id,label,env,host,port,user}；password 不入 config，存 qc_passwords[id]。
-# 去帳戶隔離（2026-07-22）：全項目配置單一份，一律存/讀此固定 key。
-# user_settings 表 PK 仍為 user_id（表結構不動），業務配置不再 per-user——
-# 所有 load/save 都用此 key。email 身分僅供權限授予查詢（見 permissions），與配置存取解耦。
+# 全項目共享設定固定 key（去帳戶隔離·2026-07-22）：user_settings 表 PK 仍為 user_id（表結構不動），
+# 業務配置不再 per-user——所有 load/save 都用此 key。email 身分僅供權限授予查詢（見 permissions），
+# 與配置存取解耦。
 GLOBAL_SETTINGS_KEY = "__global__"
 
 
-_NEW_DEFAULT: dict = {
-    "llm_configs": [],
-    "active_llm_config_id": None,
-    "llm_tokens": {},  # { config_id: token } per-config 機密（每套配置各自獨立 token）
-    "provider_tokens": {},  # 舊 per-provider 共用（遷移來源，保留供回退；resolution 已不用）
-    "provider_models": {},  # { provider_id: [model_id...] } 各供應商自訂 model 清單
-    "qc_configs": [],
-    "active_qc_config_id": None,
-    "qc_passwords": {},  # { config_id: password } per-config 機密
-    "overview_boards": [],  # 概覽自訂組合看板 [{id,label,chartIds[]}]（非機密）
-    "active_overview_board_id": None,
-    # 導出偏好（非機密）：「打開 Google Drive 上傳」目的資料夾 URL；None＝未設（前端退全域 config 預設）
-    "gdrive_upload_folder_url": None,
-}
+def _blank_settings() -> dict:
+    """全新空白設定（深複本，避免共用 mutable 預設）。"""
+    return {
+        "llm_connections": {},
+        "llm_tokens": {},
+        "llm_area_defaults": {},
+        "provider_models": {},
+        "qc_connections": {},
+        "qc_passwords": {},
+        "overview_boards": [],
+        "active_overview_board_id": None,
+        "gdrive_upload_folder_url": None,
+    }
 
-# 舊 flat 格式的指紋 key：load 時偵測到即觸發 _migrate_legacy。
-_LEGACY_KEYS = frozenset(
-    {"provider", "model", "base_url", "api_token", "qc_db_env", "qc_db_host", "qc_db_name"}
-)
 
 # 當前 request 生效的 user 設定（端點 handler 注入）；judge 路徑經 current() 讀取。
 # 注入值為 effective_llm_dict() 組出的 flat dict（保留 client._resolve 所讀的 key）。
@@ -132,79 +165,82 @@ _current: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 )
 
 
-def _blank_settings() -> dict:
-    """全新空白設定（深複本，避免共用 mutable 預設）。"""
-    return {
-        "llm_configs": [],
-        "active_llm_config_id": None,
-        "llm_tokens": {},
-        "provider_tokens": {},
-        "provider_models": {},
-        "qc_configs": [],
-        "active_qc_config_id": None,
-        "qc_passwords": {},
-        "overview_boards": [],
-        "active_overview_board_id": None,
-        "gdrive_upload_folder_url": None,
-    }
+def _migrate_configs_to_areas(data: dict) -> dict:
+    """舊多套 config 結構（A schema 改造前：llm_configs[]/qc_configs[] + active_id）→ 新連線+功能區默認結構。
 
-
-def _is_legacy_format(data: dict) -> bool:
-    """偵測舊單一 active 配置 flat 格式（有任一 legacy 指紋 key）。"""
-    return bool(_LEGACY_KEYS & set(data.keys()))
-
-
-def _migrate_legacy(data: dict) -> dict:
-    """舊 flat dict → 新多 config 結構：LLM/QC 各轉成第一套並設為 active，機密歸入對應 map。
-
-    沿用既有 legacy 規則：api_token→provider_tokens。
+    一次性遷移（2026-07-22），偵測依據：資料含 `llm_configs` 或 `qc_configs` 鍵而無 `llm_connections`。
+    LLM：每 provider 取其首見 config 的 base_url 組 llm_connections（provider 由 config 自帶或由
+    base_url 反推）；token 取該 config 的 per-config llm_tokens（無則退舊 provider_tokens[provider]）。
+    active config 的旋鈕（model/thinking/reasoning_effort/temperature）→ 三個 area 的初始默認（皆設為
+    同一份，符合「現有配置作為默認」）；查無 active/任何 config 時 area 默認留空，effective_llm_dict
+    退 _DEFAULT_LLM。
+    QC：比照以 env 為 key 收斂 qc_configs → qc_connections + qc_passwords（同 env 多套時取首見，
+    active 優先）。
+    密碼/token 值原樣搬移（可能仍是 at-rest 密文，_persist 的 encrypt_secret 對密文冪等，安全）。
     """
     new = _blank_settings()
-
-    # provider_tokens：保留既有 + 舊單值 api_token 歸入（不覆蓋既有）
-    ptokens = dict(data.get("provider_tokens") or {})
-    legacy_token = data.get("api_token")
-    if legacy_token:
-        ptokens.setdefault(provider_id_for(data.get("base_url", "")), legacy_token)
-    new["provider_tokens"] = ptokens
     new["provider_models"] = dict(data.get("provider_models") or {})
+    new["overview_boards"] = [dict(b) for b in (data.get("overview_boards") or [])]
+    new["active_overview_board_id"] = data.get("active_overview_board_id")
+    new["gdrive_upload_folder_url"] = data.get("gdrive_upload_folder_url")
 
-    # LLM：舊單一 active config → llm_configs[0]
-    llm_id = str(uuid.uuid4())
-    # per-config token：舊單值 api_token 直接歸入該遷移 config 的 llm_tokens
-    if legacy_token:
-        new["llm_tokens"] = {llm_id: legacy_token}
-    new["llm_configs"] = [
-        {
-            "id": llm_id,
-            "label": "預設配置（自動遷移）",
-            "provider": data.get("provider", _DEFAULT_LLM["provider"]),
-            "base_url": data.get("base_url", ""),
-            "model": data.get("model", _DEFAULT_LLM["model"]),
-            "temperature": data.get("temperature"),
-            "thinking": data.get("thinking", "default"),
-            "reasoning_effort": data.get("reasoning_effort", "default"),
+    # ── LLM：llm_configs[] → llm_connections（per provider）+ llm_area_defaults（三區同初值）──
+    llm_configs = data.get("llm_configs") or []
+    llm_tokens_by_cfg = data.get("llm_tokens") or {}
+    provider_tokens = data.get("provider_tokens") or {}
+    active_id = data.get("active_llm_config_id")
+
+    connections: dict[str, dict] = {}
+    tokens: dict[str, str] = {}
+    for cfg in llm_configs:
+        pid = cfg.get("provider") or provider_id_for(cfg.get("base_url") or "")
+        if pid not in connections:
+            connections[pid] = {"base_url": cfg.get("base_url", "")}
+        if pid not in tokens:
+            tok = llm_tokens_by_cfg.get(cfg.get("id")) or provider_tokens.get(pid)
+            if tok:
+                tokens[pid] = tok
+    new["llm_connections"] = connections
+    new["llm_tokens"] = tokens
+
+    active_cfg = next((c for c in llm_configs if c.get("id") == active_id), None) or (
+        llm_configs[0] if llm_configs else None
+    )
+    if active_cfg:
+        knobs = {
+            "provider": active_cfg.get("provider")
+            or provider_id_for(active_cfg.get("base_url") or ""),
+            "model": active_cfg.get("model", _DEFAULT_LLM["model"]),
+            "thinking": active_cfg.get("thinking", "default"),
+            "reasoning_effort": active_cfg.get("reasoning_effort", "default"),
+            "temperature": active_cfg.get("temperature"),
         }
-    ]
-    new["active_llm_config_id"] = llm_id
+        new["llm_area_defaults"] = {area: dict(knobs) for area in LLM_AREAS}
 
-    # 僅當舊資料有 QC 連線痕跡才建 config（host / user 任一）
-    if data.get("qc_db_host") or data.get("qc_db_user"):
-        qc_id = str(uuid.uuid4())
-        new["qc_configs"] = [
-            {
-                "id": qc_id,
-                "label": "預設連線（自動遷移）",
-                "env": data.get("qc_db_env", QC_DB_DEFAULTS.get("defaultEnv", "sit")),
-                "host": data.get("qc_db_host", ""),
-                "port": data.get("qc_db_port"),
-                "user": data.get("qc_db_user", ""),
-            }
-        ]
-        new["active_qc_config_id"] = qc_id
-        old_pw = data.get("qc_db_password", "")
-        if old_pw:
-            new["qc_passwords"] = {qc_id: old_pw}
+    # ── QC：qc_configs[] → qc_connections（per env）+ qc_passwords（per env）──
+    qc_configs = data.get("qc_configs") or []
+    qc_passwords_by_cfg = data.get("qc_passwords") or {}
+    active_qc_id = data.get("active_qc_config_id")
+    qc_sorted = sorted(
+        qc_configs, key=lambda c: c.get("id") != active_qc_id
+    )  # active 優先（stable）
+
+    qc_connections: dict[str, dict] = {}
+    qc_passwords: dict[str, str] = {}
+    for cfg in qc_sorted:
+        env = cfg.get("env") or QC_DB_DEFAULTS.get("defaultEnv", "sit")
+        if env in qc_connections:
+            continue
+        qc_connections[env] = {
+            "host": cfg.get("host", ""),
+            "port": cfg.get("port"),
+            "user": cfg.get("user", ""),
+        }
+        pw = qc_passwords_by_cfg.get(cfg.get("id"))
+        if pw:
+            qc_passwords[env] = pw
+    new["qc_connections"] = qc_connections
+    new["qc_passwords"] = qc_passwords
 
     return new
 
@@ -213,98 +249,72 @@ def load_settings(user_id: str | None = None) -> dict:
     """讀全項目共享設定（含明文機密）；未存過回空白結構複本。
 
     去帳戶隔離：一律讀 GLOBAL_SETTINGS_KEY（傳入的 user_id 保留呼叫相容但忽略）。
-    舊 flat 格式偵測到即遷移成多 config 結構並「立即持久化」一次——穩定各 config 的 uuid，
-    避免每次 load 重產 id 導致 active_id / qc_passwords key 失效。
+    舊多套 config 結構（無 `llm_connections` 鍵）偵測到即遷移成新連線+功能區默認結構並「立即持久化」
+    一次（穩定 shape，避免每次 load 重跑遷移邏輯）。
     """
     data = db.load_user_settings(GLOBAL_SETTINGS_KEY)
     if not data:
         return _blank_settings()
-    if _is_legacy_format(data):
-        migrated = _migrate_legacy(data)
-        _persist(migrated)  # 持久化一次，使 uuid 穩定（機密加密落庫）
+    if "llm_connections" not in data:
+        migrated = _migrate_configs_to_areas(data)
+        _persist(migrated)
         return migrated
-    # 補缺 key + 深複本（避免改到 _NEW_DEFAULT 內的 mutable）
-    cur = {**_NEW_DEFAULT, **data}
+    # 補缺 key + 深複本（避免改到 _blank_settings 內的 mutable）
+    cur = {**_blank_settings(), **data}
+    cur["llm_connections"] = {k: dict(v) for k, v in (cur.get("llm_connections") or {}).items()}
     cur["llm_tokens"] = dict(cur.get("llm_tokens") or {})
-    cur["provider_tokens"] = dict(cur.get("provider_tokens") or {})
+    cur["llm_area_defaults"] = {k: dict(v) for k, v in (cur.get("llm_area_defaults") or {}).items()}
     cur["provider_models"] = dict(cur.get("provider_models") or {})
+    cur["qc_connections"] = {k: dict(v) for k, v in (cur.get("qc_connections") or {}).items()}
     cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
-    cur["llm_configs"] = [dict(c) for c in (cur.get("llm_configs") or [])]
-    cur["qc_configs"] = [dict(c) for c in (cur.get("qc_configs") or [])]
     cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
     _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
-    # per-config token 遷移：舊 per-provider 共用 token → 每套 config 各自 llm_tokens（一次性，持久化穩定）
-    if _seed_llm_tokens_from_providers(cur):
-        _persist(cur)
     return cur
 
 
-def _seed_llm_tokens_from_providers(cur: dict) -> bool:
-    """一次性遷移：per-provider 共用 provider_tokens → 每套 config 各自的 llm_tokens（per-config）。
+def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | None = None) -> dict:
+    """由指定功能區默認旋鈕 + 對應供應商連線組出 judge 路徑 flat dict（set_current 入參）。
 
-    僅在 llm_tokens 尚空、provider_tokens 有值、且有 config 時執行：每套 config 依 base_url 反推
-    provider，複製該 provider 的共用 token 當自身初值。回傳是否有變更（供 load_settings 決定是否持久化）。
+    area 指定功能區（prejudge/prompt_debug/sandbox）取旋鈕預設；缺省或該區無默認 → 回退 _DEFAULT_LLM
+    （stub）。overrides 為本次執行的臨時旋鈕覆寫（不落庫）：model/thinking/reasoning_effort/provider
+    僅非 None 值生效；temperature 有「顯式 null＝本次改用 API 預設」語意，只要 key 存在即覆寫（即使值
+    是 None），故獨立判斷。
+    連線（base_url/token）一律以「覆寫後」決定的 provider 反查 llm_connections/llm_tokens——換言之
+    overrides 也能切換本次用哪個供應商連線,不限於原 area 默認的 provider。
+    保留 client._resolve() 所讀 key（provider/base_url/model/temperature/thinking/reasoning_effort/
+    api_token/provider_models），故 judge 路徑（app/judge/llm/client.py）零改動。
     """
-    if cur.get("llm_tokens"):
-        return False
-    ptok = cur.get("provider_tokens") or {}
-    configs = cur.get("llm_configs") or []
-    if not ptok or not configs:
-        return False
-    seeded = {
-        c["id"]: ptok[provider_id_for(c.get("base_url") or "")]
-        for c in configs
-        if c.get("id") and ptok.get(provider_id_for(c.get("base_url") or ""))
-    }
-    if not seeded:
-        return False
-    cur["llm_tokens"] = seeded
-    return True
-
-
-def effective_llm_dict(s: dict, config_id: str | None = None) -> dict:
-    """由指定（或 active）LLM config + 共用 provider_tokens 組出 judge 路徑 flat dict（set_current 入參）。
-
-    config_id 指定某套（初判歸因可選模型推理用）；缺省＝active_llm_config_id。
-    指定/active 失效 → 回退 llm_configs[0] → 再無則 _DEFAULT_LLM（stub）。
-    保留 client._resolve() 所讀 key（provider/base_url/model/temperature/reasoning_effort/provider_tokens），
-    故 judge 路徑（app/judge/llm/client.py）零改動。
-    """
-    configs = s.get("llm_configs") or []
-    want_id = config_id or s.get("active_llm_config_id")
-    cfg = next((c for c in configs if c.get("id") == want_id), None)
-    if cfg is None and configs:
-        cfg = configs[0]
-    cfg = cfg or {}
+    knobs = dict((s.get("llm_area_defaults") or {}).get(area or "") or {}) or dict(_DEFAULT_LLM)
+    if overrides:
+        for key in ("provider", "model", "thinking", "reasoning_effort"):
+            if overrides.get(key) is not None:
+                knobs[key] = overrides[key]
+        if "temperature" in overrides:
+            knobs["temperature"] = overrides["temperature"]
+    provider = knobs.get("provider") or _DEFAULT_LLM["provider"]
+    conn = (s.get("llm_connections") or {}).get(provider) or {}
     return {
-        "provider": cfg.get("provider", _DEFAULT_LLM["provider"]),
-        "base_url": cfg.get("base_url", _DEFAULT_LLM["base_url"]),
-        "model": cfg.get("model", _DEFAULT_LLM["model"]),
-        "temperature": cfg.get("temperature"),
-        "thinking": cfg.get("thinking", "default"),
-        "reasoning_effort": cfg.get("reasoning_effort", "default"),
-        # per-config token：該套配置自身的 token（llm_tokens[config_id]）；resolve_provider_token 據此解出
-        "api_token": (s.get("llm_tokens") or {}).get(cfg.get("id"), ""),
+        "provider": provider,
+        "base_url": conn.get("base_url", _DEFAULT_LLM["base_url"]),
+        "model": knobs.get("model") or _DEFAULT_LLM["model"],
+        "temperature": knobs.get("temperature"),
+        "thinking": knobs.get("thinking") or "default",
+        "reasoning_effort": knobs.get("reasoning_effort") or "default",
+        # per-provider token：該供應商連線自身的 token；resolve_provider_token 據此解出
+        "api_token": (s.get("llm_tokens") or {}).get(provider, ""),
         "provider_models": dict(s.get("provider_models") or {}),
     }
 
 
 def _sanitize(cur: dict) -> None:
-    """就地修正一致性：dangling active_id 回退首項/None；清除孤立 qc_passwords（config 已不存在）。"""
-    llm_ids = {c.get("id") for c in cur.get("llm_configs") or []}
-    if cur.get("active_llm_config_id") not in llm_ids:
-        cur["active_llm_config_id"] = (
-            cur["llm_configs"][0]["id"] if cur.get("llm_configs") else None
-        )
-    # 清除孤立 llm_tokens（config 已刪）——比照 qc_passwords 收斂
+    """就地修正一致性：清除孤立 llm_tokens/qc_passwords（連線已不存在）；area 默認補全已知功能區。"""
+    conn_providers = set(cur.get("llm_connections") or {})
     cur["llm_tokens"] = {
-        cid: t for cid, t in (cur.get("llm_tokens") or {}).items() if cid in llm_ids
+        p: t for p, t in (cur.get("llm_tokens") or {}).items() if p in conn_providers
     }
-    qc_ids = {c.get("id") for c in cur.get("qc_configs") or []}
-    if cur.get("active_qc_config_id") not in qc_ids:
-        cur["active_qc_config_id"] = cur["qc_configs"][0]["id"] if cur.get("qc_configs") else None
+    qc_envs = set(cur.get("qc_connections") or {})
     cur["qc_passwords"] = {
-        cid: pw for cid, pw in (cur.get("qc_passwords") or {}).items() if cid in qc_ids
+        e: pw for e, pw in (cur.get("qc_passwords") or {}).items() if e in qc_envs
     }
     board_ids = {b.get("id") for b in cur.get("overview_boards") or []}
     if cur.get("active_overview_board_id") not in board_ids:
@@ -314,52 +324,50 @@ def _sanitize(cur: dict) -> None:
 
 
 def save_settings(patch: dict, user_id: str | None = None) -> dict:
-    """部分/整包合併寫入全項目共享設定。機密（provider_tokens / qc_config.password）空或遮罩值不覆蓋既有。
+    """部分/整包合併寫入全項目共享設定。機密（llm_tokens / qc_passwords）空或遮罩值不覆蓋既有。
 
     去帳戶隔離：寫 GLOBAL_SETTINGS_KEY（user_id 保留呼叫相容但忽略）。併發語義：內部 load
     最新→欄位級白名單 merge→整包 persist（競態窗口毫秒級、欄位級合併衝突面小），多人同時
     編輯不同 tab 走 last-write-wins，可接受。
-    qc_configs 內每套可帶 transient `password` 欄位：save 時抽出存入 qc_passwords[config_id]，
-    config 本體不落機密。回 masked()。
+    llm_connections/qc_connections 與 llm_tokens/qc_passwords 為平行 map（keyed by provider/env），
+    整包替換非機密連線欄位、機密欄位逐 key merge（空/遮罩不覆蓋既有）。回 masked()。
     """
     cur = load_settings()
 
-    # ── LLM ──
-    if "llm_configs" in patch:
-        cur["llm_configs"] = [_ensure_id(c) for c in (patch["llm_configs"] or [])]
-    if "active_llm_config_id" in patch:
-        cur["active_llm_config_id"] = patch["active_llm_config_id"]
+    # ── LLM 連線層（provider → base_url；token 另表）──
+    if "llm_connections" in patch:
+        cur["llm_connections"] = {
+            pid: {"base_url": (conn or {}).get("base_url", "")}
+            for pid, conn in (patch["llm_connections"] or {}).items()
+        }
     if "llm_tokens" in patch:
         merged = dict(cur.get("llm_tokens") or {})
-        for cid, tok in (patch["llm_tokens"] or {}).items():
+        for pid, tok in (patch["llm_tokens"] or {}).items():
             if tok and not _is_masked(tok):
-                merged[cid] = tok  # 空/遮罩不覆蓋該 config 既有真值
+                merged[pid] = tok  # 空/遮罩不覆蓋該 provider 既有真值
         cur["llm_tokens"] = merged
-    if "provider_tokens" in patch:
-        merged = dict(cur.get("provider_tokens") or {})
-        for pid, tok in (patch["provider_tokens"] or {}).items():
-            if tok and not _is_masked(tok):
-                merged[pid] = tok  # 空/遮罩不覆蓋該 provider 既有真值（舊路徑，保留相容）
-        cur["provider_tokens"] = merged
     if "provider_models" in patch:
         cur["provider_models"] = dict(patch.get("provider_models") or {})
 
-    # ── QC DB ──（password 隨各 config 帶入，抽出存 qc_passwords）
-    if "qc_configs" in patch:
-        new_configs: list[dict] = []
-        pw_updates: dict[str, str] = {}
-        for c in patch["qc_configs"] or []:
-            c = _ensure_id(c)
-            pw = c.pop("password", None)  # 機密不存進 config 本體
-            if pw and not _is_masked(pw):
-                pw_updates[c["id"]] = pw
-            new_configs.append(c)
-        cur["qc_configs"] = new_configs
+    # ── LLM 旋鈕層（area → knobs，team 共用默認；整包替換單一 area 或多 area）──
+    if "llm_area_defaults" in patch:
+        merged_areas = dict(cur.get("llm_area_defaults") or {})
+        for area, knobs in (patch["llm_area_defaults"] or {}).items():
+            merged_areas[area] = dict(knobs or {})
+        cur["llm_area_defaults"] = merged_areas
+
+    # ── QC 連線層（env → host/port/user；password 另表）──
+    if "qc_connections" in patch:
+        cur["qc_connections"] = {
+            env: {k: (conn or {}).get(k) for k in ("host", "port", "user")}
+            for env, conn in (patch["qc_connections"] or {}).items()
+        }
+    if "qc_passwords" in patch:
         merged_pw = dict(cur.get("qc_passwords") or {})
-        merged_pw.update(pw_updates)  # 空/遮罩者已在上面過濾，不覆蓋既有
+        for env, pw in (patch["qc_passwords"] or {}).items():
+            if pw and not _is_masked(pw):
+                merged_pw[env] = pw  # 空/遮罩不覆蓋該環境既有真值
         cur["qc_passwords"] = merged_pw
-    if "active_qc_config_id" in patch:
-        cur["active_qc_config_id"] = patch["active_qc_config_id"]
 
     # ── 概覽自訂看板（非機密，整包替換 + 補 id）──
     if "overview_boards" in patch:
@@ -376,38 +384,45 @@ def save_settings(patch: dict, user_id: str | None = None) -> dict:
     return masked()
 
 
-def _has_active_token(s: dict) -> bool:
-    """active LLM config 自身是否已有 token（per-config）。"""
-    return bool(effective_llm_dict(s).get("api_token"))
+def _ensure_id(cfg: dict) -> dict:
+    """補 uuid id（前端新建留空時）；回新 dict，不就地改入參。目前僅 overview_boards 沿用此 id 語意。"""
+    if cfg.get("id"):
+        return dict(cfg)
+    return {**cfg, "id": str(uuid.uuid4())}
 
 
-def _has_active_qc_password(s: dict) -> bool:
-    """active QC config 是否已有 password。"""
-    aid = s.get("active_qc_config_id")
-    return bool(aid and (s.get("qc_passwords") or {}).get(aid))
+def _has_any_token(s: dict) -> bool:
+    """是否任一供應商連線已配 token（LLM 是否至少可用一套的粗粒度信號）。"""
+    return any((s.get("llm_tokens") or {}).values())
+
+
+def _has_any_qc_password(s: dict) -> bool:
+    """是否任一環境 QC 連線已配密碼（粗粒度信號）。"""
+    return any((s.get("qc_passwords") or {}).values())
 
 
 def masked(user_id: str | None = None) -> dict:
-    """回傳給前端（全項目共享設定）：機密 map 逐 key 遮罩，附 has_token / has_qc_db_password。"""
+    """回傳給前端（全項目共享設定）：機密 map 逐 key 遮罩，附粗粒度 has_token / has_qc_db_password
+    及逐供應商/逐環境細粒度 provider_has_token / qc_env_has_password（前端各連線卡個別顯示用）。
+    """
     cur = load_settings()
-    cur["has_token"] = _has_active_token(cur)
-    cur["has_qc_db_password"] = _has_active_qc_password(cur)
-    cur["llm_tokens"] = {c: _mask_secret(t) for c, t in (cur.get("llm_tokens") or {}).items()}
-    cur["provider_tokens"] = {
-        p: _mask_secret(t) for p, t in (cur.get("provider_tokens") or {}).items()
-    }
-    cur["qc_passwords"] = {c: _mask_secret(p) for c, p in (cur.get("qc_passwords") or {}).items()}
+    cur["has_token"] = _has_any_token(cur)
+    cur["has_qc_db_password"] = _has_any_qc_password(cur)
+    cur["provider_has_token"] = {p: bool(t) for p, t in (cur.get("llm_tokens") or {}).items()}
+    cur["qc_env_has_password"] = {e: bool(pw) for e, pw in (cur.get("qc_passwords") or {}).items()}
+    cur["llm_tokens"] = {p: _mask_secret(t) for p, t in (cur.get("llm_tokens") or {}).items()}
+    cur["qc_passwords"] = {e: _mask_secret(pw) for e, pw in (cur.get("qc_passwords") or {}).items()}
     return cur
 
 
 def raw(user_id: str | None = None) -> dict:
-    """完整未遮罩配置（全項目共享·含明文 provider_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
+    """完整未遮罩配置（全項目共享·含明文 llm_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
 
     ⚠️ 明文回傳機密欄位：僅應在受信任的本地 / 內網環境暴露此端點；並由 settings.secret.read 權限 gating。
     """
     cur = load_settings()
-    cur["has_token"] = _has_active_token(cur)
-    cur["has_qc_db_password"] = _has_active_qc_password(cur)
+    cur["has_token"] = _has_any_token(cur)
+    cur["has_qc_db_password"] = _has_any_qc_password(cur)
     return cur
 
 
@@ -417,56 +432,57 @@ def set_current(settings: dict) -> None:
 
 
 def current() -> dict:
-    """judge 路徑取當前生效設定；未注入時回 stub 預設（_DEFAULT_LLM + 空 provider_tokens）。"""
+    """judge 路徑取當前生效設定；未注入時回 stub 預設（_DEFAULT_LLM + 空 token）。"""
     s = _current.get()
     return s if s is not None else effective_llm_dict(_blank_settings())
 
 
 def _decrypt_secret_maps(data: dict) -> None:
-    """就地把機密 map（provider_tokens / qc_passwords）由 at-rest 密文轉回明文。
+    """就地把機密 map（llm_tokens / qc_passwords）由 at-rest 密文轉回明文。
 
     舊明文列直通（crypto.decrypt_secret 對非密文原樣返回），支撐漸進遷移。
     """
-    for key in ("llm_tokens", "provider_tokens", "qc_passwords"):
+    for key in ("llm_tokens", "qc_passwords"):
         data[key] = {k: crypto.decrypt_secret(v) for k, v in (data.get(key) or {}).items()}
 
 
 def _persist(data: dict) -> None:
     """落庫唯一出口：機密 map 加密後寫 DB（AIQ_SECRET_KEY 未設時明文直通）。
 
-    加密作用在複本，入參 data（呼叫端後續仍持有的明文版）不被污染。
+    加密作用在複本，入參 data（呼叫端後續仍持有的明文版）不被污染。encrypt_secret 對已加密值冪等，
+    故遷移時原樣搬移的密文（未先解密）在此重新加密不會壞掉（雙重套殼安全，見 crypto.py 文件）。
     """
     stored = dict(data)
-    for key in ("llm_tokens", "provider_tokens", "qc_passwords"):
+    for key in ("llm_tokens", "qc_passwords"):
         stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
     db.save_user_settings(GLOBAL_SETTINGS_KEY, stored)
 
 
 def resolve_provider_token(eff: dict) -> str:
-    """由 effective LLM dict 解出該配置實際生效的 token（per-config api_token 優先，OpenAI 才 fallback env）。
+    """由 effective LLM dict 解出該配置實際生效的 token（per-provider api_token 優先，OpenAI 才 fallback env）。
 
     與 judge 路徑 `llm/client._resolve()` 共用同一判定——API 層 stub 硬閘（prejudge router /
     prejudge_batch 第二道防線）據此判斷「本次批量是否將落為 stub 假判」，兩處邏輯合一防漂移
     （曾因 env 空值覆蓋致 stub 假判覆蓋 1,452 筆真歸因）。
 
     後備分流（provider-aware）：`env.openai_api_key` 只是 **OpenAI** 的 infra 後備；gemini / bytedance
-    等非 OpenAI provider 若無 per-config token 一律回空（視為未配置），否則會誤拿 OpenAI key 使 stub
+    等非 OpenAI provider 若無連線 token 一律回空（視為未配置），否則會誤拿 OpenAI key 使 stub
     硬閘誤判「已配置」放行，實際卻拿 OpenAI key 打非 OpenAI 端點 → 逐筆 401/403。provider 由 base_url
     反推（未知/自訂端點歸 openai，保留其 env 後備）。
 
     Args:
         eff: effective LLM dict（`effective_llm_dict()` 產出或 contextvar `current()` 讀出，
-            含該配置自身的 api_token 與 base_url；缺鍵視為空）。
+            含該供應商連線自身的 api_token 與 base_url；缺鍵視為空）。
 
     Returns:
         實際生效 token；解不出任何 token 回空字串（呼叫端以 falsy 判 stub）。
     """
     from app.core.config import env  # 函式內 import：維持 settings 不在頂層依賴 config
 
-    # per-config：直接取該配置自身 token（effective_llm_dict 已解出 api_token）
-    per_config = eff.get("api_token")
-    if per_config:
-        return per_config
+    # per-provider：直接取該連線自身 token（effective_llm_dict 已解出 api_token）
+    per_provider = eff.get("api_token")
+    if per_provider:
+        return per_provider
     # env 後備僅限 OpenAI（含未知/自訂 OpenAI 相容端點，provider_id_for 預設歸 openai）
     if provider_id_for(eff.get("base_url") or "") == "openai":
         return env.openai_api_key

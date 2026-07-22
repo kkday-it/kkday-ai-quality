@@ -101,7 +101,7 @@ def main() -> None:
     ap.add_argument("--target-recall", type=float, default=0.995, help="per-domain 召回閘門")
     ap.add_argument("--min-positives", type=int, default=30, help="低於此正樣本數不給閾值（always_on）")
     ap.add_argument("--exclude", default="", help="排除清單 json（{items:[{source,source_id}]}；評測集防洩漏用）")
-    ap.add_argument("--config-id", default="", help="user_settings llm_configs 指定配置 id（預設 active）")
+    ap.add_argument("--provider", default="", help="覆寫供應商連線（空＝prejudge 功能區默認）")
     args = ap.parse_args()
 
     from sklearn.linear_model import LogisticRegression  # 重依賴 lazy（[dev] extras）
@@ -111,7 +111,7 @@ def main() -> None:
         raise SystemExit(f"❌ 找不到 user：{args.user}")
     app_settings.set_current(
         app_settings.effective_llm_dict(
-            app_settings.load_settings(u["user_id"]), config_id=args.config_id or None
+            app_settings.load_settings(), area="prejudge", overrides={"provider": args.provider or None}
         )
     )
     if client.is_stub():

@@ -9,7 +9,7 @@
 | `judge_config/` | **判準 config loader**（package）：ai_judge / product_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
 | `schema.py` | Pydantic 領域模型（`TicketFinding` 初判單元 + `AdequacyResult`）；初判引擎與 db 兩側平行消費。 |
 | `export_jobs.py` | 通用導出背景 job registry（in-mem 進度快照 + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 初判規則導出共用，端點見 `api/routers/exports.py`。 |
-| `settings.py` | 使用者運行期設定（LLM/QC 連線 profiles、啟用狀態、導出偏好 `gdrive_upload_folder_url`）CRUD + 遮罩 + 遷移；落庫邊界呼叫 `crypto` 對機密 map 加解密。 |
+| `settings.py` | 全項目共享運行期設定（固定 `__global__` row，非 per-user）：LLM 連線層 `llm_connections`（per-provider base_url）+ 旋鈕層 `llm_area_defaults`（per-功能區 model/thinking/reasoning_effort/temperature）分離、QC DB 同構 `qc_connections`、導出偏好 `gdrive_upload_folder_url`；CRUD + 遮罩 + 舊多套 config 結構一次性遷移；`effective_llm_dict(s, area=, overrides=)` 為 judge 路徑收斂點；落庫邊界呼叫 `crypto` 對機密 map（`llm_tokens`/`qc_passwords`）加解密。 |
 | `crypto.py` | 機密 at-rest 加密（Fernet；key＝env `AIQ_SECRET_KEY`，未設明文直通可回滾）。密文帶 `enc:v1:` 前綴、舊明文列直通；既有列遷移用 `scripts/tools/encrypt_user_secrets.py`。 |
 | `config.py` | env `Settings`（機密/跨環境值：DATABASE_URL / CORS / timeout / DB 連線池…），全專案最底層依賴。 |
 | `logging_setup.py` | kklog 結構化 stdout 日誌（公司 Kibana/Filebeat 契約）：`KklogJsonFormatter`（單行 JSON·@timestamp 逐筆即時——Filebeat 停收坑迴歸鎖）+ `RequestContextMiddleware`（X-Request-Id 生成/沿用/回填→`request.uuid`）+ `configure_logging()`（dictConfig 接管 root+uvicorn 三支；access log 排除 `/api/status` probe 噪音）。`log_type`＝`config.env.log_type`（Kibana 查詢鍵）。 |

@@ -266,7 +266,9 @@ def main() -> None:
     ap.add_argument("--prompt", required=True, help="polarity 或 C-1..C-6")
     ap.add_argument("--n", type=int, default=20, help="樣本數（md5 穩定排序，跨 run 可比）")
     ap.add_argument("--user", required=True, help="user_settings token 來源（email）")
-    ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（空＝active）")
+    ap.add_argument("--area", default="prejudge", help="功能區默認旋鈕基準（prejudge/prompt_debug/sandbox）")
+    ap.add_argument("--provider", default="", help="覆寫供應商連線（空＝area 默認）")
+    ap.add_argument("--model", default="", help="覆寫 model（空＝area 默認）")
     ap.add_argument(
         "--compare", default="", help="baseline.json 路徑（逐案 diff improvements/regressions）"
     )
@@ -277,8 +279,9 @@ def main() -> None:
     u = db.get_user_by_email(args.user)
     if not u:
         raise SystemExit(f"❌ 找不到 user：{args.user}")
+    overrides = {"provider": args.provider or None, "model": args.model or None}
     eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(u["user_id"]), config_id=args.config_id or None
+        app_settings.load_settings(), area=args.area, overrides=overrides
     )
     app_settings.set_current(eff)
     if client.is_stub():

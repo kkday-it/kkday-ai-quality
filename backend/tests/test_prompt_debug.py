@@ -104,24 +104,6 @@ def test_validate_result_requires_modify_target_for_93() -> None:
     assert prompt_debug.validate_result(value) == []
 
 
-def test_build_effective_config_can_clear_temperature_without_clearing_secrets() -> None:
-    base = {
-        "token": "secret",
-        "base_url": "https://api.openai.com/v1",
-        "model": "gpt-5-mini",
-        "temperature": 0.7,
-        "thinking": "on",
-    }
-    result = prompt_debug.build_effective_config(
-        base,
-        {"model": "gpt-5.4-mini", "temperature": None, "thinking": None},
-    )
-    assert result["token"] == "secret"
-    assert result["model"] == "gpt-5.4-mini"
-    assert result["temperature"] is None
-    assert result["thinking"] == "on"
-
-
 def test_stream_frames_uses_final_chunk_usage_for_same_call(monkeypatch) -> None:
     raw = json.dumps(_base_result(), ensure_ascii=False)
     usage = SimpleNamespace(

@@ -147,7 +147,9 @@ def main() -> None:
     ap.add_argument("--all-freetag", action="store_true", help="不限已初判（預設只收已初判，對齊現有 Sheet）")
     ap.add_argument("--eval-set", help="評測集 JSON 路徑（run 模式必填）")
     ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM")
-    ap.add_argument("--config-id", default="", help="指定 LLM 配置 id（切換模型；空＝該帳號 active）")
+    ap.add_argument("--area", default="prejudge", help="功能區默認旋鈕基準（prejudge/prompt_debug/sandbox）")
+    ap.add_argument("--provider", default="", help="覆寫供應商連線（切換模型；空＝area 默認）")
+    ap.add_argument("--model", default="", help="覆寫 model（空＝area 默認）")
     ap.add_argument("--limit", type=int, default=0, help="pilot：只跑前 N 則")
     ap.add_argument("--workers", type=int, default=0, help="併發數（預設 min(8, env)）")
     ap.add_argument("--out", required=True, help="輸出 JSON 路徑")
@@ -169,8 +171,9 @@ def main() -> None:
     if not u:
         print(f"❌ 找不到 user：{args.user}")
         sys.exit(1)
+    overrides = {"provider": args.provider or None, "model": args.model or None}
     eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(u["user_id"]), config_id=args.config_id or None
+        app_settings.load_settings(), area=args.area, overrides=overrides
     )
     app_settings.set_current(eff)
     if client.is_stub():
@@ -200,7 +203,6 @@ def main() -> None:
     payload = {
         "provider": provider,
         "model": model,
-        "config_id": args.config_id,
         "n": len(results),
         "results": sorted(results, key=lambda r: r["rec_oid"]),
     }

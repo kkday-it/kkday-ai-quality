@@ -41,13 +41,29 @@ def _guard_not_stub_in_production(eff: dict) -> None:
         )
 
 
+class LlmOverridesIn(BaseModel):
+    """本次執行臨時旋鈕覆寫（不落庫；「存為此功能區默認」為前端另一顯式動作，走 /api/settings）。
+
+    三功能區（prejudge/prompt_debug/sandbox）共用同一契約——provider 可切換本次用哪個供應商連線，
+    其餘旋鈕覆寫該區默認。缺省欄位＝沿用功能區默認，前端 LlmConfigPicker/LlmKnobs 對齊此形狀。
+    """
+
+    provider: str | None = None
+    model: str | None = None
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    thinking: Literal["default", "on", "off"] | None = None
+    reasoning_effort: (
+        Literal["default", "none", "minimal", "low", "medium", "high", "xhigh"] | None
+    ) = None
+
+
 class PrejudgeIn(BaseModel):
     """初判歸因請求：item_ids 顯式選取優先；否則 scope=all 依 stages 目標選取（可 within_ids 交集勾選範圍）。"""
 
     item_ids: list[str] | None = None
     source: str | None = None
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
-    llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
+    overrides: LlmOverridesIn | None = None  # 本次臨時旋鈕覆寫；缺省沿用 prejudge 功能區默認
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未初判；加選已初判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
@@ -120,24 +136,12 @@ class PromptSandboxIn(PrejudgeIn):
     compare: bool = False
 
 
-class PromptDebugOverridesIn(BaseModel):
-    """本次調試臨時旋鈕；不覆寫已保存 LLM 配置。"""
-
-    model: str | None = None
-    temperature: float | None = Field(default=None, ge=0, le=2)
-    thinking: Literal["default", "on", "off"] | None = None
-    reasoning_effort: (
-        Literal["default", "none", "minimal", "low", "medium", "high", "xhigh"] | None
-    ) = None
-
-
 class PromptDebugIn(BaseModel):
     """任意售後對話 Prompt 調試請求。"""
 
     text: str = Field(min_length=1, max_length=200_000)
     system_prompt: str = Field(min_length=1, max_length=300_000)
-    llm_config_id: str | None = None
-    overrides: PromptDebugOverridesIn | None = None
+    overrides: LlmOverridesIn | None = None  # 本次臨時旋鈕覆寫；缺省沿用 prompt_debug 功能區默認
 
 
 @router.get("/prompt-debug/defaults")
@@ -157,9 +161,8 @@ def prompt_debug_stream(
     from app.judge import prompt_debug
 
     saved = app_settings.load_settings()
-    base = app_settings.effective_llm_dict(saved, config_id=body.llm_config_id)
     overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
-    effective = prompt_debug.build_effective_config(base, overrides)
+    effective = app_settings.effective_llm_dict(saved, area="prompt_debug", overrides=overrides)
     if not app_settings.resolve_provider_token(effective):
         raise HTTPException(
             status_code=400,
@@ -189,8 +192,9 @@ async def start_prompt_sandbox(
     from app.judge import prompt_sandbox
 
     item_ids = _resolve_target_ids(body)
+    overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
     eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(), config_id=body.llm_config_id
+        app_settings.load_settings(), area="sandbox", overrides=overrides
     )
     try:
         job_id = await asyncio.to_thread(
@@ -330,11 +334,12 @@ def start_prejudge(
     """啟動初判歸因批量任務 → {job_id, total, model}（立即回，背景派工）。
 
     標的解析：_resolve_target_ids（item_ids 顯式 > scope=all 目標選取，可 within_ids 交集勾選範圍）。
-    設定注入：以當前 user 的 effective LLM dict（可選 llm_config_id）供 judge 路徑跨 thread 讀取。
+    設定注入：以 prejudge 功能區 effective LLM dict（可選 overrides）供 judge 路徑跨 thread 讀取。
     """
     uid = user.get("user_id", "")
     s = app_settings.load_settings()
-    eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
+    overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
+    eff = app_settings.effective_llm_dict(s, area="prejudge", overrides=overrides)
     _guard_not_stub_in_production(eff)
     model = eff.get("model", "")
 

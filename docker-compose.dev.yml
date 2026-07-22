@@ -56,6 +56,7 @@ services:
       CORS_ALLOW_ORIGINS: http://localhost:${FRONTEND_PORT:-5273}
     volumes:
       - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
+      - ./backend/tests:/app/backend/tests   # 測試檔案熱編（image 未含/過舊時測試會跑到舊版，踩過改測試不生效）
       # migration 檔 + entrypoint 也掛（image 可能過舊）：新增 migration 免 rebuild，重啟容器即自動套用。
       - ./backend/alembic:/app/backend/alembic
       - ./backend/alembic.ini:/app/backend/alembic.ini

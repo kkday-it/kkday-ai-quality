@@ -14,6 +14,11 @@
     "high",
     "xhigh"
   ],
+  "areas": ["prejudge", "prompt_debug", "sandbox"],
+  "_areas_comment": "LLM 消費點功能區清單：每區可各自存一份團隊共用旋鈕默認（llm_area_defaults[area]）。",
+  "modelCapabilities": {
+    "_comment": "特定 model id 的可配參數能力覆寫（優先於所屬 provider 的級別預設，見各 providers[].supportsThinking 等欄位）；目前三供應商差異僅驗證到 provider 級（OpenAI reasoning model 開 thinking 時 temperature 鎖定為 1，其餘不鎖），故暫無個別 model 覆寫條目——未來若驗證到特定 model 有別於所屬 provider 的能力（如某 model 不支援 reasoning_effort 特定值），於此按 model id 加條目即可，前後端 model_capabilities_for()/capabilitiesFor() 同讀。"
+  },
   "modelMinVersion": "5",
   "price_default": {
     "input": 0.25,
@@ -66,7 +71,12 @@
         }
       ],
       "thinking": "off",
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "supportsThinking": true,
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"],
+      "temperatureLockedWhenThinking": true,
+      "lockedTemperatureValue": 1,
+      "_temperatureLockedWhenThinking_comment": "OpenAI reasoning model（o-系列/gpt-5 系列）思考模式開啟時 temperature 僅接受 API 預設值 1，其他值回 400。"
     },
     {
       "id": "gemini",
@@ -75,6 +85,9 @@
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
       "url_hint": "generativelanguage",
       "defaultModel": "gemini-3.5-flash",
+      "supportsThinking": true,
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"],
+      "temperatureLockedWhenThinking": false,
       "defaultModels": [
         {
           "id": "gemini-3.1-pro-preview",
@@ -121,6 +134,9 @@
       "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
       "url_hint": "bytepluses",
       "defaultModel": "seed-2-0-lite-260228",
+      "supportsThinking": true,
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"],
+      "temperatureLockedWhenThinking": false,
       "defaultModels": [
         {
           "id": "seed-2-0-lite-260428",
