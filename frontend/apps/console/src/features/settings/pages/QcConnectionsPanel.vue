@@ -39,13 +39,12 @@ const isEditingNew = computed(
 );
 const blank = (env: string): QcConfig => ({
   id: crypto.randomUUID(),
-  label: `QC DB ${configStamp()}`,
+  // 預設名：qc <環境> db <時間戳>，全小寫、環境入名（如 qc sit db 202606301518），可自訂覆寫
+  label: `qc ${env} db ${configStamp()}`,
   env,
   host: envOf(env).host,
   port: QC.port as number,
   user: '',
-  names: [],
-  schemas: [QC.schema],
 });
 
 // 手風琴受控展開：activeId＝當前展開面板；載入後展開落點環境的第一張。

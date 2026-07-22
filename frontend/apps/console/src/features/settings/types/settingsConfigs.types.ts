@@ -22,8 +22,6 @@ export interface QcConfig {
   host: string;
   port: number | null;
   user: string;
-  names: string[]; // 多選 database
-  schemas: string[]; // 多選 schema
 }
 
 /** 後端 GET /api/settings(/raw) 回傳的設定全貌（raw 為明文機密、masked 為遮罩）。 */

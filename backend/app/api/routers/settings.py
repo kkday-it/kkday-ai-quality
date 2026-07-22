@@ -53,8 +53,6 @@ class QcConfigIn(BaseModel):
     host: str | None = None
     port: int | None = None
     user: str | None = None
-    names: list[str] = []
-    schemas: list[str] = []
     password: str | None = None  # transient；空/遮罩不覆蓋既有
 
 
@@ -168,19 +166,15 @@ class QcDbTestIn(BaseModel):
     env: str | None = None
     host: str | None = None
     port: int | None = None
-    names: list[str] | None = None
-    schemas: list[str] | None = None
     user: str | None = None
     password: str | None = None
 
 
 def _qc_db_bootstrap_name(cfg: dict) -> str:
-    """決定測試連線/列舉 database 用的 bootstrap dbname。
+    """決定測試連線用的 bootstrap dbname。
 
-    一律用 env 的預設起手庫（postgres——必存在、不受 QC 實例輪替影響），不測具體綁定庫：
-    綁定庫可能已隨實例輪替下線（如 qc201），以其起手會讓「測試連線」本身失敗，
-    使用者反而無法重載清單改綁（死循環）。PostgreSQL 連任一庫即可 SELECT pg_database 列出全部；
-    綁定庫是否仍存在改由測試結果的 stale_names 標注。
+    一律用 env 的預設起手庫（postgres——必存在、不受 QC 實例輪替影響）：實際抽取資料的具體
+    database 已不由此設定綁定（綁定資料庫功能已退役），測試連線僅做純連通性檢查。
     """
     from app.core.settings import qc_db_env_name
 
@@ -188,11 +182,10 @@ def _qc_db_bootstrap_name(cfg: dict) -> str:
 
 
 def _try_qc_db_connect(cfg: dict) -> dict:
-    """以 cfg 連 QC DB（5s timeout）並列舉可用 database / schema，回 {ok, databases?, schemas?, error?}。
+    """以 cfg 連 QC DB（5s timeout）測純連通性，回 {ok, error?}。
 
-    不回傳含密碼的連線字串。連線成功後 SELECT pg_database（排除 template）+ information_schema.schemata
-    （排除系統 schema）供前端多選載入。schema 為連線「起手庫」的清單（schema 屬 per-database，
-    多選多庫時以起手庫為準；KKday 多數庫為 public，實務差異小）。
+    僅連上 bootstrap 庫並 `SELECT 1`；不回傳含密碼的連線字串，不列舉 database/schema
+    （綁定資料庫功能已退役，測試連線降級為純連通性檢查）。
     """
     host = cfg.get("host") or ""
     if not host:
@@ -223,33 +216,17 @@ def _try_qc_db_connect(cfg: dict) -> dict:
         )
         try:
             with conn.cursor() as cur:
-                # 列舉非 template 的可連 database，供前端多選；排序穩定便於閱讀
-                cur.execute(
-                    "SELECT datname FROM pg_database "
-                    "WHERE datistemplate = false AND datallowconn = true "
-                    "ORDER BY datname"
-                )
-                databases = [r[0] for r in cur.fetchall()]
-                # 列舉起手庫的使用者 schema（排除 pg_* / information_schema 系統 schema）
-                cur.execute(
-                    "SELECT schema_name FROM information_schema.schemata "
-                    "WHERE schema_name NOT LIKE 'pg\\_%' "
-                    "AND schema_name <> 'information_schema' "
-                    "ORDER BY schema_name"
-                )
-                schemas = [r[0] for r in cur.fetchall()]
+                cur.execute("SELECT 1")
         finally:
             conn.close()
-        # 綁定庫健檢：已綁定但已不存在的庫（如 QC 實例輪替下線）標注回前端，供改綁提示
-        stale = [n for n in (cfg.get("names") or []) if n not in databases]
-        return {"ok": True, "databases": databases, "schemas": schemas, "stale_names": stale}
+        return {"ok": True}
     except Exception as e:  # 只回錯誤首行（避免洩漏連線細節 / 密碼）
         return {"ok": False, "error": str(e).splitlines()[0][:200]}
 
 
 @router.post("/api/datasource/qc-db/test")
 def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dict:
-    """測試某套 QC DB 連線並列舉 database/schema：以指定 config（或 active）為底，body 覆蓋表單值。
+    """測試某套 QC DB 連線的純連通性：以指定 config（或 active）為底，body 覆蓋表單值。
 
     password 空/遮罩 → 反查 qc_passwords[config_id]（免重輸）；config_id 缺省取 active_qc_config_id。
     """
@@ -258,9 +235,9 @@ def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dic
     saved = app_settings.load_settings(user["user_id"])
     cid = body.config_id or saved.get("active_qc_config_id")
     base = next((c for c in (saved.get("qc_configs") or []) if c.get("id") == cid), {})
-    cfg = {k: base.get(k) for k in ("env", "host", "port", "user", "names", "schemas")}
+    cfg = {k: base.get(k) for k in ("env", "host", "port", "user")}
     # body 表單值覆蓋（None 不覆蓋）
-    for k in ("env", "host", "port", "user", "names", "schemas"):
+    for k in ("env", "host", "port", "user"):
         v = getattr(body, k, None)
         if v is not None:
             cfg[k] = v

@@ -4,7 +4,7 @@
 - LLM：`llm_configs[]`（每套 {id,label,provider,base_url,model,temperature,thinking,reasoning_effort}）
   + `active_llm_config_id`；token 不入 config，存跨 config 共用的 `provider_tokens`（per-provider 機密）；
   `provider_models`（各供應商自訂 model 清單）。
-- QC DB：`qc_configs[]`（每套 {id,label,env,host,port,user,names[],schemas[]}）+ `active_qc_config_id`；
+- QC DB：`qc_configs[]`（每套 {id,label,env,host,port,user}）+ `active_qc_config_id`；
   password 不入 config，存 `qc_passwords`（per-config 機密，key=config_id）。
 
 機密絕不明文回前端：masked() 逐 key 遮罩 provider_tokens / qc_passwords；raw() 供「眼睛顯示全文」與編輯回填。
@@ -25,7 +25,7 @@ from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 # 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
 # 目錄定位統一由 app.core.paths 提供；後續新增全局配置於此目錄各建一 JSON。
-# QC DB 連線預設（port/schema/defaultEnv/environments）；main.py 連線測試的 port fallback 亦取此。
+# QC DB 連線預設（port/defaultEnv/environments）；main.py 連線測試的 port fallback 亦取此。
 QC_DB_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "qc_db.json").read_text(encoding="utf-8"))
 _LLM_DEFAULTS: dict = json.loads((_GLOBAL_DIR / "llm_model.json").read_text(encoding="utf-8"))
 # LLM model 下拉的最低版本門檻（僅 gpt-* 受限）；/api/settings/models 動態清單過濾用。
@@ -98,7 +98,7 @@ _DEFAULT_LLM: dict = {
 
 # 多 config 結構的 key 模板（值僅作型別樣板；實際以 _blank_settings() 產深複本）。
 # llm_configs[]：每套 {id,label, + _DEFAULT_LLM 欄位}；token 不入 config，存共用 provider_tokens。
-# qc_configs[]：每套 {id,label,env,host,port,user,names[],schemas[]}；password 不入 config，存 qc_passwords[id]。
+# qc_configs[]：每套 {id,label,env,host,port,user}；password 不入 config，存 qc_passwords[id]。
 _NEW_DEFAULT: dict = {
     "llm_configs": [],
     "active_llm_config_id": None,
@@ -151,7 +151,7 @@ def _is_legacy_format(data: dict) -> bool:
 def _migrate_legacy(data: dict) -> dict:
     """舊 flat dict → 新多 config 結構：LLM/QC 各轉成第一套並設為 active，機密歸入對應 map。
 
-    沿用既有 legacy 規則：api_token→provider_tokens、qc_db_name→names、qc_db_schema→schemas。
+    沿用既有 legacy 規則：api_token→provider_tokens。
     """
     new = _blank_settings()
 
@@ -182,17 +182,8 @@ def _migrate_legacy(data: dict) -> dict:
     ]
     new["active_llm_config_id"] = llm_id
 
-    # QC：names/schemas 由舊單值或陣列遷移
-    names = list(data.get("qc_db_names") or [])
-    if not names and data.get("qc_db_name"):
-        names = [data["qc_db_name"]]
-    schemas = list(data.get("qc_db_schemas") or [])
-    if not schemas and data.get("qc_db_schema"):
-        schemas = [data["qc_db_schema"]]
-    if not schemas:
-        schemas = [QC_DB_DEFAULTS["schema"]]
-    # 僅當舊資料有 QC 連線痕跡才建 config（host / names / user 任一）
-    if data.get("qc_db_host") or names or data.get("qc_db_user"):
+    # 僅當舊資料有 QC 連線痕跡才建 config（host / user 任一）
+    if data.get("qc_db_host") or data.get("qc_db_user"):
         qc_id = str(uuid.uuid4())
         new["qc_configs"] = [
             {
@@ -202,11 +193,9 @@ def _migrate_legacy(data: dict) -> dict:
                 "host": data.get("qc_db_host", ""),
                 "port": data.get("qc_db_port"),
                 "user": data.get("qc_db_user", ""),
-                "names": names,
-                "schemas": schemas,
             }
         ]
-        new["active_qc_config_id"] = qc_id if names else None
+        new["active_qc_config_id"] = qc_id
         old_pw = data.get("qc_db_password", "")
         if old_pw:
             new["qc_passwords"] = {qc_id: old_pw}

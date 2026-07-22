@@ -1,7 +1,6 @@
 {
-  "_comment": "QC DB（PostgreSQL）連線預設——跨語言共用非機密單一真相源（前端 @config/global/qc_db.json、後端 settings.py 同讀）。機密（密碼）走 backend/.env / user_settings，勿放這裡。port/schema 為跨環境共用；環境（sit/stage/production）各帶 host + bootstrap database（測試連線/列舉 database 用的起手庫）。起手庫統一用 postgres（必存在、不受 QC qcNNN 實例輪替影響；qc201 下線曾致舊起手庫連線失敗）。實際抽取的 database 由前端多選，存 user_settings。",
+  "_comment": "QC DB（PostgreSQL）連線預設——跨語言共用非機密單一真相源（前端 @config/global/qc_db.json、後端 settings.py 同讀）。機密（密碼）走 backend/.env / user_settings，勿放這裡。port 為跨環境共用；環境（sit/stage/production）各帶 host + bootstrap database（測試連線用的起手庫）。起手庫統一用 postgres（必存在、不受 QC qcNNN 實例輪替影響；qc201 下線曾致舊起手庫連線失敗）。測試連線僅做純連通性檢查（SELECT 1），不列舉 / 綁定實際 database。",
   "port": 5432,
-  "schema": "public",
   "defaultEnv": "sit",
   "environments": [
     {
