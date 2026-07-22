@@ -150,7 +150,17 @@ def test_resolve_attrs_multi_prune_no_fallback_when_hit(monkeypatch) -> None:
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     calls: list = []
 
-    def _fake_pack(item, text, model, max_n, polarity="negative", *, versions=None, pids=None):
+    def _fake_pack(  # noqa: PLR0913 —— 對齊 _attrs_pack 正式簽名（含 order_snapshot 透傳）
+        item,
+        text,
+        model,
+        max_n,
+        polarity="negative",
+        *,
+        versions=None,
+        pids=None,
+        order_snapshot="",
+    ):
         calls.append(pids)
         return [{"l1_domain_code": "content", "l2_code": "C-1-1", "confidence": 0.9}]
 
@@ -165,7 +175,17 @@ def test_resolve_attrs_multi_prune_fallback_reruns_rest(monkeypatch) -> None:
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     calls: list = []
 
-    def _fake_pack(item, text, model, max_n, polarity="negative", *, versions=None, pids=None):
+    def _fake_pack(  # noqa: PLR0913 —— 對齊 _attrs_pack 正式簽名（含 order_snapshot 透傳）
+        item,
+        text,
+        model,
+        max_n,
+        polarity="negative",
+        *,
+        versions=None,
+        pids=None,
+        order_snapshot="",
+    ):
         calls.append(pids)
         if pids == ["01_C-1_content"]:  # 候選域空手
             return []
@@ -186,7 +206,17 @@ def test_resolve_attrs_multi_no_prune_no_fallback(monkeypatch) -> None:
     monkeypatch.setattr(prejudge.client, "is_stub", lambda: False)
     calls: list = []
 
-    def _fake_pack(item, text, model, max_n, polarity="negative", *, versions=None, pids=None):
+    def _fake_pack(  # noqa: PLR0913 —— 對齊 _attrs_pack 正式簽名（含 order_snapshot 透傳）
+        item,
+        text,
+        model,
+        max_n,
+        polarity="negative",
+        *,
+        versions=None,
+        pids=None,
+        order_snapshot="",
+    ):
         calls.append(pids)
         return []
 
