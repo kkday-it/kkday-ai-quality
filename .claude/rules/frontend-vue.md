@@ -140,6 +140,22 @@ import { StickyTabs } from '@/components';
 
 > Canonical 用例：`features/judge/components/PrejudgeLogView.vue`（7 路 LLM 調用 tab，`polarity`/`C-1`~`C-6`，含左側掛錨點導航 + `getScrollEl()` 用法）。`StickyTabs` 內部實作（`:deep()` 覆寫 `.arco-tabs`/`.arco-tabs-nav`/`.arco-tabs-content`，水平 overflow 維持 hidden 不動 Arco 原生 clip 機制）見 `components/StickyTabs.vue` 本身，除非要擴充該元件本身，否則消費端不需要、也不應該知道這些內部細節。
 
+## 異步加載三態一致：骨架 + 進度反饋（canonical · 強制）
+
+任何**異步加載**的 UI（fetch/SSE/await 後才有內容）一律給「載入中反饋」，禁止只有空白或裸 spinner 乾等；且**同類場景用同一元件**，不各處手抄骨架/進度：
+
+| 異步場景 | 唯一元件 | 載入中反饋 |
+|---|---|---|
+| **列表表格**（頁/抽屜/彈窗內） | `TableLayout`（`@/components`） | 內建 loading（a-table spin）+ error（表上 alert 不遮資料）+ emptyText 三態 |
+| **有確定進度的 job**（批次初判/導出，知道 processed/total） | `ExportProgressBar`（`@/components`）或 `a-progress` | 真實百分比進度條 + 文案（見既有 useExportJob/usePrejudgeJob 的 SSE 驅動） |
+| **非表格區塊/詳情/卡片**（單請求，進度不可知，如訂單佐證/圖表容器/側欄詳情） | **`AsyncSection`（`@/components`）** | **頂部不確定進度條（indeterminate 動態感）+ `a-skeleton` 骨架占位 + error/empty 三態** |
+| **按鈕觸發的動作**（送出/儲存/測試） | `a-button :loading` | 按鈕自身 loading 態（不需骨架） |
+
+- **強制**：凡 `ref(false)` 的 loading 狀態驅動一塊**內容區塊**的顯示，該區塊一律包 `AsyncSection`（或上表對應元件），不得只寫 `v-if="loading"` 顯示一行「載入中…」或什麼都不顯示直接閃現。骨架讓使用者預期內容形狀、進度條給「正在載入」的實時感——兩者都要，尤其加載 >1s 的請求（如佐證取數 3-6s）。
+- **Canonical 用例＝訂單佐證區塊**（`features/judge/components/AttributionDetailDrawer.vue` 的 `AsyncSection`）：`:loading`/`:error`/`:empty`/`:empty-text`/`:skeleton-rows`，成功內容走預設插槽。任何新的異步區塊照此，禁止再手寫 `a-skeleton`+`a-alert`+`a-empty` 三段 v-if（那正是 AsyncSection 收斂掉的重複）。
+- **值域/三態語義同源**：`AsyncSection` 的 loading/error/empty 對應 composable 回傳的三態（如 `useOrderEvidence` 的 `loading`/`error`/`result`）——composable 也一律回這組三態，不各自發明狀態欄位。
+- **選型判準**：能算百分比 → 進度條（ExportProgressBar/a-progress）；算不出百分比的單請求 → AsyncSection（骨架+不確定條）；表格 → TableLayout；按鈕 → :loading。拿不準時預設 AsyncSection。
+
 ## 同語義控件跨頁一致（canonical 對齊 · 強制）
 
 同一語義的設定/表單控件，**全站只准一種元件形態**；已有 canonical 實作的語義，新頁面必須對齊其元件選型與交互語義（含禁用/鎖定條件與值域 SSOT），禁止另選元件重做一套：

@@ -7,7 +7,7 @@
  */
 import { watch } from 'vue';
 import { IconRefresh } from '@arco-design/web-vue/es/icon';
-import { JsonEditor } from '@/components';
+import { AsyncSection, JsonEditor } from '@/components';
 import {
   ACTION_LABEL,
   EVIDENCE_EMPTY_TEXT,
@@ -163,21 +163,21 @@ const otherLangs = (a: Attribution): [string, string][] =>
             <template #icon><icon-refresh /></template>
           </a-button>
         </div>
-        <a-skeleton v-if="evLoading" animation>
-          <a-skeleton-line :rows="3" />
-        </a-skeleton>
-        <a-alert v-else-if="evError" type="warning">{{ evError }}</a-alert>
-        <JsonEditor
-          v-else-if="evResult?.data"
-          :json="evResult.data"
-          read-only
-          mode="tree"
-          auto-height
-        />
-        <a-empty
-          v-else-if="evResult"
-          :description="EVIDENCE_EMPTY_TEXT[evResult.status] || evResult.status"
-        />
+        <AsyncSection
+          :loading="evLoading"
+          :error="evError"
+          :empty="!!evResult && !evResult.data"
+          :empty-text="evResult ? EVIDENCE_EMPTY_TEXT[evResult.status] || evResult.status : ''"
+          :skeleton-rows="4"
+        >
+          <JsonEditor
+            v-if="evResult?.data"
+            :json="evResult.data"
+            read-only
+            mode="tree"
+            auto-height
+          />
+        </AsyncSection>
       </div>
 
       <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因/判決狀態/真值徽章）-->
