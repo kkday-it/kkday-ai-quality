@@ -1,0 +1,24 @@
+{
+  "_comment": "訂單佐證（qc_evidence）子系統旋鈕：production snapshot 連線/快取/摘要參數。純後端消費（前端不讀）。改值需重啟 backend（比照 prejudge.json 慣例可後補熱重載）。⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（per-user qc_configs 憑證）純為可行性驗證；終態＝SA/SD 核發專用 replica + 服務帳號（backend/.env AIQ_EVIDENCE_DB_* 注入，見 config.py evidence_db_*）。",
+  "enabled": true,
+  "db": {
+    "dbname": "kkdb",
+    "schema": "public",
+    "connect_timeout_s": 5,
+    "statement_timeout_s": 12,
+    "pool_size": 3,
+    "breaker_threshold": 5,
+    "breaker_cooldown_s": 60
+  },
+  "cache": {
+    "order_ttl_hours": 6,
+    "product_ttl_days": 30,
+    "size_limit_mb": 512
+  },
+  "singleflight_wait_timeout_s": 20,
+  "summary": {
+    "lang_fallback": "zh-tw",
+    "max_chars_per_field": 500,
+    "max_total_chars": 1800
+  }
+}
