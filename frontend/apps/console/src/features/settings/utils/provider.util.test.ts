@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveProviderId, modelMeetsMin } from './provider.util';
-
-describe('deriveProviderId', () => {
-  it('由 base_url 子字串反推非官方 provider', () => {
-    expect(deriveProviderId('https://generativelanguage.googleapis.com/v1beta')).toBe('gemini');
-    expect(deriveProviderId('https://ark.bytepluses.com/api/v3')).toBe('bytedance');
-  });
-
-  it('無法辨識時退回 openai（安全預設）', () => {
-    expect(deriveProviderId('')).toBe('openai');
-    expect(deriveProviderId('https://unknown.example/v1')).toBe('openai');
-  });
-});
+import { modelMeetsMin } from './provider.util';
 
 describe('modelMeetsMin', () => {
   it('gpt-* 依主.次版本比較門檻', () => {

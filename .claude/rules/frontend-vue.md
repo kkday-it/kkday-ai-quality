@@ -167,7 +167,7 @@ import { StickyTabs } from '@/components';
 | 大集合單選（模型清單、連線清單） | `a-select`（`:options` 或 a-option） | 自刻下拉 |
 | 數值微調（temperature 類） | `a-switch`（啟用自訂）＋ `a-slider`＋當前值顯示；有鎖定條件時 switch disabled + 鎖定說明文字 | 裸 input number、無啟用開關的常駐 slider |
 
-- **Canonical 用例＝LLM 旋鈕**（`features/settings/components/LlmConfigEditor.vue`）：Thinking＝`a-switch on/off`、Reasoning effort＝radio-group 分段（值域 SSOT＝`features/settings/constants` 的 `REASONING`，源頭 `config/global/llm_model.json`）、Temperature＝switch＋slider＋`tempLocked`（OpenAI thinking on 鎖 1）。任何頁面出現同語義旋鈕（如 Prompt 調試台）一律鏡射此組合與正規化邏輯（`thinking === 'on' ? 'on' : 'off'`、reasoning 兜底 `medium`），不得自帶第二套值域或另選元件（2026-07-22 Prompt 調試台曾用 select 下拉重做被退回對齊，即本條由來）。
+- **Canonical 用例＝LLM 旋鈕**（`@/components/LlmKnobs.vue`，A schema 2026-07-22 起為唯一實作，各功能區與設定面板皆呼叫此元件，禁止另寫第二套）：Thinking＝`a-switch on/off`、Reasoning effort＝radio-group 分段、Temperature＝switch＋slider＋`tempLocked`。值域與鎖定規則不再寫死（不是 `provider === 'openai'` 判斷），改由 `features/settings/constants` 的 `capabilitiesFor(model, provider)` 依所屬供應商（`config/global/llm_model.json` `providers[].supportsThinking`/`reasoningEffortOptions`/`temperatureLockedWhenThinking`/`lockedTemperatureValue`，個別 model 可被 `modelCapabilities` 覆寫）動態決定，與後端 `settings.model_capabilities_for()` 同一份資料源。連線選擇（供應商）配對元件＝`@/components/LlmConfigPicker.vue`。任何頁面出現同語義旋鈕（初判分類/Prompt 調試台/Prompt 沙盒）一律直接複用 `LlmKnobs`/`LlmConfigPicker`（透過 `useLlmAreaDefault(area)` composable 取得 v-model 綁定），不得自帶第二套值域或另選元件（2026-07-22 Prompt 調試台曾用 select 下拉重做被退回對齊，即本條由來）。
 - **值域/選項 SSOT 同源**：對齊 canonical 時連值域一起復用（import 同一 constants），禁止在新頁面手抄枚舉陣列——手抄必 drift。
 - **第 2 次出現即評估抽共用元件**（呼應上方佈局拆分準則）：同一組控件組合出現在第 2 個頁面時，優先抽成共用元件（props 注入差異）而非各自複製模板。
 

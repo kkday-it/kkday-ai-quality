@@ -3,7 +3,7 @@ export * from './useAttributionDashboard';
 export * from './useAttributionList';
 export * from './useAttributionSelection';
 export * from './useExportJob';
-export * from './useLlmConfigs';
+export * from './useLlmAreaDefault';
 export * from './useOrderEvidence';
 export * from './usePrejudgeJob';
 export * from './useProductVerticalRule';

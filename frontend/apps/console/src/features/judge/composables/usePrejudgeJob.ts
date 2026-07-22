@@ -26,6 +26,7 @@ import {
 } from '@/api';
 import { emptyFilters, filtersToParams, STAGE_LABELS } from '../constants';
 import type { LogEntry } from '../components/PrejudgeLogView.types';
+import type { LlmOverrides } from '@/features/settings/types';
 
 /** 頁面列表篩選快照（開彈窗時自動帶入彈窗內目標篩選草稿的初值；鍵名對齊 getProblems 參數）。 */
 export interface PrejudgeListFilters {
@@ -48,8 +49,8 @@ export interface PrejudgeListFilters {
 interface PrejudgeJobDeps {
   /** 目前選定來源（getter / ref / 純值）。 */
   source: MaybeRefOrGetter<string>;
-  /** 選中的已保存 LLM 配置 id（來自 useLlmConfigs）。 */
-  llmConfigId: Ref<string>;
+  /** 本次執行 LLM 覆寫（provider+旋鈕，來自 useLlmAreaDefault('prejudge')）。 */
+  llmOverrides: ComputedRef<LlmOverrides>;
   /** 生效的商品垂直分類（送查詢用；全選/未選為 undefined）。 */
   effVerticals: ComputedRef<string[] | undefined>;
   /** 跨頁累積的勾選 review（source_id）；selected 模式目標與 item_ids 用。 */
@@ -65,7 +66,7 @@ interface PrejudgeJobDeps {
  * @returns 進度狀態、目標選取、批次動作（跑/暫停/恢復/停止）、單列重新初判 loading + 觸發。
  */
 export function usePrejudgeJob(deps: PrejudgeJobDeps) {
-  const { source, llmConfigId, effVerticals, selectedKeys, listFilters, reload } = deps;
+  const { source, llmOverrides, effVerticals, selectedKeys, listFilters, reload } = deps;
 
   const running = ref(false);
   /** 當前 job_id（供暫停/恢復/停止；無執行中為空）。 */
@@ -191,7 +192,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     failedItems.value = []; // 新批次重置（保留上一批失敗清單至下次開跑，供期間點「重新初判失敗筆」）
     failedTruncated.value = false;
     try {
-      const r = await startPrejudge({ ...body, llm_config_id: llmConfigId.value || undefined });
+      const r = await startPrejudge({ ...body, overrides: llmOverrides.value });
       jobId.value = r.job_id;
       progress.value = { processed: 0, total: r.total, totalTokens: 0, costUsd: 0 };
       if (!r.total) {
@@ -405,7 +406,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       const r = await startPrejudge({
         item_ids: [id],
         source: toValue(source),
-        llm_config_id: llmConfigId.value || undefined,
+        overrides: llmOverrides.value,
         prompt_versions: promptVersions,
       });
       _openLog(r.job_id);

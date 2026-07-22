@@ -11,7 +11,14 @@
  * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
 import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
-import { CollapsibleSidePanel, ExportProgressBar, StateGuard, TableLayout } from '@/components';
+import {
+  CollapsibleSidePanel,
+  ExportProgressBar,
+  LlmConfigPicker,
+  LlmKnobs,
+  StateGuard,
+  TableLayout,
+} from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
@@ -27,7 +34,6 @@ import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import {
   AttributionDetailDrawer,
   AttributionFilterBar,
-  LlmConfigSelect,
   PrejudgeLogView,
   PromptSandboxDrawer,
   PromptVersionPickerGroup,
@@ -114,8 +120,12 @@ const {
   onFilterChange,
   activeFilterCount,
   resetFilters,
-  llmConfigId,
-  llmConfigs,
+  llmProvider,
+  llmKnobs,
+  llmProviderHasToken,
+  setLlmProvider,
+  setLlmKnobs,
+  saveLlmAreaDefault,
   rows,
   total,
   unjudged,
@@ -226,13 +236,29 @@ const onConfirmRun = () => {
   }
 };
 
+/** 把目前 provider + 旋鈕存為 prejudge 功能區默認（team 共用）。 */
+const onSaveLlmAreaDefault = async () => {
+  try {
+    await saveLlmAreaDefault();
+    Message.success('已存為本功能區默認（團隊共用）');
+  } catch (e: any) {
+    Message.error('儲存失敗：' + (e?.message || e));
+  }
+};
+
 // ── 確認抽屜執行前摘要卡：把「這次會用什麼設定跑」攤開給使用者看（模型 + 版本選擇），
 //    取代原本收合面板時的大片空白；label 復用 judgeRules store 與 composeLlmLabel，勿另建對照。 ──
 const judgeRulesStore = useJudgeRulesStore();
-const confirmModelLabel = computed(() => {
-  const c = llmConfigs.value.find((x) => x.id === llmConfigId.value);
-  return c ? composeLlmLabel(c) : '系統預設模型';
-});
+const confirmModelLabel = computed(() =>
+  llmKnobs.model
+    ? composeLlmLabel({
+        provider: llmProvider.value,
+        model: llmKnobs.model,
+        thinking: llmKnobs.thinking,
+        reasoning_effort: llmKnobs.reasoning_effort,
+      })
+    : '系統預設模型',
+);
 /** 指定了非 active 歷史版本的 prompt 清單（[中文名, 版本號]）；空＝全部沿用 active。 */
 const confirmPinnedVersions = computed(() =>
   Object.entries(confirmVersionSelection.value.versions).map(
@@ -356,11 +382,17 @@ const submitNote = async () => {
 /** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
 const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-/** 本次初判將使用的模型 label（llmConfigId 跟隨全域啟用中，抽屜可臨時覆寫）；無配置回空。 */
-const currentLlmLabel = computed(() => {
-  const c = llmConfigs.value.find((x) => x.id === llmConfigId.value);
-  return c ? composeLlmLabel(c) : '';
-});
+/** 本次初判將使用的模型 label（跟隨 prejudge 功能區默認，抽屜可臨時覆寫）；無配置回空。 */
+const currentLlmLabel = computed(() =>
+  llmKnobs.model
+    ? composeLlmLabel({
+        provider: llmProvider.value,
+        model: llmKnobs.model,
+        thinking: llmKnobs.thinking,
+        reasoning_effort: llmKnobs.reasoning_effort,
+      })
+    : '',
+);
 
 /** 單列（重）判抽屜的說明文案（附當前模型，判前提醒用什麼 model 歸因）；有既有歸因時提醒會覆寫。 */
 const rejudgeConfirmText = computed(
@@ -449,7 +481,7 @@ onMounted(init);
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigSelect）-->
+      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigPicker/LlmKnobs）-->
       <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）-->
       <a-button
         type="primary"
@@ -1098,7 +1130,18 @@ onMounted(init);
 
             <a-divider orientation="left" :margin="12">初判設定</a-divider>
             <div class="flex flex-col gap-3">
-              <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" />
+              <a-alert v-if="!Object.keys(llmProviderHasToken).length" type="warning">
+                尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
+              </a-alert>
+              <LlmConfigPicker
+                :model-value="llmProvider"
+                :provider-has-token="llmProviderHasToken"
+                @update:model-value="setLlmProvider"
+              />
+              <LlmKnobs :model-value="llmKnobs" :provider="llmProvider" @update:model-value="setLlmKnobs" />
+              <div class="flex justify-end">
+                <a-button size="small" @click="onSaveLlmAreaDefault">存為此區默認</a-button>
+              </div>
               <div>
                 <div class="mb-1 text-xs text-gray-500">
                   Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { useRouter } from 'vue-router';
 import {
@@ -10,26 +10,16 @@ import {
   type PromptDebugResult,
   type PromptDebugUsage,
 } from '@/api';
-import { useSettingsConfigsStore } from '@/stores/settingsConfigs.store';
-import { composeLlmLabel } from '@/features/settings/utils/label.util';
-import { REASONING } from '@/features/settings/constants';
+import { LlmConfigPicker, LlmKnobs } from '@/components';
+import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 
 const router = useRouter();
-const configs = useSettingsConfigsStore();
+const llm = useLlmAreaDefault('prompt_debug');
 
 const defaults = ref<PromptDebugDefaults | null>(null);
 const systemPrompt = ref('');
 const inputText = ref('');
 const loadingDefaults = ref(false);
-const selectedConfigId = ref('');
-
-const model = ref('');
-const useTemperature = ref(false);
-const temperature = ref(0);
-// 與 LlmConfigEditor 同語義：thinking 二態 switch（'default' 正規化為 off）、reasoning 走 REASONING SSOT
-type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
-const thinking = ref<'on' | 'off'>('off');
-const reasoningEffort = ref<ReasoningEffort>('medium');
 
 const streaming = ref(false);
 const rawOutput = ref('');
@@ -41,32 +31,12 @@ const errorMessage = ref('');
 const outputRef = ref<HTMLElement>();
 let abortController: AbortController | null = null;
 
-const selectedConfig = computed(() =>
-  configs.llmConfigs.find((item) => item.id === selectedConfigId.value),
-);
-/** 思考模式開啟時 temperature 鎖定 1（僅 OpenAI；同 LlmConfigEditor 的 tempLocked 語義）。 */
-const tempLocked = computed(
-  () => thinking.value === 'on' && (selectedConfig.value?.provider ?? 'openai') === 'openai',
-);
-watch(
-  tempLocked,
-  (locked) => {
-    if (locked) {
-      useTemperature.value = true;
-      temperature.value = 1;
-    }
-  },
-  { immediate: true },
-);
 const canRun = computed(
   () =>
-    !!selectedConfigId.value &&
-    !!model.value.trim() &&
+    !!llm.provider.value &&
+    !!llm.knobs.model.trim() &&
     !!systemPrompt.value.trim() &&
     !!inputText.value.trim(),
-);
-const configOptions = computed(() =>
-  configs.llmConfigs.map((item) => ({ value: item.id, label: composeLlmLabel(item) })),
 );
 const displayedResults = computed(() => {
   const parsed = result.value?.parsed;
@@ -75,20 +45,6 @@ const displayedResults = computed(() => {
     .filter((field) => Object.prototype.hasOwnProperty.call(parsed, field.key))
     .map((field) => ({ ...field, value: parsed[field.key] }));
 });
-
-function syncConfig(): void {
-  const current = selectedConfig.value;
-  if (!current) return;
-  model.value = current.model;
-  useTemperature.value = current.temperature !== null;
-  temperature.value = current.temperature ?? 0;
-  thinking.value = current.thinking === 'on' ? 'on' : 'off';
-  reasoningEffort.value = REASONING.includes(current.reasoning_effort)
-    ? (current.reasoning_effort as ReasoningEffort)
-    : 'medium';
-}
-
-watch(selectedConfigId, syncConfig);
 
 async function loadDefaults(): Promise<void> {
   loadingDefaults.value = true;
@@ -103,9 +59,7 @@ async function loadDefaults(): Promise<void> {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDefaults(), configs.loadAll()]);
-  selectedConfigId.value = configs.activeLlmId || configs.llmConfigs[0]?.id || '';
-  syncConfig();
+  await Promise.all([loadDefaults(), llm.loadConfigs()]);
 });
 
 const samples = [
@@ -146,13 +100,7 @@ async function run(): Promise<void> {
       {
         text: inputText.value,
         system_prompt: systemPrompt.value,
-        llm_config_id: selectedConfigId.value,
-        overrides: {
-          model: model.value.trim(),
-          temperature: tempLocked.value ? 1 : useTemperature.value ? temperature.value : null,
-          thinking: thinking.value,
-          reasoning_effort: reasoningEffort.value,
-        },
+        overrides: llm.overrides.value,
       },
       {
         onMeta: (value) => (meta.value = value),
@@ -180,6 +128,15 @@ async function run(): Promise<void> {
 
 function abort(): void {
   abortController?.abort();
+}
+
+async function saveAsDefault(): Promise<void> {
+  try {
+    await llm.saveAsDefault();
+    Message.success('已存為本功能區默認（團隊共用）');
+  } catch (error) {
+    Message.error('儲存失敗：' + (error instanceof Error ? error.message : error));
+  }
 }
 
 async function copyOutput(): Promise<void> {
@@ -318,71 +275,24 @@ function displayValue(value: unknown): string {
         <div class="debug-panel flex-none">
           <div class="panel-head">
             <div>
-              <div class="panel-title">OpenAI 配置</div>
-              <div class="panel-sub">選已保存連線；下方旋鈕只影響本次，不會改動全域配置</div>
+              <div class="panel-title">本次 LLM 配置</div>
+              <div class="panel-sub">跟隨「Prompt 調試台」功能區默認；下方調整只影響本次，不動全域默認</div>
             </div>
             <a-link @click="openLlmSettings">管理連線</a-link>
           </div>
-          <a-alert v-if="!configs.llmConfigs.length" type="warning" class="mb-3">
-            尚無可用 LLM 配置，請先建立並保存 API Token。
+          <a-alert v-if="!Object.keys(llm.providerHasToken.value).length" type="warning" class="mb-3">
+            尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
           </a-alert>
-          <a-select
-            v-model="selectedConfigId"
-            :options="configOptions"
-            placeholder="選擇 LLM 配置"
-            :disabled="streaming"
+          <LlmConfigPicker
+            :model-value="llm.provider.value"
+            :provider-has-token="llm.providerHasToken.value"
+            @update:model-value="llm.setProvider"
           />
-          <div class="mt-3 grid grid-cols-2 gap-3">
-            <label class="field col-span-2">
-              <span>Model</span>
-              <a-input v-model="model" :disabled="streaming" allow-clear />
-            </label>
-            <label class="field">
-              <span>思考模式 Thinking</span>
-              <div class="flex h-8 items-center">
-                <a-switch
-                  v-model="thinking"
-                  checked-value="on"
-                  unchecked-value="off"
-                  :disabled="streaming"
-                />
-              </div>
-            </label>
-            <label class="field col-span-2">
-              <span>Reasoning effort</span>
-              <a-space>
-                <a-radio-group
-                  v-model="reasoningEffort"
-                  type="button"
-                  size="small"
-                  :disabled="streaming || thinking === 'off'"
-                >
-                  <a-radio v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-radio>
-                </a-radio-group>
-                <span v-if="thinking === 'off'" class="text-xs text-[#86909c]"
-                  >Thinking 關閉時不適用</span
-                >
-              </a-space>
-            </label>
-            <label class="field col-span-2">
-              <span>Temperature</span>
-              <a-space>
-                <a-switch v-model="useTemperature" :disabled="streaming || tempLocked" />
-                <span class="text-xs text-[#86909c]">{{
-                  tempLocked ? '鎖定 1（Thinking 開啟）' : useTemperature ? '自訂' : 'API 預設'
-                }}</span>
-                <a-slider
-                  v-if="useTemperature && !tempLocked"
-                  v-model="temperature"
-                  :min="0"
-                  :max="2"
-                  :step="0.1"
-                  class="w-[180px]"
-                  :disabled="streaming"
-                />
-                <span v-if="useTemperature">{{ tempLocked ? 1 : (temperature ?? 0) }}</span>
-              </a-space>
-            </label>
+          <div class="mt-3">
+            <LlmKnobs :model-value="llm.knobs" :provider="llm.provider.value" @update:model-value="llm.setKnobs" />
+          </div>
+          <div class="mt-2 flex justify-end">
+            <a-button size="small" :disabled="streaming" @click="saveAsDefault">存為此區默認</a-button>
           </div>
         </div>
 
@@ -510,13 +420,6 @@ function displayValue(value: unknown): string {
 .input-editor {
   height: calc(100vh - 354px);
   min-height: 460px;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: #4e5969;
-  font-size: 12px;
 }
 .stream-output {
   min-height: 150px;

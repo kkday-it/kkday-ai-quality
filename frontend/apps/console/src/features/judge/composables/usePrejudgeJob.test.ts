@@ -51,7 +51,7 @@ const mk = (
 ) =>
   usePrejudgeJob({
     source: () => 'product_reviews',
-    llmConfigId: ref('cfg1'),
+    llmOverrides: computed(() => ({ provider: 'openai', model: 'gpt-5-nano' })),
     effVerticals: computed(() => opts.verticals),
     selectedKeys: ref(opts.selected ?? []),
     listFilters: computed(() => opts.filters ?? {}),
@@ -127,7 +127,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
         within_ids: ['x', 'y'],
         scope: 'all',
         source: 'product_reviews',
-        llm_config_id: 'cfg1',
+        overrides: { provider: 'openai', model: 'gpt-5-nano' },
       }),
     );
     expect(job.confirmOpen.value).toBe(false);

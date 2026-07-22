@@ -24,7 +24,7 @@ import {
 import { exportName } from '../utils';
 import { useAttributionSelection } from './useAttributionSelection';
 import { useExportJob } from './useExportJob';
-import { useLlmConfigs } from './useLlmConfigs';
+import { useLlmAreaDefault } from './useLlmAreaDefault';
 import { usePrejudgeJob } from './usePrejudgeJob';
 
 /**
@@ -81,8 +81,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
   const sortValue = ref('occurred_at:desc');
 
-  // ── LLM 模型（已保存配置）──下沉 useLlmConfigs（載入/選中/全域切換）；同源「設定 › LLM 模型連線」。
-  const { llmConfigId, llmConfigs, activeLlmId, loadConfigs, setActiveLlm } = useLlmConfigs();
+  // ── LLM 連線 + 旋鈕（prejudge 功能區）──下沉 useLlmAreaDefault；同源「設定 › LLM 連線」。
+  const llm = useLlmAreaDefault('prejudge');
 
   // ── 伺服器端分頁 ──
   const rows = ref<ProblemRow[]>([]);
@@ -196,7 +196,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   );
 
   const init = () => {
-    loadConfigs();
+    llm.loadConfigs();
     verticalFilter.loadOptions();
     loadCascadeOptions();
     loadModelOptions();
@@ -214,7 +214,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const listFilters = computed(() => filtersToParams(filters));
   const job = usePrejudgeJob({
     source,
-    llmConfigId,
+    llmOverrides: llm.overrides,
     effVerticals,
     selectedKeys,
     listFilters,
@@ -332,11 +332,13 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     onFilterChange,
     activeFilterCount,
     resetFilters,
-    // 模型
-    llmConfigId,
-    llmConfigs,
-    activeLlmId,
-    setActiveLlm,
+    // 模型（prejudge 功能區連線 + 旋鈕）
+    llmProvider: llm.provider,
+    llmKnobs: llm.knobs,
+    llmProviderHasToken: llm.providerHasToken,
+    setLlmProvider: llm.setProvider,
+    setLlmKnobs: llm.setKnobs,
+    saveLlmAreaDefault: llm.saveAsDefault,
     // 分頁資料
     rows,
     total,

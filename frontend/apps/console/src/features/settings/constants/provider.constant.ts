@@ -24,6 +24,14 @@ export interface Provider {
   defaultModels: ModelOption[];
   thinking?: string; // 'on' | 'off'
   reasoning_effort?: string;
+  /** 該供應商是否支援 thinking 開關（provider 級能力預設；modelCapabilities 可對個別 model 覆寫）。 */
+  supportsThinking?: boolean;
+  /** 該供應商可用的 reasoning_effort 值域（取代舊固定全域 REASONING）。 */
+  reasoningEffortOptions?: string[];
+  /** 思考模式開啟時是否鎖定 temperature（OpenAI reasoning model 為 true；Gemini/ByteDance 為 false）。 */
+  temperatureLockedWhenThinking?: boolean;
+  /** 鎖定時實際送出的 temperature 值（通常 1）。 */
+  lockedTemperatureValue?: number;
 }
 
 /**
@@ -33,23 +41,46 @@ export interface Provider {
  */
 export const PROVIDERS = llm.providers as Provider[];
 
-/** Reasoning effort 對齊 OpenAI 官方支援值；資料源＝config/global/llm_model.json。 */
+/** Reasoning effort 對齊 OpenAI 官方支援值（全域值域回退）；資料源＝config/global/llm_model.json。 */
 export const REASONING: string[] = llm.reasoning;
 
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
 
-/** openai 為預設供應商；其 preset 作為 LLM 設定表單的初始展示預設（與後端「未設定即用 API 預設」語義不同，故獨立）。 */
-const openai = PROVIDERS.find((p) => p.id === 'openai');
+/** LLM 消費功能區清單（prejudge/prompt_debug/sandbox）；資料源＝config/global/llm_model.json areas[]。 */
+export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'sandbox'];
+
+/** 每 model 可配參數能力（thinking 支援 / reasoning_effort 值域 / temperature 鎖定規則）。 */
+export interface ModelCapability {
+  supportsThinking: boolean;
+  reasoningEffortOptions: string[];
+  temperatureLockedWhenThinking: boolean;
+  lockedTemperatureValue: number;
+}
+
+/** 個別 model 覆寫（優先於所屬 provider 級預設）；資料源＝config/global/llm_model.json modelCapabilities。 */
+const MODEL_CAPABILITY_OVERRIDES: Record<string, Partial<ModelCapability>> =
+  (llm as { modelCapabilities?: Record<string, Partial<ModelCapability>> }).modelCapabilities ?? {};
 
 /**
- * LLM 設定面板表單的「UI 展示預設」。衍生自 openai 供應商 preset，避免與 config/global/llm_model.json 重複寫死。
- * 注意：這是「前端開頁顯示值」，非後端 _DEFAULT（後端 thinking/effort 用 'default' 表示「不送、用 API 預設」）。
+ * 回某 model 的可配參數能力：預設取「該 model 所屬 provider」的 provider 級欄位，
+ * `modelCapabilities[model_id]` 可對個別 model 覆寫任一欄位。取代舊寫死的
+ * `tempLocked = provider === 'openai'` 與固定全域 REASONING 值域，與後端
+ * `settings.model_capabilities_for()` 同一份資料源、同一套判定。
+ * @param modelId LLM model id（如 gpt-5.4-mini）。
+ * @param provider 該 model 所屬 provider id（缺省時反查所有 provider 的 defaultModels）。
  */
-export const DEFAULT_LLM_FORM = {
-  model: openai?.defaultModel ?? openai?.defaultModels[0]?.id ?? 'gpt-5.4-mini',
-  base_url: '',
-  temperature: 0 as number,
-  thinking: openai?.thinking ?? 'off',
-  reasoning_effort: openai?.reasoning_effort ?? 'medium',
-};
+export function capabilitiesFor(modelId: string, provider?: string): ModelCapability {
+  const owner =
+    (provider && PROVIDERS.find((p) => p.id === provider)) ||
+    PROVIDERS.find((p) => (p.defaultModels ?? []).some((m) => m.id === modelId)) ||
+    PROVIDERS.find((p) => p.id === 'openai');
+  const base: ModelCapability = {
+    supportsThinking: owner?.supportsThinking ?? true,
+    reasoningEffortOptions: owner?.reasoningEffortOptions ?? REASONING,
+    temperatureLockedWhenThinking: owner?.temperatureLockedWhenThinking ?? false,
+    lockedTemperatureValue: owner?.lockedTemperatureValue ?? 1,
+  };
+  return { ...base, ...MODEL_CAPABILITY_OVERRIDES[modelId] };
+}
+

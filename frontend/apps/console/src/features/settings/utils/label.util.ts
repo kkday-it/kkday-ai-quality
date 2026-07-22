@@ -1,12 +1,5 @@
-// 設定 config 預設名稱用的時間戳。QC DB config 仍以時間戳作唯一標籤（例「QC DB 202606301458」）。
-// LLM config 改用「參數拼接名」（composeLlmLabel），不再手動命名。
+// LLM 顯示名參數拼接（composeLlmLabel）：連線層改按 provider/env 為 key（無需手動命名/時間戳）。
 import { PROVIDERS } from '../constants';
-
-/** 本地時區時間戳 YYYYMMDDHHmm（config 預設名稱用）。 */
-export function configStamp(d: Date = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`;
-}
 
 /** provider id → 精簡顯示名（SSOT＝llm_model.json providers[].short_label，經 PROVIDERS 帶入；不再前端各寫一份）。 */
 const PROVIDER_DISPLAY: Record<string, string> = Object.fromEntries(

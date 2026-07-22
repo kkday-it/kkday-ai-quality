@@ -14,7 +14,8 @@ import { usePermission } from '@/composables/usePermission';
 // gating 接線保留，日後要收緊只改 config/global/role_permissions.json，前端零改。
 const { can } = usePermission();
 
-// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 模型連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料導入。
+// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料導入。
+// LLM 模型旋鈕（model/thinking/reasoning/temperature）不在此分頁——已下沉各功能區就地配置＋存為區默認。
 // 前兩 tab 自帶多套 config 管理 + 卡片內啟用切換；vertical tab 維護分組↔CATEGORY 映射（版本化）；
 // import tab＝全庫資料包安全匯入（覆蓋式；admin 閘現階段延後，見 DataImportPanel）。
 // 帳號 → 獨立抽屜（topbar email chip 開）；歸因判準規則 → AI 法官主頁路由 /judge/rules（不在此）。
@@ -77,7 +78,7 @@ watch(
     unmount-on-close
   >
     <a-tabs v-model:active-key="tab">
-      <a-tab-pane key="llm" title="🤖 LLM 模型連線"><LlmConnectionsPanel /></a-tab-pane>
+      <a-tab-pane key="llm" title="🤖 LLM 連線"><LlmConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="qc" title="🗄️ QC DB 連線"><QcConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="vertical" title="🧭 商品垂直分類">
         <ProductVerticalSettingsPanel :active="tab === 'vertical'" />

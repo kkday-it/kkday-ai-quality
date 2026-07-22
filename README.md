@@ -104,7 +104,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 
 ### LLM 模式
 - **無 `OPENAI_API_KEY`**：走 **stub**（啟發式），零 key 走通整條 pipeline。
-- **有 key**：面板（設定 › LLM 模型連線）或 env `OPENAI_API_KEY` 設定，自動切真 LLM。
+- **有 key**：面板（設定 › LLM 連線）或 env `OPENAI_API_KEY` 設定，自動切真 LLM。
 
 ## API 一覽（主要）
 | method | path | 說明 |

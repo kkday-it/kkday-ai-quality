@@ -38,11 +38,10 @@ import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { fmtDt } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
-import { CollapsibleSidePanel, StickyTabs, TableLayout } from '@/components';
+import { CollapsibleSidePanel, LlmConfigPicker, LlmKnobs, StickyTabs, TableLayout } from '@/components';
 // 相對路徑 import（非走 barrel）：本檔自身即為 components barrel 的一員，經 barrel 迴繞 import
 // 同資料夾元件會觸發 circular dep（見 barrel-exports 規則）。
 import AttributionFilterBar from './AttributionFilterBar.vue';
-import LlmConfigSelect from './LlmConfigSelect.vue';
 import PrejudgeLogView from './PrejudgeLogView.vue';
 import PromptDraftAdoptDrawer from './PromptDraftAdoptDrawer.vue';
 import PromptDraftEditorDrawer from './PromptDraftEditorDrawer.vue';
@@ -51,7 +50,7 @@ import SandboxCompareCard from './SandboxCompareCard.vue';
 import SandboxPromptEntries from './SandboxPromptEntries.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 import { idPlaceholderFor, schemaFor, STAGE_LABELS, type FilterField } from '../constants';
-import { useLlmConfigs } from '../composables/useLlmConfigs';
+import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 import { usePromptSandboxTargets } from '../composables/usePromptSandboxTargets';
 import type { PrejudgeListFilters } from '../composables/usePrejudgeJob';
 
@@ -84,11 +83,21 @@ const emit = defineEmits<{
 // 編輯/採納抽屜標題）與 active 版本（stale 提示）。
 const rulesStore = useJudgeRulesStore();
 const selectedCodes = ref<string[]>([]);
-const { llmConfigId, llmConfigs } = useLlmConfigs();
+const llm = useLlmAreaDefault('sandbox');
 const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
 const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));
+
+/** 把目前 provider + 旋鈕存為 sandbox 功能區默認（team 共用）。 */
+const onSaveLlmAreaDefault = async () => {
+  try {
+    await llm.saveAsDefault();
+    Message.success('已存為本功能區默認（團隊共用）');
+  } catch (e: any) {
+    Message.error('儲存失敗：' + (e?.message || e));
+  }
+};
 
 // ── 草稿閉環狀態 ──
 /** 納入測試且處於草稿模式的 rule_code（picker emit；送測時逐條取 DB 草稿內容快照）。 */
@@ -295,7 +304,7 @@ async function run() {
             prompt_ids: promptArgs.value,
             scope: props.scope,
           };
-    body.llm_config_id = llmConfigId.value || undefined;
+    body.overrides = llm.overrides.value;
     if (Object.keys(versionSelection.value.versions).length) {
       body.versions = versionSelection.value.versions;
     }
@@ -415,6 +424,7 @@ watch(
     }
     activeTab.value = 'results';
     settingsOpen.value = false;
+    void llm.loadConfigs();
     if (props.scope === 'all') {
       targets.openTargetPicker();
       void targets.refreshTargetCount(promptArgs.value);
@@ -521,7 +531,24 @@ watch(
         <!-- 初判設定（恆顯示）：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）。 -->
         <div>
           <a-divider orientation="left" :margin="12">初判設定</a-divider>
-          <LlmConfigSelect v-model="llmConfigId" :configs="llmConfigs" class="mb-2" />
+          <a-alert v-if="!Object.keys(llm.providerHasToken.value).length" type="warning" class="mb-2">
+            尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
+          </a-alert>
+          <LlmConfigPicker
+            :model-value="llm.provider.value"
+            :provider-has-token="llm.providerHasToken.value"
+            class="mb-2"
+            @update:model-value="llm.setProvider"
+          />
+          <LlmKnobs
+            :model-value="llm.knobs"
+            :provider="llm.provider.value"
+            class="mb-2"
+            @update:model-value="llm.setKnobs"
+          />
+          <div class="mb-2 flex justify-end">
+            <a-button size="small" @click="onSaveLlmAreaDefault">存為此區默認</a-button>
+          </div>
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
             Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或 📝
             草稿；編輯鈕可即時修改草稿）

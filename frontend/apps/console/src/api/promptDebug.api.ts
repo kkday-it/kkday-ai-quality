@@ -1,5 +1,6 @@
 // 售後根因 Prompt 調試台：預設資料 + POST SSE 串流 client。
 import { BASE, getToken, j, JSON_HEADERS } from './http.api';
+import type { LlmOverrides } from '@/features/settings/types';
 
 export interface PromptDebugDefaults {
   system_prompt: string;
@@ -23,18 +24,11 @@ export interface PromptDebugDefaults {
   };
 }
 
-export interface PromptDebugOverrides {
-  model?: string;
-  temperature?: number | null;
-  thinking?: 'default' | 'on' | 'off';
-  reasoning_effort?: 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-}
-
 export interface PromptDebugBody {
   text: string;
   system_prompt: string;
-  llm_config_id?: string;
-  overrides?: PromptDebugOverrides;
+  /** 本次執行 LLM 覆寫（provider+旋鈕）；缺省沿用 prompt_debug 功能區默認。 */
+  overrides?: LlmOverrides;
 }
 
 export interface PromptDebugMeta {

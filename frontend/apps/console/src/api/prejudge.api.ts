@@ -1,6 +1,7 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
 import { BASE, j } from './http.api';
 import type { ProblemRow } from '@/features/judge/constants';
+import type { LlmOverrides } from '@/features/settings/types';
 
 /** 統一問題列表查詢參數（傾向/階段/信心分層/歸因分類/垂直分類/日期區間/精確 id）。 */
 export interface GetProblemsParams {
@@ -127,7 +128,8 @@ export interface PrejudgeBody {
   item_ids?: string[];
   source?: string;
   scope?: string;
-  llm_config_id?: string;
+  /** 本次執行 LLM 覆寫（provider+旋鈕）；缺省沿用 prejudge 功能區默認。 */
+  overrides?: LlmOverrides;
   product_verticals?: string[];
   /** 目標選取（scope=all；stage 驅動）：階段清單/傾向收斂/信心上限。 */
   stages?: string[];
