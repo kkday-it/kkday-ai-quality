@@ -126,6 +126,45 @@ def test_resolve_credentials_rejects_missing_password():
     assert qc_evidence.resolve_credentials(_settings_with("production", password="")) is None
 
 
+def test_resolve_credentials_any_falls_back_to_scan(monkeypatch):
+    """系統級：當前 user 沒配 production 也能掃到全庫任一 production 憑證（修 per-user 脆弱點）。"""
+    from app.core import settings as app_settings
+    from app.core.db import users as db_users
+
+    # 當前 user（tester）無 production config；系統中另有 alvin 配了
+    tester = {"active_qc_config_id": None, "qc_configs": [], "qc_passwords": {}}
+    alvin = _settings_with("production", password="pw-alvin")
+    monkeypatch.setattr(db_users, "list_user_ids_with_settings", lambda: ["tester", "alvin"])
+    monkeypatch.setattr(
+        app_settings, "load_settings", lambda uid: alvin if uid == "alvin" else tester
+    )
+    creds = qc_evidence.resolve_credentials_any(tester)
+    assert creds is not None
+    assert creds["host"] == "h.example"  # 掃到 alvin 的 production
+    assert creds["password"] == "pw-alvin"
+
+
+def test_resolve_credentials_any_prefers_own_over_scan(monkeypatch):
+    """當前 user 自己有 production 憑證時優先用自己的，不進掃庫（避免無謂掃描）。"""
+    from app.core.db import users as db_users
+
+    def _boom():
+        raise AssertionError("should not scan when own creds exist")
+
+    monkeypatch.setattr(db_users, "list_user_ids_with_settings", _boom)
+    creds = qc_evidence.resolve_credentials_any(_settings_with("production", password="own"))
+    assert creds is not None
+    assert creds["password"] == "own"
+
+
+def test_resolve_credentials_any_none_when_no_config_anywhere(monkeypatch):
+    """全系統無任何 production QC 憑證 → None（端點降級 degraded_unavailable）。"""
+    from app.core.db import users as db_users
+
+    monkeypatch.setattr(db_users, "list_user_ids_with_settings", lambda: [])
+    assert qc_evidence.resolve_credentials_any(None) is None
+
+
 def test_resolve_credentials_env_service_account_first(monkeypatch):
     """env 服務帳號存在時優先於 per-user config（R17 切換點）。"""
     from app.core.config import env as app_env

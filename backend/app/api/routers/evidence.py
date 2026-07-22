@@ -25,7 +25,9 @@ def get_order_evidence(order_oid: str, user: dict = Depends(auth.get_current_use
         no_order_oid/not_found/degraded_unavailable/error），非成功時 data=None——
         前端據此顯示三態，不拋 5xx（佐證缺失是常態不是錯誤）。
     """
+    # 系統級憑證（env 服務帳號 → 當前 user → 全庫任一 production）：佐證是團隊共享唯讀
+    # 快照，不綁「當前登入者是否自己配過連線」（否則僅配過者查得到，其他人全降級）
     s = app_settings.load_settings(user.get("user_id", ""))
-    qc_evidence.set_current(qc_evidence.resolve_credentials(s))
+    qc_evidence.set_current(qc_evidence.resolve_credentials_any(s))
     result = qc_evidence.get_evidence(order_oid)
     return {"status": result.status, "data": result.data}

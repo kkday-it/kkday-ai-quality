@@ -102,38 +102,33 @@ def current() -> dict | None:
     return _current_creds.get()
 
 
-def resolve_credentials(s: dict) -> dict | None:
-    """解析佐證 DB 憑證：env 服務帳號優先，fallback user 的 active production QC 連線。
+def _base_conn() -> dict:
+    """佐證連線的固定欄位（dbname/schema，來自 evidence.json）。"""
+    db_cfg = _cfg().get("db") or {}
+    return {"dbname": db_cfg.get("dbname", "kkdb"), "schema": db_cfg.get("schema", "public")}
 
-    Args:
-        s: `app.core.settings.load_settings()` 回傳的完整 user 設定（含明文 qc_passwords）。
 
-    Returns:
-        連線參數 dict（host/port/user/password/dbname/schema/…），不可解析回 None——
-        呼叫端不擋批次啟動，None＝本批全走無佐證降級。密碼在此一次性快照，
-        批次執行中 user 改設定不影響進行中的 job（防半批新舊憑證不一致）。
-
-    選取順序：env 服務帳號 → active config（若 env=production）→ 第一個有密碼的
-    production config。佐證**只准連 production**，故不要求 user 把 active 切到
-    production（active 服務的是資料瀏覽/上傳工作流，與佐證取數是不同關注點）。
-    """
+def _env_credentials() -> dict | None:
+    """env 服務帳號憑證（終態路徑：SA/SD 核發後部署層注入 AIQ_EVIDENCE_DB_*；未設回 None）。"""
     from app.core.config import env
 
-    db_cfg = _cfg().get("db") or {}
-    base = {
-        "dbname": db_cfg.get("dbname", "kkdb"),
-        "schema": db_cfg.get("schema", "public"),
-    }
-    # ① env 服務帳號（終態路徑：SA/SD 核發後部署層注入即生效）
     if env.evidence_db_host and env.evidence_db_user and env.evidence_db_password:
         return {
-            **base,
+            **_base_conn(),
             "host": env.evidence_db_host,
             "port": env.evidence_db_port,
             "user": env.evidence_db_user,
             "password": env.evidence_db_password,
         }
-    # ② fallback：production env 的 QC config（active 優先，否則首個有密碼者）
+    return None
+
+
+def _production_config_credentials(s: dict) -> dict | None:
+    """某 user settings 內的 production QC 憑證（active 優先，否則首個有密碼者；無則 None）。
+
+    佐證**只准連 production**，故不要求 user 把 active 切到 production（active 服務的是
+    資料瀏覽/上傳工作流，與佐證取數是不同關注點）。
+    """
     configs = [c for c in (s.get("qc_configs") or []) if c.get("env") == "production"]
     aid = s.get("active_qc_config_id")
     configs.sort(key=lambda c: c.get("id") != aid)  # active 排最前（stable sort）
@@ -142,12 +137,67 @@ def resolve_credentials(s: dict) -> dict | None:
         pw = passwords.get(cfg.get("id")) or ""
         if cfg.get("host") and cfg.get("user") and pw:
             return {
-                **base,
+                **_base_conn(),
                 "host": cfg["host"],
                 "port": cfg.get("port") or 5432,
                 "user": cfg["user"],
                 "password": pw,
             }
+    return None
+
+
+def resolve_credentials(s: dict) -> dict | None:
+    """解析某 user 的佐證 DB 憑證：env 服務帳號優先，fallback 該 user 的 production QC 連線。
+
+    Args:
+        s: `app.core.settings.load_settings()` 回傳的完整 user 設定（含明文 qc_passwords）。
+
+    Returns:
+        連線參數 dict（host/port/user/password/dbname/schema），不可解析回 None——
+        呼叫端不擋批次啟動，None＝本批全走無佐證降級。密碼在此一次性快照，
+        批次執行中 user 改設定不影響進行中的 job（防半批新舊憑證不一致）。
+    """
+    return _env_credentials() or _production_config_credentials(s)
+
+
+def resolve_credentials_any(s: dict | None = None) -> dict | None:
+    """系統級佐證憑證：env 服務帳號 → 指定 user → **全庫任一已配 production QC**。
+
+    佐證是團隊共享的唯讀 production 快照（共用帳號 kk02021），不該綁「當前登入者是否
+    自己配過連線」——否則只有配過的人查得到、其他人全降級（實測 9 個 user 僅 1 個配過）。
+    故佐證查詢端點/判決取數用此，掃全庫找任一可用 production 憑證兜底。
+
+    ⚠️ 過渡期權宜：借用他人已配的 production QC 連線（都是同一唯讀共用帳號，無越權疑慮）；
+    終態＝env 服務帳號（`_env_credentials` 優先於掃庫，SA/SD 核發後此 fallback 自然不觸發）。
+
+    Args:
+        s: 優先嘗試的 user 設定（通常＝當前登入/觸發者）；None 則直接走 env + 掃庫。
+
+    Returns:
+        連線參數 dict 或 None（全系統無任何可用 production QC 憑證時）。
+    """
+    if s is not None:
+        preferred = resolve_credentials(s)
+        if preferred:
+            return preferred
+    env_c = _env_credentials()
+    if env_c:
+        return env_c
+    return _scan_any_production_credentials()
+
+
+def _scan_any_production_credentials() -> dict | None:
+    """掃全庫 user_settings，回第一個可解出的 production QC 憑證（無則 None）。
+
+    掃庫廉價（user 數量級小）故不快取，讓 user 改/刪設定即時反映。
+    """
+    from app.core import settings as app_settings
+    from app.core.db import users as db_users
+
+    for uid in db_users.list_user_ids_with_settings():
+        creds = _production_config_credentials(app_settings.load_settings(uid))
+        if creds:
+            return creds
     return None
 
 
