@@ -111,6 +111,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 |---|---|---|
 | GET | `/api/status` | 健康檢查（公司契約：回 `{"status":"0000","message":"success"}`·免認證·k8s probe 用）|
 | POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
+| GET | `/api/evidence/{order_oid}` | 訂單佐證唯讀查詢（production 下單當時商品快照投影；兩級快取+single-flight+熔斷，失敗回 status 降級不走 5xx）；詳情抽屜 lazy fetch 用。需登入 |
 | GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/初判階段(多選)/信心分層/判決狀態(status 多選)/初判模型(model 多選·當前初判維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
 | GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩初判模型——當前初判維度，僅套初判級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |

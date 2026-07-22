@@ -10,4 +10,5 @@ export * from './settings.api';
 export * from './datasource.api';
 export * from './usage.api';
 export * from './promptDebug.api';
+export * from './evidence.api';
 export * from './overview.api';

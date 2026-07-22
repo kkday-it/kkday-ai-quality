@@ -53,9 +53,13 @@ spec:
             requests:
               cpu: 250m
               memory: 512Mi
+              # 磁碟快取（/app/data emptyDir：llm_cache 1GB + evidence_cache 512MB + reports）
+              ephemeral-storage: 1Gi
             limits:
               cpu: "1"
               memory: 1Gi
+              # 上限保護：快取失控成長時由 kubelet 驅逐重建（快取可整刪重生），不拖垮節點
+              ephemeral-storage: 4Gi
           # 三層 probe（公司慣例：readiness=HTTP /api/status、liveness=TCP）：
           # startup 預算 5 分鐘涵蓋 entrypoint 內 alembic upgrade 可能耗時
           startupProbe:
@@ -73,3 +77,13 @@ spec:
             tcpSocket:
               port: 8100
             periodSeconds: 15
+          volumeMounts:
+            # runtime 派生產物（llm_cache / evidence_cache / reports；paths.DATA_DIR）。
+            # 刻意用 emptyDir 而非 PVC：EBS 快照備份會讓佐證 payload（PII-adjacent）留存
+            # 超出 diskcache TTL 治理；pod 重建快取歸零可接受（TTL 快取自然重建）
+            - name: data-cache
+              mountPath: /app/data
+      volumes:
+        - name: data-cache
+          emptyDir:
+            sizeLimit: 4Gi

@@ -5,8 +5,14 @@
  * 逐字佐證/建議行動/負責單位/真值/finding_id）。純展示、資料取自列上 attributions，零額外請求；
  * 全部走 Arco 現成組件（a-drawer / a-descriptions / a-tag / a-rate / a-typography）。
  */
+import { watch } from 'vue';
+import { IconRefresh } from '@arco-design/web-vue/es/icon';
+import { JsonEditor } from '@/components';
 import {
   ACTION_LABEL,
+  EVIDENCE_EMPTY_TEXT,
+  EVIDENCE_STATUS_COLOR,
+  EVIDENCE_STATUS_LABEL,
   POLARITY_COLOR,
   POLARITY_LABELS,
   STAGE_LABELS,
@@ -17,10 +23,21 @@ import {
   type Attribution,
   type ProblemRow,
 } from '../constants';
+import { useOrderEvidence } from '../composables';
 import { fmtDt } from '../utils';
 
 const visible = defineModel<boolean>('visible', { default: false });
-defineProps<{ row: ProblemRow | null }>();
+const props = defineProps<{ row: ProblemRow | null }>();
+
+// 訂單佐證 lazy fetch：抽屜開啟且有 order_oid 才打（後端帶快取，重開便宜）
+const { loading: evLoading, error: evError, result: evResult, load: evLoad } = useOrderEvidence();
+watch(
+  [visible, () => props.row?.order_oid],
+  ([v, oid]) => {
+    if (v && oid) void evLoad(String(oid));
+  },
+  { immediate: true },
+);
 
 /** 初判階段語義色（同列表：已初判綠 / 待複審橙 / 待數據補充藍）。 */
 const STAGE_COLOR: Record<string, string> = {
@@ -97,11 +114,14 @@ const otherLangs = (a: Attribution): [string, string][] =>
         <a-descriptions-item label="訂單">
           <div class="font-medium">{{ cell(row.order_mid) }}</div>
           <div class="text-xs text-[var(--color-text-2)]">
-            OID {{ cell(row.order_oid) }} · 出發 {{ fmtDt(String(row.go_date ?? ''), true) || '—' }}
+            OID {{ cell(row.order_oid) }} · 出發
+            {{ fmtDt(String(row.go_date ?? ''), true) || '—' }}
           </div>
         </a-descriptions-item>
         <a-descriptions-item label="商品">
-          <div v-if="row.prod_name" class="font-medium">{{ row.prod_name }}</div>
+          <div v-if="row.prod_name" class="font-medium">
+            {{ row.prod_name }}
+          </div>
           <div class="text-xs text-[var(--color-text-2)]">
             OID {{ cell(row.prod_oid) }} · {{ cell(row.product_category_main) }} ·
             {{ cell(row.lang) }}
@@ -122,6 +142,43 @@ const otherLangs = (a: Attribution): [string, string][] =>
           <span v-if="!row.traveller_type && !row.member_uuid">—</span>
         </a-descriptions-item>
       </a-descriptions>
+
+      <!-- ②b 訂單佐證（production 下單當時商品快照·lazy fetch·三態）-->
+      <div v-if="row.order_oid">
+        <div class="mb-2 flex items-center gap-2">
+          <span class="text-base font-medium text-[var(--color-text-1)]">訂單佐證</span>
+          <a-tag
+            v-if="evResult?.status"
+            size="small"
+            :color="EVIDENCE_STATUS_COLOR[evResult.status]"
+          >
+            {{ EVIDENCE_STATUS_LABEL[evResult.status] || evResult.status }}
+          </a-tag>
+          <a-button
+            size="mini"
+            type="text"
+            :disabled="evLoading"
+            @click="evLoad(String(row.order_oid), true)"
+          >
+            <template #icon><icon-refresh /></template>
+          </a-button>
+        </div>
+        <a-skeleton v-if="evLoading" animation>
+          <a-skeleton-line :rows="3" />
+        </a-skeleton>
+        <a-alert v-else-if="evError" type="warning">{{ evError }}</a-alert>
+        <JsonEditor
+          v-else-if="evResult?.data"
+          :json="evResult.data"
+          read-only
+          mode="tree"
+          auto-height
+        />
+        <a-empty
+          v-else-if="evResult"
+          :description="EVIDENCE_EMPTY_TEXT[evResult.status] || evResult.status"
+        />
+      </div>
 
       <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因/判決狀態/真值徽章）-->
       <template v-if="row.attributions && row.attributions.length">

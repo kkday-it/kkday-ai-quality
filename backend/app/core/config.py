@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     llm_exact_cache: bool = True
     llm_cache_ttl_days: int = 30  # 快取條目存活天數（過期自動失效；目錄可整刪重生）
     qc_db_connect_timeout: int = 5  # QC DB 連線測試 timeout 秒
+    # ── 訂單佐證取數服務帳號（R17 憑證抽象層的 env 注入點；SA/SD 核發 kkday_ai_quality_api_user
+    # 後於部署層設定即自動優先於 per-user qc_configs，查詢邏輯零改動。現階段留空＝走 fallback）──
+    evidence_db_host: str = ""
+    evidence_db_port: int = 5432
+    evidence_db_user: str = ""
+    evidence_db_password: str = ""
     # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
     openai_api_key: str = ""
     ai_judge_model: str = (

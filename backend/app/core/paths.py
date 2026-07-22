@@ -30,6 +30,9 @@ REPORTS_DIR: Path = DATA_DIR / "reports"  # 準確度 / 規則品質報表（jud
 LLM_CACHE_DIR: Path = (
     DATA_DIR / "llm_cache"
 )  # LLM exact-match 結果快取（judge/llm/client.py；可整刪重生）
+EVIDENCE_CACHE_DIR: Path = (
+    DATA_DIR / "evidence_cache"
+)  # 訂單佐證投影快取（core/db/qc_evidence.py；與 llm_cache 分離命名空間，可整刪重生）
 
 # repo 根 constants/：前後端共用「固定參照」字典（前端 @constants alias 同讀；後端按需讀取）。
 CONSTANTS_DIR: Path = REPO_ROOT / "constants"
