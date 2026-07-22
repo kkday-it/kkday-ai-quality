@@ -18,7 +18,7 @@ def main() -> int:
     fails: list[str] = []
 
     # 1. health
-    if c.get("/health").json() != {"status": "ok"}:
+    if c.get("/api/status").json() != {"status": "0000", "message": "success"}:
         fails.append("health")
 
     # 2. 單個錄入

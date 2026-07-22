@@ -1,8 +1,8 @@
-"""重判（replace_source_findings）人工覆核軸保留 + 日期上界含當日整天回歸測試。
+"""重新初判（replace_source_findings）人工判決軸保留 + 日期上界含當日整天回歸測試。
 
 需 temp_db fixture（隔離 PostgreSQL 測試庫，合成拋棄列，非真實資料）：
-- G2：重判整組替換舊列時，人工既定 status（confirmed/dismissed）必須依 finding_id 保留，
-  不得被打回初始 "new" 洗掉人工覆核結果。
+- G2：重新初判整組替換舊列時，人工既定 status（confirmed/dismissed）必須依 finding_id 保留，
+  不得被打回初始 "new" 洗掉人工判決結果。
 - 效能改動語義守恆：date_to 上界改半開 `< date_to||'~'` 後，仍須含當日「有時間分量」的列
   （naive `<= date_to` 會漏），且排除隔日。
 """
@@ -42,14 +42,14 @@ def _finding(rec_oid: str, domain: str = "content", status: str = "new") -> Tick
 
 def _status_of(finding_id: str) -> str | None:
     """讀某 finding 的 status。"""
-    jg = T.judgments
+    jg = T.attributions
     with T.get_engine().connect() as c:
-        r = c.execute(select(jg.c.status).where(jg.c.finding_id == finding_id)).first()
-    return r.status if r else None
+        r = c.execute(select(jg.c.verdict_status).where(jg.c.finding_id == finding_id)).first()
+    return r.verdict_status if r else None
 
 
 def test_rejudge_preserves_human_status(temp_db) -> None:
-    """人工覆核（confirmed）後重判：status 依 finding_id 保留（G2），不被新判決 new 洗掉。"""
+    """人工判決（confirmed）後重新初判：status 依 finding_id 保留（G2），不被新初判 new 洗掉。"""
     db.insert_source_batch("product_reviews", [_pr_row("R1")])
     fid = "fd_product_reviews_R1__content"
     db.replace_source_findings("product_reviews", "R1", [_finding("R1")])
@@ -59,7 +59,7 @@ def test_rejudge_preserves_human_status(temp_db) -> None:
 
 
 def test_rejudge_preserves_dismissed_status(temp_db) -> None:
-    """人工 dismissed 後重判仍保留。"""
+    """人工 dismissed 後重新初判仍保留。"""
     db.insert_source_batch("product_reviews", [_pr_row("R2")])
     fid = "fd_product_reviews_R2__content"
     db.replace_source_findings("product_reviews", "R2", [_finding("R2")])
@@ -69,7 +69,7 @@ def test_rejudge_preserves_dismissed_status(temp_db) -> None:
 
 
 def test_rejudge_untouched_status_follows_new_judgment(temp_db) -> None:
-    """從未覆核（仍為 new）者重判：status 由新判決決定（不硬回填 new，為 Phase 4 自動確認預留）。"""
+    """從未覆核（仍為 new）者重新初判：status 由新初判決定（不硬回填 new，為 Phase 4 自動確認預留）。"""
     db.insert_source_batch("product_reviews", [_pr_row("R3")])
     fid = "fd_product_reviews_R3__content"
     db.replace_source_findings("product_reviews", "R3", [_finding("R3", status="new")])
@@ -94,7 +94,7 @@ def test_date_to_includes_same_day_with_time_component(temp_db) -> None:
 
 
 def test_rejudge_does_not_preserve_auto_confirmed(temp_db) -> None:
-    """G1 auto_confirmed（系統自動確認·非人工）重判不保留 → 由新判決 status 決定（有別於人工 confirmed）。"""
+    """G1 auto_confirmed（系統自動確認·非人工）重新初判不保留 → 由新初判 status 決定（有別於人工 confirmed）。"""
     db.insert_source_batch("product_reviews", [_pr_row("R4")])
     fid = "fd_product_reviews_R4__content"
     db.replace_source_findings("product_reviews", "R4", [_finding("R4")])

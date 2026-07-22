@@ -18,12 +18,10 @@ export interface LlmConfig {
 export interface QcConfig {
   id: string;
   label: string;
-  env: string; // sit | stage
+  env: string; // sit | stage | production
   host: string;
   port: number | null;
   user: string;
-  names: string[]; // 多選 database
-  schemas: string[]; // 多選 schema
 }
 
 /** 後端 GET /api/settings(/raw) 回傳的設定全貌（raw 為明文機密、masked 為遮罩）。 */
@@ -36,6 +34,8 @@ export interface SettingsBundle {
   qc_configs?: QcConfig[];
   active_qc_config_id?: string | null;
   qc_passwords?: Record<string, string>;
+  /** 導出偏好：Google Drive 上傳資料夾 URL（null/缺省＝未設，退全域 config 預設）。 */
+  gdrive_upload_folder_url?: string | null;
   stub_mode?: boolean;
   has_token?: boolean;
   has_qc_db_password?: boolean;

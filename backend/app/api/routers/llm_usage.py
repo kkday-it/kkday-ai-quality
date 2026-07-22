@@ -1,4 +1,4 @@
-"""AI 使用紀錄端點（消耗 dashboard 聚合）；全路徑自帶 /api。用量寫入由判決管線內部處理，此處僅讀。"""
+"""AI 使用紀錄端點（消耗 dashboard 聚合）；全路徑自帶 /api。用量寫入由初判管線內部處理，此處僅讀。"""
 
 from __future__ import annotations
 

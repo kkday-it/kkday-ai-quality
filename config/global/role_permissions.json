@@ -7,6 +7,6 @@
     "data.datapack.export",
     "data.datapack.import",
     "problem.list.export",
-    "judgment.prejudge.run"
+    "prejudge.run"
   ]
 }

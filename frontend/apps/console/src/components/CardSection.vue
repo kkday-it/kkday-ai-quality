@@ -23,10 +23,14 @@ defineProps<{
           ><span v-if="hint" class="text-xs text-[#86909c]">{{ hint }}</span></slot
         >
         <a-popover v-if="desc" :trigger="['hover', 'click']" position="br">
-          <icon-info-circle class="cursor-pointer text-[#86909c] transition-colors hover:text-[#165dff]" />
+          <icon-info-circle
+            class="cursor-pointer text-[#86909c] transition-colors hover:text-[#165dff]"
+          />
           <template #title>{{ title }}</template>
           <template #content>
-            <div class="max-w-xs whitespace-pre-line text-xs leading-relaxed text-gray-600">{{ desc }}</div>
+            <div class="max-w-xs whitespace-pre-line text-xs leading-relaxed text-gray-600">
+              {{ desc }}
+            </div>
           </template>
         </a-popover>
       </div>

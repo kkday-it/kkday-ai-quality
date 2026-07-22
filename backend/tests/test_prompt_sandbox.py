@@ -29,7 +29,7 @@ def _wait_done(job_id: str, timeout: float = 5.0) -> dict:
 
 
 def test_guard_stub_rejects_unconditionally(monkeypatch):
-    """無 token 的 eff → 無條件拒跑（非僅正式環境），比照 classify_one 既有慣例。
+    """無 token 的 eff → 無條件拒跑（非僅正式環境）。
 
     明確 monkeypatch `resolve_provider_token` 回空（而非依賴容器當下是否恰好無 key）——
     guard 邏輯的正確性不該偶然依附於執行環境有沒有配置真實 OPENAI_API_KEY。
@@ -46,7 +46,7 @@ def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
         prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
     )
 
-    def _fake_classify(item, prompt_ids, model, *, versions=None):
+    def _fake_classify(item, prompt_ids, model, *, versions=None, drafts=None):
         return {
             "source_id": item["source_id"],
             "text": "測試文字",
@@ -87,13 +87,13 @@ def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
 
 
 def test_run_records_per_item_error_without_failing_whole_job(temp_db, monkeypatch):
-    """單筆判決失敗（如找不到評論）不擋全批：該筆記錯誤，job 仍 done，其餘筆正常落庫。"""
+    """單筆初判失敗（如找不到評論）不擋全批：該筆記錯誤，job 仍 done，其餘筆正常落庫。"""
     monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")  # 過 guard
     monkeypatch.setattr(
         prompt_eval, "_build_sandbox_item", lambda source, sid: {"source_id": sid, "raw": {}}
     )
 
-    def _fake_classify(item, prompt_ids, model, *, versions=None):
+    def _fake_classify(item, prompt_ids, model, *, versions=None, drafts=None):
         if item["source_id"] == "bad":
             raise ValueError("找不到評論：product_reviews/bad")
         return {"source_id": item["source_id"], "prompts": []}
@@ -154,7 +154,7 @@ def test_start_versions_thread_through_to_sandbox_classify_and_persist(temp_db, 
 
     seen: list[dict | None] = []
 
-    def _fake_classify(item, prompt_ids, model, *, versions=None):
+    def _fake_classify(item, prompt_ids, model, *, versions=None, drafts=None):
         seen.append(versions)
         return {"source_id": item["source_id"], "prompts": []}
 

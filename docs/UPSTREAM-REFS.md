@@ -11,7 +11,7 @@ AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5
 
 | repo | 角色 | 與 AI 法官關係 |
 |---|---|---|
-| `ProductContentAIChecker` | 審品(tour_flow_v1 G1/G3) + 撰寫(writer) + 過期(general_v1 GEN-1)。最早的規則-as-prompt 工具。 | **已沿用**：深度 prompt + machine_checks + rules.json → 本專案 `backend/app/judge/vendored/`（見該目錄 MANIFEST.md） |
+| `ProductContentAIChecker` | 審品(tour_flow_v1 G1/G3) + 撰寫(writer) + 過期(general_v1 GEN-1)。最早的規則-as-prompt 工具。 | ⚠️ **待重新確認**：原沿用深度 prompt + machine_checks + rules.json → `backend/app/judge/vendored/`，但該目錄已在 commit `4c8a8fb`（判決引擎 teardown）中移除，此列引用的路徑已不存在，待重新確認現行沿用路徑 |
 | `ai_review_system` | **審品系統 review_v1（最新）**：逐欄位審品 12 欄 Pass/Failed，Rule1~Rule8（P0 平台禁止，含多模態圖片）+ Rule4 類目匹配（40 類目 per-category prompt）+ 乾淨 per-field 規則引擎。零相依 ProductContentAIChecker。 | **待評估沿用**：Rule1-8 / rule4_leaves 類目 prompt 可作欄位級/類目級判決參考；尚未 vendored |
 | `kkday-ai-quality` | **AI 法官**（本專案）：事後內容爭議裁決，L1-L5 判決鏈、法典配置、dashboard。 | 主體 |
 
@@ -24,10 +24,9 @@ AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5
 
 ## 已沿用 vs 待跟進
 
-### ProductContentAIChecker（已 vendored，見 `vendored/MANIFEST.md`）
-- ✅ 深度 judge prompt：行程流程 G1/G3(560) / 過期 GEN-1(645) / 商品名稱(113)
-- ✅ machine_checks（禁詞/長度/促銷/結構）+ rules.json（29 禁詞/10 情緒詞/8 維度）
-- ⏳ 跟進：基線後若有 prompt/規則修正（如 parser、禁詞、封頂邏輯），需重新 vendor 對應檔並更新 MANIFEST
+### ProductContentAIChecker（⚠️ 原 vendored/ 目錄已隨判決引擎 teardown〔commit `4c8a8fb`〕移除，待重新確認現行沿用路徑）
+- 曾沿用：深度 judge prompt（行程流程 G1/G3(560) / 過期 GEN-1(645) / 商品名稱(113)）+ machine_checks（禁詞/長度/促銷/結構）+ rules.json（29 禁詞/10 情緒詞/8 維度）
+- ⏳ 跟進：確認上述內容是否已重新融入 `prompts/*.md` 各域 prompt，或該沿用關係已隨架構重構終止；若仍需沿用，重新 vendor 對應檔並更新 MANIFEST
 
 ### ai_review_system（尚未沿用，候選）
 - ⏳ **Rule1~Rule8**（`prompts/Rule*_P0_*.md`）：P0 平台禁止規則（部分多模態圖片，如禁 KKday logo）——文字類可轉為法官判準；圖片類視法官是否擴多模態
@@ -40,4 +39,4 @@ AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5
 1. 定期（或啟動相關工作前）跑跟進指令，看上游基線後新提交。
 2. 若新提交動到 prompt / 規則 / 機檢邏輯 → 評估是否影響本專案 vendored 或法典配置。
 3. 需同步者：重新 vendor 對應檔（ProductContentAIChecker）或新 vendor（ai_review_system），更新 `vendored/MANIFEST.md` 與本檔基線 hash。
-4. 法典 Google Sheets 變更另走 `data/parse_judge_logic.py` / `parse_codex.py` ETL（與 repo 提交無關）。
+4. 法典變更現直接反映在 `prompts/*.md`（judge prompt 唯一真相源）——可由開發者直接編輯該檔案（作為 default seed），或透過 RuleManager 介面線上熱編輯（寫入 DB `judge_rule_versions` 存為 active 版，即時生效），兩者皆不經獨立 ETL 腳本。

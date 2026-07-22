@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, shallowRef, watch } from 'vue';
-import type { Content, JSONEditorPropsOptional, OnClassName, OnExpand, Validator } from 'vanilla-jsoneditor';
+import type {
+  Content,
+  JSONEditorPropsOptional,
+  OnClassName,
+  OnExpand,
+  Validator,
+} from 'vanilla-jsoneditor';
 
 /** vanilla-jsoneditor 的節點路徑（各段字串；套件未公開匯出 JSONPath 型別，故本地別名）。 */
 type JsonPath = string[];
@@ -25,7 +31,7 @@ const props = withDefaults(
     mode?: 'tree' | 'text';
     /** 選填 JSON Schema：提供時編輯器即時標示違反處（best-effort，建立失敗則略過，後端仍為真閘）。 */
     schema?: Record<string, unknown>;
-    /** 撐滿父容器高度（height:100%）取代預設 60vh 上限；用於整頁編輯（如判決規則頁）。 */
+    /** 撐滿父容器高度（height:100%）取代預設 60vh 上限；用於整頁編輯（如初判規則頁）。 */
     fill?: boolean;
     /** 高度隨內容自然撐開（取代固定 60vh + 內部捲動）：tree 模式逐節點皆為實體 DOM（非虛擬滾動），
      * 撐開安全；用於外層已提供整體捲動容器、不want 巢狀雙捲軸的情境（如日誌執行流全展開）。 */
@@ -73,7 +79,11 @@ const onChange = (content: Content): void => {
     const { json } = jse.toJSONContent(content);
     emit('change', { json, valid: true });
   } catch (e) {
-    emit('change', { json: undefined, valid: false, error: e instanceof Error ? e.message : String(e) });
+    emit('change', {
+      json: undefined,
+      valid: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 };
 
@@ -102,7 +112,10 @@ watch(
   () => [props.json, props.onClassName] as const,
   ([json, onClassName]) => {
     if (!props.readOnly || !editor.value) return;
-    editor.value.updateProps({ content: { json } as Content, onClassName } as JSONEditorPropsOptional);
+    editor.value.updateProps({
+      content: { json } as Content,
+      onClassName,
+    } as JSONEditorPropsOptional);
   },
 );
 

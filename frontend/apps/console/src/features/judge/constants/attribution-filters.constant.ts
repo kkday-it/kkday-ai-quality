@@ -1,19 +1,19 @@
 // 歸因列表篩選狀態 SSOT：型別 + 空值 + 選項 + 計數 + → API 參數轉換。
 // 三處共用（工具列 / 導出彈窗 / 初判目標篩選）皆以此型別為單一真相，避免各寫一份而漂移。
-import { POLARITY_LABELS, STAGE_LABELS, TIER_LABELS } from './judgment.constant';
+import { POLARITY_LABELS, STAGE_LABELS, TIER_LABELS } from './pipeline.constant';
 import { STATUS_LABEL } from './status.constant';
 
 /** 歸因列表可篩選欄位（值型別對齊各控制項 v-model）。 */
 export interface AttributionFilters {
   /** 傾向（多選 negative/neutral/positive；分別對應情緒分 1-2 / 3 / 4-5）。預設不選＝不篩選。 */
   polarity: string[];
-  /** 判決階段（多選）。 */
+  /** 初判階段（多選）。 */
   stage: string[];
   /** 信心分層（單選）。 */
   tier: string;
-  /** 覆核狀態（多選 new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。 */
+  /** 判決狀態（多選 new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。 */
   status: string[];
-  /** 判決模型（多選；judgments.model IN——當前判決維度，任一歸因命中即列出）。 */
+  /** 初判模型（多選；attributions.model IN——當前初判維度，任一歸因命中即列出）。 */
   model: string[];
   /** 歸因分類（多選任意層級 code；L1/L2 皆可，後端子樹語義命中）。 */
   taxonomy: string[];
@@ -69,7 +69,7 @@ export const POLARITY_FILTER_OPTS = ['negative', 'neutral', 'positive'].map((val
   value,
   label: POLARITY_LABELS[value],
 }));
-/** 階段 / 分層 / 覆核狀態選項（自 label 常數衍生，單一真相）。 */
+/** 階段 / 分層 / 判決狀態選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
 export const STATUS_OPTS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
@@ -89,7 +89,7 @@ export const countActiveFilters = (f: AttributionFilters): number =>
   (f.orderOid.trim() ? 1 : 0);
 
 /** 篩選 → getProblems / 導出 API 參數（統一轉換，空值一律 undefined 不送）。
- *  傾向直接按 judgments.polarity 多選篩（正向/中性/負向）。 */
+ *  傾向直接按 attributions.polarity 多選篩（正向/中性/負向）。 */
 export const filtersToParams = (f: AttributionFilters) => {
   return {
     polarity: f.polarity.length ? f.polarity : undefined,

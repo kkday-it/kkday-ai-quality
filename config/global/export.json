@@ -1,0 +1,4 @@
+{
+  "_comment": "導出行為配置（前端消費）。gdrive_upload_folder_url：導出完成通知的「打開 Google Drive 上傳」捷徑目的地——團隊共用資料夾 URL（本地下載後手動拖曳上傳；空字串＝退回個人雲端硬碟根 my-drive）。",
+  "gdrive_upload_folder_url": "https://drive.google.com/drive/folders/1EnsRzSdeeKnyI3n6MRbl0uj-EC1ZNPSY"
+}

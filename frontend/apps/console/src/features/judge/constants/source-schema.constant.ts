@@ -23,7 +23,7 @@ export interface PolarityFilterDef {
   type: 'polarity';
 }
 
-/** 判決階段篩選（多選；選項來自 STAGE_LABELS，值 unjudged/judged/pending_review/pending_data）。 */
+/** 初判階段篩選（多選；選項來自 STAGE_LABELS，值 unjudged/judged/pending_review/pending_data）。 */
 export interface StageFilterDef {
   type: 'stage';
 }
@@ -33,12 +33,12 @@ export interface TierFilterDef {
   type: 'tier';
 }
 
-/** 覆核狀態篩選（多選；選項來自 STATUS_LABEL，值 new/auto_confirmed/confirmed/dismissed）。 */
+/** 判決狀態篩選（多選；選項來自 STATUS_LABEL，值 new/auto_confirmed/confirmed/dismissed）。 */
 export interface StatusFilterDef {
   type: 'status';
 }
 
-/** 判決模型篩選（多選；選項來自 /api/judgment-history/models，值 judgments.model 當前判決維度）。 */
+/** 初判模型篩選（多選；選項來自 /api/attribution-history/models，值 attributions.model 當前初判維度）。 */
 export interface ModelFilterDef {
   type: 'model';
 }
@@ -95,7 +95,7 @@ export interface AttributionConfidence {
   tier?: string;
 }
 
-/** 歸因判決內容（摘要 / 佐證原文 / 建議行動）。 */
+/** 歸因初判內容（摘要 / 佐證原文 / 建議行動）。 */
 export interface AttributionContent {
   /** 表格顯示用摘要＝繁中（zh-tw）字串（後端由 summary_langs 取出，前端直接用）。 */
   summary?: string;
@@ -112,7 +112,7 @@ export interface AttributionContent {
 export interface Attribution {
   finding_id?: string;
   polarity?: string;
-  /** 判決階段（judged/pending_review/pending_data）。 */
+  /** 初判階段（judged/pending_review/pending_data）。 */
   stage?: string;
   l1?: AttributionLevel;
   l2?: AttributionLevel;
@@ -120,12 +120,12 @@ export interface Attribution {
   content?: AttributionContent;
   /** 負責單位（後端自 l1 域 rule _meta.owner_role 派生；業務未填時為空字串，不顯示標籤）。 */
   owner?: string;
-  /** 判決模型（如 gpt-5-mini；stub＝假判）——判決溯源標籤用。 */
+  /** 初判模型（如 gpt-5-mini；stub＝假判）——初判溯源標籤用。 */
   model?: string;
   /** 備註數（finding_notes fan-out 計數）——備註按鈕 badge 用。 */
   notes_count?: number;
   is_primary?: boolean;
-  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——覆核徽章用。 */
+  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——初判徽章用。 */
   status?: string;
 }
 
@@ -136,22 +136,22 @@ export interface Attribution {
  */
 export interface ProblemRow {
   item_id: string;
-  polarity?: string; // 列級傾向（列樣式；判決詳情走 attributions[]）
+  polarity?: string; // 列級傾向（列樣式；歸因詳情走 attributions[]）
   source_id?: string; // 該來源特徵 id（product_reviews→rec_oid…；選取/導出業務身分）
   // ── 一列一 review（後端 _paged_fanout 附）：多歸因收進 attributions 陣列，右側單欄堆疊呈現 ──
   _group?: string; // 該 review 的特徵 id（source_id；前端 rowKey / expand key）
   _seq?: number; // review 在本頁的序號（#seq 顯示）
-  attributions?: Attribution[]; // 該 review 的多條歸因（0＝未判，右欄顯示「—」）
+  attributions?: Attribution[]; // 該 review 的多條歸因（0＝未初判，右欄顯示「—」）
   [key: string]: unknown;
 }
 
 /**
  * 統一主列欄位（**全 5 反饋來源共用**，無展開行，複合欄合併同類資訊）。
- * 排列原則：**源數據在前，判決數據在後**。序號欄由 AttributionList 統一前置。
+ * 排列原則：**源數據在前，初判數據在後**。序號欄由 AttributionList 統一前置。
  *   1. 反饋內容（星等+傾向+標題+內容全文+ID·時間，可按反饋時間排序）
  *   2. 關聯資料（訂單→商品→方案→供應商→旅客，各段小標籤；缺欄防禦式「—」，故各來源皆適用）
- *   3. 判決歸因（L1→L2 + 摘要 + 信心/分層/階段 + per-歸因覆核，每條一塊）
- *   4. 操作（整列級 歸因/重判 + 查看詳情）
+ *   3. 判決歸因（L1→L2 + 摘要 + 信心/分層/階段 + per-歸因判決，每條一塊）
+ *   4. 操作（整列級 歸因/重新初判 + 查看詳情）
  * 複合欄（review/context/verdict/actions）以 slotName 客製渲染，欄位 key 皆 `_enrich_problem` 現成
  * （非該來源的欄位回空 → 顯示「—」，達成「盡可能統一」的優雅降級）。
  */
@@ -179,7 +179,7 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/** 共用篩選（各來源皆適用，落 judgments.data 或時間欄）：傾向 / 判決階段 / 信心分層 / 覆核狀態 / 判決模型 / 歸因分類 / 日期區間。 */
+/** 共用篩選（各來源皆適用，落 attributions.data 或時間欄）：傾向 / 初判階段 / 信心分層 / 判決狀態 / 初判模型 / 歸因分類 / 日期區間。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },

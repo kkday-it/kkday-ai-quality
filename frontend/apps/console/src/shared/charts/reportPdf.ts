@@ -40,10 +40,15 @@ function buildHeaderEl(meta: ReportMeta): HTMLElement {
   };
 
   el.appendChild(line(meta.title, 'font-size:22px;font-weight:700;'));
-  el.appendChild(line(`產生時間：${meta.generatedAt}`, 'margin-top:6px;font-size:12px;color:#86909c;'));
-  if (meta.summary) el.appendChild(line(meta.summary, 'margin-top:2px;font-size:12px;color:#86909c;'));
+  el.appendChild(
+    line(`產生時間：${meta.generatedAt}`, 'margin-top:6px;font-size:12px;color:#86909c;'),
+  );
+  if (meta.summary)
+    el.appendChild(line(meta.summary, 'margin-top:2px;font-size:12px;color:#86909c;'));
   const filters = meta.filters.length ? meta.filters.join('　·　') : '全部（未套用篩選）';
-  el.appendChild(line(`當前篩選：${filters}`, 'margin-top:8px;font-size:12px;color:#4e5969;line-height:1.6;'));
+  el.appendChild(
+    line(`當前篩選：${filters}`, 'margin-top:8px;font-size:12px;color:#4e5969;line-height:1.6;'),
+  );
   return el;
 }
 
@@ -70,7 +75,10 @@ export async function exportBlocksToPdf(
   fileName: string,
   hooks: PdfExportHooks = {},
 ): Promise<boolean> {
-  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
+  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
   // compress: 對 PDF 內容流做 zlib 壓縮（再省一截）。
   const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
   const pageW = pdf.internal.pageSize.getWidth();
@@ -85,7 +93,12 @@ export async function exportBlocksToPdf(
    * 改 JPEG 通常省 10–20 倍且白底圖表文字仍清晰；scale 1.6 兼顧清晰度與體積。
    */
   const place = async (el: HTMLElement): Promise<void> => {
-    const canvas = await html2canvas(el, { scale: 1.6, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    const canvas = await html2canvas(el, {
+      scale: 1.6,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+    });
     let w = contentW;
     let h = (canvas.height / canvas.width) * w;
     const maxH = pageH - margin * 2;

@@ -11,7 +11,10 @@ const stubs = {
   // Arco 元件以 stub 呈現（不拉整套 Arco；只驗 StateGuard 自身的分支邏輯）
   'a-alert': { template: '<div class="stub-alert"><slot /></div>' },
   'a-spin': { template: '<div class="stub-spin" />' },
-  'a-empty': { props: ['description'], template: '<div class="stub-empty">{{ description }}</div>' },
+  'a-empty': {
+    props: ['description'],
+    template: '<div class="stub-empty">{{ description }}</div>',
+  },
 };
 
 const factory = (props: Record<string, unknown>) =>

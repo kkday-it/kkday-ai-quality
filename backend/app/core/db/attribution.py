@@ -30,25 +30,25 @@ def attribution_overview(
 ) -> dict:
     """歸因概覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
 
-    傾向(polarity)分布、L1 域分布、星等分布、月度時序（已判/負向）。域軸用 data.l1_domain_code。
-    polarity/l1 取自 judgments.data JSON（JSONB 抽出 GROUP BY，與 list_problems 同手法）；星等取
+    傾向(polarity)分布、L1 域分布、星等分布、月度時序（已初判/負向）。域軸用 data.l1_domain_code。
+    polarity/l1 取自 attributions.data JSON（JSONB 抽出 GROUP BY，與 list_problems 同手法）；星等取
     spec.score_col；月份用 date_col 前 7 字（YYYY-MM）。信心分層走 Python 即時聚合（資料量小）。
-    source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
+    source 命中 source_registry 時查該專表；source=None（縱覽全部）走 attributions 直接聚合。
 
-    model：判決模型多選（judgments.model IN——**當前判決**維度；歷史快照級聚合另計）。
-    僅套用於判決級指標（judged/attributed/分布/趨勢），total_intake/by_score 為進線/星等
-    語義不受影響——套用後 judged 語義變「所選模型的判決覆蓋數」，與 total_intake 差額含
-    「他模型判過」非皆未判（前端 KPI 文案需揭露）。
+    model：初判模型多選（attributions.model IN——**當前初判**維度；歷史快照級聚合另計）。
+    僅套用於初判級指標（judged/attributed/分布/趨勢），total_intake/by_score 為進線/星等
+    語義不受影響——套用後 judged 語義變「所選模型的初判覆蓋數」，與 total_intake 差額含
+    「他模型判過」非皆未初判（前端 KPI 文案需揭露）。
 
     Returns:
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
     """
     # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
     spec = _vertical_scoped_spec(source, product_vertical)
-    jg = T.judgments
+    jg = T.attributions
     cnt = func.count().label("n")
     tiers = _CONFIDENCE_TIERS
-    # judgments typed 判決欄（直接 GROUP BY / FILTER，走 btree 索引）
+    # attributions typed 初判欄（直接 GROUP BY / FILTER，走 btree 索引）
     pol = jg.c.polarity
     l1c = jg.c.l1_code
     l1l = jg.c.l1_label
@@ -75,7 +75,7 @@ def attribution_overview(
         return bt
 
     def _jgm(stmt):
-        """套判決模型篩選（僅判決級 query 呼叫；進線/星等 query 勿套——語義見 docstring）。"""
+        """套初判模型篩選（僅初判級 query 呼叫；進線/星等 query 勿套——語義見 docstring）。"""
         return stmt.where(jg.c.model.in_(model)) if model else stmt
 
     with T.get_engine().connect() as c:
@@ -194,7 +194,7 @@ def attribution_overview(
                 .all()
             )
         else:
-            # 縱覽（source=None，無 vertical）：judgments 直接聚合（含全 5 來源）；total_intake=5 表和；無 date/星等/趨勢
+            # 縱覽（source=None，無 vertical）：attributions 直接聚合（含全 5 來源）；total_intake=5 表和；無 date/星等/趨勢
             total_intake = sum(
                 (c.execute(select(func.count()).select_from(t)).scalar() or 0) for t in _ALL_TABLES
             )
@@ -244,8 +244,8 @@ def attribution_overview(
 
     by_polarity = [
         {
-            "polarity": r["k"] or "unjudged",  # NULL＝未判（尚未進判決管線，非中立）
-            "label": _POLARITY_LABEL_ZH.get(r["k"], r["k"] or "未判"),
+            "polarity": r["k"] or "unjudged",  # NULL＝未初判（尚未進初判管線，非中立）
+            "label": _POLARITY_LABEL_ZH.get(r["k"], r["k"] or "未初判"),
             "n": r["n"],
         }
         for r in by_polarity_raw
@@ -279,22 +279,22 @@ def attribution_breakdown(
 ) -> dict:
     """某 L1 歸因域下的 L2 面向分布（縱覽下鑽·懶載）。
 
-    L2 取自 judgments typed 欄，限定該 L1 域；GROUP BY code（carry label），依筆數降序。
-    source 命中 source_registry 時查該專表；source=None（縱覽全部）走 judgments 直接聚合。
-    model：判決模型多選（judgments.model IN，當前判決維度；與 attribution_overview 同口徑）。
+    L2 取自 attributions typed 欄，限定該 L1 域；GROUP BY code（carry label），依筆數降序。
+    source 命中 source_registry 時查該專表；source=None（縱覽全部）走 attributions 直接聚合。
+    model：初判模型多選（attributions.model IN，當前初判維度；與 attribution_overview 同口徑）。
 
     Returns:
         {l1_code, l1_label, by_l2}；by_l2 為 [{code, label, n, neg, avg_conf, auto}]。
     """
     # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
     spec = _vertical_scoped_spec(source, product_vertical)
-    jg = T.judgments
+    jg = T.attributions
     cnt = func.count().label("n")
     l1c, l1l = jg.c.l1_code, jg.c.l1_label
     l2c, l2l = jg.c.l2_code, jg.c.l2_label
     _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
 
-    # spec 命中：join 該表（可套 date/vertical）；source=None：judgments 直接聚合
+    # spec 命中：join 該表（可套 date/vertical）；source=None：attributions 直接聚合
     if spec is not None:
         tbl = spec.table
         date_col = tbl.c[spec.date_col]
@@ -311,7 +311,7 @@ def attribution_breakdown(
         frm = jg
         extra = []
     if model:
-        # 判決模型篩選：進 extra 統一由 _level() 套用
+        # 初判模型篩選：進 extra 統一由 _level() 套用
         extra.append(jg.c.model.in_(model))
 
     # 多指標（供商品內容細化表）：負向數 / 平均信心 / 自動採信數（占比與自動採信率由前端 n 換算）。
@@ -350,9 +350,9 @@ def attribution_breakdown(
 def ai_judge_overview_stats(months: int = 6) -> dict:
     """AI 法官真實指標（overview 首頁「縮窄真接」範圍）：內容類占比月趨勢 + 總量。
 
-    口徑（誠實標註）：以 judgments.judged_at 判決時間分組（非來源進線時間——跨 5 來源的
-    進線時間欄各異，統一軸以判決時間為準）；一則進線＝distinct (source, source_id)：
-    - ratio ＝ 該月「含 content 主因歸因的進線數」/「該月已判進線數」（1:N 多歸因不重複計）。
+    口徑（誠實標註）：以 attributions.created_at 初判時間分組（非來源進線時間——跨 5 來源的
+    進線時間欄各異，統一軸以初判時間為準）；一則進線＝distinct (source, source_id)：
+    - ratio ＝ 該月「含 content 主因歸因的進線數」/「該月已初判進線數」（1:N 多歸因不重複計）。
     - substr 用於月分組 label（顯示分組非過濾，同 attribution_overview 趨勢註解）。
 
     Args:
@@ -364,9 +364,9 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
     """
     from sqlalchemy import distinct
 
-    jg = T.judgments
+    jg = T.attributions
     item = jg.c.source + ":" + jg.c.source_id  # distinct 進線鍵（1:N 多歸因去重）
-    ym = func.substr(jg.c.judged_at, 1, 7).label("ym")
+    ym = func.substr(jg.c.created_at, 1, 7).label("ym")
     with T.get_engine().connect() as c:
         rows = (
             c.execute(
@@ -377,7 +377,7 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
                     .filter(jg.c.l1_code == _HEADLINE_DOMAIN)
                     .label("content"),
                 )
-                .where(jg.c.judged_at.isnot(None), jg.c.judged_at != "")
+                .where(jg.c.created_at.isnot(None), jg.c.created_at != "")
                 .group_by(ym)
                 .order_by(ym.asc())
             )

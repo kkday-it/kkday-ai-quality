@@ -19,7 +19,13 @@ export interface AppModule {
 
 /** 縱覽置首（整個 AI 質檢的鳥瞰），AI 法官為其下一環。 */
 export const MODULES: ReadonlyArray<AppModule> = [
-  { value: 'overview', label: '📊 質檢概覽', home: '/overview', prefix: '/overview', tabs: OVERVIEW_TABS },
+  {
+    value: 'overview',
+    label: '📊 質檢概覽',
+    home: '/overview',
+    prefix: '/overview',
+    tabs: OVERVIEW_TABS,
+  },
   { value: 'ai-usage', label: '💰 AI 消耗', home: '/usage', prefix: '/usage', tabs: USAGE_TABS },
   { value: 'ai-judge', label: '⚖️ AI 法官', home: '/judge', prefix: '/judge', tabs: JUDGE_TABS },
 ];

@@ -1,6 +1,6 @@
-"""判決規則導出：初判 Prompt 包（zip）＋ 共用 Excel 導出樣式 helper。
+"""初判規則導出：初判 Prompt 包（zip）＋ 共用 Excel 導出樣式 helper。
 
-Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md，故規則配置頁「導出」改為直接
+Prompt-as-Source 架構下初判 prompt 唯一真相源＝prompts/*.md，故規則配置頁「導出」改為直接
 打包該目錄（`build_prompts_zip_bytes`），不再派生 xlsx 結構表。`_style_header` 為各 Excel 導出（問題
 列表 db/export、未來其他）共用的視覺美化 helper，續留本模組供 `db/export` 複用；openpyxl 為重庫，於
 `_style_header` 內 lazy import。
@@ -57,9 +57,9 @@ def _style_header(ws, widths: list[int], freeze_cols: int = 0) -> None:
 
 
 def build_prompts_zip_bytes(ctx: ExportCtx | None = None) -> bytes:
-    """打包 prompts 判決 prompt 目錄為 zip（bytes）：7 支 prompt md ＋ README ＋ BASELINE。
+    """打包 prompts 初判 prompt 目錄為 zip（bytes）：7 支 prompt md ＋ README ＋ BASELINE。
 
-    Prompt-as-Source 架構下判決 prompt 唯一真相源＝prompts/*.md（見 `judge.prompt_source`），本
+    Prompt-as-Source 架構下初判 prompt 唯一真相源＝prompts/*.md（見 `judge.prompt_source`），本
     導出直接打包該目錄的 .md 檔（含引擎契約 README、基線指標 BASELINE），供離線交付 / 版本留存 / 手動
     diff。以**磁碟現行檔**為準（DB 熱編 active 版另存 judge_rule_versions；若已在 RuleManager 熱編而未
     回寫檔，兩者可能不同步——需回寫請先「恢復默認」反向操作，或改由檔案編輯流程）。

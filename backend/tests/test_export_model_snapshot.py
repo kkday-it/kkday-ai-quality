@@ -1,7 +1,7 @@
 """導出「輸出結果版本」（snapshot_model 歷史快照替換）+ xlsx 欄位回歸測試。
 
-覆蓋：快照模式內容/底色列傾向同步/覆核軸空白/未命中排除/統計附註；
-當前判決模式「覆核狀態」欄非空（鎖住 _attr_keys 既有 bug 修復——曾因缺 key
+覆蓋：快照模式內容/底色列傾向同步/判決軸空白/未命中排除/統計附註；
+當前初判模式「判決狀態」欄非空（鎖住 _attr_keys 既有 bug 修復——曾因缺 key
 fallback 讀 row 級恆 None 而靜默空白）。
 """
 
@@ -45,7 +45,7 @@ def _finding(
         confidence=0.9,
         raw_confidence=0.9,
         confidence_tier="auto_accept",
-        judgment_stage="judged",
+        prejudge_stage="judged",
         summary={"zh-tw": summary},
         model_used=model,
     )
@@ -64,21 +64,21 @@ def _col(headers: list, name: str) -> int:
 
 
 def test_export_current_mode_status_and_model_columns(temp_db) -> None:
-    """當前判決模式：「判決模型」「覆核狀態」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
+    """當前初判模式：「初判模型」「判決狀態」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
     db.insert_source_batch("product_reviews", [_pr_row("E1")])
     db.replace_source_findings("product_reviews", "E1", [_finding("E1", "gpt-5-mini")])
     db.update_finding_status("fd_product_reviews_E1__content", "confirmed", actor="qa@kkday.com")
     headers, rows = _cells(db.export_problems_xlsx(source="product_reviews"))
-    assert "判決模型" in headers and "覆核狀態" in headers
+    assert "初判模型" in headers and "判決狀態" in headers
     r = rows[0]
-    assert r[_col(headers, "判決模型")] == "gpt-5-mini"
-    assert r[_col(headers, "覆核狀態")] == "已確認"  # _STATUS_LABEL_ZH 中文化
+    assert r[_col(headers, "初判模型")] == "gpt-5-mini"
+    assert r[_col(headers, "判決狀態")] == "已確認"  # _STATUS_LABEL_ZH 中文化
 
 
 def test_export_snapshot_model_replaces_content(temp_db) -> None:
-    """快照模式：內容/列傾向替換為所選模型快照；覆核軸空白；無該模型快照的評論整列排除。"""
+    """快照模式：內容/列傾向替換為所選模型快照；判決軸空白；無該模型快照的評論整列排除。"""
     db.insert_source_batch("product_reviews", [_pr_row("S1"), _pr_row("S2")])
-    # S1：先 gpt-5-mini 判 content/負向 → 再 seed 重判 supplier/正向（當前判決＝seed）
+    # S1：先 gpt-5-mini 判 content/負向 → 再 seed 重新初判 supplier/正向（當前初判＝seed）
     db.replace_source_findings("product_reviews", "S1", [_finding("S1", "gpt-5-mini")])
     db.update_finding_status("fd_product_reviews_S1__content", "confirmed", actor="qa@kkday.com")
     db.replace_source_findings(
@@ -95,16 +95,16 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
     assert len(rows) == 1  # S2 無 seed 快照 → 排除
     r = rows[0]
     assert r[_col(headers, "編號")] == "S1"
-    assert r[_col(headers, "L1 分類")] == "供應商履約"  # 快照內容（非當前判決也非舊 gpt 判決）
+    assert r[_col(headers, "L1 分類")] == "供應商履約"  # 快照內容（非當前初判也非舊 gpt 初判）
     assert r[_col(headers, "問題摘要")] == "他模型觀點"
-    assert r[_col(headers, "判決模型")] == "seed-2-0-lite"
+    assert r[_col(headers, "初判模型")] == "seed-2-0-lite"
     assert r[_col(headers, "情緒傾向")] == "4"  # row 級 our_sentiment 同步為快照 primary
-    # 覆核軸屬「當前判決」語義，歷史快照不冒充 → 空白
-    assert not r[_col(headers, "覆核狀態")]
+    # 判決軸屬「當前初判」語義，歷史快照不冒充 → 空白
+    assert not r[_col(headers, "判決狀態")]
 
 
 def test_export_snapshot_selects_that_models_view(temp_db) -> None:
-    """快照模式選舊模型：輸出該模型當時判的內容（與當前判決不同），統計附註揭露口徑。"""
+    """快照模式選舊模型：輸出該模型當時判的內容（與當前初判不同），統計附註揭露口徑。"""
     db.insert_source_batch("product_reviews", [_pr_row("S3")])
     db.replace_source_findings(
         "product_reviews", "S3", [_finding("S3", "gpt-5-mini", summary="gpt 觀點")]
@@ -116,20 +116,20 @@ def test_export_snapshot_selects_that_models_view(temp_db) -> None:
     )
     blob = db.export_problems_xlsx(source="product_reviews", snapshot_model="gpt-5-mini")
     headers, rows = _cells(blob)
-    assert rows[0][_col(headers, "問題摘要")] == "gpt 觀點"  # 舊模型快照，非當前判決（seed）
+    assert rows[0][_col(headers, "問題摘要")] == "gpt 觀點"  # 舊模型快照，非當前初判（seed）
     # 統計表 A2 揭露輸出版本口徑
     wb = load_workbook(io.BytesIO(blob))
-    a2 = wb["歸因統計"]["A2"].value
+    a2 = wb["分類統計"]["A2"].value
     assert "gpt-5-mini" in a2 and "已排除 0 則" in a2
 
 
 def test_export_compare_models_side_by_side(temp_db) -> None:
-    """並排對比模型：基準（gpt 當前判決）右側附各模型情緒/L1 對比欄；未判該模型的評論該欄空白。
+    """並排對比模型：基準（gpt 當前初判）右側附各模型情緒/L1 對比欄；未初判該模型的評論該欄空白。
 
     用 2 個 compare model（總欄數 > 26）同時鎖住 _style_header 欄字母溢出修復（chr(64+i) → 'get_column_letter'）。
     """
     db.insert_source_batch("product_reviews", [_pr_row("C1"), _pr_row("C2")])
-    # C1：seed 判 supplier/正向、gemini 判 customer/負向，最後 gpt 判 content/負向（當前判決＝gpt）
+    # C1：seed 判 supplier/正向、gemini 判 customer/負向，最後 gpt 判 content/負向（當前初判＝gpt）
     db.replace_source_findings(
         "product_reviews",
         "C1",
@@ -154,7 +154,7 @@ def test_export_compare_models_side_by_side(temp_db) -> None:
         assert f"情緒·{m}" in headers and f"L1·{m}" in headers and f"L2·{m}" in headers
     by_id = {r[_col(headers, "編號")]: r for r in rows}
     c1 = by_id["C1"]
-    assert c1[_col(headers, "L1 分類")] == "商品內容"  # 基準＝gpt 當前判決
+    assert c1[_col(headers, "L1 分類")] == "商品內容"  # 基準＝gpt 當前初判
     assert c1[_col(headers, "L1·seed-2-0-lite")] == "供應商履約"  # seed 最新快照
     assert c1[_col(headers, "情緒·seed-2-0-lite")] == "4"  # 正向 sentiment
     assert c1[_col(headers, "L1·gemini-flash")] == "理解期待"

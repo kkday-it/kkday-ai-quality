@@ -1,46 +1,22 @@
 <script setup lang="ts">
 /**
- * 執行日誌渲染（純展示，無 SSE 邏輯）：每一次 LLM 調用（polarity / C-1..C-6）聚合成獨立 tab，
- * tab 內以「時間軸」由上至下（時間遞增）呈現該調用的生命週期——請求（完整輸入參數，100% 對齊
- * 實際送 API 的 kwargs）→ Prompt 全文 → 回應（原始輸出 + 用量）；非 LLM 的流程階段（載資料 /
- * 落庫 / 錯誤）收在「流程」tab 的時間軸。抽自 `PrejudgeLogDrawer.vue`，供該抽屜（即時 SSE）與
- * Prompt 測試沙盒（即時 SSE + 歷史回看快照）共用同一份渲染，避免 drift。
- *
- * Tab 固定 + 內容捲動：交給公共元件 `StickyTabs`（`@/components`，見
- * `.claude/rules/frontend-vue.md` Tabs 切換展示章節）取代裸 `a-tabs`，本檔不再自行處理
- * `:deep()` CSS——`.arco-tabs-content` 是 StickyTabs 內建的唯一捲動容器，LLM 調用 tab 左側
- * 掛錨點導航（`a-anchor`）與其並排、`scroll-container` 指向該容器（`getScrollEl()`），捲動範圍
- * 天然限定在 tab 列下方的右側內容區，不含 tab 列與導航自身，也不需要外層另包一層捲動容器。
+ * 執行日誌視圖（分組 wrapper）：依 entries 的 `item_id` 自動適應——
+ * - 單組（單筆初判／舊快照無 item_id／沙盒單挑）：直接渲染 `PrejudgeLogTabs`，與既往完全一致。
+ * - 多組（批量 ≥2 筆）：主從式——左欄「整體流程」評論清單（每筆狀態一目了然＝批量整體視角），
+ *   點任一筆 → 右側以同一份 `PrejudgeLogTabs` 只渲染該筆條目（單筆密度的 流程＋polarity＋C-N
+ *   tabs＝快速下鑽單筆執行日誌）；job 級事件（任務啟動參數等）收在「整體流程」偽列。
+ * 串流時預設自動跟隨「最新有動靜」的評論，使用者手動點選即釘住不再跳。
+ * 三個消費端（確認初判分類抽屜／PrejudgeLogDrawer／PromptSandboxDrawer）零改動自動升級。
  */
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   IconCheckCircleFill,
   IconCloseCircleFill,
   IconLoading,
   IconMinusCircleFill,
 } from '@arco-design/web-vue/es/icon';
-import { StickyTabs } from '@/components';
-// 相對路徑 import（非走 barrel）：本檔自身未進 components barrel，但同資料夾 PrejudgeLogDrawer /
-// PromptSandboxDrawer 皆以相對路徑消費本檔，此處延續同一慣例（避免同資料夾迴繞 import）。
-import LlmCallTimeline from './LlmCallTimeline.vue';
+import PrejudgeLogTabs from './PrejudgeLogTabs.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
-import {
-  DIALOGUE_ROLE_COLORS,
-  DIALOGUE_ROLE_LABELS,
-  POLARITY_COLOR,
-  POLARITY_LABELS,
-  schemaFor,
-  TIER_LABELS,
-} from '../constants';
-import {
-  fmtTs,
-  LLM_KIND_LABEL,
-  logEntryId,
-  parseDialogue,
-  scalarParams,
-  tryParseRaw,
-  type DialogueTurn,
-} from '../utils';
 
 const props = withDefaults(
   defineProps<{
@@ -51,116 +27,115 @@ const props = withDefaults(
   { streaming: false },
 );
 
-const stickyTabsRef = ref<InstanceType<typeof StickyTabs>>();
-/** `StickyTabs` 內部唯一捲動容器（`.arco-tabs-content`），餵給左側錨點導航的 `scroll-container`。 */
-const scrollEl = ref<HTMLElement | null>(null);
-// entries 首次掛載 / 每次變動（串流新增條目）→ 重新取得捲動容器（idempotent）；
-// 串流中另委由 StickyTabs 捲動當前可見 tab 的內容區到底，歷史回看（streaming=false）不自動捲。
+/** job 級事件的偽分組鍵（entry 無 item_id 者歸此；亦是「整體流程」列的選取值）。 */
+const JOB_KEY = '__job__';
+
+/** 單一評論的日誌分組（狀態自條目派生，供左欄清單一眼掃）。 */
+interface ItemGroup {
+  id: string;
+  entries: LogEntry[];
+  /** 「開始初判」entry 的原文標題（可空）。 */
+  title: string;
+  status: 'running' | 'done' | 'failed' | 'incomplete';
+  /** 歸類完成的歸因筆數（未完成＝null；0＝未歸因）。 */
+  findings: number | null;
+  /** 評論傾向（歸類完成 digest 首筆 polarity；未完成＝''）——底色區分比照導出表格。 */
+  polarity: string;
+}
+
+/** 按 item_id 分組（保持首次出現序＝派工序）；無 item_id 條目歸 job 組。 */
+const groupMap = computed(() => {
+  const map = new Map<string, LogEntry[]>();
+  for (const e of props.entries) {
+    const key = e.item_id || JOB_KEY;
+    const list = map.get(key);
+    if (list) list.push(e);
+    else map.set(key, [e]);
+  }
+  return map;
+});
+
+const itemGroups = computed<ItemGroup[]>(() => {
+  const out: ItemGroup[] = [];
+  for (const [id, list] of groupMap.value) {
+    if (id === JOB_KEY) continue;
+    const failed = list.some((e) => e.kind === 'error');
+    const doneEntry = list.find((e) => e.stage === 'item' && Array.isArray(e.data?.findings));
+    const start = list.find((e) => e.data?.title);
+    out.push({
+      id,
+      entries: list,
+      title: String(start?.data?.title || ''),
+      status: failed ? 'failed' : doneEntry ? 'done' : props.streaming ? 'running' : 'incomplete',
+      findings: doneEntry ? (doneEntry.data?.findings as unknown[]).length : null,
+      polarity: String(
+        (doneEntry?.data?.findings as { polarity?: string }[] | undefined)?.[0]?.polarity || '',
+      ),
+    });
+  }
+  return out;
+});
+
+/** 批量（≥2 筆）才切主從式；單組維持既往單視圖（含舊快照/單筆情境零視覺差異）。 */
+const grouped = computed(() => itemGroups.value.length >= 2);
+
+/** 左欄頂部彙總（完成/失敗/進行中）。 */
+const summary = computed(() => {
+  const g = itemGroups.value;
+  return {
+    total: g.length,
+    done: g.filter((x) => x.status === 'done').length,
+    failed: g.filter((x) => x.status === 'failed').length,
+    running: g.filter((x) => x.status === 'running').length,
+  };
+});
+
+const selectedId = ref(JOB_KEY);
+/** 使用者手動點選後釘住，串流不再自動跳到最新動靜的評論。 */
+const pinned = ref(false);
+const select = (id: string) => {
+  selectedId.value = id;
+  pinned.value = true;
+};
+// 串流跟隨：未釘住時自動選「最新有動靜」的評論（最後一條帶 item_id 的 entry 所屬組）；
+// 尚無 item 事件（剛啟動只有 job 級）時停在整體流程列。
 watch(
   () => props.entries.length,
-  async () => {
-    await nextTick();
-    scrollEl.value = stickyTabsRef.value?.getScrollEl() ?? null;
-    if (props.streaming) stickyTabsRef.value?.scrollActiveToBottom();
+  () => {
+    if (pinned.value || !props.streaming) return;
+    for (let i = props.entries.length - 1; i >= 0; i--) {
+      const iid = props.entries[i].item_id;
+      if (iid) {
+        selectedId.value = iid;
+        return;
+      }
+    }
   },
   { immediate: true },
 );
 
-const isLlm = (kind: string) => kind.startsWith('llm_');
-
-/** 一次 LLM 調用的聚合（依 ts 排序的條目 + 狀態），供單一 tab 的時間軸呈現。 */
-interface CallGroup {
-  key: string;
-  entries: LogEntry[];
-  status: 'running' | 'done' | 'incomplete';
-  /** done 狀態下該次調用是否有非空 attributions（真的歸因到問題，非「域無關回空」）；
-   * 非 attribute 域（如 polarity 無 attributions 欄）或尚未 done → null（不顯示標示）。 */
-  hasResult: boolean | null;
-}
-
-/** 非 LLM 的流程階段（job/item/db/error）→ 時間軸；LLM 條目另按調用分組。 */
-const flowEntries = computed(() => props.entries.filter((e) => !isLlm(e.kind)));
-
-/** 按 label（回退 stage）把 LLM 條目聚合成調用清單，維持首次出現順序（＝送出順序）。 */
-const callGroups = computed<CallGroup[]>(() => {
-  const map = new Map<string, CallGroup>();
-  const order: string[] = [];
-  for (const e of props.entries) {
-    if (!isLlm(e.kind)) continue;
-    const key = e.label || e.stage || '?';
-    let g = map.get(key);
-    if (!g) {
-      g = { key, entries: [], status: 'running', hasResult: null };
-      map.set(key, g);
-      order.push(key);
-    }
-    g.entries.push(e); // 到達順序＝時間遞增
-  }
-  for (const g of map.values()) {
-    const resp = g.entries.find((e) => e.kind === 'llm_response');
-    // 有回應＝完成；串流中未回＝進行中；串流已止仍未回＝該調用中斷（例外/額度）
-    g.status = resp ? 'done' : props.streaming ? 'running' : 'incomplete';
-    if (resp) {
-      const parsed = (tryParseRaw(resp.data?.raw) ?? resp.data?.parsed) as
-        { attributions?: unknown } | undefined;
-      // 只有 attribute 域回應才有 attributions 欄；is-array 判斷本身即排除 polarity 等無此欄的階段
-      g.hasResult = Array.isArray(parsed?.attributions) ? parsed.attributions.length > 0 : null;
-    }
-  }
-  return order.map((k) => map.get(k)!);
+const selectedEntries = computed(
+  () => groupMap.value.get(selectedId.value) ?? groupMap.value.get(JOB_KEY) ?? [],
+);
+/** 右側 tabs 的串流旗標：已完成/失敗的評論不再視為串流中（其未回應調用應顯示中斷而非轉圈）。 */
+const selectedStreaming = computed(() => {
+  if (!props.streaming) return false;
+  const g = itemGroups.value.find((x) => x.id === selectedId.value);
+  return g ? g.status === 'running' : true; // 整體流程列跟隨全域串流
 });
 
-const activeTab = ref('__flow__');
-/** 當前 active tab 若為某次 LLM 調用（非「流程」tab）→ 該調用的分組，供左側錨點導航渲染；
- * 流程 tab 是一般時間軸、不需要導航 → undefined。 */
-const activeCallGroup = computed(() => callGroups.value.find((g) => g.key === activeTab.value));
-
-/** 時間軸節點色（依 stage 語義；LLM 調用 tab 自身節點色見 `LlmCallTimeline`）。 */
-const STAGE_DOT: Record<string, string> = {
-  job: '#4080ff',
-  item: '#14c9c9',
-  db: '#00b42a',
-  polarity: '#722ed1',
-  attribute: '#722ed1',
-};
-const flowDot = (e: LogEntry) => (e.kind === 'error' ? '#f53f3f' : STAGE_DOT[e.stage] || '#86909c');
-
-/** 流程 tab stage 機器碼 → 中文顯示標籤（entry 本身保留機器碼；未知碼原樣顯示）。 */
-const FLOW_STAGE_LABELS: Record<string, string> = {
-  job: '任務',
-  item: '單筆',
-  db: '落庫',
+/** 傾向 → 列底色＋左色條（比照導出表格整列底色語義；選中另疊 primary 底、色條保留辨識）。 */
+const POLARITY_ROW_CLASS: Record<string, string> = {
+  positive: 'border-l-[rgb(var(--success-4))] bg-[rgb(var(--success-1))]',
+  neutral: 'border-l-[#c9cdd4] bg-[var(--color-fill-1)]',
+  negative: 'border-l-[rgb(var(--danger-4))] bg-[rgb(var(--danger-1))]',
 };
 
-/** 「歸類完成」entry 附帶的單筆歸因 digest（後端 `_work_one` emit；欄位缺省安全）。 */
-interface FindingDigest {
-  polarity?: string;
-  l1?: string;
-  l2?: string;
-  confidence?: number;
-  tier?: string;
-  summary?: string;
-}
-/** 取 entry 的歸因結果 digest 陣列（非「歸類完成」entry 回空陣列 → 不渲染結果塊）。 */
-const findingsOf = (e: LogEntry): FindingDigest[] =>
-  Array.isArray(e.data?.findings) ? (e.data?.findings as FindingDigest[]) : [];
-
-/** 「開始判決」entry 的原文標題（source-schema `title`；評論類來源如 product_reviews 才有值）。 */
-const titleOf = (e: LogEntry): string => String(e.data?.title || '');
-
-/** 「開始判決」entry 的內容輪次：依來源 schema contentMode（conversations＝dialogue）解析 [ROLE]:
- * 前綴成輪次，同 AttributionList 渲染邏輯；非對話來源或解析失敗回 null → fallback 原樣全文。 */
-const dialogueTurnsOf = (e: LogEntry): DialogueTurn[] | null => {
-  const source = String(e.data?.source || '');
-  if (schemaFor(source).contentMode !== 'dialogue') return null;
-  return parseDialogue(String(e.data?.content || ''));
-};
-
-/** 信心數字按分層上色（同列表：auto_accept 綠 / jury 琥珀 / needs_review 紅）。 */
-const CONF_TIER_CLASS: Record<string, string> = {
-  auto_accept: 'text-[rgb(var(--success-6))]',
-  jury: 'text-[rgb(var(--warning-6))]',
-  needs_review: 'text-[rgb(var(--danger-6))]',
+const STATUS_LABELS: Record<ItemGroup['status'], string> = {
+  running: '進行中',
+  done: '完成',
+  failed: '失敗',
+  incomplete: '中斷',
 };
 </script>
 
@@ -174,155 +149,87 @@ const CONF_TIER_CLASS: Record<string, string> = {
     </div>
     <a-empty v-else-if="!entries.length" description="無日誌紀錄" :image-size="32" />
 
-    <div v-else class="flex h-full min-h-0 gap-4">
-      <!-- 左側掛錨點導航：僅 LLM 調用 tab 顯示，指向 StickyTabs 內部唯一的捲動容器。 -->
-      <a-anchor
-        v-if="activeCallGroup"
-        class="w-32 shrink-0 pt-2"
-        :scroll-container="scrollEl ?? undefined"
-        :change-hash="false"
-        :smooth="true"
-        line-less
-      >
-        <a-anchor-link
-          v-for="(e, i) in activeCallGroup.entries"
-          :key="i"
-          :href="`#${logEntryId(activeCallGroup.key, i)}`"
-          :title="LLM_KIND_LABEL[e.kind] || e.kind"
-        />
-      </a-anchor>
+    <!-- 單組：既往單視圖原樣（單筆/舊快照/沙盒單挑） -->
+    <PrejudgeLogTabs v-else-if="!grouped" :entries="entries" :streaming="streaming" />
 
-      <StickyTabs
-        ref="stickyTabsRef"
-        v-model:active-key="activeTab"
-        type="card-gutter"
-        size="small"
-        :lazy-load="true"
-        class="min-w-0 flex-1"
-      >
-        <!-- 流程 tab：非 LLM 階段時間軸（由上至下時間遞增） -->
-        <a-tab-pane key="__flow__">
-          <template #title>
-            <span>流程</span>
-            <a-tag class="ml-1" size="small" color="gray">{{ flowEntries.length }}</a-tag>
-          </template>
-          <a-timeline class="pl-1 pt-2">
-            <a-timeline-item
-              v-for="(e, i) in flowEntries"
-              :key="i"
-              :dot-color="flowDot(e)"
-              :label="fmtTs(e.ts)"
-            >
-              <div
-                class="text-xs"
-                :class="e.kind === 'error' ? 'text-[#f53f3f]' : 'text-[#4e5969]'"
+    <!-- 多組（批量）：主從式——左欄整體流程清單、右側選中評論的完整日誌 -->
+    <div v-else class="flex h-full min-h-0 gap-3">
+      <div class="flex w-60 shrink-0 flex-col overflow-hidden rounded border">
+        <div
+          class="flex flex-none flex-wrap items-center gap-x-2 border-b bg-[var(--color-fill-1)] px-2 py-1.5 text-xs text-[#4e5969]"
+        >
+          <span>共 {{ summary.total }}</span>
+          <span class="text-[rgb(var(--success-6))]">✓ {{ summary.done }}</span>
+          <span v-if="summary.failed" class="text-[rgb(var(--danger-6))]">
+            ✗ {{ summary.failed }}
+          </span>
+          <span v-if="summary.running" class="text-[rgb(var(--primary-6))]">
+            ⟳ {{ summary.running }}
+          </span>
+        </div>
+        <div class="min-h-0 flex-1 overflow-auto">
+          <!-- 整體流程偽列：job 級事件（任務啟動參數 / job error） -->
+          <div
+            class="cursor-pointer border-b px-2 py-1.5 text-xs"
+            :class="
+              selectedId === JOB_KEY
+                ? 'bg-[rgb(var(--primary-1))] text-[rgb(var(--primary-6))]'
+                : 'text-[#4e5969] hover:bg-[var(--color-fill-1)]'
+            "
+            @click="select(JOB_KEY)"
+          >
+            整體流程
+          </div>
+          <div
+            v-for="g in itemGroups"
+            :key="g.id"
+            class="cursor-pointer border-b border-l-4 px-2 py-1.5"
+            :class="[
+              POLARITY_ROW_CLASS[g.polarity] ||
+                'border-l-transparent hover:bg-[var(--color-fill-1)]',
+              selectedId === g.id ? '!bg-[rgb(var(--primary-1))]' : 'hover:brightness-[0.97]',
+            ]"
+            :title="`${g.id} ${g.title}·${STATUS_LABELS[g.status]}`"
+            @click="select(g.id)"
+          >
+            <div class="flex items-center gap-1 text-xs">
+              <icon-loading v-if="g.status === 'running'" class="shrink-0 text-[#4080ff]" />
+              <icon-close-circle-fill
+                v-else-if="g.status === 'failed'"
+                class="shrink-0 text-[rgb(var(--danger-6))]"
+              />
+              <!-- 完成但 0 筆歸因＝未歸因（灰），有歸因＝綠勾 -->
+              <icon-minus-circle-fill
+                v-else-if="g.status === 'done' && g.findings === 0"
+                class="shrink-0 text-[#86909c]"
+              />
+              <icon-check-circle-fill
+                v-else-if="g.status === 'done'"
+                class="shrink-0 text-[rgb(var(--success-6))]"
+              />
+              <icon-minus-circle-fill v-else class="shrink-0 text-[#c9cdd4]" />
+              <span class="font-mono text-[var(--color-text-1)]">{{ g.id }}</span>
+              <!-- 歸因筆數：常態 1 筆不標（噪音），僅多歸因（≥2）才顯示——那才需要被注意 -->
+              <span
+                v-if="(g.findings ?? 0) > 1"
+                class="ml-auto shrink-0 text-[11px] text-[#86909c]"
               >
-                <a-tag size="small" :color="e.kind === 'error' ? 'red' : 'gray'">
-                  {{ FLOW_STAGE_LABELS[e.stage] || e.stage }}
-                </a-tag>
-                <span class="ml-1">{{ e.message }}</span>
-                <!-- 歸類完成：逐筆歸因結果塊（傾向 + L1›L2 + 信心/分層 + 摘要），流程 tab 一目瞭然 -->
-                <div v-if="findingsOf(e).length" class="mt-1 flex flex-col gap-1">
-                  <div
-                    v-for="(f, fi) in findingsOf(e)"
-                    :key="fi"
-                    class="rounded border border-[var(--color-border-1)] bg-[var(--color-fill-1)] px-2 py-1"
-                  >
-                    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <a-tag
-                        v-if="f.polarity"
-                        size="small"
-                        :color="POLARITY_COLOR[f.polarity] || 'gray'"
-                      >
-                        {{ POLARITY_LABELS[f.polarity] || f.polarity }}
-                      </a-tag>
-                      <template v-if="f.l1 || f.l2">
-                        <span class="font-medium text-[rgb(var(--primary-6))]">{{ f.l1 }}</span>
-                        <template v-if="f.l2">
-                          <span class="text-[#86909c]">›</span>
-                          <span>{{ f.l2 }}</span>
-                        </template>
-                      </template>
-                      <span v-else class="text-[#86909c]">未歸因</span>
-                      <span
-                        v-if="typeof f.confidence === 'number'"
-                        class="font-semibold"
-                        :class="CONF_TIER_CLASS[f.tier || ''] || ''"
-                      >
-                        {{ f.confidence.toFixed(2) }}
-                      </span>
-                      <span
-                        v-if="f.tier"
-                        class="rounded bg-[var(--color-fill-2)] px-1 text-[11px] text-[#4e5969]"
-                      >
-                        {{ TIER_LABELS[f.tier] || f.tier }}
-                      </span>
-                    </div>
-                    <div v-if="f.summary" class="mt-0.5 font-medium text-[var(--color-text-1)]">
-                      {{ f.summary }}
-                    </div>
-                  </div>
-                </div>
-                <div v-else-if="e.data?.content" class="mt-0.5">
-                  <div v-if="titleOf(e)" class="font-medium text-[var(--color-text-1)]">
-                    {{ titleOf(e) }}
-                  </div>
-                  <!-- 進線對話：按 [ROLE]: 前綴解析輪次（角色 tag + 該輪文字），比照 AttributionList
-                     歸因列表一眼辨發話方；非對話來源或解析失敗 fallback 原樣加引號全文 -->
-                  <div v-if="dialogueTurnsOf(e)" class="flex flex-col gap-1">
-                    <div
-                      v-for="(t, ti) in dialogueTurnsOf(e)"
-                      :key="ti"
-                      class="break-all text-[#86909c]"
-                    >
-                      <a-tag
-                        v-if="t.role"
-                        size="small"
-                        :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
-                        class="mr-1"
-                        >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
-                      >
-                      <span class="whitespace-pre-wrap">{{ t.text }}</span>
-                    </div>
-                  </div>
-                  <div v-else class="break-all text-[#86909c]">「{{ e.data.content }}」</div>
-                </div>
-                <div
-                  v-else-if="e.data && Object.keys(e.data).length"
-                  class="mt-0.5 flex flex-wrap gap-x-3 text-[#86909c]"
-                >
-                  <span v-for="[k, v] in scalarParams(e.data)" :key="k">
-                    {{ k }}: <span class="font-mono">{{ v }}</span>
-                  </span>
-                </div>
-              </div>
-            </a-timeline-item>
-          </a-timeline>
-        </a-tab-pane>
-
-        <!-- 每一次 LLM 調用一個 tab：時間軸由上至下（請求 → Prompt → 回應） -->
-        <a-tab-pane v-for="g in callGroups" :key="g.key">
-          <template #title>
-            <icon-loading v-if="g.status === 'running'" class="text-[#4080ff]" />
-            <!-- done + hasResult=false：該調用正常完成但無非空 attributions（域與此則無關，非錯誤） -->
-            <icon-minus-circle-fill
-              v-else-if="g.status === 'done' && g.hasResult === false"
-              class="text-[#86909c]"
-            />
-            <icon-check-circle-fill
-              v-else-if="g.status === 'done'"
-              class="text-[rgb(var(--success-6))]"
-            />
-            <icon-close-circle-fill v-else class="text-[rgb(var(--danger-6))]" />
-            <span class="ml-1 font-medium">{{ g.key }}</span>
-          </template>
-
-          <!-- 一次 LLM 調用的時間軸內容（請求／Prompt／回應）：抽為 LlmCallTimeline 供本檔各調用 tab
-             復用；左側掛錨點導航見上方（本檔統一持有，點擊平滑捲動定位，捲動時 Arco Anchor
-             內建 scrollspy 自動同步高亮當前節點）。 -->
-          <LlmCallTimeline :entries="g.entries" :call-key="g.key" :status="g.status" />
-        </a-tab-pane>
-      </StickyTabs>
+                {{ g.findings }} 歸因
+              </span>
+            </div>
+            <div v-if="g.title" class="mt-0.5 truncate text-[11px] text-[#86909c]">
+              {{ g.title }}
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- :key 換組即重掛（tab 回到流程、捲動歸零），單筆密度與單列初判體驗一致 -->
+      <PrejudgeLogTabs
+        :key="selectedId"
+        :entries="selectedEntries"
+        :streaming="selectedStreaming"
+        class="min-w-0 flex-1"
+      />
     </div>
   </div>
 </template>

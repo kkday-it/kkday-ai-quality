@@ -77,4 +77,3 @@ export interface SourceRow {
   dashboard: string;
   url: string;
 }
-

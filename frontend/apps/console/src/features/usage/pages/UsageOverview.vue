@@ -138,7 +138,7 @@ const num = (n: number) => n.toLocaleString();
           <CardSection
             title="各來源成本"
             hint="USD"
-            desc="依判決來源分組（product_reviews / conversations…）；ad-hoc 單次呼叫無來源者歸「（未標）」。"
+            desc="依初判來源分組（product_reviews / conversations…）；ad-hoc 單次呼叫無來源者歸「（未標）」。"
           >
             <v-chart :option="bySourceOption" class="h-[300px]" autoresize />
           </CardSection>

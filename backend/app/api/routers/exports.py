@@ -1,7 +1,7 @@
 """通用導出 job 端點：進度串流 / 停止 / 取檔（跨領域共用）。
 
 導出 job registry（app.core.export_jobs）為全域 in-mem，故 SSE 串流、停止、下載三端點與導出「內容」
-無關、可被任何導出（問題列表 / 判決規則 / 未來新增）共用；各領域只需自己的 start 端點呼叫
+無關、可被任何導出（問題列表 / 初判規則 / 未來新增）共用；各領域只需自己的 start 端點呼叫
 `export_jobs.start_export(builder, filename)` 取得 job_id，其餘生命週期都走這裡。
 
 契約對齊 frontend/apps/console/src/api/exports.api.ts（exportStreamUrl / cancelExport / downloadExport）。

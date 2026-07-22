@@ -39,6 +39,6 @@ def test_spec_for_registered_sources(source: str, natural_key: str) -> None:
 
 
 def test_spec_for_unknown_source_returns_none() -> None:
-    """未知來源 / None 回 None（source=None 即縱覽全部，走 judgments 直接聚合）。"""
+    """未知來源 / None 回 None（source=None 即縱覽全部，走 attributions 直接聚合）。"""
     assert source_registry.spec_for("unknown_source") is None
     assert source_registry.spec_for(None) is None

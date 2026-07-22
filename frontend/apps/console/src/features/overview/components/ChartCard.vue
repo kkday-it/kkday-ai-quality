@@ -32,10 +32,18 @@ const KIND_TAG: Record<string, { label: string; color: string }> = {
 };
 const kindTag = computed(() => (props.spec.kind ? KIND_TAG[props.spec.kind] : null));
 
-const nsMetrics = computed(() => (props.spec.type === 'scorecard' ? (props.data as NorthStarMetric[]) ?? [] : []));
-const engineList = computed(() => (props.spec.type === 'engines' ? (props.data as EngineCardData[]) ?? [] : []));
-const loopSteps = computed(() => (props.spec.type === 'loop' ? (props.data as LoopStep[]) ?? [] : []));
-const sourceRows = computed(() => (props.spec.type === 'table' ? (props.data as SourceRow[]) ?? [] : []));
+const nsMetrics = computed(() =>
+  props.spec.type === 'scorecard' ? ((props.data as NorthStarMetric[]) ?? []) : [],
+);
+const engineList = computed(() =>
+  props.spec.type === 'engines' ? ((props.data as EngineCardData[]) ?? []) : [],
+);
+const loopSteps = computed(() =>
+  props.spec.type === 'loop' ? ((props.data as LoopStep[]) ?? []) : [],
+);
+const sourceRows = computed(() =>
+  props.spec.type === 'table' ? ((props.data as SourceRow[]) ?? []) : [],
+);
 
 const chartHeight = computed(() => (props.spec.type === 'gauge' ? 'h-[240px]' : 'h-[300px]'));
 const goto = (route: string) => router.push(route);
@@ -69,9 +77,18 @@ const goto = (route: string) => router.push(route);
 
     <!-- 卡身（flex-1 填滿，配合 align=stretch 等高）-->
     <div class="flex min-h-0 flex-1 flex-col">
-      <v-chart v-if="zoomable && option" :option="option" autoresize class="w-full" :class="chartHeight" />
+      <v-chart
+        v-if="zoomable && option"
+        :option="option"
+        autoresize
+        class="w-full"
+        :class="chartHeight"
+      />
 
-      <div v-else-if="spec.type === 'scorecard'" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div
+        v-else-if="spec.type === 'scorecard'"
+        class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <NorthStarCard v-for="m in nsMetrics" :key="m.key" :metric="m" />
       </div>
 

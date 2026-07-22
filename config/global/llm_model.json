@@ -1,5 +1,12 @@
 {
-  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/llm_model.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / user_settings，勿放這裡。defaultModels[]＝{ id, desc, input, output }；desc 為下拉 hint，input/output＝美元/1M tokens 單價（判決花費估算 SSOT，後端 pricing.py 讀此；未列 input/output 者回退 price_default，Batch −50%）。價格隨官方調整請手動更新此檔（即時生效，reload() 清快取）。",
+  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/llm_model.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / user_settings，勿放這裡。defaultModels[]＝{ id, desc, input, output }；desc 為下拉 hint，input/output＝美元/1M tokens 單價（判決花費估算 SSOT，後端 pricing.py 讀此；未列 input/output 者回退 price_default，Batch −50%）。embeddings[]＝embedding 模型單價（域路由特徵用；僅計價、不進聊天模型下拉）。價格隨官方調整請手動更新此檔（即時生效，reload() 清快取）。",
+  "embeddings": [
+    {
+      "id": "text-embedding-3-small",
+      "input": 0.02,
+      "output": 0.0
+    }
+  ],
   "reasoning": [
     "none",
     "low",

@@ -1,12 +1,12 @@
-"""OpenFeature 標準旗標介面（判決閾值）+ judge_rule_versions 薄 provider。
+"""OpenFeature 標準旗標介面（初判閾值）+ judge_rule_versions 薄 provider。
 
-面向 **OpenFeature 標準避免供應商鎖定**（計畫核心工程原則）：判決閾值（confidence_tiers：auto_accept
+面向 **OpenFeature 標準避免供應商鎖定**（計畫核心工程原則）：初判閾值（confidence_tiers：auto_accept
 / jury_low / jury_high）讀取一律走 OpenFeature client（`threshold()`→`get_float_value`），backing
-provider（JudgeConfigProvider）解析到 judgment 判決配置的 confidence_tiers（DB active·G4 熱重載，讀取
-走 `db._shared.read_judgment_config` 單一入口）。Phase 7 換 Flagsmith 只需 `api.set_provider(新 provider)`，
+provider（JudgeConfigProvider）解析到 prejudge 初判配置的 confidence_tiers（靜態設定檔，讀取
+走 `db._shared.read_pipeline_config` 單一入口）。Phase 7 換 Flagsmith 只需 `api.set_provider(新 provider)`，
 呼叫端零改。
 
-閾值以 module 級 cache 持有（判決熱路徑高頻讀，避免每 finding 打 DB）；規則管理存檔後由
+閾值以 module 級 cache 持有（初判熱路徑高頻讀，避免每 finding 打 DB）；規則管理存檔後由
 rules._reload_judge_cache 呼叫 `reload()` 清 cache 即時生效（對齊 ai_judge/prejudge）。
 """
 
@@ -19,28 +19,28 @@ from openfeature.provider.metadata import Metadata
 
 # 旗標命名：judge.<tier>（auto_accept / jury_low / jury_high）。
 _FLAG_PREFIX = "judge."
-# provider 無值時的內建預設（對齊 judgment.json confidence_tiers）。
+# provider 無值時的內建預設（對齊 prejudge.json/verdict.json confidence_tiers）。
 _DEFAULT_TIERS: dict[str, float] = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
 
-# 閾值 cache（DB active confidence_tiers；lazy，reload() 清空重載）。
+# 閾值 cache（prejudge.json confidence_tiers；lazy，reload() 清空重載）。
 _tiers_cache: dict | None = None
 
 
 def _tiers() -> dict:
-    """取 judgment confidence_tiers（DB active 優先，缺則 seed 檔／內建預設）；module 級快取。"""
+    """取 prejudge confidence_tiers（靜態設定檔，缺則內建預設）；module 級快取。"""
     global _tiers_cache
     if _tiers_cache is None:
         from app.core.db import _shared  # lazy：避免 core → core.db import 期成環
 
-        cfg = _shared.read_judgment_config()
+        cfg = _shared.read_pipeline_config()
         _tiers_cache = cfg.get("confidence_tiers") or dict(_DEFAULT_TIERS)
     return _tiers_cache
 
 
 class JudgeConfigProvider(AbstractProvider):
-    """薄 OpenFeature provider：judge.<tier> 旗標 → judgment confidence_tiers（DB active，熱重載）。
+    """薄 OpenFeature provider：judge.<tier> 旗標 → prejudge confidence_tiers（靜態設定檔）。
 
-    僅 float（判決閾值）為本 provider 職責；其餘型別回 default（DEFAULT reason），不越權。
+    僅 float（初判閾值）為本 provider 職責；其餘型別回 default（DEFAULT reason），不越權。
     """
 
     def get_metadata(self) -> Metadata:
@@ -80,7 +80,7 @@ def _client():
 
 
 def threshold(name: str, default: float) -> float:
-    """取判決閾值（走 OpenFeature 標準介面；provider 讀 judgment DB active 配置，缺則 default）。
+    """取初判閾值（走 OpenFeature 標準介面；provider 讀 prejudge 靜態配置，缺則 default）。
 
     Args:
         name: tier 名（auto_accept / jury_low / jury_high）。
@@ -90,6 +90,6 @@ def threshold(name: str, default: float) -> float:
 
 
 def reload() -> None:
-    """清閾值 cache（規則管理存檔後呼叫，使新閾值即時反映於判決）。"""
+    """清閾值 cache（規則管理存檔後呼叫，使新閾值即時反映於初判）。"""
     global _tiers_cache
     _tiers_cache = None

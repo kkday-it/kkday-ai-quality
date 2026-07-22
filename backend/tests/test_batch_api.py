@@ -20,7 +20,7 @@ def test_build_batch_line_shape():
 
 
 def test_build_batch_line_with_schema():
-    """schema 傳入 → 走 Structured Outputs（json_schema strict），與即時判決同格式。"""
+    """schema 傳入 → 走 Structured Outputs（json_schema strict），與即時初判同格式。"""
     line = batch_api.build_batch_line("x", "m", "s", "u", schema={"type": "object"})
     rf = line["body"]["response_format"]
     assert rf["type"] == "json_schema"

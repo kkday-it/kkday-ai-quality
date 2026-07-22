@@ -41,7 +41,7 @@ def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
         admin_body = client.get("/api/auth/permissions", headers=_auth(admin)).json()
 
         # be2 契約形狀
-        assert set(qc_body.keys()) == {"value", "ttl", "startTime"}
+        assert set(qc_body.keys()) == {"value", "ttl"}  # be2 wire 契約僅兩欄（startTime 已移除）
         assert isinstance(qc_body["value"], list) and qc_body["ttl"] > 0
 
         qc_perms, admin_perms = set(qc_body["value"]), set(admin_body["value"])
@@ -50,26 +50,19 @@ def test_permissions_endpoint_shape_and_qc_vs_admin(temp_db, roles_cfg) -> None:
         assert "data.source.upload" in qc_perms
         assert "data.datapack.import" in qc_perms
         assert "judge-rule.version.manage" not in qc_perms
-        assert "config.file.write" not in qc_perms
         # admin 全量且為 qc 超集
         assert qc_perms <= admin_perms
-        assert {"judge-rule.version.manage", "config.file.write"} <= admin_perms
+        assert "judge-rule.version.manage" in admin_perms
 
 
 def test_qc_forbidden_on_admin_tier_endpoints(temp_db, roles_cfg) -> None:
-    """qc 打 admin-tier 端點（規則管理 / config 覆寫）一律 403。"""
+    """qc 打 admin-tier 端點（規則管理）一律 403。"""
     from app.api.main import app
 
     with TestClient(app) as client:
         qc = _auth(_login(client, "someone@kkday.com"))
         assert client.post("/api/judge-rules/C-1/reset-default", headers=qc).status_code == 403
         assert client.post("/api/judge-rules/reset-default-all", headers=qc).status_code == 403
-        assert (
-            client.put(
-                "/api/config/files/whatever.json", json={"content": {}}, headers=qc
-            ).status_code
-            == 403
-        )
 
 
 def test_qc_allowed_on_datapack_import(temp_db, roles_cfg) -> None:
@@ -109,17 +102,17 @@ def test_anonymous_gets_401_not_403(temp_db) -> None:
         assert client.post("/api/problems/export", json={}).status_code == 401
         assert client.post("/api/judge-rules/C-1/reset-default").status_code == 401
         assert (
-            client.patch("/api/findings/x/status", json={"status": "confirmed"}).status_code == 401
+            client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code == 401
         )
 
 
 def test_qc_allowed_on_prejudge_run(temp_db, roles_cfg) -> None:
-    """qc 打批量判決啟動端點非 401/403（judgment.prejudge.run 為 qc 日常主功能）。"""
+    """qc 打批量初判啟動端點非 401/403（prejudge.run 為 qc 日常主功能）。"""
     from app.api.main import app
 
     with TestClient(app) as client:
         qc = _auth(_login(client, "someone@kkday.com"))
-        r = client.post("/api/v1/judgment/prejudge", json={"item_ids": []}, headers=qc)
+        r = client.post("/api/v1/prejudge", json={"item_ids": []}, headers=qc)
         assert r.status_code not in (401, 403), r.text
 
 
@@ -128,11 +121,26 @@ def test_anonymous_401_on_prejudge_and_read_endpoints(temp_db) -> None:
     from app.api.main import app
 
     with TestClient(app) as client:
-        assert client.post("/api/v1/judgment/prejudge", json={}).status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/pause?job_id=x").status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/resume?job_id=x").status_code == 401
-        assert client.post("/api/v1/judgment/prejudge/cancel?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge", json={}).status_code == 401
+        assert client.post("/api/v1/prejudge/pause?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge/resume?job_id=x").status_code == 401
+        assert client.post("/api/v1/prejudge/cancel?job_id=x").status_code == 401
         assert client.get("/api/problems").status_code == 401
         assert client.get("/api/problems/attribution_overview").status_code == 401
         assert client.get("/api/problems/attribution_breakdown?l1=content").status_code == 401
         assert client.get("/api/overview/ai-judge").status_code == 401
+
+
+def test_be2_provider_transitional_delegation(temp_db, roles_cfg) -> None:
+    """be2 provider 過渡實作：get_permissions/check 與 LocalProvider 安全等價（正式契約前委派）。"""
+    from app.core.permissions.be2_provider import Be2PermissionProvider
+    from app.core.permissions.local_provider import LocalPermissionProvider
+
+    user = {"user_id": "u1", "email": "someone@kkday.com"}
+    assert Be2PermissionProvider().get_permissions(
+        user
+    ) == LocalPermissionProvider().get_permissions(user)
+    assert Be2PermissionProvider().check(user, "finding.review.update") is True
+    assert (
+        Be2PermissionProvider().check(user, "judge-rule.version.manage") is False
+    )  # qc 無 admin key

@@ -1,6 +1,6 @@
 """售後根因 Prompt 調試台：預設 Prompt、嚴格輸出契約、LLM 串流與單次計費。
 
-這條路徑只做 ad-hoc 調試，不寫 judgments / judgment_history；真實 API 用量仍會 best-effort
+這條路徑只做 ad-hoc 調試，不寫 attributions / attribution_history；真實 API 用量仍會 best-effort
 寫入 llm_usage，讓「AI 消耗」看板與本次畫面口徑一致。
 """
 

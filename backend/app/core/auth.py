@@ -15,7 +15,6 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core import db
 from app.core.config import env, is_production
 
 _log = logging.getLogger(__name__)
@@ -91,22 +90,28 @@ _bearer = HTTPBearer(auto_error=False)
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
-    """FastAPI 認證依賴：解析 Authorization: Bearer → 回傳 user dict；無效則 401。"""
+    """FastAPI 認證依賴：解析 Authorization: Bearer → 回傳 user dict；無效則 401。
+
+    token 驗證經 auth_verifiers.get_verifier() 分流（auth.config.json authProvider：
+    local=自建 JWT｜be2=Auth Service accessToken＋email 自動 provision）——換 be2 登入
+    時本函式與全部 router 零改，唯一分流點在 auth_verifiers。
+    """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="未提供認證 token")
-    user_id = decode_access_token(credentials.credentials)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="token 無效或已過期")
-    user = db.get_user_by_id(user_id)
+    from app.core.auth_verifiers import (
+        get_verifier,  # 函式內 import 防循環（verifier 反向用本檔 decode）
+    )
+
+    user = get_verifier().resolve_user(credentials.credentials)
     if not user:
-        raise HTTPException(status_code=401, detail="使用者不存在")
+        raise HTTPException(status_code=401, detail="token 無效或已過期，或使用者不存在")
     user["role"] = role_for(user.get("email"))  # config 白名單即時派生（見檔末 RBAC 區）
     return user
 
 
 # ── 輕量 RBAC（config 白名單驅動·零 migration）─────────────────────────────
 # 角色每請求由 config/global/roles.json 即時派生（非 JWT claim）：改名單免重簽 token 即生效。
-# 兩級：admin（規則發布 / config 編輯 / 恢復默認）｜qc（覆核 / 標真值 / 查看 / 上傳）。
+# 兩級：admin（規則發布 / 恢復默認）｜qc（判決 / 查看 / 上傳）。
 _ROLES_CACHE: dict | None = None
 
 

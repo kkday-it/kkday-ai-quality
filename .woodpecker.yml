@@ -1,0 +1,67 @@
+# Woodpecker CI 草稿（公司標準：tag 觸發 build image 推 ECR；首版慣例由 DevOps 發 PR 校正）。
+# 分工：GitHub Actions（.github/workflows/ci.yml）續任 PR gate（lint/test）；
+#       Woodpecker 專職 tag 觸發 build→ECR（避免兩套 CI 重複維運）——分工待與 DevOps 確認。
+#
+# Tag 慣例（B2CBE-2529，2026-07-14 起統一）：
+#   SIT   ＝不打 tag（Jenkins branch-build 直接部署分支）
+#   STAGE ＝ v<版號>-rc.<n>（重新包版 -rc 號 +1 疊加；輕量 git tag 即可，不必開 GitHub release）
+#   PROD  ＝ v<版號>（不含 -rc；以 GitHub create-release 打正式版）
+#
+# ⚠️ evaluate 必須用 expr-lang 運算子語法（`CI_COMMIT_TAG contains "-rc"`）；
+#    CEL 方法語法 `.contains()` 會 config error（woodpecker 3.13 實測；參考 member-api#802 / sake#32）。
+# repo secrets（AWS 憑證等）由 DevOps 於 Step 1 設定；registry/repo 佔位待提供。
+when:
+  event: tag
+
+steps:
+  # ── STAGE：-rc tag → 新加坡 ECR ──────────────────────────────
+  build-backend-stage:
+    image: plugins/docker
+    when:
+      evaluate: 'CI_COMMIT_TAG contains "-rc"'
+    settings:
+      registry: REPLACE_ME_STAGE.dkr.ecr.ap-southeast-1.amazonaws.com
+      repo: REPLACE_ME_STAGE.dkr.ecr.ap-southeast-1.amazonaws.com/aiq-backend
+      dockerfile: backend/Dockerfile
+      context: . # build context 為 repo 根（需 COPY config/ constants/ prompts/）
+      tags:
+        - ${CI_COMMIT_TAG}
+
+  build-frontend-stage:
+    image: plugins/docker
+    when:
+      evaluate: 'CI_COMMIT_TAG contains "-rc"'
+    settings:
+      registry: REPLACE_ME_STAGE.dkr.ecr.ap-southeast-1.amazonaws.com
+      repo: REPLACE_ME_STAGE.dkr.ecr.ap-southeast-1.amazonaws.com/aiq-frontend
+      dockerfile: frontend/Dockerfile
+      context: .
+      tags:
+        - ${CI_COMMIT_TAG}
+
+  # ── PROD：正式 v* tag（無 -rc）→ 東京 ECR ────────────────────
+  build-backend-prod:
+    image: plugins/docker
+    when:
+      evaluate: 'not (CI_COMMIT_TAG contains "-rc")'
+    settings:
+      registry: REPLACE_ME_PROD.dkr.ecr.ap-northeast-1.amazonaws.com
+      repo: REPLACE_ME_PROD.dkr.ecr.ap-northeast-1.amazonaws.com/aiq-backend
+      dockerfile: backend/Dockerfile
+      context: .
+      tags:
+        - ${CI_COMMIT_TAG}
+        - latest
+
+  build-frontend-prod:
+    image: plugins/docker
+    when:
+      evaluate: 'not (CI_COMMIT_TAG contains "-rc")'
+    settings:
+      registry: REPLACE_ME_PROD.dkr.ecr.ap-northeast-1.amazonaws.com
+      repo: REPLACE_ME_PROD.dkr.ecr.ap-northeast-1.amazonaws.com/aiq-frontend
+      dockerfile: frontend/Dockerfile
+      context: .
+      tags:
+        - ${CI_COMMIT_TAG}
+        - latest

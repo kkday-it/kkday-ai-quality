@@ -4,7 +4,7 @@ export * from './auth.api';
 export * from './permission.api';
 export * from './findings.api';
 export * from './inbound.api';
-export * from './judgment.api';
+export * from './prejudge.api';
 export * from './exports.api';
 export * from './settings.api';
 export * from './datasource.api';

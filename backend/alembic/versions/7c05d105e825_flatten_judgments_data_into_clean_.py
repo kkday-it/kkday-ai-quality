@@ -6,7 +6,7 @@ Create Date: 2026-07-05 14:46:09.585335
 
 把 judgments.data（Text/JSON）攤平重整成乾淨分組物件、刪除殘留/幽靈/legacy 屬性與重複 scalar 欄。
 形狀 SSOT＝app.core.schema.TicketFinding.to_stored；查詢層抽欄＝app.core.db._shared.d_*。
-詳計畫見 plans/1-peaceful-wirth.md。遷移前已 pg_dump 全庫 + judgments（backend/_backup/）。
+遷移前已 pg_dump 全庫 + judgments（backend/_backup/）。
 """
 
 from collections.abc import Sequence

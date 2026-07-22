@@ -1,4 +1,4 @@
-// 判決規則版本命名：以 created_at 秒級時間戳呈現（vYYYYMMDDHHmmss），取代流水號 int。
+// 初判規則版本命名：以 created_at 秒級時間戳呈現（vYYYYMMDDHHmmss），取代流水號 int。
 // 內部仍以 int version 排序/恢復（唯一鍵）；此處僅為顯示層命名，故舊版本亦由既有 created_at 自動糾正。
 
 /**

@@ -1,7 +1,7 @@
-"""db 子模組共用：judgment.json 顯示標籤 / 信心閾值 + 複合鍵 join + 商品垂直分類 + 時間格式化。
+"""db 子模組共用：prejudge.json/verdict.json 顯示標籤 / 信心閾值 + 複合鍵 join + 商品垂直分類 + 時間格式化。
 
 problems / prejudge_targets / attribution / export 多處共用，抽出為單一真相（Rule of Three）。
-判決顯示 label + 信心閾值 SSOT＝config/ai_judge/judgment.json（前後端同讀）；db 不能 import settings
+初判顯示 label + 信心閾值 SSOT＝config/ai_judge/prejudge.json（+verdict.json）（前後端同讀）；db 不能 import settings
 （settings 已 import db → 循環），故以 paths.AI_JUDGE_DIR 自讀該檔。
 """
 
@@ -17,12 +17,13 @@ from app.core.db import tables as T
 from app.core.judge_config.ai_judge import domain_owner as _domain_owner
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 
-# ── 判決顯示標籤 + 信心閾值（judgment.json）───────────────
+# ── 初判顯示標籤 + 信心閾值（prejudge.json/verdict.json）───────────────
 # 皆為 module 級 dict，熱重載時就地 clear+update（不重綁），使既有 import 引用（attribution/export）
-# 同步反映新值、無需改呼叫端。SSOT＝DB active 'judgment' 版（規則管理可熱更新），缺版本回退 seed 檔。
+# 同步反映新值、無需改呼叫端。SSOT＝config/ai_judge/prejudge.json（+verdict.json）（專案靜態設定檔），改值＝改檔 + 重啟
+# （或呼叫 reload_pipeline_cfg 熱重載）。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
-# status_labels code-side fallback：judgment SSOT＝DB active 版（可熱編輯），舊 active 版尚無
-# status_labels 鍵時仍需有 label（seed 檔同步有此鍵，QC 存新版後以 DB 為準）。
+# status_labels code-side fallback：prejudge.json/verdict.json 讀取失敗或未來版本缺此鍵時仍需有預設 label 可用
+# （現行 seed 檔已含此鍵）。
 _DEFAULT_STATUS_LABELS: dict[str, str] = {
     "new": "待處理",
     "auto_confirmed": "自動確認",
@@ -36,8 +37,8 @@ _STATUS_LABEL_ZH: dict[str, str] = {}
 _CONFIDENCE_TIERS: dict = {}
 
 
-def _apply_judgment_cfg(cfg: dict) -> None:
-    """將 judgment 配置就地灌入 module 級 label / 閾值 dict（clear+update 保持同一物件引用）。"""
+def _apply_pipeline_cfg(cfg: dict) -> None:
+    """將初判/判決合併配置就地灌入 module 級 label / 閾值 dict（clear+update 保持同一物件引用）。"""
     _POLARITY_LABEL_ZH.clear()
     _POLARITY_LABEL_ZH.update(cfg.get("polarity_labels", {}))
     _TIER_LABEL_ZH.clear()
@@ -50,39 +51,46 @@ def _apply_judgment_cfg(cfg: dict) -> None:
     _CONFIDENCE_TIERS.update(cfg.get("confidence_tiers", _DEFAULT_TIERS))
 
 
-def _read_judgment_file() -> dict:
-    """讀 seed 檔 config/ai_judge/judgment.json（import 期安全來源；DB 引擎未必就緒時用）。"""
-    try:
-        return json.loads((_AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+def _read_stage_files() -> dict:
+    """讀兩階段設定檔並合併為單一 dict（import 期安全來源；DB 引擎未必就緒時用）。
 
-
-def read_judgment_config() -> dict:
-    """讀 judgment 判決配置（config/ai_judge/judgment.json：顯示 label + 信心閾值 + prejudge 旋鈕 +
-    極性閘門 polarity_gate + 證據政策 evidence_policy）。
-
-    2026-07-13 起 judgment 降為**專案靜態設定檔**（移出 RULE_CODES、不再 DB 版本化 / 不列規則頁）——
-    直讀檔案即單一真相源，不再走 DB active。改值＝改檔 + 重啟（或 reload_judgment_cfg 熱重載）。
-    同日原 global_rule.json（polarity_gate/evidence_policy）併入本檔，減少判決 config 檔案數。
-    保留此函式為 judgment 讀取的**單一入口**（_shared 熱重載、prejudge 旋鈕快取共用；Rule of Three）。
+    config/ai_judge/prejudge.json（初判層：極性閘門/證據政策/信心閾值/初判旋鈕/stage·tier·
+    polarity labels）＋ verdict.json（判決層：auto_confirm 路由/status labels）——兩檔鍵不重疊，
+    合併後形狀與消費端既有預期一致（單一 dict）。
     """
-    return _read_judgment_file()
+    merged: dict = {}
+    for name in ("prejudge.json", "verdict.json"):
+        try:
+            merged.update(json.loads((_AI_JUDGE_DIR / name).read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    merged.pop("_comment", None)  # 各檔說明註解不進 runtime dict
+    return merged
 
 
-def reload_judgment_cfg() -> None:
+def read_pipeline_config() -> dict:
+    """讀初判＋判決兩階段配置（prejudge.json + verdict.json 合併）。
+
+    兩檔皆為**專案靜態設定檔**（不進 RULE_CODES、不 DB 版本化 / 不列規則頁）——直讀檔案即單一
+    真相源。改值＝改檔 + 重啟（或 reload_pipeline_cfg 熱重載）。保留此函式為兩階段配置讀取的
+    **單一入口**（_shared 熱重載、初判旋鈕快取共用；Rule of Three）。
+    """
+    return _read_stage_files()
+
+
+def reload_pipeline_cfg() -> None:
     """熱重載 judgment 配置（規則管理存檔後由 rules._reload_judge_cache 呼叫，對齊 ai_judge）。
 
-    就地更新 label / 閾值 dict（DB active 優先，見 read_judgment_config），使 import 引用免改碼即反映新值。
+    就地更新 label / 閾值 dict（讀 config/ai_judge/prejudge.json（+verdict.json），見 read_pipeline_config），使 import 引用免改碼即反映新值。
     """
-    _apply_judgment_cfg(read_judgment_config())
+    _apply_pipeline_cfg(read_pipeline_config())
 
 
-# import 期以 seed 檔初始化（DB 引擎未必就緒；DB active 熱更新由 reload_judgment_cfg 於 runtime 觸發）。
-_apply_judgment_cfg(_read_judgment_file())
+# import 期以 seed 檔初始化（DB 引擎未必就緒；DB active 熱更新由 reload_pipeline_cfg 於 runtime 觸發）。
+_apply_pipeline_cfg(_read_stage_files())
 
 
-# ── 判決 API DTO：judgments typed 欄 → 乾淨巢狀物件（storage=typed 欄；呈現=巢狀 DTO 的 SSOT）──
+# ── 初判 API DTO：attributions typed 欄 → 乾淨巢狀物件（storage=typed 欄；呈現=巢狀 DTO 的 SSOT）──
 # 一條形狀貫穿 DB→API→前端：DB 存 typed 欄（可 btree 索引 / 乾淨 SQL），此處組成前端消費的
 # 巢狀 DTO。改 DTO 形狀只改此處（前端 Attribution interface 對齊）。
 
@@ -106,13 +114,13 @@ def _summary_langs(raw) -> dict:
 
 
 def attribution_dto(r: dict) -> dict:
-    """judgments 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
+    """attributions 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
-    r 為含判決欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
-    或直接傳 judgments 列 mapping）。人工覆核軸（status）與 finding_id 亦在其中。
+    r 為含初判欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
+    或直接傳 attributions 列 mapping）。人工判決軸（status）與 finding_id 亦在其中。
 
     Args:
-        r: 判決欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
+        r: 初判欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
 
     Returns:
         巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
@@ -127,7 +135,7 @@ def attribution_dto(r: dict) -> dict:
         "sentiment_score": r.get(
             "sentiment_score"
         ),  # 我方情緒分 1-5（與外部評論 sentiment 同尺度）
-        "stage": r.get("stage"),
+        "stage": r.get("prejudge_stage"),
         "l1": {"code": l1_code, "label": r.get("l1_label")},
         "l2": {"code": r.get("l2_code"), "label": r.get("l2_label")},
         "confidence": {
@@ -144,21 +152,23 @@ def attribution_dto(r: dict) -> dict:
         },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
         "owner": _domain_owner(l1_code or ""),
-        "model": r.get("model"),  # 判決模型（stub / ensemble 同 judgments.model 語意）
+        "model": r.get("model"),  # 初判模型（stub / ensemble 同 attributions.model 語意）
         "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
-        "status": r.get("status"),  # 人工覆核狀態（覆核徽章用）
+        "status": r.get("verdict_status"),  # 判決狀態（徽章用；wire 鍵維持 status）
+        "verdict_by": r.get("verdict_by"),  # 判決人（人工＝email；系統＝system:auto_confirm）
+        "verdict_at": r.get("verdict_at"),  # 判決時間（ISO；未判決 None）
     }
 
 
 def _jg_join_cond(spec):
-    """judgments 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。"""
-    jg = T.judgments
+    """attributions 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。"""
+    jg = T.attributions
     return and_(jg.c.source == spec.source, jg.c.source_id == spec.table.c[spec.natural_key])
 
 
 def _jg_exists(spec, *extra):
-    """`EXISTS (SELECT 1 FROM judgments WHERE source=X AND source_id=特徵id [AND ...])`。"""
+    """`EXISTS (SELECT 1 FROM attributions WHERE source=X AND source_id=特徵id [AND ...])`。"""
     return exists().where(and_(_jg_join_cond(spec), *extra))
 
 
@@ -191,7 +201,7 @@ def _vertical_scoped_spec(
     但帶商品垂直分類篩選時，改走唯一具分類欄的 product_reviews。
 
     有篩選時只統計「有分類且落在所選分類」的資料，無分類來源（進線/工單）在有篩選時排除。
-    無篩選則回 None，呼叫端走 judgments 直接聚合維持「全部來源」語義。
+    無篩選則回 None，呼叫端走 attributions 直接聚合維持「全部來源」語義。
     """
     spec = source_registry.spec_for(source)
     if spec is None and _vertical_codes(product_vertical):
@@ -214,7 +224,7 @@ def apply_table_filters(
 ):
     """來源表級篩選 SSOT（商品垂直分類/日期區間/關聯 oid/有無外部評論）——統一問題列表與初判目標選取共用。
 
-    僅含「來源表自身欄位」的條件；判決級條件（polarity/stage/tier/歸因分類）因兩端結構不同
+    僅含「來源表自身欄位」的條件；初判級條件（polarity/stage/tier/歸因分類）因兩端結構不同
     （列表用 EXISTS、目標選取用 join 分支）由各呼叫端自行套。語義逐條對齊 list_problems：
     - product_vertical：分組名經 codes_for_group 展開，product_category JSON 抽 main 比對。
     - 日期：sargable 比較走 btree 索引；上界半開 `< date_to||'~'` 含當日整天。
@@ -275,6 +285,7 @@ def fmt_datetime(value, *, date_only: bool = False) -> str:
     if s.endswith("Z"):
         s = s[:-1].strip()
     s = re.sub(r"\.\d+", "", s)  # 去小數秒（.810）
+    s = re.sub(r"[+-]\d{2}:\d{2}$", "", s).strip()  # 去尾綴時區（isoformat +00:00）
     if date_only or s.endswith(" 00:00:00"):
         return s.split(" ")[0]
     return s

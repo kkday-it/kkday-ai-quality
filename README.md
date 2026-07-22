@@ -2,7 +2,7 @@
 
 **AI 商品質檢平台 — AI 法官（內容爭議裁決系統）**（KKday 內容質量 Pod 第三支柱）
 
-把客訴 / 商品差評 / 工單 / App 反饋 / 埋點等真實負面訊號，自動**歸因**到「哪個歸因域的哪個問題」（L1→L2 兩層分類），標註信心與判決階段，產出可執行方向，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
+把客訴 / 商品差評 / 工單 / App 反饋 / 埋點等真實負面訊號，自動**歸因**到「哪個歸因域的哪個問題」（L1→L2 兩層分類），標註信心與初判階段，產出可執行方向，並反推「哪條審核規則最該優先」。目標：**降低售後進線的內容類占比**。
 
 > 邏輯參照 [folder 2117435397](https://kkday.atlassian.net/wiki/spaces/VM/folder/2117435397)（工單驅動審核）+ [AI 法官 V2 總覽](https://kkday.atlassian.net/wiki/spaces/VM/pages/2125660181)。
 
@@ -17,8 +17,8 @@
 ```
 資料上傳（5 來源 xlsx/csv·自動辨識+校驗）
   → 各來源專表（product_reviews / conversations / freshdesk_tickets / app_feedback / mixpanel_tracker）
-  → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 判決階段）
-  → judgments（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
+  → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 初判階段）
+  → attributions（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
   → 歸因列表 / 歸因概覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出
 判準來源＝prompts/*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，DB append-only 版本化 + 檔案 fallback）
 ```
@@ -31,7 +31,7 @@ backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
       db/                    # 資料存取（tables/source_registry + 8 職責模組 + barrel）
       judge_config/          # 6 判準 config loader（ai_judge/product_vertical/source_mapping/…）
       auth · config · paths · schema · settings
-    judge/                   # 判決引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
+    judge/                   # 初判引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
     api/                     # FastAPI gateway（main.py + routers/v1）
   alembic/                   # schema 遷移
   tests/ · fixtures/
@@ -41,11 +41,13 @@ frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
   apps/console/src/features/ # judge / settings / overview / auth（feature-based）
   packages/types
 scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
-docs/                        # 文檔地圖（README）· 上手指南 HTML · archive/（過時 spec 封存）
+docs/                        # 文檔地圖（README）· archive/（過時 spec 封存）
 start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入口；stop 只停止·資料一律保留）
 docker-compose.yml           # 生產編排（PG + backend 單worker + frontend nginx）
 docker-compose.dev.yml       # 開發編排（hot reload：source volume + uvicorn --reload + vite HMR）
 docker/                      # seed/（首啟自動還原）· README.md（Docker 命令大全 + 疑難排解）
+deploy/                      # EKS 部署草稿（Kustomize base+overlays·供 cloud team review，見 deploy/README.md）
+.woodpecker.yml              # 公司 CI 草稿（tag → build → ECR；GH Actions 續任 PR lint/test gate）
 backend/Dockerfile · frontend/Dockerfile · frontend/Dockerfile.dev   # 各服務 image
 ```
 
@@ -107,32 +109,33 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## API 一覽（主要）
 | method | path | 說明 |
 |---|---|---|
-| GET | `/health` | 健康檢查 |
+| GET | `/api/status` | 健康檢查（公司契約：回 `{"status":"0000","message":"success"}`·免認證·k8s probe 用）|
 | POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
-| GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/判決階段(多選)/信心分層/覆核狀態(status 多選)/判決模型(model 多選·當前判決維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
-| GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩判決模型——當前判決維度，僅套判決級指標（total_intake 不受影響）。需登入 |
+| GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/初判階段(多選)/信心分層/判決狀態(status 多選)/初判模型(model 多選·當前初判維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
+| GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩初判模型——當前初判維度，僅套初判級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |
-| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 judgment_history 最新快照（未判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
-| POST | `/api/judge-rules/export` | 啟動判決規則 xlsx 導出背景 job → {job_id} |
+| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格；初判組欄含初判時間＋域/極性 Prompt 版本〔初判當時所用版本，格式「01_C-1_content v發版時間戳」〕、判決組欄含判決狀態/時間/人；欄尾附 C-1~C-6 六域命中欄〔符合/不符合·未初判留空·供篩選〕；另附「分類統計」「Prompts」〔導出當下 active 版本快照〕「說明」〔欄位語義字典〕工作表）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 attribution_history 最新快照（未初判過的評論排除，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
+| POST | `/api/judge-rules/export` | 啟動初判 Prompt 包 zip 導出背景 job（打包 prompts/ 目錄）→ {job_id} |
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
-| POST/GET | `/api/v1/judgment/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `judgment.prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
-| GET/POST | `/api/v1/judgment/prompt-debug/defaults` · `/prompt-debug/stream` | 售後根因 Prompt 調試台：載入受控分類預設 Prompt，任意 IM session 以 SSE 串流裁決，完成後回傳交叉欄位校驗、token 與單次 USD 估算；不寫正式 judgments |
-| GET | `/api/v1/judgment/runs` · `/runs/{job_id}` | 歸因歷史（run 級 LLM 使用紀錄：批量/選取/單筆重判；詳情含 per-stage token/費用明細）|
-| GET/POST | `/api/judgment-history` · `/notes` · `/models` | 判決歷史（**評論級**時間軸：判決快照/覆核轉移/備註三類事件；重判結果與前次全同時去重不記）· 新增評論級備註 · 歷來判決過的模型清單（篩選/導出下拉選項）。需登入 |
-| CRUD | `/api/judge-rules/*` | 判決規則版本化（面板編輯/歷史/恢復默認/導出）|
-| PATCH | `/api/findings/{id}/status` · `/batch/status` · `/{id}/true_label` | 單筆/批量歸因人工覆核（確認/忽略/new＝撤銷回待處理；同值冪等、轉移記入判決歷史）· 標註真值分類。需權限，記操作者/時間 audit |
-| POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（register 受 `AIQ_ALLOW_SELF_REGISTER` 環境閘：僅 development 預設開放）（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
+| POST/GET | `/api/v1/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
+| GET/POST | `/api/v1/prejudge/prompt-debug/defaults` · `/prompt-debug/stream` | 售後根因 Prompt 調試台：載入受控分類預設 Prompt，任意 IM session 以 SSE 串流裁決，完成後回傳交叉欄位校驗、token 與單次 USD 估算；不寫正式 attributions |
+| GET | `/api/v1/prejudge/runs` · `/runs/{job_id}` | 初判紀錄（run 級 LLM 使用紀錄：批量/選取/單筆重新初判；詳情含 per-stage token/費用明細）|
+| POST/GET | `/api/v1/prejudge/prompt-sandbox/*` | 歸因列表「Prompt 測試」沙盒（ungated·不落正式初判）：啟動（可帶 `versions` 選版本、`drafts` 草稿全文快照、`compare` 雙跑對比）/ count 筆數預覽 / status 輪詢 / runs 測試歷史（詳情含 LLM log 快照；雙跑 run 另附 drafts 快照＋等價性 metrics）/ `runs/compare?a=&b=` 兩筆 run 結果對齊對比 |
+| GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照/判決轉移/備註三類事件；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
+| CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯/歷史/恢復默認/導出）+ Prompt 草稿暫存（`/drafts`·`/{code}/draft`，沙盒送測/雙跑對比用）+ `/{code}/validate` dry-run 驗證（不落庫）|
+| PATCH | `/api/findings/{id}/verdict` · `/batch/verdict` | 單筆/批量歸因人工判決（確認/駁回/new＝撤銷回待判決；同值冪等、轉移記入歸因歷史）。需權限，記判決人/判決時間 audit |
+| POST/GET | `/api/auth/register`·`/login`·`/me`·`/permissions` | 帳號 + 當前 user 權限清單（register 受 `AIQ_ALLOW_SELF_REGISTER` 環境閘：僅 development 預設開放；登入身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`）（be2 `auth.business-list` 形狀 `{value,ttl,startTime}`，供前端 v-auth/選單/守衛）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 users/user_settings。需 `data.datapack.export` 權限 |
 | POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。登入即可用（qc+admin 皆有 `data.datapack.import`）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
 
 > 完整 API：啟動後開 Swagger UI http://localhost:8100/docs
 
 ## 架構要點
-- **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），judgments 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
-- **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、判決階段），列表右側堆疊呈現、導出 fan-out。
-- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，判決引擎六域並行判斷（`prompt_pack`）。
+- **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），attributions 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
+- **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、初判階段），列表右側堆疊呈現、導出 fan-out。
+- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；角色→key 映射 `config/global/role_permissions.json`）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / `v-auth` / router 守衛 / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（pilot：auth login + AUTH.* error code），詳見 `frontend/apps/console/src/i18n/README.md`。
-- **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，judgment 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重判時規則未變動部分零 token 重用，顯式單筆重判不吃快取）。
+- **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，prejudge 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重新初判時規則未變動部分零 token 重用，顯式單筆重新初判不吃快取）。
 - **機密 at-rest 加密**：`user_settings` 的 provider_tokens / qc_passwords 以 Fernet 加密落庫（`app/core/crypto.py`，key＝env `AIQ_SECRET_KEY`；既有明文列遷移用 `scripts/tools/encrypt_user_secrets.py`）。**正式環境（`APP_ENV≠development`）缺 `AIQ_SECRET_KEY` 拒啟動**（避免機密明文落庫）；dev 未設則明文直通並告警。`/api/settings/raw` 明文回顯僅回本人設定（JWT 守衛），屬**單機內網環境的有意識權衡**，部署公網前必須移除。

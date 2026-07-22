@@ -1,8 +1,9 @@
-// 初判歸因批次任務：跑批 + SSE 進度 + 暫停/恢復/停止 + 目標選取彈窗 + 單列重判。
+// 初判歸因批次任務：跑批 + SSE 進度 + 暫停/恢復/停止 + 目標選取彈窗 + 單列重新初判。
 // 自 useAttributionList 下沉；依賴（來源 / 選中模型 / 垂直分類 / 勾選列 / 重載回呼）由呼叫端注入，
 // 回傳之 ref 保留原 identity（呼叫端 spread 進 return，模板綁定不變）。
 import {
   computed,
+  onScopeDispose,
   reactive,
   ref,
   toValue,
@@ -11,10 +12,11 @@ import {
   type Ref,
 } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import judgment from '@config/ai_judge/judgment.json';
+import prejudgeCfg from '@config/ai_judge/prejudge.json';
 import {
   cancelPrejudge,
   pausePrejudge,
+  prejudgeLogStreamUrl,
   prejudgeStreamUrl,
   previewPrejudgeCount,
   resumePrejudge,
@@ -23,14 +25,15 @@ import {
   type PrejudgeFailedItem,
 } from '@/api';
 import { emptyFilters, filtersToParams, STAGE_LABELS } from '../constants';
+import type { LogEntry } from '../components/PrejudgeLogView.types';
 
 /** 頁面列表篩選快照（開彈窗時自動帶入彈窗內目標篩選草稿的初值；鍵名對齊 getProblems 參數）。 */
 export interface PrejudgeListFilters {
   /** 傾向（頁面傾向多選篩選；開彈窗時取第一項作為再判收斂傾向的預設值）。 */
   polarity?: string[];
-  /** 信心分層（判決級，僅已判分支）。 */
+  /** 信心分層（初判級，僅已初判分支）。 */
   confidenceTier?: string;
-  /** 歸因分類（判決級，僅已判分支；多選任意層級 code，子樹語義）。 */
+  /** 歸因分類（初判級，僅已初判分支；多選任意層級 code，子樹語義）。 */
   taxonomy?: string[];
   /** 有無外部評論（表級，兩分支皆套）：''／undefined＝全部、'true'＝有、'false'＝無。 */
   hasExternal?: string;
@@ -53,13 +56,13 @@ interface PrejudgeJobDeps {
   selectedKeys: Ref<string[]>;
   /** 頁面當前列表篩選快照（scope 模式套用；undefined 值代表該維度未設）。 */
   listFilters: ComputedRef<PrejudgeListFilters>;
-  /** 判決完成後重載列表 + 未判數（就地看到結果）。 */
+  /** 初判完成後重載列表 + 未初判數（就地看到結果）。 */
   reload: () => Promise<void>;
 }
 
 /**
  * 初判歸因批次任務控制。
- * @returns 進度狀態、目標選取、批次動作（跑/暫停/恢復/停止）、單列重判 loading + 觸發。
+ * @returns 進度狀態、目標選取、批次動作（跑/暫停/恢復/停止）、單列重新初判 loading + 觸發。
  */
 export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   const { source, llmConfigId, effVerticals, selectedKeys, listFilters, reload } = deps;
@@ -70,54 +73,122 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 當前 job 狀態（running/paused/cancelling/cancelled/done/error；由 SSE 權威更新，動作先樂觀設）。 */
   const jobStatus = ref('');
   const progress = ref({ processed: 0, total: 0, totalTokens: 0, costUsd: 0 });
-  /** 本批失敗筆明細（SSE snapshot.failed_items；供顯示原因 + 「重判本批失敗筆」收 item_id）。 */
+  /** 上一輪 job 的終態快照（僅 done/error/cancelled 寫入；連線中斷放手不寫＝避免假終態）。
+   *  finally 清空 jobId/jobStatus 後仍保留，供抽屜終態摘要卡與「查看 LLM 日誌」精準定位；
+   *  開新一輪（openPrejudge / rejudgeRow / openRowConfirm）起手清空。 */
+  const lastRun = ref<{
+    jobId: string;
+    status: string;
+    processed: number;
+    total: number;
+    totalTokens: number;
+    costUsd: number;
+    model: string;
+  } | null>(null);
+  /** 本批失敗筆明細（SSE snapshot.failed_items；供顯示原因 + 「重新初判本批失敗筆」收 item_id）。 */
   const failedItems = ref<PrejudgeFailedItem[]>([]);
-  /** 失敗筆超過後端上限、清單已截斷（只計數；重判仍以清單內可見者為準）。 */
+  /** 失敗筆超過後端上限、清單已截斷（只計數；重新初判仍以清單內可見者為準）。 */
   const failedTruncated = ref(false);
   const progressPct = computed(() =>
     progress.value.total ? Math.round((progress.value.processed / progress.value.total) * 100) : 0,
   );
-  /** token 花費顯示（金額 4 位小數，token 千分位）；批量判決過程同步更新。 */
+  /** token 花費顯示（金額 4 位小數，token 千分位）；批量初判過程同步更新。 */
   const costText = computed(() =>
     progress.value.totalTokens
       ? `${progress.value.totalTokens.toLocaleString()} tokens · ≈ $${progress.value.costUsd.toFixed(4)}`
       : '',
   );
-  // 以 SSE 長連線接收批量判決進度（取代 setInterval 輪詢）；done/error 或連線中斷即 resolve。
-  // onSnapshot 提供時（單列路徑）改寫進呼叫端自己的狀態，不動這裡的全域 jobStatus/progress——
-  // 否則多列同時重判會共用同一份全域快照、互相覆蓋顯示（rowBusy 本就允許多列並發觸發）。
-  const _poll = (jid: string, onSnapshot?: (st: any) => void) =>
+  // 以 SSE 長連線接收初判進度（取代 setInterval 輪詢）；到達終態（done/error/cancelled）即
+  // resolve。批量與單列共用同一份 jobStatus/progress——兩者以雙向互斥保證同時只有一個 job 在跑
+  // （見 _run 與 rejudgeRow 開頭的 guard），故共寫安全。互斥的釋放時機＝_poll resolve，因此
+  // error 處理不可把「原生瞬斷」誤判成 job 結束（會提前放鎖＋假完成訊息，而後端 job 仍在跑）：
+  // 瞬斷交給 EventSource 自動重連，僅「帶 data 的明確終止 event / 連線已 CLOSED / 連續多次
+  // 重連失敗（如後端重啟遺失 job）」才放手。
+  const _poll = (jid: string) =>
     new Promise<void>((resolve) => {
       const es = new EventSource(prejudgeStreamUrl(jid));
+      let errStreak = 0;
       const finish = () => {
         es.close();
         resolve();
       };
+      es.onopen = () => {
+        errStreak = 0;
+      };
       es.onmessage = (ev) => {
+        errStreak = 0;
         const st = JSON.parse(ev.data);
-        if (onSnapshot) {
-          onSnapshot(st);
-        } else {
-          jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
-          progress.value = {
-            processed: st.processed || 0,
-            total: st.total || progress.value.total,
-            totalTokens: st.total_tokens || 0,
-            costUsd: st.cost_usd || 0,
-          };
-          if (Array.isArray(st.failed_items)) failedItems.value = st.failed_items;
-          failedTruncated.value = !!st.failed_items_truncated;
-        }
+        jobStatus.value = st.status || jobStatus.value; // SSE 權威狀態（涵蓋 paused/cancelling）
+        progress.value = {
+          processed: st.processed || 0,
+          total: st.total || progress.value.total,
+          totalTokens: st.total_tokens || 0,
+          costUsd: st.cost_usd || 0,
+        };
+        if (Array.isArray(st.failed_items)) failedItems.value = st.failed_items;
+        failedTruncated.value = !!st.failed_items_truncated;
         if (st.status === 'done' || st.status === 'error' || st.status === 'cancelled') finish();
       };
-      es.onerror = finish;
+      es.addEventListener('error', (ev) => {
+        errStreak += 1;
+        if ((ev as MessageEvent).data || es.readyState === EventSource.CLOSED || errStreak >= 5)
+          finish();
+      });
     });
+
+  // ── 確認初判分類抽屜內嵌執行日誌（批量／單列共用）：抽屜不再另開獨立的 PrejudgeLogDrawer，
+  // 抽屜本身收合設定面板後直接顯示這份即時 log，SSE 生命週期比照 PromptSandboxDrawer._openLogStream。
+  const logEntries = ref<LogEntry[]>([]);
+  const logStreaming = ref(false);
+  /** 後端明確終止日誌流的原因（如大批量任務不收集日誌）；空＝無錯誤。 */
+  const logError = ref('');
+  let _logEs: EventSource | null = null;
+  const _closeLog = () => {
+    _logEs?.close();
+    _logEs = null;
+    logStreaming.value = false;
+  };
+  const _openLog = (jid: string) => {
+    _closeLog();
+    logEntries.value = [];
+    logError.value = '';
+    logStreaming.value = true;
+    _logEs = new EventSource(prejudgeLogStreamUrl(jid));
+    _logEs.onopen = () => {
+      logEntries.value = []; // 自動重連會整批重放 → 先清空避免重複
+    };
+    _logEs.onmessage = (ev) => logEntries.value.push(JSON.parse(ev.data));
+    _logEs.addEventListener('done', () => _closeLog());
+    _logEs.addEventListener('error', (ev) => {
+      // 僅後端明確推送的 error event（帶 data，如「此任務無日誌」）才終止；原生連線瞬斷無
+      // data → 不關閉，交給 EventSource 自動重連（首連瞬斷就永久關流會讓日誌看起來「沒反應」）。
+      const data = (ev as MessageEvent).data;
+      if (data) {
+        try {
+          logError.value = JSON.parse(data).detail || '日誌串流失敗';
+        } catch {
+          logError.value = '日誌串流失敗';
+        }
+        _closeLog();
+      }
+    });
+  };
+  // 頁面（消費端元件）卸載時關閉殘留的 log 串流，避免 EventSource 洩漏（_poll 的進度流
+  // 生命週期綁 job 終態自關，不需在此處理）。
+  onScopeDispose(_closeLog);
+
   const _run = async (body: PrejudgeBody) => {
     if (running.value) return;
+    if (rowBusy.value.size) {
+      // 與 rejudgeRow 的 running guard 對稱：批量與單列共用 jobStatus/progress/log 流，
+      // 併發會互相覆寫顯示（且可能對同一 finding 重複初判）
+      Message.warning('單列初判進行中，請稍後再試');
+      return;
+    }
     running.value = true;
     jobStatus.value = 'running';
     progress.value = { processed: 0, total: 0, totalTokens: 0, costUsd: 0 };
-    failedItems.value = []; // 新批次重置（保留上一批失敗清單至下次開跑，供期間點「重判失敗筆」）
+    failedItems.value = []; // 新批次重置（保留上一批失敗清單至下次開跑，供期間點「重新初判失敗筆」）
     failedTruncated.value = false;
     try {
       const r = await startPrejudge({ ...body, llm_config_id: llmConfigId.value || undefined });
@@ -127,13 +198,28 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
         Message.warning('沒有可分析的對象');
         return;
       }
+      _openLog(r.job_id);
       await _poll(r.job_id);
       if (jobStatus.value === 'cancelled') {
         Message.info(
-          `已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已判結果保留）`,
+          `已停止：已處理 ${progress.value.processed}/${progress.value.total} 筆（已初判結果保留）`,
         );
-      } else {
+      } else if (jobStatus.value === 'error') {
+        Message.error('初判分類任務失敗（詳見執行日誌）');
+      } else if (jobStatus.value === 'done') {
         Message.success(`初判分類完成：${progress.value.processed} 筆（模型 ${r.model}）`);
+      } else {
+        // _poll 因連線持續失敗放手（非終態）：後端 job 可能仍在跑，勿假報成功
+        Message.warning('進度連線中斷：任務可能仍在背景執行，稍後重新整理列表確認結果');
+      }
+      if (['done', 'error', 'cancelled'].includes(jobStatus.value)) {
+        // 終態快照存檔：finally 清 jobStatus 後抽屜靠它顯示結果摘要（非終態不寫＝避免假終態）
+        lastRun.value = {
+          jobId: r.job_id,
+          status: jobStatus.value,
+          ...progress.value,
+          model: r.model,
+        };
       }
       await reload(); // 重載當前頁（保持頁碼，就地看到結果）
     } catch (e: any) {
@@ -142,6 +228,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       running.value = false;
       jobId.value = '';
       jobStatus.value = '';
+      _closeLog();
     }
   };
   /** 暫停當前 job（樂觀設 paused，SSE 隨後權威更新）。 */
@@ -164,7 +251,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       Message.error('恢復失敗：' + (e?.message || e));
     }
   };
-  /** 停止當前 job（不再派新工，已在跑的收斂後轉 cancelled；已判已落庫）。 */
+  /** 停止當前 job（不再派新工，已在跑的收斂後轉 cancelled；已初判已落庫）。 */
   const cancelJob = async () => {
     if (!jobId.value) return;
     try {
@@ -178,15 +265,15 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   const confirmOpen = ref(false);
   /** 選取範圍：selected＝在「已選 N 筆」內做階段+篩選目標選取（within_ids 交集）；scope＝全部資料。 */
   const targetMode = ref<'selected' | 'scope'>('scope');
-  const targetStages = ref<string[]>(['unjudged']); // 預設只收未判
+  const targetStages = ref<string[]>(['unjudged']); // 預設只收未初判
   const lowConfOnly = ref(true); // true＝僅低信心(<auto_accept)；false＝全部信心
   const targetCount = ref(0); // 「將處理 N 筆」預覽
-  // ── 彈窗內目標篩選草稿：開彈窗自動帶入頁面當前列表篩選，彈窗內可下拉重選，只影響本次判決目標 ──
+  // ── 彈窗內目標篩選草稿：開彈窗自動帶入頁面當前列表篩選，彈窗內可下拉重選，只影響本次初判目標 ──
   // 與列表同形狀（AttributionFilters）→ 彈窗 AttributionFilterBar 直接綁定（統一完整篩選欄）。
-  // 表級（dateRange/oid/hasExternal）兩分支皆套；判決級（polarity/tier/taxonomy）只對已判分支送
-  // （未判列無判決）。stage 由上方 checkbox 承擔 → 此欄不納入彈窗篩選。
+  // 表級（dateRange/oid/hasExternal）兩分支皆套；初判級（polarity/tier/taxonomy）只對已初判分支送
+  // （未初判列無初判）。stage 由上方 checkbox 承擔 → 此欄不納入彈窗篩選。
   const draftFilters = reactive(emptyFilters());
-  /** 是否含已判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
+  /** 是否含已初判階段（非 unjudged）→ 顯示傾向/信心收斂條件。 */
   const hasJudgedStage = computed(() => targetStages.value.some((s) => s !== 'unjudged'));
 
   /** 彈窗草稿 → 篩選快照（空值一律轉 undefined；鍵名對齊 getProblems / 後端參數）。 */
@@ -224,7 +311,9 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
       ...(hasJudgedStage.value
         ? {
             target_polarity: lf.polarity,
-            max_confidence: lowConfOnly.value ? judgment.confidence_tiers.auto_accept : undefined,
+            max_confidence: lowConfOnly.value
+              ? prejudgeCfg.confidence_tiers.auto_accept
+              : undefined,
             confidence_tier: lf.confidenceTier,
             taxonomy: lf.taxonomy,
           }
@@ -247,7 +336,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
 
   /** 開初判歸因彈窗：目標篩選草稿自動帶入頁面當前列表篩選（彈窗內可重選）。
    *  範圍預設：有勾選＝「已選內」且收全部階段、不收斂（初始目標＝整個勾選集合，對齊「判我勾的」直覺）；
-   *  無勾選＝全部資料且只判未判、再判收斂預設負向+僅低信心（安全預設，避免誤重判全庫）。 */
+   *  無勾選＝全部資料且只判未初判、再判收斂預設負向+僅低信心（安全預設，避免誤重新初判全庫）。 */
   const openPrejudge = () => {
     const hasSel = selectedKeys.value.length > 0;
     targetMode.value = hasSel ? 'selected' : 'scope';
@@ -260,19 +349,21 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     draftFilters.hasExternal = lf.hasExternal || '';
     draftFilters.tier = lf.confidenceTier || '';
     draftFilters.taxonomy = lf.taxonomy ? [...lf.taxonomy] : [];
-    // 傾向：帶入列表當前傾向；無選取的預設 scope（只判未判）用 negative 兜底——
-    // 避免使用者臨時加勾已判階段卻沒選傾向時，把整庫已判全數重判。
+    // 傾向：帶入列表當前傾向；無選取的預設 scope（只判未初判）用 negative 兜底——
+    // 避免使用者臨時加勾已初判階段卻沒選傾向時，把整庫已初判全數重新初判。
     draftFilters.polarity = hasSel ? [] : lf.polarity?.length ? [...lf.polarity] : ['negative'];
     lowConfOnly.value = !hasSel;
+    lastRun.value = null; // 開新一輪設定，清上一輪終態摘要（避免與新目標混看）
     confirmOpen.value = true;
     void refreshTargetCount();
   };
 
   /** 二次確認後執行：範圍（全部/已選內）+ 階段 + 篩選草稿統一走 scope 目標選取（與預覽同 body）。
    * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定的沿用 active，見
-   *   PromptVersionPickerGroup／usePromptVersionPicker，正式判決不支援草稿只支援指定版本）。 */
+   *   PromptVersionPickerGroup／usePromptVersionPicker，正式初判不支援草稿只支援指定版本）。 */
   const doRun = (promptVersions?: Record<string, number>) => {
-    confirmOpen.value = false;
+    // 抽屜不再於送出時自動關閉——確認後直接在原抽屜切換顯示執行日誌（見 logEntries/logStreaming），
+    // 讓使用者可留在原地看即時 log；關閉交由使用者自己按「關閉」（不影響背景 job 繼續跑）。
     _run({ ..._scopeBody(), prompt_versions: promptVersions });
   };
 
@@ -289,23 +380,27 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
 
   /**
    * 單列（重）判：對該列跑初判歸因（複用 startPrejudge，item_ids 僅此列），等 SSE done 就地重載。
-   * 走該列按鈕自己的 inline loading（isRowBusy）；rowBusy 允許多列並發觸發，故 SSE 快照傳 no-op
-   * 回呼，不寫共用的 progress（那份僅供批量頂部大進度條用，多列並發寫入會互相覆蓋）。
-   * @param onJob 取得 job_id 即回呼（判決仍在跑）——供頁面即時打開執行日誌抽屜（SSE 串流檢視）。
+   * 走該列按鈕自己的 inline loading（isRowBusy）。與批量共用 logEntries/logStreaming/jobStatus/
+   * progress（抽屜進度列與執行日誌即時反映；頁面頂部批量大進度條 gated by `running`，單列不設
+   * running 故不會誤顯示）——共寫安全靠雙向互斥：批量進行中擋單列、任一單列進行中擋批量與其他
+   * 單列（見本函式與 _run 開頭 guard）。
    * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定沿用 active）。
    */
-  const rejudgeRow = async (
-    id: string,
-    onJob?: (jobId: string) => void,
-    promptVersions?: Record<string, number>,
-  ) => {
-    if (rowBusy.value.has(id)) return;
-    if (running.value) {
-      // 批次判決進行中，避免與批次 job 並發對同一 finding 送出重複判決（重複花費 / 結果互相覆蓋）
-      Message.warning('批次判決進行中，請稍後再試');
+  const rejudgeRow = async (id: string, promptVersions?: Record<string, number>) => {
+    if (rowBusy.value.size) {
+      // 共用同一份進度/日誌狀態，同時只允許一個單列初判
+      Message.warning('已有單列初判進行中，請稍後再試');
       return;
     }
+    if (running.value) {
+      // 批次初判進行中，避免與批次 job 並發對同一 finding 送出重複初判（重複花費 / 結果互相覆蓋）
+      Message.warning('批次初判進行中，請稍後再試');
+      return;
+    }
+    lastRun.value = null;
     _setBusy(id, true);
+    jobStatus.value = 'running';
+    progress.value = { processed: 0, total: 1, totalTokens: 0, costUsd: 0 };
     try {
       const r = await startPrejudge({
         item_ids: [id],
@@ -313,26 +408,42 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
         llm_config_id: llmConfigId.value || undefined,
         prompt_versions: promptVersions,
       });
-      onJob?.(r.job_id);
-      await _poll(r.job_id, () => {});
+      _openLog(r.job_id);
+      await _poll(r.job_id);
+      if (['done', 'error', 'cancelled'].includes(jobStatus.value)) {
+        lastRun.value = {
+          jobId: r.job_id,
+          status: jobStatus.value,
+          ...progress.value,
+          model: r.model,
+        };
+      }
       await reload();
-      Message.success(`已完成歸因（模型 ${r.model}）`);
+      if (jobStatus.value === 'done') {
+        Message.success(`已完成歸因（模型 ${r.model}）`);
+      } else if (jobStatus.value === 'error') {
+        Message.error('歸因任務失敗（詳見執行日誌）');
+      } else {
+        Message.warning('進度連線中斷：任務可能仍在背景執行，稍後重新整理列表確認結果');
+      }
     } catch (e: any) {
       Message.error('歸因失敗：' + (e?.message || e));
     } finally {
       _setBusy(id, false);
+      jobStatus.value = '';
+      _closeLog();
     }
   };
 
-  /** 重判本批失敗筆：收 failed_items 的 item_id 走既有 item_ids 顯式重判路徑（失敗筆未落快取，天然不吃 cache）。 */
+  /** 重新初判本批失敗筆：收 failed_items 的 item_id 走既有 item_ids 顯式重新初判路徑（失敗筆未落快取，天然不吃 cache）。 */
   const retryFailed = () => {
     if (running.value) {
-      Message.warning('批次判決進行中，請稍後再試');
+      Message.warning('批次初判進行中，請稍後再試');
       return;
     }
     const ids = failedItems.value.map((f) => f.item_id).filter(Boolean);
     if (!ids.length) {
-      Message.info('沒有失敗筆可重判');
+      Message.info('沒有失敗筆可重新初判');
       return;
     }
     _run({ item_ids: ids, source: toValue(source) });
@@ -344,6 +455,10 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     progress,
     progressPct,
     costText,
+    logEntries,
+    logStreaming,
+    logError,
+    lastRun,
     failedItems,
     failedTruncated,
     retryFailed,

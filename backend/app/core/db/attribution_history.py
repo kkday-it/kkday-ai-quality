@@ -1,13 +1,13 @@
-"""判決歷史（judgment_history）：評論級 append-only 事件流（判決快照 / 覆核轉移 / 備註）。
+"""歸因歷史（attribution_history）：評論級 append-only 事件流（初判快照 / 判決轉移 / 備註）。
 
 一則評論 (source, source_id) 的時間軸由三類事件構成：
-- kind='judgment'：一次判決的完整歸因快照（replace_source_findings 同交易寫入；
+- kind='prejudge'：一次初判的完整歸因快照（replace_source_findings 同交易寫入；
   model+params+result_digest 與最新一筆完全相同即 skip——全欄位嚴格去重）。
-- kind='status'：人工覆核轉移（update/batch_update_finding_status 寫入；params 記
+- kind='verdict'：人工判決轉移（update/batch_update_finding_status 寫入；params 記
   {to, changes:[{finding_id, from}]}，恆記錄不去重）。
 - kind='note'：評論級備註（與 finding 級 finding_notes 並存，兩個入口）。
 
-judgment_runs 是 run 級、llm_usage 是 call 級；本表補「單一評論判決演進」缺口，
+prejudge_runs 是 run 級、llm_usage 是 call 級；本表補「單一評論初判演進」缺口，
 並以 model 維度為日後多模型對比鋪路。
 """
 
@@ -26,17 +26,17 @@ _log = logging.getLogger(__name__)
 
 
 def snapshot_of(values: dict) -> dict:
-    """judgments 落庫欄位 dict（_finding_values 產出）→ 歷史快照單筆（與回填 migration 同形）。
+    """attributions 落庫欄位 dict（_finding_values 產出）→ 歷史快照單筆（與回填 migration 同形）。
 
-    只取判決本體欄；人工覆核軸（status）不入快照——重判會保留人工覆核結果，
-    若入快照，「判決相同但先前已被人工確認」會被誤判為結果變化；覆核轉移由 kind='status'
+    只取初判本體欄；人工判決軸（status）不入快照——重新初判會保留人工判決結果，
+    若入快照，「初判相同但先前已被人工確認」會被誤判為結果變化；判決轉移由 kind='verdict'
     事件獨立留痕。summary 存原始 JSONB 語系 map（zh-tw 顯示由前端取用）。
     """
     return {
         "finding_id": values.get("finding_id"),
         "polarity": values.get("polarity"),
         "sentiment_score": values.get("sentiment_score"),
-        "stage": values.get("stage"),
+        "stage": values.get("prejudge_stage"),
         "l1": {"code": values.get("l1_code"), "label": values.get("l1_label")},
         "l2": {"code": values.get("l2_code"), "label": values.get("l2_label")},
         "confidence": {
@@ -57,7 +57,7 @@ def result_digest(attributions: list[dict]) -> str:
     """快照陣列 → 正規化 sha256（去重比對鍵）。
 
     全欄位嚴格比對（使用者拍板）：快照含摘要措辭/信心值，任一欄漂移即視為結果變化；
-    僅 judged_at 時戳先天不入快照。排序鍵 (l1.code, l2.code, finding_id) 消除
+    時間戳先天不入快照。排序鍵 (l1.code, l2.code, finding_id) 消除
     多歸因列序差異；default=str 兜底非 JSON 原生型別（Decimal 等）。
     """
     ordered = sorted(
@@ -72,7 +72,7 @@ def result_digest(attributions: list[dict]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def insert_judgment_event(
+def insert_prejudge_event(
     c: Connection,
     source: str,
     source_id: str,
@@ -83,20 +83,20 @@ def insert_judgment_event(
     job_id: str | None,
     triggered_by: str | None,
 ) -> bool:
-    """寫入一筆 kind='judgment' 歷史（去重：與最新一筆 model+params+digest 全同即 skip）。
+    """寫入一筆 kind='prejudge' 歷史（去重：與最新一筆 model+params+digest 全同即 skip）。
 
     收呼叫端交易內的 connection（replace_source_findings 的 `begin()` 區塊）——比對與插入
-    必須和判決寫入同交易，且以 FOR UPDATE 鎖最新歷史列序列化並發重判，否則兩個並發 job
+    必須和初判寫入同交易，且以 FOR UPDATE 鎖最新歷史列序列化並發重新初判，否則兩個並發 job
     可能同時讀到「無變化」而漏記、或雙寫重複列（TOCTOU）。
 
     Returns:
         是否實際插入（False＝與前一筆完全相同已 skip）。
     """
-    h = T.judgment_history
+    h = T.attribution_history
     digest = result_digest(attributions)
     latest = c.execute(
         select(h.c.model, h.c.params, h.c.result_digest)
-        .where(and_(h.c.source == source, h.c.source_id == source_id, h.c.kind == "judgment"))
+        .where(and_(h.c.source == source, h.c.source_id == source_id, h.c.kind == "prejudge"))
         .order_by(h.c.created_at.desc(), h.c.id.desc())
         .limit(1)
         .with_for_update()
@@ -112,7 +112,7 @@ def insert_judgment_event(
         sa_insert(h).values(
             source=source,
             source_id=source_id,
-            kind="judgment",
+            kind="prejudge",
             model=model,
             params=params or {},
             attributions=attributions,
@@ -124,7 +124,7 @@ def insert_judgment_event(
     return True
 
 
-def insert_status_event(
+def insert_verdict_event(
     c: Connection,
     source: str,
     source_id: str,
@@ -133,15 +133,15 @@ def insert_status_event(
     changes: list[dict],
     author: str | None,
 ) -> None:
-    """寫入一筆 kind='status' 覆核轉移事件（恆記錄不去重；同交易由呼叫端保證）。
+    """寫入一筆 kind='verdict' 判決轉移事件（恆記錄不去重；同交易由呼叫端保證）。
 
     changes：[{finding_id, from}]——單筆轉移一項、批量轉移多項；目標狀態統一存 params.to。
     """
     c.execute(
-        sa_insert(T.judgment_history).values(
+        sa_insert(T.attribution_history).values(
             source=source,
             source_id=source_id,
-            kind="status",
+            kind="verdict",
             params={"to": to_status, "changes": changes},
             author=author or "",
         )
@@ -156,17 +156,17 @@ def insert_failure_event(
     job_id: str | None = None,
     triggered_by: str | None = None,
 ) -> None:
-    """寫入一筆 kind='failure' 事件（判決失敗留痕；獨立交易、best-effort、絕不阻斷批次）。
+    """寫入一筆 kind='failure' 事件（初判失敗留痕；獨立交易、best-effort、絕不阻斷批次）。
 
-    失敗筆不落 judgments（to_findings 拋錯前 replace_source_findings 未被呼叫），本表補其唯一持久痕跡：
+    失敗筆不落 attributions（to_findings 拋錯前 replace_source_findings 未被呼叫），本表補其唯一持久痕跡：
     ① 供前端查「為何失敗」；② 供 prejudge_targets 依「最新成功後連續失敗數」設隱式重撈上限，防系統性
     失敗（壞 prompt / 失效 key）在 scope=all+unjudged 批次無限重撈。kind 是 Text 欄、新增邏輯值免 migration。
-    寫入失敗僅 debug log 不拋（比照 llm_usage 落庫「輔助不阻斷判決」慣例）。
+    寫入失敗僅 debug log 不拋（比照 llm_usage 落庫「輔助不阻斷初判」慣例）。
     """
     try:
         with T.get_engine().begin() as c:
             c.execute(
-                sa_insert(T.judgment_history).values(
+                sa_insert(T.attribution_history).values(
                     source=source,
                     source_id=source_id,
                     kind="failure",
@@ -175,22 +175,22 @@ def insert_failure_event(
                     triggered_by=triggered_by or "",
                 )
             )
-    except Exception:  # noqa: BLE001  失敗留痕是輔助，寫不進去也不能拖垮判決批次
+    except Exception:  # noqa: BLE001  失敗留痕是輔助，寫不進去也不能拖垮初判批次
         _log.debug(
             "insert_failure_event 落庫失敗 source=%s id=%s", source, source_id, exc_info=True
         )
 
 
 def _history_row(r: dict) -> dict:
-    """judgment_history 列 → API dict（created_at ISO 字串，比照 finding_notes/judgment_runs 慣例）。"""
+    """attribution_history 列 → API dict（created_at ISO 字串，比照 finding_notes/prejudge_runs 慣例）。"""
     v = r.get("created_at")
     r["created_at"] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
     return r
 
 
-def list_judgment_history(source: str, source_id: str) -> list[dict]:
-    """列某則評論的判決歷史時間軸（舊到新，時間遞增；判決快照 / 覆核轉移 / 備註三類事件混排）。"""
-    h = T.judgment_history
+def list_attribution_history(source: str, source_id: str) -> list[dict]:
+    """列某則評論的歸因歷史時間軸（舊到新，時間遞增；初判快照 / 判決轉移 / 備註三類事件混排）。"""
+    h = T.attribution_history
     stmt = (
         select(h)
         .where(and_(h.c.source == source, h.c.source_id == source_id))
@@ -203,29 +203,29 @@ def list_judgment_history(source: str, source_id: str) -> list[dict]:
 def add_history_note(source: str, source_id: str, *, author: str, content: str) -> dict:
     """新增一則評論級備註（kind='note'，append-only）；回傳建立列（含 id / 時間）。"""
     ins = (
-        sa_insert(T.judgment_history)
+        sa_insert(T.attribution_history)
         .values(source=source, source_id=source_id, kind="note", author=author, content=content)
-        .returning(*T.judgment_history.c)
+        .returning(*T.attribution_history.c)
     )
     with T.get_engine().begin() as c:
         return _history_row(dict(c.execute(ins).mappings().first()))
 
 
 def latest_snapshots(source: str, model: str) -> dict[str, dict]:
-    """某來源下、指定模型的**每評論最新**判決快照（多模型對比導出用）。
+    """某來源下、指定模型的**每評論最新**初判快照（多模型對比導出用）。
 
     PG `DISTINCT ON (source_id)` + `ORDER BY source_id, created_at DESC, id DESC`＝每評論
-    只取該模型最新一筆 kind='judgment'（同模型重判多次只回最新；去重機制下相鄰快照必有差異）。
+    只取該模型最新一筆 kind='prejudge'（同模型重新初判多次只回最新；去重機制下相鄰快照必有差異）。
     SQLAlchemy `.distinct(col)` 為 PG 方言 DISTINCT ON——codebase 首用，語意由專測鎖定。
 
     Returns:
-        {source_id: {"attributions": 快照陣列, "created_at": ISO 字串}}；該模型未判過的評論不在其中。
+        {source_id: {"attributions": 快照陣列, "created_at": ISO 字串}}；該模型未初判過的評論不在其中。
     """
-    h = T.judgment_history
+    h = T.attribution_history
     stmt = (
-        select(h.c.source_id, h.c.attributions, h.c.created_at)
+        select(h.c.source_id, h.c.attributions, h.c.created_at, h.c.params)
         .distinct(h.c.source_id)
-        .where(and_(h.c.source == source, h.c.kind == "judgment", h.c.model == model))
+        .where(and_(h.c.source == source, h.c.kind == "prejudge", h.c.model == model))
         .order_by(h.c.source_id, h.c.created_at.desc(), h.c.id.desc())
     )
     with T.get_engine().connect() as c:
@@ -233,18 +233,19 @@ def latest_snapshots(source: str, model: str) -> dict[str, dict]:
             r.source_id: {
                 "attributions": r.attributions or [],
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "params": r.params or {},
             }
             for r in c.execute(stmt)
         }
 
 
-def list_judgment_models() -> list[str]:
-    """歷來實際判決過的模型清單（judgments 當前判決 ∪ judgment_history 快照，distinct 非空）。
+def list_prejudge_models() -> list[str]:
+    """歷來實際初判過的模型清單（attributions 當前初判 ∪ attribution_history 快照，distinct 非空）。
 
-    供前端「判決模型」篩選與導出「輸出結果版本」下拉選項。字母序；`stub`（無 key 假判）
+    供前端「初判模型」篩選與導出「輸出結果版本」下拉選項。字母序；`stub`（無 key 假判）
     降權排最後——保留而非隱藏，否則純 stub 環境下拉空白、功能整支失效。
     """
-    jg, h = T.judgments, T.judgment_history
+    jg, h = T.attributions, T.attribution_history
     with T.get_engine().connect() as c:
         models = {
             r[0]
@@ -256,7 +257,7 @@ def list_judgment_models() -> list[str]:
             for r in c.execute(
                 select(h.c.model)
                 .distinct()
-                .where(h.c.kind == "judgment", h.c.model.isnot(None), h.c.model != "")
+                .where(h.c.kind == "prejudge", h.c.model.isnot(None), h.c.model != "")
             )
         }
     return sorted(models, key=lambda m: (m == "stub", m))

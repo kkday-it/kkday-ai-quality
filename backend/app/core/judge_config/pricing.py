@@ -1,6 +1,6 @@
 """LLM token → 花費估算（單價統一內聚於 config/global/llm_model.json 各 model）。
 
-判決批量「同步顯示 token 花費金額」用：把 usage（prompt/completion tokens）依模型單價換算 USD。
+初判批量「同步顯示 token 花費金額」用：把 usage（prompt/completion tokens）依模型單價換算 USD。
 單價 SSOT＝llm_model.json `providers[].defaultModels[]` 的 input/output 欄（每 1M tokens USD），
 與 model 清單同檔內聚（不再分立 model_pricing.json）；未列單價之模型回退根層 `price_default`。
 過時手動更新該檔即時生效（reload() 清快取）。
@@ -29,7 +29,7 @@ _FLEX_MULT = 0.5
 
 
 def _load() -> dict[str, dict]:
-    """lazy 建 model→單價 索引並快取；缺檔/壞檔回空表（不中斷判決，花費顯示 0）。"""
+    """lazy 建 model→單價 索引並快取；缺檔/壞檔回空表（不中斷初判，花費顯示 0）。"""
     global _table, _default
     if _table is None:
         try:
@@ -43,6 +43,12 @@ def _load() -> dict[str, dict]:
                 mid = m.get("id")
                 if mid and "input" in m and "output" in m:
                     table[mid] = {"input": float(m["input"]), "output": float(m["output"])}
+        # 根層 embeddings[]（域路由特徵模型；僅計價、不進聊天模型下拉）同樣收入單價表——
+        # 缺此段會令 embedding 用量回退 price_default（mini 級聊天價），高估 ~12x。
+        for m in cfg.get("embeddings", []):
+            mid = m.get("id")
+            if mid and "input" in m and "output" in m:
+                table[mid] = {"input": float(m["input"]), "output": float(m["output"])}
         _table = table
         _default = cfg.get("price_default") or {"input": 0.0, "output": 0.0}
     return _table

@@ -2,7 +2,7 @@
 import { BASE, JSON_HEADERS, j } from './http.api';
 
 export const patchStatus = (findingId: string, status: string) =>
-  j(`${BASE}/findings/${encodeURIComponent(findingId)}/status`, {
+  j(`${BASE}/findings/${encodeURIComponent(findingId)}/verdict`, {
     method: 'PATCH',
     headers: JSON_HEADERS,
     body: JSON.stringify({ status }),
@@ -41,33 +41,33 @@ export const addFindingNote = (findingId: string, content: string): Promise<Find
   });
 
 /**
- * 批量覆核：對多則評論（sourceIds＝勾選的 source_id）的全部歸因設定 status
- * （confirmed/dismissed/new＝撤銷）；後端單交易逐筆 diff（同值冪等跳過）並記入判決歷史。
+ * 批量初判：對多則評論（sourceIds＝勾選的 source_id）的全部歸因設定 status
+ * （confirmed/dismissed/new＝撤銷）；後端單交易逐筆 diff（同值冪等跳過）並記入歸因歷史。
  */
 export const batchPatchStatus = (
   source: string,
   sourceIds: string[],
   status: string,
 ): Promise<{ status: string; updated: number; finding_ids: string[] }> =>
-  j<{ status: string; updated: number; finding_ids: string[] }>(`${BASE}/findings/batch/status`, {
+  j<{ status: string; updated: number; finding_ids: string[] }>(`${BASE}/findings/batch/verdict`, {
     method: 'PATCH',
     headers: JSON_HEADERS,
     body: JSON.stringify({ source, source_ids: sourceIds, status }),
   });
 
-/** 判決歷史事件（評論級時間軸一項；kind 決定有值欄位：judgment 快照 / status 轉移 / note 備註）。 */
-export interface JudgmentHistoryEntry {
+/** 歸因歷史事件（評論級時間軸一項；kind 決定有值欄位：judgment 快照 / status 轉移 / note 備註）。 */
+export interface AttributionHistoryEntry {
   id: number;
   source: string;
   source_id: string;
-  /** 事件類型：judgment（判決快照）/ status（覆核轉移）/ note（評論級備註）。 */
-  kind: 'judgment' | 'status' | 'note';
-  /** 判決模型（kind=judgment；stub 同 judgments.model 語意）。 */
+  /** 事件類型：judgment（初判快照）/ status（判決轉移）/ note（評論級備註）。 */
+  kind: 'prejudge' | 'verdict' | 'note';
+  /** 初判模型（kind=judgment；stub 同 attributions.model 語意）。 */
   model?: string | null;
   /** 事件細節：judgment＝{model}（回填列 {backfilled:true}）；
    *  status＝{to, changes:[{finding_id, from}]}。 */
   params?: Record<string, unknown> | null;
-  /** 判決快照（kind=judgment；每筆形狀近 Attribution：l1-l2/傾向/情緒分/信心/內容）。 */
+  /** 初判快照（kind=judgment；每筆形狀近 Attribution：l1-l2/傾向/情緒分/信心/內容）。 */
   attributions?: Record<string, unknown>[] | null;
   result_digest?: string | null;
   job_id?: string | null;
@@ -79,22 +79,22 @@ export interface JudgmentHistoryEntry {
   created_at: string | null;
 }
 
-/** 取某則評論的判決歷史時間軸（新到舊；judgment/status/note 三類事件混排）。 */
-export const getJudgmentHistory = (
+/** 取某則評論的歸因歷史時間軸（新到舊；judgment/status/note 三類事件混排）。 */
+export const getAttributionHistory = (
   source: string,
   sourceId: string,
-): Promise<JudgmentHistoryEntry[]> => {
+): Promise<AttributionHistoryEntry[]> => {
   const q = new URLSearchParams({ source, source_id: sourceId });
-  return j<JudgmentHistoryEntry[]>(`${BASE}/judgment-history?${q.toString()}`);
+  return j<AttributionHistoryEntry[]>(`${BASE}/attribution-history?${q.toString()}`);
 };
 
-/** 為某則評論新增一則評論級備註（判決歷史時間軸內；與 finding 級備註並存）。 */
-export const addJudgmentHistoryNote = (
+/** 為某則評論新增一則評論級備註（歸因歷史時間軸內；與 finding 級備註並存）。 */
+export const addAttributionHistoryNote = (
   source: string,
   sourceId: string,
   content: string,
-): Promise<JudgmentHistoryEntry> =>
-  j<JudgmentHistoryEntry>(`${BASE}/judgment-history/notes`, {
+): Promise<AttributionHistoryEntry> =>
+  j<AttributionHistoryEntry>(`${BASE}/attribution-history/notes`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ source, source_id: sourceId, content }),

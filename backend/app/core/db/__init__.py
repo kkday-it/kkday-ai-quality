@@ -11,6 +11,12 @@ from app.core.db.attribution import (
     attribution_breakdown,
     attribution_overview,
 )
+from app.core.db.attribution_history import (
+    add_history_note,
+    latest_snapshots,
+    list_attribution_history,
+    list_prejudge_models,
+)
 from app.core.db.export import export_problems_xlsx
 from app.core.db.findings import (
     add_finding_note,
@@ -29,29 +35,29 @@ from app.core.db.ingest import (
     list_batches,
     update_batch_inserted,
 )
-from app.core.db.judgment_history import (
-    add_history_note,
-    latest_snapshots,
-    list_judgment_history,
-    list_judgment_models,
-)
-from app.core.db.judgment_runs import (
-    any_judged,
-    finish_judgment_run,
-    get_run_log,
-    insert_judgment_run,
-    judgment_run_detail,
-    list_judgment_runs,
-    save_run_log,
-    update_judgment_run_status,
-)
 from app.core.db.llm_usage import (
     insert_llm_usage_row,
     insert_llm_usage_rows,
     llm_usage_overview,
 )
+from app.core.db.prejudge_runs import (
+    any_judged,
+    finish_prejudge_run,
+    get_run_log,
+    insert_prejudge_run,
+    list_prejudge_runs,
+    prejudge_run_detail,
+    save_run_log,
+    update_prejudge_run_status,
+)
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_problems
+from app.core.db.prompt_drafts import (
+    delete_prompt_draft,
+    get_prompt_draft,
+    list_prompt_drafts,
+    upsert_prompt_draft,
+)
 from app.core.db.prompt_sandbox_runs import (
     insert_sandbox_run,
     list_sandbox_runs,
@@ -116,22 +122,26 @@ __all__ = [
     "batch_update_finding_status",
     "latest_snapshots",
     "list_finding_notes",
-    "list_judgment_history",
-    "list_judgment_models",
+    "list_attribution_history",
+    "list_prejudge_models",
     "insert_llm_usage_row",
     "insert_llm_usage_rows",
     "llm_usage_overview",
     "any_judged",
-    "finish_judgment_run",
+    "finish_prejudge_run",
     "get_run_log",
-    "insert_judgment_run",
-    "judgment_run_detail",
-    "list_judgment_runs",
+    "insert_prejudge_run",
+    "prejudge_run_detail",
+    "list_prejudge_runs",
     "save_run_log",
-    "update_judgment_run_status",
+    "update_prejudge_run_status",
     "insert_sandbox_run",
     "list_sandbox_runs",
     "sandbox_run_detail",
+    "delete_prompt_draft",
+    "get_prompt_draft",
+    "list_prompt_drafts",
+    "upsert_prompt_draft",
     "update_batch_inserted",
     "update_finding_status",
 ]

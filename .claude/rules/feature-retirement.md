@@ -25,7 +25,7 @@ grep 該 feature 的所有 symbol（函式 / 欄位 / 端點 / 元件 / 型別 /
    - 連帶清：DTO（`attribution_dto`）/ 寫入端（`findings._finding_values`、`to_columns`）/ 讀取端（select 欄清單、`_PROBLEM_COLS`）/ 去重 digest / 索引，皆去該欄
    - ⚠️ 容器內 `alembic revision` 生成的檔用**容器時區 mtime**（比 host 早數小時，`ls -t` 會誤排）；檔仍落 host（bind mount）
 3. **barrel**：`__init__.py` / `index.ts` 移除 re-export（**import 段 + `__all__` 兩處都要**）
-4. **配置**：移除死 config key（**grep 確認 0 consumer 才刪**；判決領域改值需重啟後端）
+4. **配置**：移除死 config key（**grep 確認 0 consumer 才刪**；初判領域改值需重啟後端）
 5. **前端**：元件整檔刪 / 型別 interface 欄 / `.api.ts` function / composable / store / template 使用 / 路由；移除後 `vue-tsc` 會抓 orphan import 與斷型別
 6. **測試**：刪該 feature 專屬 test 檔；修 assert 到被刪欄/回傳鍵的 test
 7. **文件（docs-sync 鐵律，見 `docs-sync.md`）**：README（模組 / 資料夾 / 根）/ API 一覽表 / 文件引用——**刪除即清引用**，勿留死連結 / 幽靈欄位
@@ -36,7 +36,7 @@ grep 該 feature 的所有 symbol（函式 / 欄位 / 端點 / 元件 / 型別 /
 
 ## 驗證（收尾必跑，缺一不可標完成）
 
-`pytest` 全綠 ＋ `vue-tsc` / `eslint` 零錯 ＋ 容器 `alembic upgrade head` ＋ 判決煙霧（DTO / breakdown 不含該欄）＋ **最終殘留 grep 全清**（該 feature 所有 symbol 在 `backend/app` + `frontend/src` 命中 0，僅「shared 保留」與「活碼 legacy」除外）。
+`pytest` 全綠 ＋ `vue-tsc` / `eslint` 零錯 ＋ 容器 `alembic upgrade head` ＋ 初判煙霧（DTO / breakdown 不含該欄）＋ **最終殘留 grep 全清**（該 feature 所有 symbol 在 `backend/app` + `frontend/src` 命中 0，僅「shared 保留」與「活碼 legacy」除外）。
 
 ## 反向氣味（出現即代表沒清乾淨）
 

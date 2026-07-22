@@ -1,0 +1,14 @@
+{
+  "_comment": "判決歸因（verdict）配置——對初判結果的裁決層（與 prejudge.json 合併載入的靜態設定檔）。auto_confirm＝G1 系統判決路由；status_labels＝判決狀態繁中 label（DB 存 code）。調值＝改此檔＋重啟後端。",
+  "auto_confirm": {
+    "enabled": true,
+    "_comment": "auto_accept+judged 的初判結果自動採信（verdict_status=auto_confirmed，留痕 verdict_by=system:auto_confirm）；audit_sample_rate 比例抽樣回 new 交人工複審，防自動化偏誤。",
+    "audit_sample_rate": 0.05
+  },
+  "status_labels": {
+    "new": "待判決",
+    "auto_confirmed": "自動確認",
+    "confirmed": "已確認",
+    "dismissed": "已駁回"
+  }
+}

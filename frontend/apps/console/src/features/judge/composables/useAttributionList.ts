@@ -7,7 +7,7 @@ import {
   batchPatchStatus,
   getProblems,
   getTaxonomyCascade,
-  getJudgmentModels,
+  getPrejudgeModels,
   type CascadeNode,
 } from '@/api';
 import { Message } from '@arco-design/web-vue';
@@ -64,13 +64,13 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       cascadeOptions.value = [];
     }
   };
-  /** 判決模型選項（歷來實際判過的模型；載一次供 篩選/導出輸出版本 下拉共用）。 */
+  /** 初判模型選項（歷來實際判過的模型；載一次供 篩選/導出輸出版本 下拉共用）。 */
   const modelOptions = ref<{ value: string; label: string }[]>([]);
   /** 載入模型清單；stub 標註「測試假判」防誤當可比口徑；失敗回空不阻斷（選單無選項仍可用）。 */
   const loadModelOptions = async () => {
     if (modelOptions.value.length) return;
     try {
-      modelOptions.value = (await getJudgmentModels()).map((m) => ({
+      modelOptions.value = (await getPrejudgeModels()).map((m) => ({
         value: m,
         label: m === 'stub' ? 'stub（測試假判，非真實模型）' : m,
       }));
@@ -143,7 +143,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     sortValue.value = 'occurred_at:desc';
     onFilterChange();
   };
-  /** 取未判筆數（全部未判按鈕顯示）。 */
+  /** 取未初判筆數（全部未初判按鈕顯示）。 */
   const loadUnjudged = async () => {
     try {
       const r = await getProblems({
@@ -188,7 +188,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     },
   );
 
-  // 全局垂直分類（選中）變更 → 列表 + 未判 count 即時重載（縱覽頁另有自己的 watch）。
+  // 全局垂直分類（選中）變更 → 列表 + 未初判 count 即時重載（縱覽頁另有自己的 watch）。
   watch(
     () => verticalFilter.filter,
     () => onFilterChange(),
@@ -209,7 +209,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const selection = useAttributionSelection({ rows, pageSize, filterQuery });
   const { selectedKeys } = selection;
 
-  // ── 初判歸因批次 + 單列重判（下沉 usePrejudgeJob；注入依賴，回傳 ref 保留 identity 不改綁定）──
+  // ── 初判歸因批次 + 單列重新初判（下沉 usePrejudgeJob；注入依賴，回傳 ref 保留 identity 不改綁定）──
   // 頁面列表篩選快照（scope 模式「套用當前列表篩選」用；與 filterQuery 同源值，鍵名對齊 getProblems）
   const listFilters = computed(() => filtersToParams(filters));
   const job = usePrejudgeJob({
@@ -230,12 +230,12 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 導出草稿篩選（與列表篩選同形狀；彈窗內可重選，不影響列表本身）。 */
   const exportFilters = reactive(emptyFilters());
   /**
-   * 導出「輸出結果版本」：''＝當前判決（預設）；指定模型＝內容替換為該模型的 judgment_history
+   * 導出「輸出結果版本」：''＝當前初判（預設）；指定模型＝內容替換為該模型的 attribution_history
    * 最新快照（真多模型對比輸出）。與 exportFilters.model（篩哪些評論）語義獨立，可並用。
    */
   const exportSnapshotModel = ref('');
   /**
-   * 導出「並排對比模型」（可複選）：基準（gpt 當前判決或所選輸出版本）右側附各模型一組
+   * 導出「並排對比模型」（可複選）：基準（gpt 當前初判或所選輸出版本）右側附各模型一組
    * 情緒/L1/L2 對比欄。空＝不並排（僅基準）。與 exportSnapshotModel 語義獨立可並用。
    */
   const exportCompareModels = ref<string[]>([]);
@@ -275,35 +275,35 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     );
   };
 
-  // ── 單列覆核（操作欄；與批量 selectedKeys 解耦；單列重判已下沉 usePrejudgeJob.rejudgeRow）──
-  /** 覆核結果提示文案（confirmed/dismissed/new＝撤銷覆核回待處理）。 */
+  // ── 單列判決（操作欄；與批量 selectedKeys 解耦；單列重新初判已下沉 usePrejudgeJob.rejudgeRow）──
+  /** 判決結果提示文案（confirmed/dismissed/new＝撤銷判決回待判決）。 */
   const REVIEW_DONE_MSG: Record<string, string> = {
     confirmed: '已確認',
     dismissed: '已忽略',
-    new: '已撤銷覆核',
+    new: '已撤銷判決',
   };
   /**
-   * 單條歸因覆核：只改該 finding 的 status（per-attribution；每條歸因分開操作）。
+   * 單條歸因判決：只改該 finding 的判決狀態（per-attribution；每條歸因分開操作）。
    * optimistic 即時回寫（PATCH 秒級·無 loading）；只改人工 status 軸、不動 AI stage。
-   * 再點選中狀態＝撤銷覆核（status='new'）；失敗回滾快照（避免 UI 與後端漂移）。
+   * 再點選中狀態＝撤銷判決（status='new'）；失敗回滾快照（避免 UI 與後端漂移）。
    */
   const reviewFinding = async (attr: Attribution, status: string) => {
     if (!attr.finding_id) return;
     const next = attr.status === status ? 'new' : status; // 再點選中態＝撤銷
     const prev = attr.status;
-    attr.status = next; // optimistic：覆核徽章即時反映
+    attr.status = next; // optimistic：初判徽章即時反映
     try {
       await patchStatus(attr.finding_id, next);
       Message.success(REVIEW_DONE_MSG[next] || next);
     } catch (e: any) {
       attr.status = prev; // 失敗回滾（樂觀值不留殘影）
-      Message.error('覆核失敗：' + (e?.message || e));
+      Message.error('判決失敗：' + (e?.message || e));
     }
   };
 
   /**
-   * 批量覆核：對已勾選評論（selectedKeys＝source_id）的**全部**歸因設定 status；
-   * 後端單交易逐筆 diff（同值冪等跳過）並記入判決歷史。完成後重載列表並清空勾選。
+   * 批量初判：對已勾選評論（selectedKeys＝source_id）的**全部**歸因設定 status；
+   * 後端單交易逐筆 diff（同值冪等跳過）並記入歸因歷史。完成後重載列表並清空勾選。
    */
   const batchReview = async (status: string) => {
     if (!selectedKeys.value.length) return;
@@ -313,7 +313,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       selectedKeys.value = [];
       await loadPage();
     } catch (e: any) {
-      Message.error('批量覆核失敗：' + (e?.message || e));
+      Message.error('批量初判失敗：' + (e?.message || e));
     }
   };
 
@@ -348,9 +348,9 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadPage,
     // 選取（useAttributionSelection：selectedKeys/selectedRowKeys/onSelectionChange/runCount/clearSelection/pageSpec/selectPages）
     ...selection,
-    // 初判歸因批次 + 單列重判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
+    // 初判歸因批次 + 單列重新初判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
     ...job,
-    // 單列覆核 + 批量覆核
+    // 單列判決 + 批量初判
     reviewFinding,
     batchReview,
     // 導出（彈窗草稿流程 + 型態選擇 + 背景 job + 實時進度 + 停止）

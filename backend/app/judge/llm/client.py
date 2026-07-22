@@ -25,9 +25,9 @@ _log = logging.getLogger(__name__)
 # ── LLM exact-match 結果快取（diskcache·成熟輪子；env.llm_exact_cache 總開關）──
 # key＝model+messages+response_format+temperature+reasoning_effort 的 sha256——prompt 內嵌規則正文，
 # 規則/模型/effort 任一變即 miss（失效粒度自動精準）；service_tier 不入 key（僅計價/延遲差異，語義同）。
-# 命中＝重用先前判決（同輸入同規則＝同判決，準確度零影響）、零 token、毫秒級回應、不落 llm_usage
-# （無 API 呼叫即無花費）。重判密集工作流（規則微調→全量重判）下未變更部分全免費。
-# _cache_read ContextVar：讀取閘（單筆顯式重判關讀取＝使用者要求重打；寫入恆開，新結果回填快取）。
+# 命中＝重用先前初判（同輸入同規則＝同初判，準確度零影響）、零 token、毫秒級回應、不落 llm_usage
+# （無 API 呼叫即無花費）。重新初判密集工作流（規則微調→全量重新初判）下未變更部分全免費。
+# _cache_read ContextVar：讀取閘（單筆顯式重新初判關讀取＝使用者要求重打；寫入恆開，新結果回填快取）。
 _cache_read: ContextVar[bool] = ContextVar("llm_cache_read", default=True)
 _exact_cache = (
     None  # lazy 單例（diskcache.Cache：thread/process safe·SQLite 底層·size_limit 自動淘汰）
@@ -38,7 +38,7 @@ _EXACT_CACHE_LOCK = threading.Lock()
 def set_llm_cache_read(enabled: bool) -> None:
     """設定當前 context 的快取「讀取」開關（寫入恆開）。
 
-    單筆顯式重判（使用者點「重判」＝要求真的重打）關讀取；批次判決開讀取（重用未變更部分）。
+    單筆顯式重新初判（使用者點「重新初判」＝要求真的重打）關讀取；批次初判開讀取（重用未變更部分）。
     以 ContextVar 承載，prejudge_batch copy_context 派工時 worker 自動繼承。
     """
     _cache_read.set(enabled)
@@ -95,7 +95,7 @@ def _loads_lenient(raw: str) -> dict | None:
     return None
 
 
-# token 用量回報槽（ContextVar）：批量判決設定 sink，chat_json 每次呼叫把 usage 回報以累計花費。
+# token 用量回報槽（ContextVar）：批量初判設定 sink，chat_json 每次呼叫把 usage 回報以累計花費。
 # 用 ContextVar 是因 prejudge_batch 以 copy_context 派工，worker 自動繼承 _run 設的 sink。
 # sink 簽名：(model, prompt_tokens, completion_tokens, cached_tokens) → None（須自行 thread-safe）；
 # cached_tokens＝prompt_tokens 中命中 prompt cache 的部分，供折扣計價。
@@ -105,7 +105,7 @@ _usage_sink: ContextVar[Callable[[str, int, int, int], None] | None] = ContextVa
 
 
 def set_usage_sink(cb: Callable[[str, int, int, int], None] | None) -> None:
-    """設定當前 context 的 token 用量回報 sink（批量判決用；None＝不回報）。"""
+    """設定當前 context 的 token 用量回報 sink（批量初判用；None＝不回報）。"""
     _usage_sink.set(cb)
 
 
@@ -132,7 +132,7 @@ def open_usage_buffer() -> list:
 def _record_usage(
     stage: str, cfg: dict, prompt: int, completion: int, cached: int, reasoning: int = 0
 ) -> None:
-    """組單次呼叫用量列並落庫（buffer 有則 append 待批量、無則即時 insert）；失敗不阻斷判決。
+    """組單次呼叫用量列並落庫（buffer 有則 append 待批量、無則即時 insert）；失敗不阻斷初判。
 
     cfg["service_tier"] 為**本次實際生效** tier（flex 429 回退標準時呼叫端已改寫）→ 計價對齊帳單。
     """
@@ -163,6 +163,56 @@ def _record_usage(
         from app.core import db
 
         db.insert_llm_usage_row(row)
+
+
+# ── flex 回退量測（P1b）：全域計數器，prejudge_batch 於 job 始末取差值 log ──────
+# 目的：量測「flex 429 回退標準價」漏掉折扣的占比（>5% 才立項 Batch API lane，見升級計畫 P1b）。
+_FLEX_LOCK = threading.Lock()
+_flex_counters = {"attempts": 0, "fallbacks": 0}
+
+
+def flex_stats() -> dict[str, int]:
+    """flex serving tier 全域計數快照（{attempts, fallbacks}）；供 job 始末差值量測回退率。
+
+    多 job 併發時差值含同時段他 job 流量（量測目標是全域回退占比，可接受）；計數自 process 啟動累計。
+    """
+    with _FLEX_LOCK:
+        return dict(_flex_counters)
+
+
+def _flex_bump(key: str) -> None:
+    with _FLEX_LOCK:
+        _flex_counters[key] += 1
+
+
+def embed_one(text: str, *, model: str) -> list[float] | None:
+    """單文本 embedding（域路由特徵用）；失敗/不可用一律回 None（fail-open，絕不拋）。
+
+    僅 OpenAI provider（base_url 反推）支援；stub / 非 OpenAI / model 空值 → None。usage 以
+    stage="router_embed" 落 llm_usage（單價讀 llm_model.json 根層 `embeddings` 表，見 pricing）。
+
+    Args:
+        text: 輸入文本（截 8000 字防超 embedding 上限；路由特徵夠用）。
+        model: embedding 模型 id（SSOT＝prejudge.json/verdict.json prejudge.domain_router.embedding_model）。
+
+    Returns:
+        embedding 向量；不可用回 None（呼叫端 fail-open 全域跑）。
+    """
+    if not model:
+        return None
+    cfg = _resolve()
+    if not cfg["token"] or _settings.provider_id_for(cfg["base_url"]) != "openai":
+        return None
+    try:
+        cli = _get_client(cfg["token"], cfg["base_url"])
+        resp = cli.embeddings.create(model=model, input=text[:8000])
+        u = getattr(resp, "usage", None)
+        pt = int(getattr(u, "prompt_tokens", 0) or getattr(u, "total_tokens", 0) or 0)
+        _record_usage("router_embed", {**cfg, "model": model, "service_tier": None}, pt, 0, 0)
+        return list(resp.data[0].embedding)
+    except Exception:  # noqa: BLE001  路由輔助，失敗 fail-open（絕不阻斷初判主流程）
+        _log.warning("embedding 失敗（model=%s），域路由 fail-open", model, exc_info=True)
+        return None
 
 
 # 共用 OpenAI client 快取（按 token+base_url）：避免每次呼叫新建 connection pool；
@@ -301,8 +351,10 @@ def _reasoning_kwargs(cfg: dict) -> dict:
 def _resolve() -> dict:
     """合併當前 request 的 user 設定（contextvar）與 env，回傳實際生效配置。
 
-    token 取「當前 provider（由 base_url 反推）對應的 provider_tokens 條目」，fallback env；
-    確保 token 永遠對齊當前 base_url 的 provider，不會用到別家 provider 的 key。
+    token 取該配置自身的 per-config token（`effective_llm_dict` 解出的 api_token，即
+    `llm_tokens[config.id]`），僅 OpenAI（含未知/自訂相容端點）在無 per-config token 時 fallback
+    `env.openai_api_key`——見 `settings.resolve_provider_token` 的 provider-aware 分流；確保 token
+    永遠對齊當前 base_url 的 provider，非 OpenAI 缺 token 即視為未配置（不會誤用別家 provider 的 key）。
     """
     cfg = _settings.current()
     base_url = (cfg.get("base_url") or "").strip()
@@ -315,7 +367,7 @@ def _resolve() -> dict:
         "temperature": cfg.get("temperature"),
         "thinking": cfg.get("thinking", "default"),
         "reasoning_effort": cfg.get("reasoning_effort", "default"),
-        # serving tier（"flex"＝-50% 變延遲；批次判決由 prejudge_batch 注入 eff，interactive 呼叫不帶）
+        # serving tier（"flex"＝-50% 變延遲；批次初判由 prejudge_batch 注入 eff，interactive 呼叫不帶）
         "service_tier": cfg.get("service_tier"),
     }
 
@@ -338,7 +390,7 @@ def chat_json(
     label: str | None = None,
 ) -> dict:
     """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
-    stage 僅作為解析失敗時的 log 標籤（標示是哪個判決階段），不影響生效配置。
+    stage 僅作為解析失敗時的 log 標籤（標示是哪個初判階段），不影響生效配置。
 
     Args:
         schema: 傳入時用 OpenAI Structured Outputs（response_format=json_schema, strict）——
@@ -369,11 +421,13 @@ def chat_json(
         kwargs["temperature"] = float(cfg["temperature"])
     kwargs.update(_reasoning_kwargs(cfg))  # thinking + reasoning_effort per-provider 組參數
     is_openai = _settings.provider_id_for(cfg["base_url"]) == "openai"
-    # serving tier：僅 OpenAI 支援 service_tier；"flex"＝-50% 計價換變動延遲（批次判決由
+    # serving tier：僅 OpenAI 支援 service_tier；"flex"＝-50% 計價換變動延遲（批次初判由
     # prejudge_batch 注入 eff，interactive 呼叫不帶）。非 OpenAI provider 不送（避免 400）。
     tier = cfg.get("service_tier")
     if tier and tier != "default" and is_openai:
         kwargs["service_tier"] = tier
+        if tier == "flex":
+            _flex_bump("attempts")  # P1b 量測：flex 嘗試數（回退數見 429 handler）
     # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
     ck = cache_key if (cache_key and is_openai) else None
     # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄。
@@ -386,21 +440,21 @@ def chat_json(
     run_log.emit(
         "llm_prompt", stage, "Prompt 全文", {"system": system, "user": user}, label=log_label
     )
-    # exact-match 結果快取：讀取閘開啟才查（單筆顯式重判關讀取）；命中＝重用先前判決，
+    # exact-match 結果快取：讀取閘開啟才查（單筆顯式重新初判關讀取）；命中＝重用先前初判，
     # 零 API 呼叫、零 token、不落 llm_usage（無花費即無紀錄）。
     use_cache = env.llm_exact_cache
     ekey = _cache_key(kwargs) if use_cache else ""
     if use_cache and _cache_read.get():
         try:
             hit = _get_exact_cache().get(ekey)
-        except Exception:  # noqa: BLE001  快取層故障不阻斷判決（退化為直呼）
+        except Exception:  # noqa: BLE001  快取層故障不阻斷初判（退化為直呼）
             hit = None
         if hit is not None:
             _log.debug("LLM exact-cache 命中 stage=%s", stage)
             run_log.emit(
                 "llm_response",
                 stage,
-                "exact-cache 命中（重用先前判決，零 API 呼叫）",
+                "exact-cache 命中（重用先前初判，零 API 呼叫）",
                 {"parsed": hit},
                 label=log_label,
             )
@@ -428,6 +482,7 @@ def chat_json(
             and getattr(e, "code", None) == "resource_unavailable"
         ):
             _log.warning("flex 容量不足(stage=%s)，回退標準 tier 重試", stage)
+            _flex_bump("fallbacks")  # P1b 量測：該筆以標準價計費（漏掉 -50% 折扣）
             kwargs.pop("service_tier", None)
             cfg = {**cfg, "service_tier": None}
             resp = _complete(cfg, kwargs, ck)
@@ -470,7 +525,7 @@ def chat_json(
             resp = _complete(cfg, kwargs, ck)
         else:
             raise  # OpenAI 的 400、或與 schema/response_format 無關的 400 → 如實拋，不猜測性重試
-    # token 用量回報（供批量累計花費；失敗不影響判決）
+    # token 用量回報（供批量累計花費；失敗不影響初判）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)
     if usage:
@@ -487,9 +542,9 @@ def chat_json(
         if sink:
             try:
                 sink(cfg["model"], prompt_tokens, completion_tokens, cached)
-            except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷判決
+            except Exception:  # noqa: BLE001  計費僅輔助，絕不阻斷初判
                 _log.debug("usage sink 回報失敗 stage=%s", stage)
-        try:  # per-call 落庫（AI 消耗紀錄）；失敗絕不阻斷判決
+        try:  # per-call 落庫（AI 消耗紀錄）；失敗絕不阻斷初判
             _record_usage(stage, cfg, prompt_tokens, completion_tokens, cached, reasoning)
         except Exception:  # noqa: BLE001
             _log.debug("usage 落庫失敗 stage=%s", stage)
@@ -523,10 +578,10 @@ def chat_json(
             label=log_label,
         )
         return {}
-    if use_cache and parsed:  # 寫入恆開（顯式重判的新結果也回填供後續批次重用）；空 dict 不快取
+    if use_cache and parsed:  # 寫入恆開（顯式重新初判的新結果也回填供後續批次重用）；空 dict 不快取
         try:
             _get_exact_cache().set(ekey, parsed, expire=env.llm_cache_ttl_days * 86400)
-        except Exception:  # noqa: BLE001  快取寫入失敗不阻斷判決
+        except Exception:  # noqa: BLE001  快取寫入失敗不阻斷初判
             _log.debug("LLM exact-cache 寫入失敗 stage=%s", stage)
     return parsed
 
@@ -582,7 +637,7 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
         if requested_eff and final_eff != requested_eff:  # 降級過 → 誠實回報實際生效值
             out["note"] = (
                 f"reasoning_effort={requested_eff} 不被此 model 接受，"
-                f"已自動降級為 {final_eff or 'API 預設'}（判決路徑亦同此行為）"
+                f"已自動降級為 {final_eff or 'API 預設'}（初判路徑亦同此行為）"
             )
         return out
     except Exception as e:  # 只回錯誤首行（避免洩漏 key / 堆疊）

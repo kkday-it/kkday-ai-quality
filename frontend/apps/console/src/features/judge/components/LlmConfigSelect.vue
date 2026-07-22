@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 共用 LLM 模型選擇（本次執行用）：純呈現元件，供正式判決抽屜（批量／單列）與 Prompt 測試抽屜
+ * 共用 LLM 模型選擇（本次執行用）：純呈現元件，供正式初判抽屜（批量／單列）與 Prompt 測試抽屜
  * 共用，取代原本各自重複的 a-select 區塊。value 的「預設跟隨全域啟用中」行為由呼叫端自己的
  * `useLlmConfigs()` 實例負責（本元件只負責畫）。
  */
@@ -10,7 +10,9 @@ import { composeLlmLabel } from '@/features/settings/utils/label.util';
 
 const props = defineProps<{ configs: LlmConfigOpt[] }>();
 const llmConfigId = defineModel<string>({ default: '' });
-const options = computed(() => props.configs.map((c) => ({ value: c.id, label: composeLlmLabel(c) })));
+const options = computed(() =>
+  props.configs.map((c) => ({ value: c.id, label: composeLlmLabel(c) })),
+);
 </script>
 
 <template>

@@ -36,6 +36,8 @@ services:
     image: kkday-ai-quality-backend:prod
     container_name: kkday-ai-quality-backend-prod
     restart: unless-stopped
+    # 須 > uvicorn --timeout-graceful-shutdown 30（Dockerfile CMD），否則 docker SIGKILL 搶先於 drain 完成
+    stop_grace_period: 35s
     environment:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?須設定 POSTGRES_PASSWORD}@db:5432/kkdb_ai_quality
@@ -54,8 +56,8 @@ services:
     expose:
       - "8100"
     healthcheck:
-      # 用內建 python 打 /health（image 無 curl）；start_period 留給 alembic upgrade + uvicorn 啟動
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8100/health').status==200 else 1)"]
+      # 用內建 python 打 /api/status（公司健康檢查契約；image 無 curl）；start_period 留給 alembic upgrade + uvicorn 啟動
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8100/api/status').status==200 else 1)"]
       interval: 15s
       timeout: 5s
       retries: 5

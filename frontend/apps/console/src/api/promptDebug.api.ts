@@ -78,7 +78,7 @@ export interface PromptDebugHandlers {
 }
 
 export const getPromptDebugDefaults = (): Promise<PromptDebugDefaults> =>
-  j<PromptDebugDefaults>(`${BASE}/v1/judgment/prompt-debug/defaults`);
+  j<PromptDebugDefaults>(`${BASE}/v1/prejudge/prompt-debug/defaults`);
 
 /** fetch + ReadableStream 解析 POST SSE；EventSource 不支援 POST body。 */
 export async function streamPromptDebug(
@@ -89,7 +89,7 @@ export async function streamPromptDebug(
   const headers = new Headers(JSON_HEADERS);
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(`${BASE}/v1/judgment/prompt-debug/stream`, {
+  const response = await fetch(`${BASE}/v1/prejudge/prompt-debug/stream`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

@@ -1,21 +1,25 @@
 <script setup lang="ts">
 /**
- * 判決歷史抽屜（評論級時間軸）：某則評論 (source, source_id) 的歷次判決快照 / 覆核轉移 / 備註
- * 三類事件混排（舊到新，時間遞增，Arco a-timeline）。判決事件附「與前一次判決的變更」徽章
+ * 歸因歷史抽屜（評論級時間軸）：某則評論 (source, source_id) 的歷次初判快照 / 判決轉移 / 備註
+ * 三類事件混排（舊到新，時間遞增，Arco a-timeline）。初判事件附「與前一次初判的變更」徽章
  * （模型/歸因數/分類/內容——client-side 對比，無需後端 diff 端點）+「查看 LLM 日誌」入口
- * （job_id 存在時，開 `PrejudgeLogDrawer` 歷史模式回看當時完整 LLM 執行日誌）；右側可新增
+ * （job_id 存在時，開 `PrejudgeLogDrawer` 回看當時完整 LLM 執行日誌快照）；右側可新增
  * 評論級備註（與 finding 級「歸因備註」並存，兩個入口不同層級）。
  *
- * 資料源＝GET /api/judgment-history（append-only judgment_history 表；重判結果與前次完全
+ * 資料源＝GET /api/attribution-history（append-only attribution_history 表；重新初判結果與前次完全
  * 相同時後端去重不落新列，時間軸只呈現真正的變化）。
  */
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { addJudgmentHistoryNote, getJudgmentHistory, type JudgmentHistoryEntry } from '@/api';
+import {
+  addAttributionHistoryNote,
+  getAttributionHistory,
+  type AttributionHistoryEntry,
+} from '@/api';
 import { StateGuard } from '@/components';
 import { POLARITY_LABELS, STATUS_LABEL, type ProblemRow } from '../constants';
 
-// 「查看 LLM 日誌」入口目標（點開才載；與初判分類即時抽屜共用同一元件，此處走 history 模式）
+// 「查看 LLM 日誌」入口目標（點開才載；PrejudgeLogDrawer 為歷史快照回看專用）
 const PrejudgeLogDrawer = defineAsyncComponent(() => import('./PrejudgeLogDrawer.vue'));
 const logDrawerVisible = ref(false);
 const logDrawerJobId = ref('');
@@ -39,7 +43,7 @@ const open = computed({
 });
 const sourceId = computed(() => String(props.row?._group ?? ''));
 
-const list = ref<JudgmentHistoryEntry[]>([]);
+const list = ref<AttributionHistoryEntry[]>([]);
 const loading = ref(false);
 const draft = ref('');
 const saving = ref(false);
@@ -49,10 +53,10 @@ const load = async () => {
   if (!sourceId.value) return;
   loading.value = true;
   try {
-    list.value = await getJudgmentHistory(props.source, sourceId.value);
+    list.value = await getAttributionHistory(props.source, sourceId.value);
   } catch (e: any) {
     list.value = [];
-    Message.error('載入判決歷史失敗：' + (e?.message || e));
+    Message.error('載入歸因歷史失敗：' + (e?.message || e));
   } finally {
     loading.value = false;
   }
@@ -74,7 +78,7 @@ const submitNote = async () => {
   if (!content) return;
   saving.value = true;
   try {
-    const created = await addJudgmentHistoryNote(props.source, sourceId.value, content);
+    const created = await addAttributionHistoryNote(props.source, sourceId.value, content);
     list.value = [...list.value, created]; // 舊到新：新備註為最新事件，附加於尾端
     draft.value = '';
     Message.success('已新增備註');
@@ -88,14 +92,14 @@ const submitNote = async () => {
 /** 時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'；與備註彈窗 fmtNoteTime 同格式）。 */
 const fmtTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-/** 事件類型 → timeline 節點色（judgment 藍＝AI 判決 / status 橙＝人工覆核 / note 灰＝備註）。 */
+/** 事件類型 → timeline 節點色（judgment 藍＝AI 初判 / status 橙＝人工判決 / note 灰＝備註）。 */
 const DOT_COLOR: Record<string, string> = {
   judgment: 'rgb(var(--primary-6))',
   status: 'rgb(var(--warning-6))',
   note: 'var(--color-neutral-6)',
 };
 
-/** 判決快照單筆（後端 snapshot_of 形狀；寬鬆型別容忍回填/新版欄位差異）。 */
+/** 初判快照單筆（後端 snapshot_of 形狀；寬鬆型別容忍回填/新版欄位差異）。 */
 type Snap = {
   finding_id?: string;
   polarity?: string;
@@ -107,7 +111,7 @@ type Snap = {
   is_primary?: boolean;
 };
 
-const snapsOf = (e: JudgmentHistoryEntry): Snap[] => (e.attributions as Snap[] | null) ?? [];
+const snapsOf = (e: AttributionHistoryEntry): Snap[] => (e.attributions as Snap[] | null) ?? [];
 
 /** 快照摘要文字：summary 為語系 map（取 zh-tw；回退首值）或純字串。 */
 const snapSummary = (s: Snap): string => {
@@ -132,18 +136,18 @@ const structKey = (snaps: Snap[]): string =>
     .join(';');
 
 /**
- * 判決事件 vs 前一次判決的變更徽章（oldest→newest 逐筆對比；首筆回「初次判決」）。
- * 後端去重保證相鄰判決必有差異：模型/歸因數/分類 逐項報，僅措辭信心漂移歸「內容微調」。
+ * 初判事件 vs 前一次初判的變更徽章（oldest→newest 逐筆對比；首筆回「初次初判」）。
+ * 後端去重保證相鄰初判必有差異：模型/歸因數/分類 逐項報，僅措辭信心漂移歸「內容微調」。
  */
 const changesById = computed<Record<number, string[]>>(() => {
-  const judgments = list.value.filter((e) => e.kind === 'judgment'); // 已是 oldest→newest（後端 ASC）
+  const attributions = list.value.filter((e) => e.kind === 'prejudge'); // 已是 oldest→newest（後端 ASC）
   const out: Record<number, string[]> = {};
-  judgments.forEach((e, i) => {
+  attributions.forEach((e, i) => {
     if (i === 0) {
-      out[e.id] = [(e.params as any)?.backfilled ? '初始回填' : '初次判決'];
+      out[e.id] = [(e.params as any)?.backfilled ? '初始回填' : '初次初判'];
       return;
     }
-    const prev = judgments[i - 1];
+    const prev = attributions[i - 1];
     const tags: string[] = [];
     if ((prev.model || '') !== (e.model || '')) tags.push(`模型 ${prev.model || '—'}→${e.model}`);
     const pn = snapsOf(prev).length;
@@ -156,8 +160,8 @@ const changesById = computed<Record<number, string[]>>(() => {
   return out;
 });
 
-/** 覆核轉移事件文案：目標狀態 + 各 finding 原狀態（params={to, changes:[{finding_id, from}]}）。 */
-const statusText = (e: JudgmentHistoryEntry): string => {
+/** 判決轉移事件文案：目標狀態 + 各 finding 原狀態（params={to, changes:[{finding_id, from}]}）。 */
+const statusText = (e: AttributionHistoryEntry): string => {
   const p = (e.params ?? {}) as { to?: string; changes?: { from?: string }[] };
   const to = STATUS_LABEL[p.to || ''] || p.to || '';
   const n = p.changes?.length ?? 0;
@@ -169,14 +173,14 @@ const statusText = (e: JudgmentHistoryEntry): string => {
 <template>
   <a-drawer
     v-model:visible="open"
-    title="判決歷史"
+    title="歸因歷史"
     :footer="false"
     :width="860"
     unmount-on-close
     :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
   >
     <div class="flex min-h-0 flex-1 gap-5">
-      <!-- 左：評論級事件時間軸（判決快照 / 覆核轉移 / 備註，新到舊）；佈局 7:3 -->
+      <!-- 左：評論級事件時間軸（初判快照 / 判決轉移 / 備註，新到舊）；佈局 7:3 -->
       <div class="flex min-w-0 flex-[7] flex-col">
         <StateGuard :loading="loading" error="">
           <!-- 滾動容器包在 a-timeline 外層：.arco-timeline 是 flex column、item 有 min-height 78px，
@@ -190,7 +194,7 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                   class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-text-3)]"
                 >
                   <span>{{ fmtTime(e.created_at) }}</span>
-                  <template v-if="e.kind === 'judgment'">
+                  <template v-if="e.kind === 'prejudge'">
                     <a-tag size="small" color="purple">{{ e.model || '—' }}</a-tag>
                     <a-tag
                       v-for="c in changesById[e.id] || []"
@@ -211,8 +215,8 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                       查看 LLM 日誌
                     </a-button>
                   </template>
-                  <template v-else-if="e.kind === 'status'">
-                    <a-tag size="small" color="orange">人工覆核</a-tag>
+                  <template v-else-if="e.kind === 'verdict'">
+                    <a-tag size="small" color="orange">人工判決</a-tag>
                     <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
                   </template>
                   <template v-else>
@@ -221,7 +225,7 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                   </template>
                 </div>
                 <!-- 內容：依事件類型 -->
-                <div v-if="e.kind === 'judgment'" class="mt-1 flex flex-col gap-1">
+                <div v-if="e.kind === 'prejudge'" class="mt-1 flex flex-col gap-1">
                   <div
                     v-for="(s, si) in snapsOf(e)"
                     :key="si"
@@ -247,7 +251,7 @@ const statusText = (e: JudgmentHistoryEntry): string => {
                   </div>
                 </div>
                 <div
-                  v-else-if="e.kind === 'status'"
+                  v-else-if="e.kind === 'verdict'"
                   class="mt-0.5 text-xs text-[var(--color-text-1)]"
                 >
                   {{ statusText(e) }}
@@ -261,7 +265,7 @@ const statusText = (e: JudgmentHistoryEntry): string => {
               </a-timeline-item>
             </a-timeline>
           </div>
-          <a-empty v-else description="尚無判決歷史" />
+          <a-empty v-else description="尚無歸因歷史" />
         </StateGuard>
       </div>
       <!-- 右：新增評論級備註（佔 3/10；與 finding 級「歸因備註」並存）-->
@@ -290,10 +294,11 @@ const statusText = (e: JudgmentHistoryEntry): string => {
     </div>
 
     <!-- 「查看 LLM 日誌」：讀落庫快照的歷史回看模式（與初判分類即時抽屜共用同一元件）-->
+    <!-- 單評論視角：帶 item-id 過濾批量快照，直達本則評論的日誌（批量抽屜入口不帶＝整批視角） -->
     <PrejudgeLogDrawer
       v-model:visible="logDrawerVisible"
       :job-id="logDrawerJobId"
-      mode="history"
+      :item-id="sourceId"
     />
   </a-drawer>
 </template>

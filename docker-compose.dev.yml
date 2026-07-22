@@ -59,7 +59,6 @@ services:
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
       - ./prompts:/app/prompts               # 判決 Prompt 唯一真相源（prompts/*.md；熱編即生效，image 未含此處補上）
-      - ./docs:/app/docs                     # 人閱文檔（gen_taxonomy_doc 於容器內寫 docs/類別定義；runtime 判決不需）
     depends_on:
       db:
         condition: service_healthy

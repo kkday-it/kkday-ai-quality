@@ -23,8 +23,11 @@ _log = logging.getLogger(__name__)
 _AUTH_CFG_CACHE: dict | None = None
 
 
-def _auth_config() -> dict:
-    """讀 config/global/auth.config.json（provider 切換開關 + 白名單）；缺 / 壞回 local 預設。"""
+def auth_config() -> dict:
+    """讀 config/global/auth.config.json（authProvider/provider 切換開關 + be2 佔位段）；缺 / 壞回 local 預設。
+
+    公開供 core.auth_verifiers（登入 verifier 分流）與其他消費端共用（單一讀取器 + reload 快取）。
+    """
     global _AUTH_CFG_CACHE
     if _AUTH_CFG_CACHE is None:
         try:
@@ -44,12 +47,12 @@ def reload() -> None:
 
 def business_list_ttl_ms() -> int:
     """前端權限清單（be2 auth.business-list）快取 TTL 毫秒（auth.config.json；預設 12 小時）。"""
-    return int(_auth_config().get("businessListTtlMs") or 43_200_000)
+    return int(auth_config().get("businessListTtlMs") or 43_200_000)
 
 
 def get_provider() -> PermissionProvider:
     """依 auth.config.json['provider'] 選 provider——換 be2 的**唯一後端分流點**。"""
-    name = str(_auth_config().get("provider") or "local").lower()
+    name = str(auth_config().get("provider") or "local").lower()
     if name == "be2":
         return Be2PermissionProvider()
     return LocalPermissionProvider()

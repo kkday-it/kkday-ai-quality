@@ -1,90 +1,100 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { IconLoading } from '@arco-design/web-vue/es/icon';
-import { getJudgmentRunLog, prejudgeLogStreamUrl } from '@/api';
+import { getPrejudgeRunLog } from '@/api';
 import PrejudgeLogView from './PrejudgeLogView.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 
-// 「LLM 執行日誌」抽屜：兩種模式共用同一份渲染（PrejudgeLogView）——
-// live（預設，「初判分類」點擊時開）：SSE 增量接收單次 job 的執行日誌，即時渲染。
-// history（判決歷史「查看 LLM 日誌」入口開）：GET 落庫快照一次性載入，靜態渲染（無 SSE）。
+// 歸因歷史回看 LLM 執行日誌快照：GET 落庫快照一次性載入，靜態渲染（無 SSE）。
+// 唯一消費者＝ AttributionHistoryDrawer（歸因歷史「查看 LLM 日誌」入口開）。
 
 const props = defineProps<{
   visible: boolean;
-  /** startPrejudge 回傳的 job_id；抽屜開啟且非空時依 mode 建立 SSE 串流或讀落庫快照。 */
+  /** 抽屜開啟且非空時讀落庫快照。 */
   jobId: string;
-  /** live＝即時串流（預設）；history＝讀落庫快照（判決歷史回看，僅小批量 job 有收集內容）。 */
-  mode?: 'live' | 'history';
+  /** 只看此評論（source_id）：自單一評論視角（歸因歷史）進入時過濾批量快照，直達該筆日誌；
+   *  空＝整批視角（批量抽屜終態摘要卡進入）。舊快照條目無 item_id → 過濾不到就回退全量。 */
+  itemId?: string;
 }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 
 const entries = ref<LogEntry[]>([]);
-const streaming = ref(false);
 const loadingHistory = ref(false);
 const streamError = ref('');
-let es: EventSource | null = null;
-
-const _close = () => {
-  es?.close();
-  es = null;
-  streaming.value = false;
-};
-
-const _openLive = (jid: string) => {
-  streaming.value = true;
-  es = new EventSource(prejudgeLogStreamUrl(jid));
-  // EventSource 自動重連會從 offset=0 整批重放 → 每次連上先清空，避免條目重複
-  es.onopen = () => {
-    entries.value = [];
-  };
-  // 自動捲到底改由 PrejudgeLogView 內部處理（捲動容器已下沉至 tab 內的 .arco-tabs-content）
-  es.onmessage = (ev) => {
-    entries.value.push(JSON.parse(ev.data));
-  };
-  es.addEventListener('done', () => _close());
-  es.addEventListener('error', (ev) => {
-    // 後端明確推送的 error event 帶 data（如「此任務無日誌」）；原生連線錯誤無 data → 交給自動重連
-    const data = (ev as MessageEvent).data;
-    if (data) {
-      try {
-        streamError.value = JSON.parse(data).detail || '日誌串流失敗';
-      } catch {
-        streamError.value = '日誌串流失敗';
-      }
-      _close();
-    }
-  });
-};
 
 const _openHistory = async (jid: string) => {
   loadingHistory.value = true;
   try {
-    const r = await getJudgmentRunLog(jid);
+    const r = await getPrejudgeRunLog(jid);
     entries.value = r.entries;
   } catch (e: any) {
-    streamError.value = e?.message || '此任務無執行日誌快照（可能為大批量任務或啟用日誌前的舊判決）';
+    streamError.value =
+      (e?.message || '此任務無執行日誌快照') +
+      '——大批量任務（逐筆日誌僅小批量收集）或啟用日誌前的舊初判皆屬正常，不代表未執行；執行結果與費用見「初判紀錄」。';
   } finally {
     loadingHistory.value = false;
   }
 };
 
 const _open = (jid: string) => {
-  _close();
   entries.value = [];
   streamError.value = '';
-  if (props.mode === 'history') void _openHistory(jid);
-  else _openLive(jid);
+  showAll.value = false;
+  void _openHistory(jid);
 };
 
 watch(
   () => [props.visible, props.jobId] as const,
   ([v, jid]) => {
     if (v && jid) _open(jid);
-    else if (!v) _close();
   },
   { immediate: true },
 );
-onBeforeUnmount(_close);
+
+/** 快照是否帶逐評論蓋章（item_id）；舊快照（機制上線前）為 false，走 message 回退過濾。 */
+const stamped = computed(() => entries.value.some((e) => e.item_id));
+
+/** itemId 過濾後的條目（含 job 級事件供脈絡）。
+ *  新快照：按 item_id 精準過濾（流程＋LLM 三段完整聚焦本評論）。
+ *  舊快照：流程條目按 data.source_id / message 內嵌 id 過濾；LLM 條目無法歸屬單一評論
+ *  → 排除（混排誤導比缺席更糟，見 legacyNote 提示）；完全過濾不到才回退全量。 */
+/** 舊快照聚焦時的逃生口：使用者主動切看整批原始混排。 */
+const showAll = ref(false);
+
+/** 聚焦本評論的過濾結果（獨立於 showAll 開關，供 shownEntries 與 legacyNote 共用）；
+ *  null＝不過濾（無 itemId／過濾不到任何本評論條目時回退全量）。
+ *  新快照：按 item_id 精準過濾（流程＋LLM 三段完整）。
+ *  舊快照：流程條目按 data.source_id / message 內嵌 id（帶邊界防撞號）過濾；LLM 條目
+ *  無法歸屬單一評論 → 排除（混排誤導比缺席更糟，缺席原因見 legacyNote 提示）。 */
+const focusedEntries = computed<LogEntry[] | null>(() => {
+  const iid = props.itemId;
+  if (!iid) return null;
+  if (stamped.value) {
+    const mine = entries.value.filter((e) => !e.item_id || e.item_id === iid);
+    return mine.some((e) => e.item_id) ? mine : null;
+  }
+  const esc = iid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const idRe = new RegExp(`(^|\\D)${esc}(\\D|$)`);
+  const mine = entries.value.filter(
+    (e) =>
+      e.stage === 'job' ||
+      (!e.kind.startsWith('llm_') &&
+        (String(e.data?.source_id || '') === iid || idRe.test(e.message))),
+  );
+  return mine.some((e) => e.stage !== 'job') ? mine : null;
+});
+
+const shownEntries = computed(() =>
+  showAll.value ? entries.value : (focusedEntries.value ?? entries.value),
+);
+
+/** 舊快照且成功聚焦 → 提示 LLM 調用為何缺席＋整批/聚焦切換（新初判後即完整）。 */
+const legacyNote = computed(
+  () =>
+    !stamped.value &&
+    focusedEntries.value !== null &&
+    focusedEntries.value.length < entries.value.length,
+);
 </script>
 
 <template>
@@ -93,25 +103,31 @@ onBeforeUnmount(_close);
     :width="880"
     :footer="false"
     unmount-on-close
-    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px 16px' }"
+    :body-style="{
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      padding: '12px 16px',
+    }"
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
     <template #title>
       <span>LLM 執行日誌</span>
       <a-tag size="small" class="ml-2 font-mono">{{ jobId }}</a-tag>
-      <template v-if="mode === 'history'">
-        <a-tag color="gray" size="small" class="ml-1">歷史快照</a-tag>
-      </template>
-      <template v-else>
-        <a-tag v-if="streaming" color="arcoblue" size="small" class="ml-1">
-          <template #icon><icon-loading /></template>
-          串流中
-        </a-tag>
-        <a-tag v-else color="green" size="small" class="ml-1">已結束</a-tag>
-      </template>
+      <a-tag color="gray" size="small" class="ml-1">歷史快照</a-tag>
+      <a-tag v-if="itemId" size="small" class="ml-1 font-mono">評論 {{ itemId }}</a-tag>
     </template>
 
-    <a-alert v-if="streamError" type="warning" class="mb-2">{{ streamError }}</a-alert>
+    <a-alert v-if="streamError" type="info" class="mb-2">{{ streamError }}</a-alert>
+    <a-alert v-if="legacyNote && !showAll" type="info" class="mb-2">
+      此快照產生於逐評論標記機制之前：流程已按本評論過濾，但 LLM 調用（polarity / C-N）無法歸屬
+      單一評論故未顯示——對本評論「重新初判」一次即可取得完整逐評論日誌。
+      <a-button size="mini" type="text" @click="showAll = true">查看整批原始日誌</a-button>
+    </a-alert>
+    <a-alert v-if="legacyNote && showAll" type="info" class="mb-2">
+      整批原始日誌（未過濾，含全部評論的混排條目）。
+      <a-button size="mini" type="text" @click="showAll = false">回到本評論視角</a-button>
+    </a-alert>
 
     <div v-if="loadingHistory" class="flex items-center gap-2 py-6 text-xs text-[#86909c]">
       <icon-loading /> 載入歷史日誌快照…
@@ -119,7 +135,7 @@ onBeforeUnmount(_close);
     <!-- 捲動已下沉至 PrejudgeLogView 內部（StickyTabs 的 .arco-tabs-content 為唯一捲動容器，
          tab 列固定、左側掛錨點導航與其並排）；本層僅需給出 bounded 高度，不再自行 overflow-auto。 -->
     <div v-else class="min-h-0 flex-1 overflow-hidden">
-      <PrejudgeLogView :entries="entries" :streaming="streaming" />
+      <PrejudgeLogView :entries="shownEntries" :streaming="false" />
     </div>
   </a-drawer>
 </template>

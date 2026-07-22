@@ -35,7 +35,7 @@ def _wait_status(job_id: str, want: set[str], timeout: float = 5.0) -> dict:
 
 @pytest.fixture
 def batch_env(monkeypatch):
-    """隔離批次環境：判決/落庫/撈件全 stub 化（僅測編排層，不測判決本體）。
+    """隔離批次環境：初判/落庫/撈件全 stub 化（僅測編排層，不測初判本體）。
 
     回傳 mutable dict 供個別測試覆寫 to_findings 行為與讀取落庫紀錄。
     """
@@ -58,13 +58,13 @@ def batch_env(monkeypatch):
     monkeypatch.setattr(
         db, "insert_llm_usage_rows", lambda rows: state["usage_flushed"].append(len(rows)) or 0
     )
-    # 歸因歷史（judgment_runs）落庫也 stub 掉：start_job/暫停恢復/終態都會 best-effort 寫 DB，
+    # 歸因歷史（prejudge_runs）落庫也 stub 掉：start_job/暫停恢復/終態都會 best-effort 寫 DB，
     # 不 stub 會把測試 job 寫進 dev 庫（實測汙染過 4 列假 run）。
     monkeypatch.setattr(
-        db, "insert_judgment_run", lambda row: state.setdefault("runs", []).append(row)
+        db, "insert_prejudge_run", lambda row: state.setdefault("runs", []).append(row)
     )
-    monkeypatch.setattr(db, "update_judgment_run_status", lambda job_id, status: None)
-    monkeypatch.setattr(db, "finish_judgment_run", lambda job_id, snap: None)
+    monkeypatch.setattr(db, "update_prejudge_run_status", lambda job_id, status: None)
+    monkeypatch.setattr(db, "finish_prejudge_run", lambda job_id, snap: None)
     monkeypatch.setattr(prejudge, "to_findings", lambda item, **kw: [])
     return state
 
@@ -130,7 +130,7 @@ def test_start_job_writes_prompt_versions_into_history_params(batch_env, monkeyp
 
 
 def test_single_item_failure_isolated(batch_env, monkeypatch):
-    """單筆判決炸掉只計 failed，不中斷整批（其餘筆照常 ok）。"""
+    """單筆初判炸掉只計 failed，不中斷整批（其餘筆照常 ok）。"""
 
     def boom(item, **kw):
         if item.get("rec_oid") == "bad":
@@ -175,7 +175,7 @@ def test_pause_resume_cancel_state_machine():
 
 
 def test_cancel_running_job_drains_to_cancelled(batch_env, monkeypatch):
-    """取消跑批：首筆判決阻塞時 cancel → drain 已提交筆 → 終態 cancelled（非 done）。"""
+    """取消跑批：首筆初判阻塞時 cancel → drain 已提交筆 → 終態 cancelled（非 done）。"""
     release = threading.Event()
     entered = threading.Event()
 

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 /**
- * 判決規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
+ * 初判規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
  * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
- * 判決 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
+ * 初判 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
  * Prompt 測試（對單列/勾選多筆跑選定 prompt 子集）於歸因列表工具列與列操作區提供，
  * 本頁不重複提供。
- * 註：歸因分類 C-N（L1/L2/L3 判準樹）+ schema 已於 2026-07-13 隨 Prompt-as-Source 全面重構退役，
- * 判準改走 prompt_C-1~6（見 RuleManager 選單「初判 Prompt」分組）。同日 global_rule（極性閘門+
- * 證據政策）併入 judgment.json（靜態設定檔，改值需重啟後端），亦移出本頁管理範圍。
+ * 子規則：source_mapping（純 JSON）＋初判 Prompts（prompt_polarity + prompt_C-1~6，Prompt-as-Source
+ * md 編輯）；judgment.json 靜態設定（極性閘門 + 證據政策，改值需重啟後端）不列本頁。
  */
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useLocalStorage } from '@vueuse/core';
@@ -46,7 +45,7 @@ const { can } = usePermission();
 const canManage = computed(() => can(PERM.judgeRuleManage));
 
 const store = useJudgeRulesStore();
-// 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未判。
+// 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未初判。
 const verticalFilter = useVerticalFilterStore();
 /** 初判 Prompt（Prompt-as-Source）：rule_code 前綴 prompt_（prompt_polarity + prompt_C-1~6）。
  * content 形態＝{_meta, text: md}——獨立成群、走 md 編輯器 + md 歷史 diff，不套 JSON 編輯器。 */
@@ -147,9 +146,9 @@ function doReset() {
   });
 }
 
-/** 打包 prompts 判決 prompt 目錄（7 支 md ＋ README ＋ BASELINE）為 zip → 背景 job + 實時進度下載。 */
+/** 打包 prompts 初判 prompt 目錄（7 支 md ＋ README ＋ BASELINE）為 zip → 背景 job + 實時進度下載。 */
 function doExport() {
-  return runExport(startRulesExport, exportName('判決 Prompt 包', 'zip'), '已導出 Prompt 包');
+  return runExport(startRulesExport, exportName('初判 Prompt 包', 'zip'), '已導出 Prompt 包');
 }
 
 /** 恢復整體配置（source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
@@ -196,8 +195,8 @@ function doResetAll() {
               <span class="ml-2">{{ store.labelFor('source_mapping') }}</span>
             </a-menu-item>
           </a-menu-item-group>
-          <!-- 初判 Prompt（判決 prompt 唯一真相源）：md 編輯 + md 歷史 diff，無 JSON -->
-          <a-menu-item-group title="判決 Prompts">
+          <!-- 初判 Prompt（初判 prompt 唯一真相源）：md 編輯 + md 歷史 diff，無 JSON -->
+          <a-menu-item-group title="初判 Prompts">
             <a-menu-item v-for="c in promptCodes" :key="c">
               <span class="font-mono text-xs text-[var(--color-text-3)]">{{
                 c.replace('prompt_', '')

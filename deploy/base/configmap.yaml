@@ -1,0 +1,12 @@
+# AI 法官後端 ConfigMap 範例（僅供 key 命名對齊；實際值由 config-manager 平台管理，勿直接 apply）
+# key 清單須與 backend/app/core/config.py 的 Settings 欄位一一對齊（同名大寫 env var 覆蓋）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiq-backend-config
+data:
+  APP_ENV: production
+  CORS_ALLOW_ORIGINS: https://REPLACE_ME.kkday.com # 正式前端網域（逗號分隔多個）
+  LOG_TYPE: aiq-backend # Kibana log_type.keyword 查詢鍵（名稱與 DevOps 對齊後定案）
+  AI_JUDGE_MODEL: gpt-5-mini
+  # 選填旋鈕（省略即用 config.py dev default）：PREJUDGE_MAX_WORKERS / LLM_TIMEOUT / DB_POOL_SIZE …

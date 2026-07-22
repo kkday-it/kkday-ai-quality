@@ -1,14 +1,24 @@
 <script setup lang="ts">
+import { AUTH_PROVIDER, BE2_CONFIG } from '@/api';
 import { useAuthStore } from '@/stores';
 import { translateApiError } from '@/i18n';
 import { Message, type FormInstance } from '@arco-design/web-vue';
-import { reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const router = useRouter();
 const auth = useAuthStore();
+
+// be2 SSO 模式（authProvider=be2）：本頁不出帳密表單，整頁跳轉 Auth Service 登入
+// （對齊 be2 系慣例 window.location.replace('/v2/auth/login')；URL 待 platform 註冊回填）。
+// local 模式（dev fallback）維持現行帳密表單。
+onMounted(() => {
+  if (AUTH_PROVIDER === 'be2' && BE2_CONFIG.be2LoginUrl && !BE2_CONFIG.be2LoginUrl.includes('REPLACE_ME')) {
+    window.location.replace(BE2_CONFIG.be2LoginUrl);
+  }
+});
 
 const mode = ref<'login' | 'register'>('login');
 // 穩定 reactive model（取代 :model={email,password} 字面量，Arco 才追得到欄位路徑）
@@ -29,7 +39,9 @@ const submit = async () => {
   try {
     if (mode.value === 'login') await auth.login(form.email.trim(), form.password);
     else await auth.register(form.email.trim(), form.password);
-    Message.success(mode.value === 'login' ? t('auth.login.successLogin') : t('auth.login.successRegister'));
+    Message.success(
+      mode.value === 'login' ? t('auth.login.successLogin') : t('auth.login.successRegister'),
+    );
     router.push('/');
   } catch (e) {
     Message.error(translateApiError(e) || t('auth.login.failFallback'));

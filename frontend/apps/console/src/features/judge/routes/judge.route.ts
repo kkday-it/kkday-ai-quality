@@ -11,7 +11,7 @@ export const judgeRoutes: RouteRecordRaw = {
       path: 'rules',
       component: () => import('../pages/RuleManager.vue'),
       meta: { text: '規則配置' },
-    }, // config/ai_judge 判決規則 + 商品垂直分類：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
+    }, // config/ai_judge 初判規則 + 商品垂直分類：面板/JSON 雙編 + schema + 歷史對比恢復 + PG 版本化（置首·預設視圖）
     {
       path: 'upload',
       component: () => import('../pages/DataUpload.vue'),

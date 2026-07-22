@@ -29,7 +29,7 @@ export function revertSortableDom(evt: SortableEvent, childSel = '*'): void {
   const { item, from, oldIndex } = evt;
   if (oldIndex == null) return;
   const siblings = Array.from(from.querySelectorAll(`:scope > ${childSel}`)).filter(
-    (n) => n !== item
+    (n) => n !== item,
   );
   from.insertBefore(item, siblings[oldIndex] ?? null);
 }
@@ -45,7 +45,7 @@ export function useListDragSort<T>(
   el: MaybeRefOrGetter<HTMLElement | null | undefined>,
   list: () => readonly T[],
   commit: (next: T[]) => void | Promise<void>,
-  options: { handle?: string; draggable?: string } = {}
+  options: { handle?: string; draggable?: string } = {},
 ): void {
   const childSel = options.draggable ?? '*';
   let inst: Sortable | null = null;
@@ -70,7 +70,7 @@ export function useListDragSort<T>(
         },
       });
     },
-    { immediate: true, flush: 'post' }
+    { immediate: true, flush: 'post' },
   );
   onBeforeUnmount(destroy);
 }

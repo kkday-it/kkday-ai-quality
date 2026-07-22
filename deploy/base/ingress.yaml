@@ -1,0 +1,42 @@
+# AI 法官 Ingress（草稿·path-based routing：/api → backend、/ → frontend）
+# frontend/nginx.conf 內的 /api proxy_pass 為 docker-compose 專屬（k8s 下 Ingress 先攔 /api 打不到，保留不動）。
+# ALB healthcheck annotations 比照 sake base/ingress.yaml 起草待 SRE 審；
+# ingressClassName / group.name / host 命名（SIT=<svc>-XX.sit.kkday.com 無 -ap- 中綴 /
+# STAGE=<svc>.stage.kkday.com / PROD=<svc>.kkday.com）待 Step 1 定案。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aiq
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal # 內部工具，走 private ALB（待 SRE 確認）
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /api/status
+    alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    # 摘除後等待 in-flight 收斂秒數（sake 慣例 15s；與 pod preStop sleep 5s 互補）
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=15
+    # alb.ingress.kubernetes.io/group.name: TBD——是否併入共用 ALB group（如 kkday-service-private）由 SRE 決定
+spec:
+  ingressClassName: alb # 佔位（EKS 常見 AWS Load Balancer Controller；實際 class 待 SRE）
+  rules:
+    - host: REPLACE_ME.kkday.com # 待 Step 1 domain 申請（PROD=<svc>.kkday.com 慣例）
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: aiq-backend
+                port:
+                  number: 8100
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aiq-frontend
+                port:
+                  number: 80

@@ -1,7 +1,7 @@
 /**
  * overview 首頁「縮窄真接」composable：抓 AI 法官真實指標，patch 進 mock 資料集的 ai_judge 區塊。
  *
- * 範圍（2026-07-07 拍板）：只有 judgments/llm_usage 可聚合的指標接真——AI 法官引擎卡、
+ * 範圍（2026-07-07 拍板）：只有 attributions/llm_usage 可聚合的指標接真——AI 法官引擎卡、
  * content goal 北極星 intake_content_ratio、laggingTrend；審品/CVR/售後等外部系統指標
  * （Google Sheet / Tableau / Looker）維持 config/mock 示意值並於頁面標註「外部指標：示意」。
  * 載入失敗 → 整包 fallback mock（三態由頁面 header tag 呈現，不阻斷版面渲染）。
@@ -30,7 +30,7 @@ export function patchAiJudgeData(base: Overview3, real: AiJudgeOverviewResp): Ov
   if (engine) {
     engine.metrics = [
       { label: '內容類歸因占比', value: share, unit: '%' },
-      { label: '已判進線', value: real.totals.judged_items, unit: '筆' },
+      { label: '已初判進線', value: real.totals.judged_items, unit: '筆' },
       { label: '歸因樣本', value: real.totals.attributed_rows, unit: '筆' },
     ];
     if (hasTrend) engine.spark = ratios;
@@ -47,7 +47,7 @@ export function patchAiJudgeData(base: Overview3, real: AiJudgeOverviewResp): Ov
       ns.deltaGood = d <= 0;
       ns.spark = ratios;
     }
-    ns.hint = '真實資料：judgments 內容類占比（判決時間軸·distinct 進線）。';
+    ns.hint = '真實資料：attributions 內容類占比（初判時間軸·distinct 進線）。';
   }
 
   // content goal 落後趨勢圖：改真實月序列（target 門檻沿用 config 值）

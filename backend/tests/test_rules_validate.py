@@ -1,4 +1,4 @@
-"""判決規則存檔前驗證（rules._validate）——鎖 judgment 分支的結構驗證，防誤刪靜默改變行為。
+"""初判規則存檔前驗證（rules._validate）——鎖 judgment 分支的結構驗證，防誤刪靜默改變行為。
 
 judgment 分支（連同 product_vertical/source_mapping/prompt_* 分支）皆各自 return，不觸 DB，
 故純函式可測、免 DB。judgment 已移出 RULE_CODES（`_check_code` 會先擋 404），此處直呼
@@ -16,17 +16,21 @@ from app.core.paths import AI_JUDGE_DIR
 
 @pytest.fixture
 def judgment_seed() -> dict:
-    """檔案默認 judgment（config/ai_judge/judgment.json）——合法基準，逐項破壞驗其被擋。"""
-    return json.loads((AI_JUDGE_DIR / "judgment.json").read_text(encoding="utf-8"))
+    """檔案默認兩階段配置（prejudge.json + verdict.json 合併）——合法基準，逐項破壞驗其被擋。"""
+    merged: dict = {}
+    for name in ("prejudge.json", "verdict.json"):
+        merged.update(json.loads((AI_JUDGE_DIR / name).read_text(encoding="utf-8")))
+    merged.pop("_comment", None)
+    return merged
 
 
 def test_valid_judgment_passes(judgment_seed) -> None:
-    """完整 judgment.json（含 confidence_tiers + auto_confirm）通過驗證不拋。"""
+    """完整 prejudge.json/verdict.json（含 confidence_tiers + auto_confirm）通過驗證不拋。"""
     _validate("judgment", judgment_seed)  # 不應拋
 
 
 def test_missing_confidence_tiers_rejected(judgment_seed) -> None:
-    """缺 confidence_tiers → 422（信心閾值為判決分層核心，不可缺）。"""
+    """缺 confidence_tiers → 422（信心閾值為信心分層核心，不可缺）。"""
     bad = {k: v for k, v in judgment_seed.items() if k != "confidence_tiers"}
     with pytest.raises(HTTPException) as e:
         _validate("judgment", bad)

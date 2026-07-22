@@ -1,7 +1,7 @@
-"""初判歸因端點：前端發起批量判決 + 進度輪詢。
+"""初判歸因端點：前端發起批量初判 + 進度輪詢。
 
 契約逐欄對齊 frontend/apps/console/src/api/judgment.api.ts（startPrejudge / getPrejudgeStatus）。
-判決本體在 app/judge/prejudge_batch（背景 ThreadPool），本層只負責標的解析 + 設定注入 + job 轉發。
+初判本體在 app/judge/prejudge_batch（背景 ThreadPool），本層只負責標的解析 + 設定注入 + job 轉發。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.core.config import env, is_production
 from app.core.permissions import permission_keys, require_permission
 from app.judge import prejudge_batch, run_log
 
-router = APIRouter(prefix="/judgment", tags=["judgment"])
+router = APIRouter(prefix="/prejudge", tags=["prejudge"])
 
 
 def _guard_not_stub_in_production(eff: dict) -> None:
@@ -36,7 +36,7 @@ def _guard_not_stub_in_production(eff: dict) -> None:
         raise HTTPException(
             status_code=403,
             detail=f"目前環境（APP_ENV={env.app_env}）偵測不到有效 LLM token，"
-            "拒絕以 stub 啟發式模式執行批量判決（假判決會覆蓋真實歸因）。"
+            "拒絕以 stub 啟發式模式執行批量初判（假初判會覆蓋真實歸因）。"
             "請至設定面板配置 provider token，或設定環境變數 OPENAI_API_KEY。",
         )
 
@@ -49,27 +49,27 @@ class PrejudgeIn(BaseModel):
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     llm_config_id: str | None = None  # 指定已存 LLM 配置（缺＝active）
     product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
-    # 目標選取（scope=all；stage 驅動）：預設只收未判；加選已判階段時可再收斂傾向/信心
+    # 目標選取（scope=all；stage 驅動）：預設只收未初判；加選已初判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
-    target_polarity: list[str] | None = None  # 已判分支傾向收斂（多選 IN；如 ["negative"]）
-    max_confidence: float | None = None  # 已判分支信心上限（confidence < 此值才收）
+    target_polarity: list[str] | None = None  # 已初判分支傾向收斂（多選 IN；如 ["negative"]）
+    max_confidence: float | None = None  # 已初判分支信心上限（confidence < 此值才收）
     within_ids: list[str] | None = None  # 範圍收斂：僅在此特徵 id 清單（勾選列）內做目標選取
     # 列表全維度篩選（scope=all；語義同 /api/problems，SSOT=_shared.apply_table_filters）：
-    # 表級（兩分支皆套）＋ 判決級收斂（僅已判分支）——「歸因目標＝列表當前篩得到的東西」
+    # 表級（兩分支皆套）＋ 初判級收斂（僅已初判分支）——「歸因目標＝列表當前篩得到的東西」
     date_from: str | None = None  # 日期區間起（'YYYY-MM-DD'，含；表級）
     date_to: str | None = None  # 日期區間迄（含；表級）
     rec_oid: str | None = None  # 評論/特徵 id 精確篩選（表級）
     prod_oid: str | None = None  # 商品 OID（表級）
     order_oid: str | None = None  # 訂單 OID（表級）
-    confidence_tier: str | None = None  # 信心分層收斂（已判分支；auto_accept/jury/needs_review）
-    taxonomy: list[str] | None = None  # 歸因分類收斂（已判分支；任意層級 code 多選，子樹語義）
+    confidence_tier: str | None = None  # 信心分層收斂（已初判分支；auto_accept/jury/needs_review）
+    taxonomy: list[str] | None = None  # 歸因分類收斂（已初判分支；任意層級 code 多選，子樹語義）
     has_external: bool | None = None  # 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews）
-    # 版本選擇功能：正式判決可指定 7 條 prompt 各自要用哪個歷史版本（預設沿用 active）。
+    # 版本選擇功能：正式初判可指定 7 條 prompt 各自要用哪個歷史版本（預設沿用 active）。
     prompt_versions: dict[str, int] | None = None  # {rule_code: 版本號}
 
 
 def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
-    """解析批量判決標的特徵 id 清單（start 與 count 預覽共用同一套，預覽即實跑）。
+    """解析批量初判標的特徵 id 清單（start 與 count 預覽共用同一套，預覽即實跑）。
 
     item_ids 顯式 > scope=="all" 走 stage 驅動目標選取（可 within_ids 交集勾選範圍）> 空集合。
     """
@@ -95,40 +95,6 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
     return []
 
 
-class ClassifyOneIn(BaseModel):
-    """單條評論 dry-run 分類（歸因列表「測試」）：來源 + 業務 id。"""
-
-    source: str
-    source_id: str
-    llm_config_id: str | None = None
-
-
-@router.post("/classify-one")
-async def classify_one(
-    body: ClassifyOneIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
-) -> dict:
-    """單條評論 dry-run 分類:跑 prompts 判這一則 → 結果,**不落庫**（預覽「改 prompt 後怎麼判」）。
-
-    effective LLM + guard not stub + asyncio.to_thread（不阻塞單 worker,contextvar 隨 copy_context
-    傳遞）。與列級「初判分類」（重判並覆寫落庫）區隔——本端點只讀不寫。
-    """
-    from app.judge import prompt_eval as pe
-    from app.judge.llm import client
-
-    eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
-    )
-    _guard_not_stub_in_production(eff)
-    app_settings.set_current(eff)
-    client.set_llm_cache_read(False)  # 量測真實行為
-    client.set_usage_context({"job_id": f"classify_one_{body.source_id}"})
-    try:
-        return await asyncio.to_thread(pe.classify_one, body.source, body.source_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
-
-
 class PromptSandboxIn(PrejudgeIn):
     """Prompt 測試沙盒啟動請求：對 item_ids（或依條件解析出的目標集合）逐筆跑 prompt_ids 子集
     （不受正式歸因閘門限制）。
@@ -146,6 +112,12 @@ class PromptSandboxIn(PrejudgeIn):
     # 版本選擇功能：{rule_code: 指定歷史版本號}（前端 PromptVersionPickerGroup／
     # usePromptVersionPicker）；不帶時全 7 支沿用 DB active。
     versions: dict[str, int] | None = None
+    # 草稿測試功能：{rule_code: 草稿 md 全文}（內容快照隨請求帶入，與 DB 草稿演進脫鉤）；
+    # 送測前逐條 prompt_source.validate 強驗 fail-fast（草稿存檔寬鬆、送測強驗）。
+    drafts: dict[str, str] | None = None
+    # 雙跑對比模式（僅 drafts 非空時有效）：每筆 item 跑 baseline（僅 versions）與
+    # draft（versions+drafts）各一遍——token 成本 ×2，由前端明示後帶入。
+    compare: bool = False
 
 
 class PromptDebugOverridesIn(BaseModel):
@@ -179,7 +151,7 @@ def prompt_debug_defaults(user: dict = Depends(auth.get_current_user)) -> dict:
 @router.post("/prompt-debug/stream")
 def prompt_debug_stream(
     body: PromptDebugIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> StreamingResponse:
     """以 SSE 串流任意文字的結構化裁決、欄位校驗與本次 token/費用。"""
     from app.judge import prompt_debug
@@ -206,14 +178,13 @@ def prompt_debug_stream(
 @router.post("/prompt-sandbox")
 async def start_prompt_sandbox(
     body: PromptSandboxIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> dict:
     """啟動 Prompt 測試沙盒背景 job → 立即回 {job_id}（前端輪詢 `/prompt-sandbox/status`）。
 
-    與 `/classify-one`（同步、單筆、production 閘門）的差異：本端點 ungated（勾了域 prompt 即跑，
-    不受正向評論擋六域的正式閘門限制）、可對多筆並行（含依條件批量選取）、結果落獨立的
-    `prompt_sandbox_runs` 歷史（與 judgments/judgment_history 完全分離），且捕捉完整 LLM log 供事後
-    回看（見 `prompt_sandbox.py`）。
+    本端點 ungated（勾了域 prompt 即跑，不受正向評論擋六域的正式閘門限制）、可對多筆並行
+    （含依條件批量選取），結果落獨立的 `prompt_sandbox_runs` 歷史（與 attributions/attribution_history
+    完全分離），且捕捉完整 LLM log 供事後回看（見 `prompt_sandbox.py`）。
     """
     from app.judge import prompt_sandbox
 
@@ -231,6 +202,8 @@ async def start_prompt_sandbox(
             scope=body.scope,
             triggered_by=user.get("email") or user.get("user_id", ""),
             versions=body.versions,
+            drafts=body.drafts,
+            compare=body.compare,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -265,25 +238,94 @@ def list_prompt_sandbox_runs(
     return db.list_sandbox_runs(limit=limit, offset=offset)
 
 
+# 註：須定義於 `/runs/{run_id}` 之前，否則 "compare" 會被當成 run_id 段攔截。
+@router.get("/prompt-sandbox/runs/compare")
+def compare_prompt_sandbox_runs(
+    a: str, b: str, user: dict = Depends(auth.get_current_user)
+) -> dict:
+    """兩筆沙盒測試 run 的結果對比（run-vs-run）→ {a, b, items, metrics}。
+
+    按 source_id 對齊兩筆 run 的逐筆結果：單邊獨有的 item 仍列於 items（另一側為 null）；
+    初判失敗的 item 保留 error 標記列出（草稿造成部分 item 初判失敗正是對比最該凸顯的訊號，
+    不可靜默消失），但任一側帶 error 即不計入 metrics。雙跑對比 run 取其 draft 變體
+    （該 run 實際受測的新配置），單跑 run 取原結果。metrics 委派
+    `prompt_eval.sandbox_pair_metrics`（與雙跑 run 摘要同一套口徑）。
+    """
+    from app.judge import prompt_eval
+
+    ra, rb = db.sandbox_run_detail(a), db.sandbox_run_detail(b)
+    if ra is None or rb is None:
+        raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+
+    def _meta(row: dict) -> dict:
+        keep = ("run_id", "source", "scope", "item_count", "model", "prompt_ids",
+                "versions", "compare", "created_at")  # fmt: skip
+        return {k: row.get(k) for k in keep}
+
+    def _normalize(r: dict) -> dict:
+        # 雙跑 item → 取 draft 變體並補回 item 級 source_id/text，形狀同單跑結果；
+        # error item（{source_id, error}）原樣保留，供對比視圖顯示失敗而非消失。
+        if r.get("compare"):
+            return {"source_id": r.get("source_id", ""), "text": r.get("text", ""),
+                    **(r.get("draft") or {})}  # fmt: skip
+        return r
+
+    def _index(row: dict) -> dict[str, dict]:
+        return {
+            r.get("source_id", ""): _normalize(r)
+            for r in (row.get("results") or [])
+            if isinstance(r, dict)
+        }
+
+    ia, ib = _index(ra), _index(rb)
+    items = [
+        {"source_id": sid, "a": ia.get(sid), "b": ib.get(sid)} for sid in sorted(set(ia) | set(ib))
+    ]
+    pairs = [
+        (it["a"], it["b"])
+        for it in items
+        if it["a"] and it["b"] and not it["a"].get("error") and not it["b"].get("error")
+    ]
+    return {
+        "a": _meta(ra),
+        "b": _meta(rb),
+        "items": items,
+        "metrics": prompt_eval.sandbox_pair_metrics(pairs) if pairs else None,
+    }
+
+
 @router.get("/prompt-sandbox/runs/{run_id}")
 def get_prompt_sandbox_run(run_id: str, user: dict = Depends(auth.get_current_user)) -> dict:
-    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。"""
+    """單一沙盒測試 run 完整詳情（含逐筆 results + 完整 LLM log 快照，供事後回看）。
+
+    雙跑對比 run（compare=true）另附 metrics（baseline vs draft 等價性聚合，讀取時動態算
+    ——口徑演進不受落庫快照凍結）。
+    """
     row = db.sandbox_run_detail(run_id)
     if row is None:
         raise HTTPException(status_code=404, detail="找不到此測試紀錄")
+    if row.get("compare"):
+        from app.judge import prompt_eval
+
+        pairs = [
+            (r["baseline"], r["draft"])
+            for r in (row.get("results") or [])
+            if isinstance(r, dict) and r.get("compare")
+        ]
+        row["metrics"] = prompt_eval.sandbox_pair_metrics(pairs) if pairs else None
     return row
 
 
-@router.post("/prejudge/count")
+@router.post("/count")
 def prejudge_count(body: PrejudgeIn, _: dict = Depends(auth.get_current_user)) -> dict:
-    """預覽批量判決「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""
+    """預覽批量初判「將處理 N 筆」→ {total}（與 start 同一套標的解析；不派工、不消耗 token）。"""
     return {"total": len(_resolve_target_ids(body))}
 
 
-@router.post("/prejudge")
+@router.post("")
 def start_prejudge(
     body: PrejudgeIn,
-    user: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN)),
+    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> dict:
     """啟動初判歸因批量任務 → {job_id, total, model}（立即回，背景派工）。
 
@@ -298,17 +340,17 @@ def start_prejudge(
 
     item_ids = _resolve_target_ids(body)
 
-    # 歸因歷史語境：觸發型態（batch=目標選取/selected=顯式多筆或勾選範圍/single=單筆）+ 是否重判 + 參數快照
+    # 歸因歷史語境：觸發型態（batch=目標選取/selected=顯式多筆或勾選範圍/single=單筆）+ 是否重新初判 + 參數快照
     if body.item_ids:
         kind = "single" if len(body.item_ids) == 1 else "selected"
-        rejudge = db.any_judged(body.source, item_ids)  # 顯式選取：標的已有判決＝重判
+        rejudge = db.any_judged(body.source, item_ids)  # 顯式選取：標的已有初判＝重新初判
     else:
         kind = (
             "selected" if body.within_ids else "batch"
         )  # 勾選範圍內目標選取：歷史語境仍屬顯式選取
         rejudge = any(
             s != "unjudged" for s in (body.stages or ["unjudged"])
-        )  # 目標選取：收已判階段＝重判
+        )  # 目標選取：收已初判階段＝重新初判
     params = body.model_dump(exclude_none=True)
     # id 大清單不進參數快照（防 params 膨脹）；≤20 筆保留供單筆/小批追溯
     for key in ("item_ids", "within_ids"):
@@ -325,7 +367,7 @@ def start_prejudge(
         kind=kind,
         rejudge=rejudge,
         params=params,
-        # exact-cache 讀取閘：批次（scope 目標選取）重用規則未變部分；顯式單筆/選取重判＝使用者要求真的重打
+        # exact-cache 讀取閘：批次（scope 目標選取）重用規則未變部分；顯式單筆/選取重新初判＝使用者要求真的重打
         cache_read=(kind == "batch"),
         prompt_versions=body.prompt_versions,
     )
@@ -336,9 +378,9 @@ def start_prejudge(
     }
 
 
-@router.post("/prejudge/pause")
+@router.post("/pause")
 def pause_prejudge(
-    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+    job_id: str, _: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN))
 ) -> dict:
     """暫停執行中的初判歸因任務（提交迴圈阻塞、已在跑的收斂後 processed 停增）→ 回更新後快照。"""
     if not prejudge_batch.pause_job(job_id):
@@ -346,9 +388,9 @@ def pause_prejudge(
     return prejudge_batch.get_job(job_id) or {}
 
 
-@router.post("/prejudge/resume")
+@router.post("/resume")
 def resume_prejudge(
-    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+    job_id: str, _: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN))
 ) -> dict:
     """恢復已暫停的初判歸因任務（提交迴圈續跑）→ 回更新後快照。"""
     if not prejudge_batch.resume_job(job_id):
@@ -356,13 +398,13 @@ def resume_prejudge(
     return prejudge_batch.get_job(job_id) or {}
 
 
-@router.post("/prejudge/cancel")
+@router.post("/cancel")
 def cancel_prejudge(
-    job_id: str, _: dict = Depends(require_permission(permission_keys.JUDGMENT_PREJUDGE_RUN))
+    job_id: str, _: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN))
 ) -> dict:
     """停止初判歸因任務（不再派新工，已在跑的收斂後轉 cancelled）→ 回更新後快照。
 
-    已判 finding 已即時落庫保留；欲繼續可對「剩餘未判」重新發起（scope=all）。
+    已初判 finding 已即時落庫保留；欲繼續可對「剩餘未初判」重新發起（scope=all）。
     """
     if not prejudge_batch.cancel_job(job_id):
         raise HTTPException(status_code=409, detail=f"job 不存在或已結束，無法停止：{job_id}")
@@ -400,11 +442,11 @@ def list_runs(
     source: str | None = None,
     _: dict = Depends(auth.get_current_user),
 ) -> dict:
-    """歸因歷史列表（每次批量/選取/單筆重判一列；started_at 降冪分頁）→ {total, items}。
+    """歸因歷史列表（每次批量/選取/單筆重新初判一列；started_at 降冪分頁）→ {total, items}。
 
     執行中 run 疊加 in-mem 即時進度（_overlay_live）；token/費用終態值來自 usage sink 累計。
     """
-    data = db.list_judgment_runs(limit=limit, offset=offset, source=source)
+    data = db.list_prejudge_runs(limit=limit, offset=offset, source=source)
     data["items"] = [_overlay_live(r) for r in data["items"]]
     return data
 
@@ -415,7 +457,7 @@ def run_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
     per-stage 明細於 job 結束 flush llm_usage 後才有值（執行中為空陣列）。
     """
-    run = db.judgment_run_detail(job_id)
+    run = db.prejudge_run_detail(job_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"歸因歷史不存在：{job_id}")
     return _overlay_live(run)
@@ -423,9 +465,9 @@ def run_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
 @router.get("/runs/{job_id}/log")
 def run_log_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
-    """讀某次判決落庫的完整執行日誌快照（判決歷史「查看 LLM 日誌」入口）。
+    """讀某次初判落庫的完整執行日誌快照（歸因歷史「查看 LLM 日誌」入口）。
 
-    僅小批量 job（run_log.LOG_JOB_MAX_ITEMS 內）有收集內容；大批量 / 啟用日誌前的舊判決回 404。
+    僅小批量 job（run_log.LOG_JOB_MAX_ITEMS 內）有收集內容；大批量 / 啟用日誌前的舊初判回 404。
     """
     entries = db.get_run_log(job_id)
     if entries is None:
@@ -433,12 +475,12 @@ def run_log_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dic
     return {"entries": entries}
 
 
-@router.get("/prejudge/stream")
+@router.get("/stream")
 async def prejudge_stream(job_id: str) -> StreamingResponse:
     """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job done/error/cancelled 即關閉。
 
     不加 auth Depends：原生 EventSource 無法帶 Authorization header；job_id 為不可猜的隨機
-    capability token（僅發起判決的登入者取得），以其本身作為存取憑證（與上傳 SSE 一致）。
+    capability token（僅發起初判的登入者取得），以其本身作為存取憑證（與上傳 SSE 一致）。
     `X-Accel-Buffering: no` 關 nginx 緩衝確保即時推送。
     """
 
@@ -465,7 +507,7 @@ async def prejudge_stream(job_id: str) -> StreamingResponse:
     )
 
 
-@router.get("/prejudge/log-stream")
+@router.get("/log-stream")
 async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse:
     """SSE 推送單次初判 job 的執行日誌（各階段 + LLM 輸入參數/prompt/輸出）——供前端抽屜即時檢視。
 
@@ -475,11 +517,21 @@ async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse
     """
 
     async def _events():
-        """增量 entry → SSE event 產生器；job 無日誌推 error、done 且讀盡推 done 後結束。"""
+        """增量 entry → SSE event 產生器；job 無日誌推 error、done 且讀盡推 done 後結束。
+
+        job 剛建立時 `run_log.bind(job_id)` 發生在背景 thread（見 prejudge_batch._run），
+        前端拿到 job_id 立刻連上時可能尚未 bind——給予短暫寬限重試，避免把「還沒 bind」
+        誤判成「無日誌」立即關流（首次初判日誌永遠空白的競態根因）。
+        """
         idx = max(0, offset)
+        grace = 5.0  # 尚未 bind 的寬限秒數；超過才視為真的不收集日誌（如大批量 job）
         while True:
             batch, done, exists = run_log.read(job_id, idx)
             if not exists:
+                if grace > 0:
+                    grace -= 0.4
+                    await asyncio.sleep(0.4)
+                    continue
                 msg = json.dumps(
                     {"detail": "此任務無執行日誌（僅小批量任務收集）"}, ensure_ascii=False
                 )

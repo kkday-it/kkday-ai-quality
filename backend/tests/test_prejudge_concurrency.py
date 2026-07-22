@@ -34,7 +34,7 @@ def test_attrs_pack_single_domain_bounded_retry(monkeypatch) -> None:
     monkeypatch.setattr(prejudge, "_domain_retry", lambda: 1)
     calls: dict[str, int] = {}
 
-    def _fake_call(system, user, stage, model, *, schema, effort, label=None):
+    def _fake_call(system, user, stage, model, *, schema, effort, label=None, cache_key=None):
         calls[system] = calls.get(system, 0) + 1
         if "03_C-3" in system and calls[system] == 1:
             raise RuntimeError("boom")
@@ -50,7 +50,7 @@ def test_attrs_pack_domain_exhausts_retry_raises(monkeypatch) -> None:
     """單域連續失敗至耗盡 → 整筆 fail-loud（拋出，交批次層計 failed）。"""
     monkeypatch.setattr(prejudge, "_domain_retry", lambda: 1)
 
-    def _fake_call(system, user, stage, model, *, schema, effort, label=None):
+    def _fake_call(system, user, stage, model, *, schema, effort, label=None, cache_key=None):
         if "03_C-3" in system:
             raise RuntimeError("persistent")
         return {"attributions": [{"l2_code": "X", "confidence": 0.9}]}
@@ -61,7 +61,7 @@ def test_attrs_pack_domain_exhausts_retry_raises(monkeypatch) -> None:
 
 
 def test_domain_retry_reads_config(monkeypatch) -> None:
-    """_domain_retry 讀 judgment.json prejudge.domain_retry；缺則預設 1；負值/None 夾 0。"""
+    """_domain_retry 讀 prejudge.json/verdict.json prejudge.domain_retry；缺則預設 1；負值/None 夾 0。"""
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {"domain_retry": 2})
     assert prejudge._domain_retry() == 2
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
@@ -99,7 +99,7 @@ def test_governor_aimd_backoff_and_probe(monkeypatch) -> None:
 
 
 def test_adaptive_concurrency_config(monkeypatch) -> None:
-    """adaptive_concurrency 讀 judgment.json；預設 enabled=True、backoff=0.5、probe=3、floor=2。"""
+    """adaptive_concurrency 讀 prejudge.json/verdict.json；預設 enabled=True、backoff=0.5、probe=3、floor=2。"""
     monkeypatch.setattr(prejudge, "_prejudge_cfg", lambda: {})
     d = prejudge.adaptive_concurrency()
     assert d == {"enabled": True, "backoff": 0.5, "probe_interval_s": 3.0, "floor": 2}
@@ -165,7 +165,7 @@ def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:
     def ev(sid: str, kind: str, minute: int) -> None:
         with T.get_engine().begin() as c:
             c.execute(
-                sa_insert(T.judgment_history).values(
+                sa_insert(T.attribution_history).values(
                     source=src,
                     source_id=sid,
                     kind=kind,
@@ -175,7 +175,7 @@ def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:
 
     for i in range(3):  # A：3 連續失敗、從未成功 → capped（>=3）
         ev("A", "failure", i)
-    for k, m in [("failure", 0), ("failure", 1), ("judgment", 2), ("failure", 3)]:
+    for k, m in [("failure", 0), ("failure", 1), ("prejudge", 2), ("failure", 3)]:
         ev("B", k, m)  # B：2 失敗→成功→1 失敗；成功後僅 1 failure < 3 → 不 capped
     with T.get_engine().connect() as c:
         assert pt._capped_source_ids(c, src, 3) == {"A"}

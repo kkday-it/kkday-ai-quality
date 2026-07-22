@@ -19,7 +19,9 @@ export const useVerticalFilterStore = defineStore('verticalFilter', () => {
   /** 工具列可選分類＝選項池成員（順序以 allOptions＝config group_order 權威序為準，拖排即時反映；
    *  並限制在 allOptions 內，防 config 移除分組後殘留）。 */
   const toolbarOptions = computed(() =>
-    allOptions.value.length ? allOptions.value.filter((g) => pool.value.includes(g)) : [...pool.value],
+    allOptions.value.length
+      ? allOptions.value.filter((g) => pool.value.includes(g))
+      : [...pool.value],
   );
 
   /**
@@ -73,5 +75,14 @@ export const useVerticalFilterStore = defineStore('verticalFilter', () => {
     filter.value = [...cleaned];
   };
 
-  return { allOptions, pool, filter, toolbarOptions, activeGroups, loadOptions, setPool, setFilter };
+  return {
+    allOptions,
+    pool,
+    filter,
+    toolbarOptions,
+    activeGroups,
+    loadOptions,
+    setPool,
+    setFilter,
+  };
 });

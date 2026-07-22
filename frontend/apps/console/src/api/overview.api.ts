@@ -1,7 +1,7 @@
 // 質檢概覽（overview 首頁）真實指標 API：僅 AI 法官可自 DB 聚合的部分（縮窄真接）。
 import { j } from './http.api';
 
-/** 單月內容類占比列（judged_at 月分組、distinct 進線去重）。 */
+/** 單月內容類占比列（created_at 月分組、distinct 進線去重）。 */
 export interface AiJudgeMonthlyRow {
   ym: string; // 'YYYY-MM'
   judged: number;

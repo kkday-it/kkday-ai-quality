@@ -131,7 +131,7 @@ def list_batches() -> list[dict]:
 
 
 def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
-    """依特徵 id（source_id）清單取該來源表列（供 prejudge_batch 批量判決）；空 / 未知來源回 []。
+    """依特徵 id（source_id）清單取該來源表列（供 prejudge_batch 批量初判）；空 / 未知來源回 []。
 
     Args:
         ids: 特徵 id 清單（source_id；product_reviews→rec_oid…）。

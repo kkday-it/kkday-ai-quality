@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue';
 /**
  * 設定面板共用「手風琴卡片」容器：統一 a-collapse 的卡片化外觀與單開（accordion）行為。
  *
- * 「配置」（連線層）與「規則」（判決邏輯層）兩 tab 共用此殼；新增折疊面板時，
+ * 「配置」（連線層）與「規則」（初判邏輯層）兩 tab 共用此殼；新增折疊面板時，
  * 消費端只需在預設 slot 內追加一個 `<a-collapse-item>`，外觀與互動自動一致。
  *
  * 兩種使用模式：
@@ -24,7 +24,7 @@ watch(
   () => props.active,
   (v) => {
     if (v !== undefined) internal.value = v;
-  }
+  },
 );
 const activeKeys = computed<string[]>({
   get: () => (internal.value ? [internal.value] : []),

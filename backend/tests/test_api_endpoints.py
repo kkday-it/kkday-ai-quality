@@ -83,12 +83,12 @@ def test_register_explicit_override_in_production(client, monkeypatch) -> None:
 def test_start_prejudge_blocked_in_production_without_token(
     client, auth_headers, monkeypatch
 ) -> None:
-    """正式環境 stub 主閘：解不出 LLM token 的批量判決啟動一律 403（防假判覆蓋真歸因）。"""
+    """正式環境 stub 主閘：解不出 LLM token 的批量初判啟動一律 403（防假判覆蓋真歸因）。"""
     from app.core import config
 
     monkeypatch.setattr(config.env, "app_env", "production")
     monkeypatch.setattr(config.env, "openai_api_key", "")
-    r = client.post("/api/v1/judgment/prejudge", json={"scope": "all"}, headers=auth_headers)
+    r = client.post("/api/v1/prejudge", json={"scope": "all"}, headers=auth_headers)
     assert r.status_code == 403
     assert "stub" in r.json()["detail"]
 
@@ -98,7 +98,7 @@ def test_start_prejudge_stub_allowed_in_development(client, auth_headers, monkey
     from app.core import config
 
     monkeypatch.setattr(config.env, "openai_api_key", "")
-    r = client.post("/api/v1/judgment/prejudge", json={"item_ids": []}, headers=auth_headers)
+    r = client.post("/api/v1/prejudge", json={"item_ids": []}, headers=auth_headers)
     assert r.status_code == 200
 
 
@@ -106,7 +106,7 @@ def test_start_prejudge_accepts_prompt_versions(client, auth_headers, monkeypatc
     """prompt_versions（指定歷史版本）允許通過，不觸發草稿的 400 guard。"""
     monkeypatch.setattr("app.core.config.env.openai_api_key", "")  # dev 走 stub，免真 LLM
     r = client.post(
-        "/api/v1/judgment/prejudge",
+        "/api/v1/prejudge",
         json={"item_ids": [], "prompt_versions": {"prompt_C-1": 1}},
         headers=auth_headers,
     )
@@ -148,6 +148,17 @@ def test_settings_masked_with_stub_mode(client, auth_headers) -> None:
     assert r.json()["stub_mode"] is True  # 測試無 token → stub
 
 
+def test_settings_gdrive_upload_folder_url_roundtrip(client, auth_headers) -> None:
+    """導出偏好（per-user）：存 URL → 讀回；存空字串＝清除（回 None，前端退全域 config 預設）。"""
+    url = "https://drive.google.com/drive/folders/abc123"
+    r = client.post("/api/settings", json={"gdrive_upload_folder_url": url}, headers=auth_headers)
+    assert r.status_code == 200 and r.json()["gdrive_upload_folder_url"] == url
+    r = client.get("/api/settings", headers=auth_headers)
+    assert r.json()["gdrive_upload_folder_url"] == url
+    r = client.post("/api/settings", json={"gdrive_upload_folder_url": ""}, headers=auth_headers)
+    assert r.status_code == 200 and r.json()["gdrive_upload_folder_url"] is None
+
+
 # ── findings：狀態覆核 ──────────────────────────────────────
 def _seed_one_finding() -> str:
     """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態端點成功路徑測試）。"""
@@ -179,19 +190,19 @@ def _seed_one_finding() -> str:
 
 def test_patch_finding_status_requires_auth(client) -> None:
     # 匿名（無 Bearer）→ 401，不得改動任何歸因狀態
-    assert client.patch("/api/findings/x/status", json={"status": "confirmed"}).status_code == 401
+    assert client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code == 401
 
 
 def test_patch_finding_status_not_found_and_success(client, auth_headers) -> None:
     assert (
         client.patch(
-            "/api/findings/nope/status", json={"status": "confirmed"}, headers=auth_headers
+            "/api/findings/nope/verdict", json={"status": "confirmed"}, headers=auth_headers
         ).status_code
         == 404
     )
     fid = _seed_one_finding()
     r = client.patch(
-        f"/api/findings/{fid}/status", json={"status": "confirmed"}, headers=auth_headers
+        f"/api/findings/{fid}/verdict", json={"status": "confirmed"}, headers=auth_headers
     )
     assert r.status_code == 200 and r.json()["status"] == "confirmed"
 
@@ -200,7 +211,7 @@ def test_patch_finding_status_rejects_invalid_value(client, auth_headers) -> Non
     # Literal 僅 confirmed/dismissed/new（new＝撤銷覆核）；fixed 已撤除、其餘非法值 → 422
     assert (
         client.patch(
-            "/api/findings/x/status", json={"status": "fixed"}, headers=auth_headers
+            "/api/findings/x/verdict", json={"status": "fixed"}, headers=auth_headers
         ).status_code
         == 422
     )
@@ -227,17 +238,17 @@ def test_problems_status_filter_and_model_in_dto(client, auth_headers) -> None:
     assert miss["total"] == 0
 
 
-# ── findings：備註權限 / 批量覆核 ─────────────────────────────────
+# ── findings：備註權限 / 批量初判 ─────────────────────────────────
 def test_get_finding_notes_requires_auth(client) -> None:
     # 匿名讀備註（內部 QC 討論內容）→ 401（原漏洞：無任何驗證）
     assert client.get("/api/findings/x/notes").status_code == 401
 
 
 def test_batch_status_endpoint(client, auth_headers) -> None:
-    """批量覆核端點：空清單 422；成功回實際更新數（同值冪等跳過語義在 db 層測）。"""
+    """批量初判端點：空清單 422；成功回實際更新數（同值冪等跳過語義在 db 層測）。"""
     assert (
         client.patch(
-            "/api/findings/batch/status",
+            "/api/findings/batch/verdict",
             json={"source": "product_reviews", "source_ids": [], "status": "confirmed"},
             headers=auth_headers,
         ).status_code
@@ -245,7 +256,7 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
     )
     _seed_one_finding()
     r = client.patch(
-        "/api/findings/batch/status",
+        "/api/findings/batch/verdict",
         json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
         headers=auth_headers,
     )
@@ -257,34 +268,34 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
 def test_batch_status_requires_auth(client) -> None:
     assert (
         client.patch(
-            "/api/findings/batch/status",
+            "/api/findings/batch/verdict",
             json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
         ).status_code
         == 401
     )
 
 
-# ── judgment-history（評論級判決歷史時間軸）──────────────────────
-def test_judgment_history_endpoints(client, auth_headers) -> None:
-    """歷史列表（判決事件）+ 評論級備註新增；匿名一律 401。"""
-    assert client.get("/api/judgment-history?source=x&source_id=y").status_code == 401
+# ── judgment-history（評論級歸因歷史時間軸）──────────────────────
+def test_attribution_history_endpoints(client, auth_headers) -> None:
+    """歷史列表（初判事件）+ 評論級備註新增；匿名一律 401。"""
+    assert client.get("/api/attribution-history?source=x&source_id=y").status_code == 401
     _seed_one_finding()
     r = client.get(
-        "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
+        "/api/attribution-history?source=product_reviews&source_id=R1", headers=auth_headers
     )
     assert r.status_code == 200
     events = r.json()
-    assert len(events) == 1 and events[0]["kind"] == "judgment"
+    assert len(events) == 1 and events[0]["kind"] == "prejudge"
     rn = client.post(
-        "/api/judgment-history/notes",
+        "/api/attribution-history/notes",
         json={"source": "product_reviews", "source_id": "R1", "content": "e2e 備註"},
         headers=auth_headers,
     )
     assert rn.status_code == 200 and rn.json()["kind"] == "note"
     events = client.get(
-        "/api/judgment-history?source=product_reviews&source_id=R1", headers=auth_headers
+        "/api/attribution-history?source=product_reviews&source_id=R1", headers=auth_headers
     ).json()
-    assert [e["kind"] for e in events] == ["judgment", "note"]  # 舊到新：判決先發生
+    assert [e["kind"] for e in events] == ["prejudge", "note"]  # 舊到新：初判先發生
 
 
 # ── prompt-sandbox（歸因列表 Prompt 測試沙盒）────────────────────────
@@ -294,7 +305,7 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
 
     monkeypatch.setattr(config.env, "openai_api_key", "")
     r = client.post(
-        "/api/v1/judgment/prompt-sandbox",
+        "/api/v1/prejudge/prompt-sandbox",
         json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
         headers=auth_headers,
     )
@@ -304,7 +315,7 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
 
 def test_prompt_sandbox_start_requires_auth(client):
     r = client.post(
-        "/api/v1/judgment/prompt-sandbox",
+        "/api/v1/prejudge/prompt-sandbox",
         json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
     )
     assert r.status_code == 401
@@ -313,7 +324,7 @@ def test_prompt_sandbox_start_requires_auth(client):
 def test_prompt_sandbox_count_item_ids_priority(client, auth_headers):
     """item_ids 顯式給定時優先採用，不論 scope／filters（比照 /prejudge/count 同一套解析）。"""
     r = client.post(
-        "/api/v1/judgment/prompt-sandbox/count",
+        "/api/v1/prejudge/prompt-sandbox/count",
         json={
             "source": "product_reviews",
             "item_ids": ["R1", "R2", "R3"],
@@ -340,7 +351,7 @@ def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
         ],
     )
     r = client.post(
-        "/api/v1/judgment/prompt-sandbox/count",
+        "/api/v1/prejudge/prompt-sandbox/count",
         json={"source": "product_reviews", "scope": "all", "prompt_ids": ["polarity"]},
         headers=auth_headers,
     )
@@ -350,7 +361,7 @@ def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
 
 def test_prompt_sandbox_count_requires_auth(client):
     r = client.post(
-        "/api/v1/judgment/prompt-sandbox/count",
+        "/api/v1/prejudge/prompt-sandbox/count",
         json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
     )
     assert r.status_code == 401
@@ -358,7 +369,7 @@ def test_prompt_sandbox_count_requires_auth(client):
 
 def test_prompt_sandbox_status_unknown_job_404(client, auth_headers):
     r = client.get(
-        "/api/v1/judgment/prompt-sandbox/status?job_id=psbxjob_不存在", headers=auth_headers
+        "/api/v1/prejudge/prompt-sandbox/status?job_id=psbxjob_不存在", headers=auth_headers
     )
     assert r.status_code == 404
 
@@ -380,13 +391,13 @@ def test_prompt_sandbox_runs_list_and_detail(client, auth_headers):
         }
     )
 
-    r_list = client.get("/api/v1/judgment/prompt-sandbox/runs", headers=auth_headers)
+    r_list = client.get("/api/v1/prejudge/prompt-sandbox/runs", headers=auth_headers)
     assert r_list.status_code == 200
     body = r_list.json()
     assert body["total"] == 1
     assert "results" not in body["items"][0] and "log" not in body["items"][0]
 
-    r_detail = client.get(f"/api/v1/judgment/prompt-sandbox/runs/{run_id}", headers=auth_headers)
+    r_detail = client.get(f"/api/v1/prejudge/prompt-sandbox/runs/{run_id}", headers=auth_headers)
     assert r_detail.status_code == 200
     detail = r_detail.json()
     assert detail["results"][0]["source_id"] == "R1"
@@ -394,5 +405,25 @@ def test_prompt_sandbox_runs_list_and_detail(client, auth_headers):
 
 
 def test_prompt_sandbox_run_detail_unknown_404(client, auth_headers):
-    r = client.get("/api/v1/judgment/prompt-sandbox/runs/psbx_不存在", headers=auth_headers)
+    r = client.get("/api/v1/prejudge/prompt-sandbox/runs/psbx_不存在", headers=auth_headers)
     assert r.status_code == 404
+
+
+# ── /api/status（公司健康檢查契約）──────────────────────────────────
+def test_status_contract(client) -> None:
+    """公司 EKS 上線驗證契約：免認證 200 + 精確 body（k8s readiness probe 引用同一路徑）。"""
+    r = client.get("/api/status")  # 無 Authorization header
+    assert r.status_code == 200
+    assert r.json() == {"status": "0000", "message": "success"}
+
+
+def test_old_health_endpoint_removed(client) -> None:
+    """/health 已 cutover 至 /api/status，舊路徑不應殘留（防雙端點漂移）。"""
+    assert client.get("/health").status_code == 404
+
+
+def test_metrics_endpoint_for_prometheus(client) -> None:
+    """Prometheus /metrics 契約：免認證 200、exposition 格式（EKS Step 6 Grafana 驗收基礎）。"""
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "http_request" in r.text  # instrumentator 預設 metric 前綴存在即格式正確

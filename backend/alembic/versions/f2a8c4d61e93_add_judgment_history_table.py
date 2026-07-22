@@ -4,12 +4,16 @@ Revision ID: f2a8c4d61e93
 Revises: e1f7a2c95d38
 Create Date: 2026-07-11
 
+DDL 內嵌本檔（不 import tables.py）：該表其後更名為 attribution_history，live metadata
+已無 judgment_history 屬性，引用 T.judgment_history 會使舊庫重放遷移鏈時 AttributeError。
 """
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
+
 from alembic import op
-from app.core.db import tables as T
 
 # revision identifiers, used by Alembic.
 revision: str = "f2a8c4d61e93"
@@ -21,19 +25,39 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """建評論級判決歷史表 + 回填既有已判評論一筆初始 kind='judgment' 快照。
 
-    建表用 `T.judgment_history.create(bind, checkfirst=True)`（dev 環境 app 啟動的
-    metadata.create_all 可能已先建出此表，checkfirst 避開 DuplicateTable，仿 c8e5a2d94f17）。
+    建表帶 has_table 守衛（dev 環境 app 啟動的 metadata.create_all 可能已先建出此表，
+    等價原 checkfirst 語意）；回填**無論建表與否都跑**（自身 NOT EXISTS 冪等——dev 先
+    create_all 再 upgrade 的雙路徑下不重複回填）。
 
     回填：judgments 每個 distinct (source, source_id) 聚合一筆快照——
-    - created_at 用該組 judged_at（時間軸忠實反映歷史判決時間，非 migration 執行時間）；
-      judged_at 為 Python isoformat 帶時區字串，::timestamptz 可直接 cast。
-    - params 標 {"backfilled": true}（沿用 judgment_runs 的 backfilled 標記慣例），
-      result_digest 留空——下一次真判決的 (model, params, digest) 必與回填列不同，
-      去重比對不會誤 skip。
-    - 冪等：NOT EXISTS 擋重跑（dev 先 create_all 再 upgrade 的雙路徑下不重複回填）。
+    - created_at 用該組 judged_at（時間軸忠實反映歷史判決時間，非 migration 執行時間）。
+    - params 標 {"backfilled": true}，result_digest 留空——下一次真判決的
+      (model, params, digest) 必與回填列不同，去重比對不會誤 skip。
     """
     bind = op.get_bind()
-    T.judgment_history.create(bind, checkfirst=True)
+    if not sa.inspect(bind).has_table("judgment_history"):
+        op.create_table(
+            "judgment_history",
+            sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+            sa.Column("source", sa.Text(), nullable=False),
+            sa.Column("source_id", sa.Text(), nullable=False),
+            sa.Column("kind", sa.Text(), nullable=False),
+            sa.Column("model", sa.Text()),
+            sa.Column("params", JSONB()),
+            sa.Column("attributions", JSONB()),
+            sa.Column("result_digest", sa.Text()),
+            sa.Column("job_id", sa.Text()),
+            sa.Column("triggered_by", sa.Text()),
+            sa.Column("author", sa.Text()),
+            sa.Column("content", sa.Text()),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index(
+            "idx_judgment_history_source_id",
+            "judgment_history",
+            ["source", "source_id", "created_at"],
+        )
+        op.create_index("idx_judgment_history_created_at", "judgment_history", ["created_at"])
     op.execute(
         """
         INSERT INTO judgment_history
@@ -76,6 +100,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """移除評論級判決歷史表（回填資料隨表刪除）。"""
-    bind = op.get_bind()
-    T.judgment_history.drop(bind, checkfirst=True)
+    """移除評論級判決歷史表（回填資料隨表刪除；冪等）。"""
+    op.execute("DROP TABLE IF EXISTS judgment_history")

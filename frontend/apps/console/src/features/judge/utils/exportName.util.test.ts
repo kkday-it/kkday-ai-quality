@@ -3,7 +3,7 @@ import { exportName } from './exportName.util';
 
 describe('exportName', () => {
   it('組 `<base>-<14 位秒級時間戳>.<ext>`', () => {
-    expect(exportName('判決規則', 'xlsx')).toMatch(/^判決規則-\d{14}\.xlsx$/);
+    expect(exportName('初判規則', 'xlsx')).toMatch(/^初判規則-\d{14}\.xlsx$/);
     expect(exportName('problems_all', 'csv')).toMatch(/^problems_all-\d{14}\.csv$/);
   });
 

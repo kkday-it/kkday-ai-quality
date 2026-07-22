@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 FORMAT_VERSION = "1.0"
 
-# INSERT 順序（軟關聯：帳號 → 5 來源 → 批次/規則 → 判決 → 依賴/日誌）；TRUNCATE 為反向。
+# INSERT 順序（軟關聯：帳號 → 5 來源 → 批次/規則 → 初判 → 依賴/日誌）；TRUNCATE 為反向。
 # 本專案零 DB 級 ForeignKey（軟關聯），順序非硬性；仍固定一份 SSOT 供匯入/匯出共用、利審查。
 TABLE_LOAD_ORDER: tuple[str, ...] = (
     "users",
@@ -48,11 +48,12 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "mixpanel_tracker",
     "batches",
     "judge_rule_versions",
-    "judgments",
+    "prompt_drafts",
+    "attributions",
     "finding_notes",
     "llm_usage",
-    "judgment_runs",
-    "judgment_history",
+    "prejudge_runs",
+    "attribution_history",
 )
 
 # 敏感表：含帳號 / 加密機密，預設不匯入（避免跨環境金鑰不符靜默清空、或還原 users 鎖死當前帳號）。
@@ -63,7 +64,7 @@ _SEQUENCE_TABLES: tuple[tuple[str, str], ...] = (
     ("judge_rule_versions", "id"),
     ("finding_notes", "id"),
     ("llm_usage", "id"),
-    ("judgment_history", "id"),
+    ("attribution_history", "id"),
 )
 
 _CHUNK = 2000  # 分塊 insert 大小（對齊 upload_batch 既有分塊量級）
