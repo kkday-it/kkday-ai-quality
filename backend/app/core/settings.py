@@ -99,6 +99,12 @@ _DEFAULT_LLM: dict = {
 # 多 config 結構的 key 模板（值僅作型別樣板；實際以 _blank_settings() 產深複本）。
 # llm_configs[]：每套 {id,label, + _DEFAULT_LLM 欄位}；token 不入 config，存共用 provider_tokens。
 # qc_configs[]：每套 {id,label,env,host,port,user}；password 不入 config，存 qc_passwords[id]。
+# 去帳戶隔離（2026-07-22）：全項目配置單一份，一律存/讀此固定 key。
+# user_settings 表 PK 仍為 user_id（表結構不動），業務配置不再 per-user——
+# 所有 load/save 都用此 key。email 身分僅供權限授予查詢（見 permissions），與配置存取解耦。
+GLOBAL_SETTINGS_KEY = "__global__"
+
+
 _NEW_DEFAULT: dict = {
     "llm_configs": [],
     "active_llm_config_id": None,
@@ -203,18 +209,19 @@ def _migrate_legacy(data: dict) -> dict:
     return new
 
 
-def load_settings(user_id: str) -> dict:
-    """讀某 user 完整設定（含明文機密）；未存過回空白結構複本。
+def load_settings(user_id: str | None = None) -> dict:
+    """讀全項目共享設定（含明文機密）；未存過回空白結構複本。
 
+    去帳戶隔離：一律讀 GLOBAL_SETTINGS_KEY（傳入的 user_id 保留呼叫相容但忽略）。
     舊 flat 格式偵測到即遷移成多 config 結構並「立即持久化」一次——穩定各 config 的 uuid，
     避免每次 load 重產 id 導致 active_id / qc_passwords key 失效。
     """
-    data = db.load_user_settings(user_id)
+    data = db.load_user_settings(GLOBAL_SETTINGS_KEY)
     if not data:
         return _blank_settings()
     if _is_legacy_format(data):
         migrated = _migrate_legacy(data)
-        _persist(user_id, migrated)  # 持久化一次，使 uuid 穩定（機密加密落庫）
+        _persist(migrated)  # 持久化一次，使 uuid 穩定（機密加密落庫）
         return migrated
     # 補缺 key + 深複本（避免改到 _NEW_DEFAULT 內的 mutable）
     cur = {**_NEW_DEFAULT, **data}
@@ -228,7 +235,7 @@ def load_settings(user_id: str) -> dict:
     _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
     # per-config token 遷移：舊 per-provider 共用 token → 每套 config 各自 llm_tokens（一次性，持久化穩定）
     if _seed_llm_tokens_from_providers(cur):
-        _persist(user_id, cur)
+        _persist(cur)
     return cur
 
 
@@ -306,13 +313,16 @@ def _sanitize(cur: dict) -> None:
         )
 
 
-def save_settings(user_id: str, patch: dict) -> dict:
-    """部分/整包合併寫入某 user。機密（provider_tokens / qc_config.password）空或遮罩值不覆蓋既有。
+def save_settings(patch: dict, user_id: str | None = None) -> dict:
+    """部分/整包合併寫入全項目共享設定。機密（provider_tokens / qc_config.password）空或遮罩值不覆蓋既有。
 
+    去帳戶隔離：寫 GLOBAL_SETTINGS_KEY（user_id 保留呼叫相容但忽略）。併發語義：內部 load
+    最新→欄位級白名單 merge→整包 persist（競態窗口毫秒級、欄位級合併衝突面小），多人同時
+    編輯不同 tab 走 last-write-wins，可接受。
     qc_configs 內每套可帶 transient `password` 欄位：save 時抽出存入 qc_passwords[config_id]，
     config 本體不落機密。回 masked()。
     """
-    cur = load_settings(user_id)
+    cur = load_settings()
 
     # ── LLM ──
     if "llm_configs" in patch:
@@ -362,8 +372,8 @@ def save_settings(user_id: str, patch: dict) -> dict:
         cur["gdrive_upload_folder_url"] = (patch["gdrive_upload_folder_url"] or "").strip() or None
 
     _sanitize(cur)
-    _persist(user_id, cur)
-    return masked(user_id)
+    _persist(cur)
+    return masked()
 
 
 def _has_active_token(s: dict) -> bool:
@@ -377,9 +387,9 @@ def _has_active_qc_password(s: dict) -> bool:
     return bool(aid and (s.get("qc_passwords") or {}).get(aid))
 
 
-def masked(user_id: str) -> dict:
-    """回傳給前端：機密 map（provider_tokens / qc_passwords）逐 key 遮罩，附 has_token / has_qc_db_password。"""
-    cur = load_settings(user_id)
+def masked(user_id: str | None = None) -> dict:
+    """回傳給前端（全項目共享設定）：機密 map 逐 key 遮罩，附 has_token / has_qc_db_password。"""
+    cur = load_settings()
     cur["has_token"] = _has_active_token(cur)
     cur["has_qc_db_password"] = _has_active_qc_password(cur)
     cur["llm_tokens"] = {c: _mask_secret(t) for c, t in (cur.get("llm_tokens") or {}).items()}
@@ -390,12 +400,12 @@ def masked(user_id: str) -> dict:
     return cur
 
 
-def raw(user_id: str) -> dict:
-    """完整未遮罩配置（含明文 provider_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
+def raw(user_id: str | None = None) -> dict:
+    """完整未遮罩配置（全項目共享·含明文 provider_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
 
-    ⚠️ 明文回傳機密欄位：僅應在受信任的本地 / 內網環境暴露此端點。
+    ⚠️ 明文回傳機密欄位：僅應在受信任的本地 / 內網環境暴露此端點；並由 settings.secret.read 權限 gating。
     """
-    cur = load_settings(user_id)
+    cur = load_settings()
     cur["has_token"] = _has_active_token(cur)
     cur["has_qc_db_password"] = _has_active_qc_password(cur)
     return cur
@@ -421,7 +431,7 @@ def _decrypt_secret_maps(data: dict) -> None:
         data[key] = {k: crypto.decrypt_secret(v) for k, v in (data.get(key) or {}).items()}
 
 
-def _persist(user_id: str, data: dict) -> None:
+def _persist(data: dict) -> None:
     """落庫唯一出口：機密 map 加密後寫 DB（AIQ_SECRET_KEY 未設時明文直通）。
 
     加密作用在複本，入參 data（呼叫端後續仍持有的明文版）不被污染。
@@ -429,7 +439,7 @@ def _persist(user_id: str, data: dict) -> None:
     stored = dict(data)
     for key in ("llm_tokens", "provider_tokens", "qc_passwords"):
         stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
-    db.save_user_settings(user_id, stored)
+    db.save_user_settings(GLOBAL_SETTINGS_KEY, stored)
 
 
 def resolve_provider_token(eff: dict) -> str:

@@ -161,44 +161,24 @@ def resolve_credentials(s: dict) -> dict | None:
 
 
 def resolve_credentials_any(s: dict | None = None) -> dict | None:
-    """系統級佐證憑證：env 服務帳號 → 指定 user → **全庫任一已配 production QC**。
+    """佐證 DB 憑證：env 服務帳號 → 全項目共享配置的 production QC。
 
-    佐證是團隊共享的唯讀 production 快照（共用帳號 kk02021），不該綁「當前登入者是否
-    自己配過連線」——否則只有配過的人查得到、其他人全降級（實測 9 個 user 僅 1 個配過）。
-    故佐證查詢端點/判決取數用此，掃全庫找任一可用 production 憑證兜底。
+    去帳戶隔離後（2026-07-22）配置全項目單一份，不再需要「掃全庫找誰配了 production QC」——
+    直讀全局配置即可。s 傳入時優先用（通常就是 `load_settings()` 全局那份，等價），None 則直讀全局。
 
-    ⚠️ 過渡期權宜：借用他人已配的 production QC 連線（都是同一唯讀共用帳號，無越權疑慮）；
-    終態＝env 服務帳號（`_env_credentials` 優先於掃庫，SA/SD 核發後此 fallback 自然不觸發）。
-
-    Args:
-        s: 優先嘗試的 user 設定（通常＝當前登入/觸發者）；None 則直接走 env + 掃庫。
+    ⚠️ 過渡管道：現用 QC 共用 snapshot（唯讀共用帳號 kk02021）；終態＝env 服務帳號
+    （`_env_credentials` 優先，SA/SD 核發後全局 QC config fallback 自然不觸發）。
 
     Returns:
-        連線參數 dict 或 None（全系統無任何可用 production QC 憑證時）。
+        連線參數 dict 或 None（全項目無可用 production QC 憑證時）。
     """
     if s is not None:
         preferred = resolve_credentials(s)
         if preferred:
             return preferred
-    env_c = _env_credentials()
-    if env_c:
-        return env_c
-    return _scan_any_production_credentials()
-
-
-def _scan_any_production_credentials() -> dict | None:
-    """掃全庫 user_settings，回第一個可解出的 production QC 憑證（無則 None）。
-
-    掃庫廉價（user 數量級小）故不快取，讓 user 改/刪設定即時反映。
-    """
     from app.core import settings as app_settings
-    from app.core.db import users as db_users
 
-    for uid in db_users.list_user_ids_with_settings():
-        creds = _production_config_credentials(app_settings.load_settings(uid))
-        if creds:
-            return creds
-    return None
+    return _env_credentials() or _production_config_credentials(app_settings.load_settings())
 
 
 # ── 連線池 + Semaphore + 借出治理 ─────────────────────────────────────────────────────────

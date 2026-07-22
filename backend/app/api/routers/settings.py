@@ -25,7 +25,7 @@ def _activate_settings(user_id: str) -> None:
     """在 handler 內注入該 user 設定到 contextvar（同 thread，judge 路徑 llm client 才讀得到）。"""
     from app.core import settings as app_settings
 
-    s = app_settings.load_settings(user_id)
+    s = app_settings.load_settings()
     # judge 路徑讀 contextvar：注入「active LLM config + provider_tokens」組出的 effective flat dict
     # （client._resolve 所讀 key 不變 → client.py 零改動）
     app_settings.set_current(app_settings.effective_llm_dict(s))
@@ -81,7 +81,7 @@ def get_settings(user: dict = Depends(load_user_context)) -> dict:
     from app.core import settings as app_settings
 
     _activate_settings(user["user_id"])
-    data = app_settings.masked(user["user_id"])
+    data = app_settings.masked()
     data["stub_mode"] = llm_client.is_stub()
     return data
 
@@ -91,7 +91,7 @@ def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -
     """更新當前 user 的模型配置（空/遮罩 token 不覆蓋既有）。"""
     from app.core import settings as app_settings
 
-    data = app_settings.save_settings(user["user_id"], body.model_dump(exclude_none=True))
+    data = app_settings.save_settings(body.model_dump(exclude_none=True))
     _activate_settings(user["user_id"])  # 反映新 token（stub_mode）
     data["stub_mode"] = llm_client.is_stub()
     return data
@@ -106,7 +106,7 @@ def get_settings_raw(user: dict = Depends(load_user_context)) -> dict:
     from app.core import settings as app_settings
 
     _activate_settings(user["user_id"])
-    data = app_settings.raw(user["user_id"])
+    data = app_settings.raw()
     data["stub_mode"] = llm_client.is_stub()
     return data
 
@@ -134,7 +134,7 @@ def test_llm(body: TestLlmIn, user: dict = Depends(load_user_context)) -> dict:
     """
     from app.core import settings as app_settings
 
-    saved = app_settings.load_settings(user["user_id"])  # 含明文 llm_tokens
+    saved = app_settings.load_settings()  # 含明文 llm_tokens
     # per-config token：表單明文優先；空/遮罩 → 沿用已儲存該套 config 的 llm_tokens[config_id]
     form_tok = body.api_token
     if form_tok and "***" not in str(form_tok) and "…" not in str(form_tok):
@@ -232,7 +232,7 @@ def test_qc_db(body: QcDbTestIn, user: dict = Depends(load_user_context)) -> dic
     """
     from app.core import settings as app_settings
 
-    saved = app_settings.load_settings(user["user_id"])
+    saved = app_settings.load_settings()
     cid = body.config_id or saved.get("active_qc_config_id")
     base = next((c for c in (saved.get("qc_configs") or []) if c.get("id") == cid), {})
     cfg = {k: base.get(k) for k in ("env", "host", "port", "user")}

@@ -156,7 +156,7 @@ def prompt_debug_stream(
     """以 SSE 串流任意文字的結構化裁決、欄位校驗與本次 token/費用。"""
     from app.judge import prompt_debug
 
-    saved = app_settings.load_settings(user.get("user_id", ""))
+    saved = app_settings.load_settings()
     base = app_settings.effective_llm_dict(saved, config_id=body.llm_config_id)
     overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
     effective = prompt_debug.build_effective_config(base, overrides)
@@ -190,7 +190,7 @@ async def start_prompt_sandbox(
 
     item_ids = _resolve_target_ids(body)
     eff = app_settings.effective_llm_dict(
-        app_settings.load_settings(user.get("user_id", "")), config_id=body.llm_config_id
+        app_settings.load_settings(), config_id=body.llm_config_id
     )
     try:
         job_id = await asyncio.to_thread(
@@ -333,7 +333,7 @@ def start_prejudge(
     設定注入：以當前 user 的 effective LLM dict（可選 llm_config_id）供 judge 路徑跨 thread 讀取。
     """
     uid = user.get("user_id", "")
-    s = app_settings.load_settings(uid)
+    s = app_settings.load_settings()
     eff = app_settings.effective_llm_dict(s, config_id=body.llm_config_id)
     _guard_not_stub_in_production(eff)
     model = eff.get("model", "")

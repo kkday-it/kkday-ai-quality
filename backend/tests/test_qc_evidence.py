@@ -126,42 +126,37 @@ def test_resolve_credentials_rejects_missing_password():
     assert qc_evidence.resolve_credentials(_settings_with("production", password="")) is None
 
 
-def test_resolve_credentials_any_falls_back_to_scan(monkeypatch):
-    """系統級：當前 user 沒配 production 也能掃到全庫任一 production 憑證（修 per-user 脆弱點）。"""
+def test_resolve_credentials_any_reads_global(monkeypatch):
+    """去隔離後：resolve_credentials_any(None) 直讀全局配置的 production QC（不再掃庫）。"""
     from app.core import settings as app_settings
-    from app.core.db import users as db_users
 
-    # 當前 user（tester）無 production config；系統中另有 alvin 配了
-    tester = {"active_qc_config_id": None, "qc_configs": [], "qc_passwords": {}}
-    alvin = _settings_with("production", password="pw-alvin")
-    monkeypatch.setattr(db_users, "list_user_ids_with_settings", lambda: ["tester", "alvin"])
     monkeypatch.setattr(
-        app_settings, "load_settings", lambda uid: alvin if uid == "alvin" else tester
+        app_settings, "load_settings", lambda: _settings_with("production", password="pw-global")
     )
-    creds = qc_evidence.resolve_credentials_any(tester)
+    creds = qc_evidence.resolve_credentials_any(None)
     assert creds is not None
-    assert creds["host"] == "h.example"  # 掃到 alvin 的 production
-    assert creds["password"] == "pw-alvin"
+    assert creds["host"] == "h.example"
+    assert creds["password"] == "pw-global"
 
 
-def test_resolve_credentials_any_prefers_own_over_scan(monkeypatch):
-    """當前 user 自己有 production 憑證時優先用自己的，不進掃庫（避免無謂掃描）。"""
-    from app.core.db import users as db_users
+def test_resolve_credentials_any_prefers_passed_settings(monkeypatch):
+    """傳入 s（有 production 憑證）時優先用 s，不再讀全局（呼叫端已持有全局那份）。"""
+    from app.core import settings as app_settings
 
     def _boom():
-        raise AssertionError("should not scan when own creds exist")
+        raise AssertionError("should not read global when passed settings resolve")
 
-    monkeypatch.setattr(db_users, "list_user_ids_with_settings", _boom)
+    monkeypatch.setattr(app_settings, "load_settings", _boom)
     creds = qc_evidence.resolve_credentials_any(_settings_with("production", password="own"))
     assert creds is not None
     assert creds["password"] == "own"
 
 
 def test_resolve_credentials_any_none_when_no_config_anywhere(monkeypatch):
-    """全系統無任何 production QC 憑證 → None（端點降級 degraded_unavailable）。"""
-    from app.core.db import users as db_users
+    """全項目無 production QC 憑證 → None（端點降級 degraded_unavailable）。"""
+    from app.core import settings as app_settings
 
-    monkeypatch.setattr(db_users, "list_user_ids_with_settings", lambda: [])
+    monkeypatch.setattr(app_settings, "load_settings", lambda: _settings_with("sit"))
     assert qc_evidence.resolve_credentials_any(None) is None
 
 

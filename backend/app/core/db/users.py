@@ -59,13 +59,6 @@ def load_user_settings(user_id: str) -> dict | None:
         return None
 
 
-def list_user_ids_with_settings() -> list[str]:
-    """列所有已存過設定的 user_id（qc_evidence 系統級憑證掃描用）。"""
-    stmt = select(T.user_settings.c.user_id)
-    with T.get_engine().connect() as c:
-        return [r[0] for r in c.execute(stmt)]
-
-
 def save_user_settings(user_id: str, data: dict) -> None:
     """覆寫某 user 的完整設定 dict（冪等：user_id 重複則覆蓋）。"""
     updated_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
