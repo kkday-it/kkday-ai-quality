@@ -12,6 +12,7 @@ import {
 } from '@/api';
 import { useSettingsConfigsStore } from '@/stores/settingsConfigs.store';
 import { composeLlmLabel } from '@/features/settings/utils/label.util';
+import { REASONING } from '@/features/settings/constants';
 
 const router = useRouter();
 const configs = useSettingsConfigsStore();
@@ -25,10 +26,10 @@ const selectedConfigId = ref('');
 const model = ref('');
 const useTemperature = ref(false);
 const temperature = ref(0);
-const thinking = ref<'default' | 'on' | 'off'>('off');
-const reasoningEffort = ref<'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>(
-  'medium',
-);
+// 與 LlmConfigEditor 同語義：thinking 二態 switch（'default' 正規化為 off）、reasoning 走 REASONING SSOT
+type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+const thinking = ref<'on' | 'off'>('off');
+const reasoningEffort = ref<ReasoningEffort>('medium');
 
 const streaming = ref(false);
 const rawOutput = ref('');
@@ -42,6 +43,20 @@ let abortController: AbortController | null = null;
 
 const selectedConfig = computed(() =>
   configs.llmConfigs.find((item) => item.id === selectedConfigId.value),
+);
+/** 思考模式開啟時 temperature 鎖定 1（僅 OpenAI；同 LlmConfigEditor 的 tempLocked 語義）。 */
+const tempLocked = computed(
+  () => thinking.value === 'on' && (selectedConfig.value?.provider ?? 'openai') === 'openai',
+);
+watch(
+  tempLocked,
+  (locked) => {
+    if (locked) {
+      useTemperature.value = true;
+      temperature.value = 1;
+    }
+  },
+  { immediate: true },
 );
 const canRun = computed(
   () =>
@@ -67,14 +82,10 @@ function syncConfig(): void {
   model.value = current.model;
   useTemperature.value = current.temperature !== null;
   temperature.value = current.temperature ?? 0;
-  thinking.value = ['default', 'on', 'off'].includes(current.thinking)
-    ? (current.thinking as typeof thinking.value)
-    : 'default';
-  reasoningEffort.value = ['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(
-    current.reasoning_effort,
-  )
-    ? (current.reasoning_effort as typeof reasoningEffort.value)
-    : 'default';
+  thinking.value = current.thinking === 'on' ? 'on' : 'off';
+  reasoningEffort.value = REASONING.includes(current.reasoning_effort)
+    ? (current.reasoning_effort as ReasoningEffort)
+    : 'medium';
 }
 
 watch(selectedConfigId, syncConfig);
@@ -138,7 +149,7 @@ async function run(): Promise<void> {
         llm_config_id: selectedConfigId.value,
         overrides: {
           model: model.value.trim(),
-          temperature: useTemperature.value ? temperature.value : null,
+          temperature: tempLocked.value ? 1 : useTemperature.value ? temperature.value : null,
           thinking: thinking.value,
           reasoning_effort: reasoningEffort.value,
         },
@@ -327,41 +338,50 @@ function displayValue(value: unknown): string {
               <a-input v-model="model" :disabled="streaming" allow-clear />
             </label>
             <label class="field">
-              <span>Thinking</span>
-              <a-select v-model="thinking" :disabled="streaming">
-                <a-option value="default">API 預設</a-option>
-                <a-option value="off">關閉</a-option>
-                <a-option value="on">開啟</a-option>
-              </a-select>
-            </label>
-            <label class="field">
-              <span>Reasoning</span>
-              <a-select v-model="reasoningEffort" :disabled="streaming">
-                <a-option
-                  v-for="value in ['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']"
-                  :key="value"
-                  :value="value"
-                >
-                  {{ value }}
-                </a-option>
-              </a-select>
+              <span>思考模式 Thinking</span>
+              <div class="flex h-8 items-center">
+                <a-switch
+                  v-model="thinking"
+                  checked-value="on"
+                  unchecked-value="off"
+                  :disabled="streaming"
+                />
+              </div>
             </label>
             <label class="field col-span-2">
-              <span class="flex items-center justify-between">
-                Temperature
-                <a-switch v-model="useTemperature" size="small" :disabled="streaming" />
-              </span>
-              <a-slider
-                v-if="useTemperature"
-                v-model="temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                :disabled="streaming"
-              />
-              <span v-else class="rounded bg-[#f7f8fa] px-3 py-2 text-xs text-[#86909c]"
-                >API 預設</span
-              >
+              <span>Reasoning effort</span>
+              <a-space>
+                <a-radio-group
+                  v-model="reasoningEffort"
+                  type="button"
+                  size="small"
+                  :disabled="streaming || thinking === 'off'"
+                >
+                  <a-radio v-for="r in REASONING" :key="r" :value="r">{{ r }}</a-radio>
+                </a-radio-group>
+                <span v-if="thinking === 'off'" class="text-xs text-[#86909c]"
+                  >Thinking 關閉時不適用</span
+                >
+              </a-space>
+            </label>
+            <label class="field col-span-2">
+              <span>Temperature</span>
+              <a-space>
+                <a-switch v-model="useTemperature" :disabled="streaming || tempLocked" />
+                <span class="text-xs text-[#86909c]">{{
+                  tempLocked ? '鎖定 1（Thinking 開啟）' : useTemperature ? '自訂' : 'API 預設'
+                }}</span>
+                <a-slider
+                  v-if="useTemperature && !tempLocked"
+                  v-model="temperature"
+                  :min="0"
+                  :max="2"
+                  :step="0.1"
+                  class="w-[180px]"
+                  :disabled="streaming"
+                />
+                <span v-if="useTemperature">{{ tempLocked ? 1 : (temperature ?? 0) }}</span>
+              </a-space>
             </label>
           </div>
         </div>

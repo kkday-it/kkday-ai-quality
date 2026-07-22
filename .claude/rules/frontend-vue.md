@@ -140,6 +140,21 @@ import { StickyTabs } from '@/components';
 
 > Canonical 用例：`features/judge/components/PrejudgeLogView.vue`（7 路 LLM 調用 tab，`polarity`/`C-1`~`C-6`，含左側掛錨點導航 + `getScrollEl()` 用法）。`StickyTabs` 內部實作（`:deep()` 覆寫 `.arco-tabs`/`.arco-tabs-nav`/`.arco-tabs-content`，水平 overflow 維持 hidden 不動 Arco 原生 clip 機制）見 `components/StickyTabs.vue` 本身，除非要擴充該元件本身，否則消費端不需要、也不應該知道這些內部細節。
 
+## 同語義控件跨頁一致（canonical 對齊 · 強制）
+
+同一語義的設定/表單控件，**全站只准一種元件形態**；已有 canonical 實作的語義，新頁面必須對齊其元件選型與交互語義（含禁用/鎖定條件與值域 SSOT），禁止另選元件重做一套：
+
+| 語義 | 唯一元件形態 | 禁止 |
+|---|---|---|
+| 布林開關（開/關、啟用/停用、鎖定） | `a-switch`（必要時 `checked-value`/`unchecked-value` 帶語義值） | `a-select` 下拉「開啟/關閉」、checkbox 模擬開關 |
+| 小集合互斥檔位（≤6 個枚舉，如 reasoning effort） | `a-radio-group type="button" size="small"`（分段按鈕） | select 下拉（掃視成本高、與 canonical 不一致） |
+| 大集合單選（模型清單、連線清單） | `a-select`（`:options` 或 a-option） | 自刻下拉 |
+| 數值微調（temperature 類） | `a-switch`（啟用自訂）＋ `a-slider`＋當前值顯示；有鎖定條件時 switch disabled + 鎖定說明文字 | 裸 input number、無啟用開關的常駐 slider |
+
+- **Canonical 用例＝LLM 旋鈕**（`features/settings/components/LlmConfigEditor.vue`）：Thinking＝`a-switch on/off`、Reasoning effort＝radio-group 分段（值域 SSOT＝`features/settings/constants` 的 `REASONING`，源頭 `config/global/llm_model.json`）、Temperature＝switch＋slider＋`tempLocked`（OpenAI thinking on 鎖 1）。任何頁面出現同語義旋鈕（如 Prompt 調試台）一律鏡射此組合與正規化邏輯（`thinking === 'on' ? 'on' : 'off'`、reasoning 兜底 `medium`），不得自帶第二套值域或另選元件（2026-07-22 Prompt 調試台曾用 select 下拉重做被退回對齊，即本條由來）。
+- **值域/選項 SSOT 同源**：對齊 canonical 時連值域一起復用（import 同一 constants），禁止在新頁面手抄枚舉陣列——手抄必 drift。
+- **第 2 次出現即評估抽共用元件**（呼應上方佈局拆分準則）：同一組控件組合出現在第 2 個頁面時，優先抽成共用元件（props 注入差異）而非各自複製模板。
+
 ## 懶加載 / Code-splitting（預設機制）
 
 首屏不需要的一律延遲載入，縮小初始 bundle（呼應 06 quality-targets：單路由 JS < 200KB gzip）：
