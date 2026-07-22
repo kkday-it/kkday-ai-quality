@@ -53,7 +53,7 @@ spec:
             requests:
               cpu: 250m
               memory: 512Mi
-              # 磁碟快取（/app/data emptyDir：llm_cache 1GB + evidence_cache 512MB + reports）
+              # 磁碟快取（/app/data emptyDir：llm_cache 1GB + reports）
               ephemeral-storage: 1Gi
             limits:
               cpu: "1"
@@ -78,7 +78,7 @@ spec:
               port: 8100
             periodSeconds: 15
           volumeMounts:
-            # runtime 派生產物（llm_cache / evidence_cache / reports；paths.DATA_DIR）。
+            # runtime 派生產物（llm_cache / reports；paths.DATA_DIR）。
             # 刻意用 emptyDir 而非 PVC：EBS 快照備份會讓佐證 payload（PII-adjacent）留存
             # 超出 diskcache TTL 治理；pod 重建快取歸零可接受（TTL 快取自然重建）
             - name: data-cache

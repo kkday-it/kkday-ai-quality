@@ -25,7 +25,7 @@
 | `prompt_drafts.py` | 初判 Prompt 草稿（prompt_drafts；prompt_* 每 rule_code 一份共享草稿＝未入庫的編輯中內容）：沙盒可直送測（雙跑對比），滿意後走 `save_rule_version` 入庫並刪草稿；與 judge_rule_versions 分離（版本表維持「存檔即 active」單一語意），併發 last-write-wins。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | attributions CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量初判·單交易 diff〕+ 歸因備註）。 |
-| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、兩級 diskcache（order 6h/商品版本 30d，`data/evidence_cache`）、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials()`（env 服務帳號優先→user production QC 連線）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
+| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、兩級快取落本地 PG `evidence_cache` 表（order 6h/商品版本 30d，TTL 懶清理；不入 datapack）、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials()`（env 服務帳號優先→user production QC 連線）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；初判級（僅已初判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |

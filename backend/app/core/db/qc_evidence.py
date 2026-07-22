@@ -15,6 +15,8 @@
   timeout（QueryCanceled）不重試直接降級——共享 snapshot 庫，自我限速優先。
 - **失敗永不拋出**：`get_evidence()` 統一吞錯轉 `EvidenceResult.status`——佐證失敗＝降級判決，
   不得讓佐證問題拖垮判決批次（與判決管線的單筆 fail-loud 原則刻意相反）。
+- **兩級快取落本地 PG**（`evidence_cache` 表；order 短 TTL/商品版本長 TTL）：真相源仍是
+  production snapshot，此表純快取可整表清空重生；刻意不入 datapack（見 tables.py 註記）。
 
 ⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（postgresql-snapshot.kkday.com，共用帳號）純為
 可行性驗證；終態＝SA/SD（Confluence VM/2165145662）專用 replica + 服務帳號。
@@ -364,22 +366,65 @@ def assert_no_pii_keys(data: Any) -> None:
             assert_no_pii_keys(v)
 
 
-# ── 兩級 diskcache（獨立於 llm_cache 命名空間；可整刪重生）───────────────────────────────
-_cache_lock = threading.Lock()
-_cache: Any = None
+# ── 兩級快取（本地 PG evidence_cache 表；使用者 2026-07-22 拍板由 diskcache 改落 PG）──────
+# 真相源仍是 production snapshot——此表純快取（可整表清空重生）；TTL 懶清理：
+# 讀到過期＝miss 並刪列；寫入時順手清全表過期列（走 expires 索引，量小成本可忽略）。
+def _now_iso() -> str:
+    """UTC ISO 時間字串（快取時戳/過期比較統一格式，lexical 可比較）。"""
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _get_cache():
-    """佐證 payload 磁碟快取單例（lazy；size-based LRU + per-key TTL）。"""
-    global _cache
-    if _cache is None:
-        with _cache_lock:
-            if _cache is None:
-                from diskcache import Cache  # 重依賴 lazy import
+def _cache_get(key: str) -> Any:
+    """PG 快取讀：命中且未過期回 payload；未命中/已過期回 None（過期列順手刪除）。"""
+    from sqlalchemy import delete, select
 
-                mb = int((_cfg().get("cache") or {}).get("size_limit_mb", 512))
-                _cache = Cache(str(paths.EVIDENCE_CACHE_DIR), size_limit=mb << 20)
-    return _cache
+    from app.core.db import tables as T
+
+    t = T.evidence_cache
+    with T.get_engine().begin() as c:
+        row = c.execute(select(t.c.payload, t.c.expires_at).where(t.c.cache_key == key)).first()
+        if row is None:
+            return None
+        if (row.expires_at or "") <= _now_iso():
+            c.execute(delete(t).where(t.c.cache_key == key))
+            return None
+        return row.payload
+
+
+def _cache_set(key: str, kind: str, val: Any, ttl_s: int) -> None:
+    """PG 快取寫（upsert）＋清全表過期列；寫入失敗僅記 log 不拋（快取層不得拖垮取數）。"""
+    from datetime import timedelta
+
+    from sqlalchemy import delete
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.core.db import tables as T
+
+    t = T.evidence_cache
+    now = datetime.now(timezone.utc)
+    try:
+        with T.get_engine().begin() as c:
+            c.execute(delete(t).where(t.c.expires_at <= now.isoformat()))
+            stmt = pg_insert(t).values(
+                cache_key=key,
+                kind=kind,
+                payload=val,
+                fetched_at=now.isoformat(),
+                expires_at=(now + timedelta(seconds=ttl_s)).isoformat(),
+            )
+            c.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[t.c.cache_key],
+                    set_={
+                        "kind": kind,
+                        "payload": val,
+                        "fetched_at": now.isoformat(),
+                        "expires_at": (now + timedelta(seconds=ttl_s)).isoformat(),
+                    },
+                )
+            )
+    except Exception:  # noqa: BLE001 —— 快取寫入失敗降級為「無快取」，取數結果照常回傳
+        _log.warning("evidence cache write failed key=%s", key, exc_info=True)
 
 
 def _order_ttl_s() -> int:
@@ -556,21 +601,20 @@ def _fetch_supplier_bundle(creds: dict, supplier_oid) -> dict | None:
     return {"supplier_name": sup[0], "order_handler": sup[1], "msg_handler": sup[2]}
 
 
-def _cached(key: str, ttl_s: int, fetch: Callable[[], Any]) -> tuple[Any, bool]:
+def _cached(key: str, kind: str, ttl_s: int, fetch: Callable[[], Any]) -> tuple[Any, bool]:
     """快取優先讀取：命中直接回（不進 single-flight，減少鎖爭用）；miss 經 single-flight 實查。
 
     Returns:
         (value, cache_hit)。fetch 回 None（如查無此單）不落快取——避免暫態誤判長駐。
     """
-    cache = _get_cache()
-    val = cache.get(key)
+    val = _cache_get(key)
     if val is not None:
         return val, True
 
     def _do() -> Any:
         v = fetch()
         if v is not None:
-            cache.set(key, v, expire=ttl_s)
+            _cache_set(key, kind, v, ttl_s)
         return v
 
     return _singleflight(key, _do), False
@@ -602,7 +646,7 @@ def get_evidence(order_oid: str | int | None) -> EvidenceResult:
     t0 = time.time()
     try:
         order, hit_order = _cached(
-            f"order:{oid}", _order_ttl_s(), lambda: _fetch_order_bundle(creds, oid)
+            f"order:{oid}", "order", _order_ttl_s(), lambda: _fetch_order_bundle(creds, oid)
         )
         if order is None:
             _audit(oid, "not_found", t0)
@@ -613,10 +657,11 @@ def get_evidence(order_oid: str | int | None) -> EvidenceResult:
         )
         prod_key = f"prod:{order['prod_oid']}:{order['prod_version']}:{lang}:{order['pkg_oid']}"
         prod, hit_prod = _cached(
-            prod_key, _product_ttl_s(), lambda: _fetch_product_bundle(creds, order, lang)
+            prod_key, "product", _product_ttl_s(), lambda: _fetch_product_bundle(creds, order, lang)
         )
         sup, hit_sup = _cached(
             f"sup:{order['supplier_oid']}",
+            "supplier",
             _product_ttl_s(),
             lambda: _fetch_supplier_bundle(creds, order["supplier_oid"]),
         )

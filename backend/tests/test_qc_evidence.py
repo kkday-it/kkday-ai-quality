@@ -169,10 +169,11 @@ def test_get_evidence_disabled(monkeypatch):
 
 # ── S3：single-flight / 熔斷 / 兩級快取 ─────────────────────────────────────────────────
 @pytest.fixture()
-def _isolated_state(monkeypatch, tmp_path):
-    """隔離 S3 模組級狀態：快取目錄導向 tmp、重置快取單例與熔斷計數。"""
-    monkeypatch.setattr(qc_evidence.paths, "EVIDENCE_CACHE_DIR", tmp_path / "ec")
-    monkeypatch.setattr(qc_evidence, "_cache", None)
+def _isolated_state(monkeypatch, temp_db):
+    """隔離 S3 模組級狀態：engine 導向測試庫（conftest temp_db 建表+清空+測後還原），重置熔斷計數。
+
+    快取讀寫走 PG evidence_cache 表——不依賴 temp_db 會寫進 dev 庫（踩過）。
+    """
     monkeypatch.setattr(qc_evidence, "_breaker_fails", 0)
     monkeypatch.setattr(qc_evidence, "_breaker_opened_at", 0.0)
     yield

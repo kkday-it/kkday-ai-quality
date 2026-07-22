@@ -451,6 +451,24 @@ prompt_sandbox_runs = Table(
 )
 
 
+# ── 訂單佐證快取（qc_evidence 兩級快取的 PG 儲存層）──────────────────────────────
+# runtime 派生快取（真相源＝production snapshot，可重生）。⚠️ 刻意不入 datapack
+# TABLE_LOAD_ORDER：快取不隨資料包匯出/匯入（含 PII-adjacent 商品 payload，且匯入端
+# 重抓即可）。TTL 過期由 qc_evidence 讀寫路徑懶清理（讀到過期＝miss 並刪列；寫入時
+# 順手清全表過期列，走 expires 索引）。
+evidence_cache = Table(
+    "evidence_cache",
+    metadata,
+    Column(
+        "cache_key", Text, primary_key=True
+    ),  # order:{oid} / prod:{oid}:{ver}:{lang}:{pkg} / sup:{oid}
+    Column("kind", Text),  # order / product / supplier（統計與清理分組）
+    Column("payload", JSONB),  # 投影後佐證 bundle（allow-list 欄位，無旅客個資）
+    Column("fetched_at", Text),  # 取數時刻（ISO UTC）
+    Column("expires_at", Text),  # 過期時刻（ISO UTC；同格式 lexical 可比較）
+    Index("idx_evidence_cache_expires", "expires_at"),
+)
+
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────
 _engine: Engine | None = None
 
