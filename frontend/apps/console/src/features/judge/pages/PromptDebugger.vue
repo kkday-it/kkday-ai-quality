@@ -11,10 +11,13 @@ import {
   type PromptDebugUsage,
 } from '@/api';
 import { LlmConfigPicker, LlmKnobs } from '@/components';
+import { PERM } from '@/api';
+import { usePermission } from '@/composables/usePermission';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 
 const router = useRouter();
 const llm = useLlmAreaDefault('prompt_debug');
+const { can } = usePermission();
 
 const defaults = ref<PromptDebugDefaults | null>(null);
 const systemPrompt = ref('');
@@ -292,7 +295,12 @@ function displayValue(value: unknown): string {
             <LlmKnobs :model-value="llm.knobs" :provider="llm.provider.value" @update:model-value="llm.setKnobs" />
           </div>
           <div class="mt-2 flex justify-end">
-            <a-button size="small" :disabled="streaming" @click="saveAsDefault">存為此區默認</a-button>
+            <a-button
+              size="small"
+              :disabled="streaming || !can(PERM.settingsLlmAreaDefaultWrite)"
+              @click="saveAsDefault"
+              >存為此區默認</a-button
+            >
           </div>
         </div>
 

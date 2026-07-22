@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import qcDefaults from '@config/global/qc_db.json';
+import { PERM } from '@/api';
 import { StateGuard } from '@/components';
+import { usePermission } from '@/composables/usePermission';
 import { useSettingsConfigsStore } from '@/stores';
 import { QcConnectionCard } from '../components';
 
@@ -10,7 +12,14 @@ import { QcConnectionCard } from '../components';
 // 佐證取數（qc_evidence）固定只讀 production 這一條。
 const store = useSettingsConfigsStore();
 const ENVS = qcDefaults.environments;
-onMounted(() => store.loadAll());
+const { can } = usePermission();
+/** 是否可改連線/測試（settings.qc-config.manage，僅 grants）；無此權限僅能檢視狀態點。 */
+const canManage = computed(() => can(PERM.settingsQcConfigManage));
+
+onMounted(() => {
+  store.loadAll();
+  if (canManage.value) store.loadSecrets();
+});
 
 const onSave = (env: string, payload: { conn: { host: string; port: number | null; user: string }; password?: string }) =>
   store.saveQcConnection(env, payload.conn, payload.password);
@@ -19,6 +28,9 @@ const onSave = (env: string, payload: { conn: { host: string; port: number | nul
 <template>
   <StateGuard :loading="store.loading">
     <div>
+      <a-alert v-if="!canManage" type="info" class="mb-3">
+        僅檢視連線狀態；如需修改連線，請聯繫有 QC 連線管理權限的同事。
+      </a-alert>
       <QcConnectionCard
         v-for="e in ENVS"
         :key="e.id"
@@ -26,6 +38,7 @@ const onSave = (env: string, payload: { conn: { host: string; port: number | nul
         :connection="store.qcConnections[e.id]"
         :password-known="store.qcPasswords[e.id] ?? ''"
         :has-password="!!store.qcEnvHasPassword[e.id]"
+        :can-manage="canManage"
         @save="(payload) => onSave(e.id, payload)"
       />
       <p class="mb-0 mt-1 text-[13px] leading-[1.7] text-[#4e5969]">

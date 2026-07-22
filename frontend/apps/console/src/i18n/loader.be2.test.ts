@@ -44,7 +44,6 @@ describe('i18n loader be2 分支', () => {
 
     const messages = (await loadLocaleMessages('zh-TW')) as Record<string, Record<string, unknown>>;
     expect(messages.common).toBeDefined(); // 靜態打包 namespace 仍在
-    expect(messages.auth).toBeDefined();
   });
 
   it('Klingon 模式 → 每筆譯文前置 (完整key)（巢狀遞迴）', async () => {
@@ -65,8 +64,6 @@ describe('i18n loader be2 分支', () => {
       vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch,
     );
     const nested = (await loadLocaleMessages('zh-TW')) as Record<string, Record<string, unknown>>;
-    expect((nested.auth.login as Record<string, string>).submitLogin).toBe(
-      '(auth.login.submitLogin) 登入',
-    );
+    expect((nested.common.app as Record<string, string>).name).toBe('(common.app.name) ⚖️ AI 質檢');
   });
 });

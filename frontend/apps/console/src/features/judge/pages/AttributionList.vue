@@ -1140,7 +1140,12 @@ onMounted(init);
               />
               <LlmKnobs :model-value="llmKnobs" :provider="llmProvider" @update:model-value="setLlmKnobs" />
               <div class="flex justify-end">
-                <a-button size="small" @click="onSaveLlmAreaDefault">存為此區默認</a-button>
+                <a-button
+                  size="small"
+                  :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
+                  @click="onSaveLlmAreaDefault"
+                  >存為此區默認</a-button
+                >
               </div>
               <div>
                 <div class="mb-1 text-xs text-gray-500">

@@ -31,9 +31,11 @@ import {
   type PromptSandboxRunSummary,
   type PromptSandboxStartBody,
   type PromptSandboxVariantResult,
+  PERM,
   type SandboxCompareMetrics,
 } from '@/api';
 import { getRuleDraft } from '@/api/judgeRules.api';
+import { usePermission } from '@/composables/usePermission';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { fmtDt } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
@@ -84,6 +86,7 @@ const emit = defineEmits<{
 const rulesStore = useJudgeRulesStore();
 const selectedCodes = ref<string[]>([]);
 const llm = useLlmAreaDefault('sandbox');
+const { can } = usePermission();
 const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
@@ -547,7 +550,12 @@ watch(
             @update:model-value="llm.setKnobs"
           />
           <div class="mb-2 flex justify-end">
-            <a-button size="small" @click="onSaveLlmAreaDefault">存為此區默認</a-button>
+            <a-button
+              size="small"
+              :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
+              @click="onSaveLlmAreaDefault"
+              >存為此區默認</a-button
+            >
           </div>
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
             Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或 📝

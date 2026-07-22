@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
+import { PERM } from '@/api';
 import { StateGuard } from '@/components';
+import { usePermission } from '@/composables/usePermission';
 import { useSettingsConfigsStore } from '@/stores';
 import { LlmConnectionCard } from '../components';
 import { PROVIDERS } from '../constants';
@@ -10,7 +12,14 @@ import { PROVIDERS } from '../constants';
 // 已下沉各功能區（初判分類、Prompt 調試台、Prompt 沙盒）就地配置＋「存為此區默認」，
 // 團隊共用同一份默認、員工進同功能區沿用（見 @/components 的 LlmKnobs / LlmConfigPicker）。
 const store = useSettingsConfigsStore();
-onMounted(() => store.loadAll());
+const { can } = usePermission();
+/** 是否可改連線/測試（settings.llm-config.manage，僅 grants）；無此權限僅能檢視狀態點，不能編輯。 */
+const canManage = computed(() => can(PERM.settingsLlmConfigManage));
+
+onMounted(() => {
+  store.loadAll();
+  if (canManage.value) store.loadSecrets(); // 明文回填僅授權者需要，無權限就不打 /raw（省一次 403）
+});
 
 const onSave = (provider: string, payload: { baseUrl: string; token?: string }) =>
   store.saveLlmConnection(provider, payload.baseUrl, payload.token);
@@ -19,6 +28,9 @@ const onSave = (provider: string, payload: { baseUrl: string; token?: string }) 
 <template>
   <StateGuard :loading="store.loading">
     <div>
+      <a-alert v-if="!canManage" type="info" class="mb-3">
+        僅檢視連線狀態；如需修改連線（base_url / token），請聯繫有 LLM 連線管理權限的同事。
+      </a-alert>
       <LlmConnectionCard
         v-for="p in PROVIDERS"
         :key="p.id"
@@ -26,6 +38,7 @@ const onSave = (provider: string, payload: { baseUrl: string; token?: string }) 
         :connection="store.llmConnections[p.id]"
         :token-known="store.llmTokens[p.id] ?? ''"
         :has-token="!!store.providerHasToken[p.id]"
+        :can-manage="canManage"
         @save="(payload) => onSave(p.id, payload)"
       />
       <p class="mb-0 mt-1 text-[13px] leading-[1.7] text-[#4e5969]">

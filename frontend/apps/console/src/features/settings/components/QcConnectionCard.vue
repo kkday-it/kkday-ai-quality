@@ -19,6 +19,8 @@ const props = defineProps<{
   /** 本 session 已知明文 password（供眼睛切換）。 */
   passwordKnown: string;
   hasPassword: boolean;
+  /** 是否可編輯/測試（settings.qc-config.manage）；false 時唯讀顯示狀態點。 */
+  canManage: boolean;
 }>();
 const emit = defineEmits<{
   (e: 'save', payload: { conn: QcConnection; password?: string }): void;
@@ -111,30 +113,38 @@ watch(testResult, async (r) => {
       <a-row :gutter="12">
         <a-col :span="10">
           <a-form-item field="host" label="Host">
-            <a-input v-model="form.host" :placeholder="envMeta.host" allow-clear />
+            <a-input v-model="form.host" :disabled="!canManage" :placeholder="envMeta.host" allow-clear />
           </a-form-item>
         </a-col>
         <a-col :span="6">
           <a-form-item field="port" label="Port">
-            <a-input-number v-model="form.port" :min="1" :max="65535" :placeholder="String(QC.port)" class="w-full" />
+            <a-input-number
+              v-model="form.port"
+              :disabled="!canManage"
+              :min="1"
+              :max="65535"
+              :placeholder="String(QC.port)"
+              class="w-full"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item field="user" label="User">
-            <a-input v-model="form.user" placeholder="資料庫帳號" allow-clear />
+            <a-input v-model="form.user" :disabled="!canManage" placeholder="資料庫帳號" allow-clear />
           </a-form-item>
         </a-col>
       </a-row>
       <a-form-item field="password" label="Password">
         <a-input-password
           v-model="form.password"
+          :disabled="!canManage"
           :placeholder="hasPasswordDisplay ? '已設定（留空不變更）' : '請輸入密碼'"
           allow-clear
           @input="pwDirty = true"
         />
       </a-form-item>
 
-      <a-space align="center" :size="8">
+      <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
         <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
         <span class="text-xs text-[#86909c]">此環境唯一一條連線</span>

@@ -15,6 +15,8 @@ const props = defineProps<{
   tokenKnown: string;
   /** 是否已配 token（不明文，遮罩態初始顯示用）。 */
   hasToken: boolean;
+  /** 是否可編輯/測試（settings.llm-config.manage）；false 時唯讀顯示狀態點。 */
+  canManage: boolean;
 }>();
 const emit = defineEmits<{
   (e: 'save', payload: { baseUrl: string; token?: string }): void;
@@ -119,6 +121,7 @@ watch(testResult, async (r) => {
           <a-form-item field="api_token" label="API Token">
             <a-input-password
               v-model="form.api_token"
+              :disabled="!canManage"
               :placeholder="hasTokenDisplay ? '已設定（留空不變更）' : '請輸入 token'"
               allow-clear
               @input="tokenDirty = true"
@@ -129,6 +132,7 @@ watch(testResult, async (r) => {
           <a-form-item field="base_url" label="Base URL">
             <a-input
               v-model="form.base_url"
+              :disabled="!canManage"
               :placeholder="providerMeta?.base_url || '空＝供應商預設端點'"
               allow-clear
             />
@@ -136,7 +140,7 @@ watch(testResult, async (r) => {
         </a-col>
       </a-row>
 
-      <a-space align="center" :size="8">
+      <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
         <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
         <span class="text-xs text-[#86909c]">此供應商唯一一條連線；token 只存後端，不入 git</span>
