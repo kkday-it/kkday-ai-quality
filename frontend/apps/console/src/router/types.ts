@@ -7,10 +7,5 @@ declare module 'vue-router' {
     public?: boolean;
     /** 路由顯示文字（頂部視圖 tab 用）；有此欄位的子路由才會出現在 FeatureTabs */
     text?: string;
-    /**
-     * 進此路由所需的 business-key 權限（全具備才放行，缺任一導回首頁）。
-     * 由可替換權限框架的 router 守衛強制（見 router/index.ts）；現無路由宣告，框架就緒待用。
-     */
-    permissions?: string[];
   }
 }

@@ -1,6 +1,6 @@
 // 權限清單來源（前端唯一替換點）：現讀後端 /api/auth/permissions（be2 auth.business-list 契約形狀）。
 // 日後接 be2 中央 Auth SVC：**只改本檔 fetchPermissions**（改讀 be2 SDK / localStorage），
-// permission.store / usePermission / v-auth / router 守衛 / 選單過濾全不動。
+// permission.store / usePermission / 選單過濾全不動。
 import { BASE, j } from './http.api';
 
 /** be2 權限清單 localStorage key（與 be2 前端契約一致）。 */
