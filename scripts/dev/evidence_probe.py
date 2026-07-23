@@ -46,15 +46,21 @@ def run_single(order_oid: str) -> int:
         return 1
 
     data = result.data or {}
-    order = data.get("order") or {}
-    print("── order（allow-list 欄位）──")
-    for k, v in order.items():
-        print(f"  {k} = {v}")
-    for section in ("product_lang", "product_setting", "pkg_basic", "module_setting", "supplier"):
-        v = data.get(section)
-        size = len(json.dumps(v, ensure_ascii=False)) if v is not None else 0
-        keys = list(v.keys()) if isinstance(v, dict) else v
-        print(f"── {section}: {'null' if v is None else f'{size:,}B keys={keys}'}")
+    for section in ("order_summary", "supplier_info"):
+        print(f"── {section}（allow-list 欄位）──")
+        for k, v in (data.get(section) or {}).items():
+            print(f"  {k} = {v}")
+    for section in ("product_info", "item_info", "package_info"):
+        print(f"── {section}（商品內容）──")
+        for k, v in (data.get(section) or {}).items():
+            size = len(json.dumps(v, ensure_ascii=False)) if v is not None else 0
+            if isinstance(v, dict):
+                shape = f"keys={list(v.keys())}"
+            elif isinstance(v, list):
+                shape = f"[{len(v)} rows]"
+            else:
+                shape = str(v)
+            print(f"  {k}: {'null' if v is None else f'{size:,}B {shape}'}")
     # PII 防線複核（get_evidence 內已跑過一次；此處顯式重跑供人眼確認輸出）
     qc_evidence.assert_no_pii_keys(data)
     print("✅ PII key 掃描通過")
@@ -113,13 +119,14 @@ def run_batch(limit: int, concurrency: int) -> int:
         r = qc_evidence.get_evidence(oid)
         elapsed = time.time() - t0
         d = r.data or {}
-        order = d.get("order") or {}
+        order_summary = d.get("order_summary") or {}
+        package_info = d.get("package_info") or {}
         return {
             "oid": oid,
             "status": r.status,
             "elapsed": elapsed,
-            "prod_key": f"{order.get('prod_oid')}:{order.get('prod_version')}",
-            "module_setting": d.get("module_setting") is not None,
+            "prod_key": f"{order_summary.get('prod_oid')}:{order_summary.get('prod_version')}",
+            "package_module_setting": package_info.get("package_module_setting") is not None,
             "bytes": len(json.dumps(d, ensure_ascii=False)) if r.data else 0,
         }
 
@@ -139,7 +146,7 @@ def run_batch(limit: int, concurrency: int) -> int:
     for r in results:
         status_counts[r["status"]] = status_counts.get(r["status"], 0) + 1
     distinct_products = len({r["prod_key"] for r in ok})
-    ms_rate = (sum(1 for r in ok if r["module_setting"]) / len(ok)) if ok else 0
+    ms_rate = (sum(1 for r in ok if r["package_module_setting"]) / len(ok)) if ok else 0
     throughput = len(results) / wall if wall else 0
     proj_964 = 964 / throughput / 60 if throughput else float("inf")
 
@@ -150,8 +157,8 @@ def run_batch(limit: int, concurrency: int) -> int:
         f"- 延遲（成功筆）：p50 {q(0.5):.2f}s / p95 {q(0.95):.2f}s / max {lat[-1] if lat else 0:.2f}s / avg {statistics.mean(lat) if lat else 0:.2f}s",
         f"- 吞吐：{throughput:.2f} 筆/s → **外推 964 筆全量 ≈ {proj_964:.1f} 分鐘**（閘門：>30 分鐘升級兩階段管線）",
         f"- distinct (prod_oid,prod_version)：{distinct_products}/{len(ok)}（商品級快取可省比例）",
-        f"- ors_prod_module_setting 命中率：{ms_rate:.0%}（null 代表該 pkg/lang 無模組設定列）",
-        f"- payload bytes：avg {int(statistics.mean([r['bytes'] for r in ok])) if ok else 0:,} / max {max((r['bytes'] for r in ok), default=0):,}",
+        f"- package_module_setting 命中率：{ms_rate:.0%}（null 代表該 pkg/lang 無模組設定列）",
+        f"- 資料 bytes（樹狀組裝後）：avg {int(statistics.mean([r['bytes'] for r in ok])) if ok else 0:,} / max {max((r['bytes'] for r in ok), default=0):,}",
     ]
     report = "\n".join(lines)
     print("\n" + report)

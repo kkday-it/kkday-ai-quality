@@ -46,15 +46,16 @@ def test_assert_no_pii_keys_ignores_values():
 
 def test_pii_guard_scope_exempts_product_content():
     """防線只掃自組區塊：商品目錄 JSONB 的 spec 標籤（如 passportNo）不得誤殺（Phase A 實測教訓）。"""
-    assert "product_lang" not in qc_evidence.PII_GUARD_SECTIONS
-    assert "product_setting" not in qc_evidence.PII_GUARD_SECTIONS
-    assert set(qc_evidence.PII_GUARD_SECTIONS) == {"order", "supplier", "meta"}
+    assert "product_info" not in qc_evidence.PII_GUARD_SECTIONS
+    assert "item_info" not in qc_evidence.PII_GUARD_SECTIONS
+    assert "package_info" not in qc_evidence.PII_GUARD_SECTIONS
+    assert set(qc_evidence.PII_GUARD_SECTIONS) == {"order_summary", "supplier_info", "meta"}
     # 模擬 get_evidence 的作用域裁剪：商品內容含 passportNo spec 標籤 → 通過
     data = {
-        "order": {"order_mid": "26KK1"},
-        "supplier": {"supplier_name": "s"},
-        "meta": {"lang": "zh-tw"},
-        "product_setting": {"item_summary": [{"spec": {"passportNo": {"required": True}}}]},
+        "order_summary": {"order_mid": "26KK1", "prod_oid": 11},
+        "supplier_info": {"supplier_name": "s"},
+        "meta": {"source": "qc-snapshot"},
+        "item_info": {"item_setting": [{"spec": {"passportNo": {"required": True}}}]},
     }
     qc_evidence.assert_no_pii_keys({k: data.get(k) for k in qc_evidence.PII_GUARD_SECTIONS})
 
@@ -264,87 +265,79 @@ def test_breaker_opens_after_threshold_and_half_opens(_isolated_state, monkeypat
     assert qc_evidence._breaker_fails == 0
 
 
-def _stub_bundles(monkeypatch, counters):
-    """打樁三個 DB 實查 bundle（計數呼叫次數，不觸網）。"""
+def _sample_snapshot(oid: str) -> dict:
+    """合成扁平欄位 dict（鍵＝`_SNAPSHOT_VALUE_COLUMNS`；stub `_fetch_full_snapshot` 用，不觸網）。"""
+    return {
+        "order_mid": "26KK1",
+        "order_status": "GO",
+        "price_pay": 1.0,
+        "lang_code": "zh-tw",
+        "crt_dt": "2026-01-01T00:00:00",
+        "prod_oid": 11,
+        "prod_version": 22,
+        "pkg_oid": 33,
+        "item_oid": 44,
+        "supplier_oid": 55,
+        "lst_dt_go": "2026-02-01T00:00:00",
+        "timezone": "Asia/Taipei",
+        "pkg_name": "pkg",
+        "prod_desc": "desc",
+        "supplier_name": "s",
+        "supplier_order_handler": "KKDAY",
+        "supplier_msg_handler": "KKDAY",
+        "product_summary": {"category": "M01"},
+        "product_desc_module": None,
+        "item_lang": [],
+        "item_setting": None,
+        "package_lang": None,
+        "package_setting": None,
+        "package_policy": None,
+        "package_module_setting": None,
+    }
+
+
+def _stub_snapshot(monkeypatch, counter):
+    """打樁 `_fetch_full_snapshot`（計數底層實查次數，不觸網）。"""
     monkeypatch.setattr(
         qc_evidence,
-        "_fetch_order_bundle",
-        lambda creds, oid: (
-            counters.__setitem__("order", counters["order"] + 1)
-            or {
-                "order_oid": int(oid),
-                "order_mid": "26KK1",
-                "order_status": "GO",
-                "price_pay": 1.0,
-                "lang_code": "zh-tw",
-                "crt_dt": "2026-01-01T00:00:00",
-                "prod_oid": 11,
-                "prod_version": 22,
-                "pkg_oid": 33,
-                "item_oid": 44,
-                "supplier_oid": 55,
-                "lst_dt_go": "2026-02-01T00:00:00",
-                "timezone": "Asia/Taipei",
-                "package_name": "pkg",
-                "prod_desc": "desc",
-            }
-        ),
-    )
-    monkeypatch.setattr(
-        qc_evidence,
-        "_fetch_product_bundle",
-        lambda creds, order, lang: (
-            counters.__setitem__("prod", counters["prod"] + 1)
-            or {
-                "product_lang": {"item_summary": []},
-                "product_setting": {"category": "M01"},
-                "pkg_basic": None,
-                "module_setting": None,
-            }
-        ),
-    )
-    monkeypatch.setattr(
-        qc_evidence,
-        "_fetch_supplier_bundle",
-        lambda creds, sup_oid: (
-            counters.__setitem__("sup", counters["sup"] + 1)
-            or {"supplier_name": "s", "order_handler": "KKDAY", "msg_handler": "KKDAY"}
-        ),
+        "_fetch_full_snapshot",
+        lambda creds, oid: (counter.__setitem__("n", counter["n"] + 1) or _sample_snapshot(oid)),
     )
 
 
-def test_get_evidence_two_level_cache_hit(_isolated_state, monkeypatch):
-    """首查 fetched（實查一次）；重查 cache_hit（DB 零觸碰）；meta.cache 旗標正確。"""
-    counters = {"order": 0, "prod": 0, "sup": 0}
-    _stub_bundles(monkeypatch, counters)
+def test_get_evidence_single_row_cache_hit(_isolated_state, monkeypatch):
+    """首查 fetched（實查一次）；重查 cache_hit（DB 零觸碰）；meta.cache_hit 旗標正確。"""
+    counter = {"n": 0}
+    _stub_snapshot(monkeypatch, counter)
     qc_evidence.set_current(
         {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
     )
 
     r1 = qc_evidence.get_evidence("123")
     assert r1.status == "fetched"
-    assert counters == {"order": 1, "prod": 1, "sup": 1}
+    assert counter == {"n": 1}
+    assert r1.data["order_summary"]["order_oid"] == 123
+    assert r1.data["order_summary"]["prod_oid"] == 11
+    assert r1.data["meta"]["cache_hit"] is False
 
     r2 = qc_evidence.get_evidence("123")
     assert r2.status == "cache_hit"
-    assert counters == {"order": 1, "prod": 1, "sup": 1}, "快取命中不得再觸 DB"
-    assert r2.data["meta"]["cache"] == {"order": True, "product": True, "supplier": True}
+    assert counter == {"n": 1}, "快取命中不得再觸 DB"
+    assert r2.data["meta"]["cache_hit"] is True
 
 
-def test_get_evidence_product_cache_shared_across_orders(_isolated_state, monkeypatch):
-    """同商品版本的另一張訂單：order 級實查、商品級/供應商級快取共用（兩級去重語義）。"""
-    counters = {"order": 0, "prod": 0, "sup": 0}
-    _stub_bundles(monkeypatch, counters)
+def test_get_evidence_per_order_no_cross_order_sharing(_isolated_state, monkeypatch):
+    """一訂單一列：不同 order_oid 各自實查一次（不再有商品版本跨訂單共用快取）。"""
+    counter = {"n": 0}
+    _stub_snapshot(monkeypatch, counter)
     qc_evidence.set_current(
         {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
     )
 
     qc_evidence.get_evidence("123")
-    r2 = qc_evidence.get_evidence("456")  # 不同 order_oid、stub 回同 prod/ver/pkg
-    assert r2.status == "fetched"  # order 級是新查
-    assert counters["order"] == 2
-    assert counters["prod"] == 1, "同商品版本應命中商品級快取"
-    assert counters["sup"] == 1
+    r2 = qc_evidence.get_evidence("456")  # 不同 order_oid → 全量重查
+    assert r2.status == "fetched"
+    assert counter["n"] == 2, "不同訂單各自實查一次（無跨訂單共用）"
 
 
 def test_get_evidence_not_found_not_cached(_isolated_state, monkeypatch):
@@ -352,56 +345,17 @@ def test_get_evidence_not_found_not_cached(_isolated_state, monkeypatch):
     state = {"exists": False}
     monkeypatch.setattr(
         qc_evidence,
-        "_fetch_order_bundle",
-        lambda creds, oid: ({"order_oid": 1} | _minimal_order()) if state["exists"] else None,
+        "_fetch_full_snapshot",
+        lambda creds, oid: _sample_snapshot(oid) if state["exists"] else None,
     )
     qc_evidence.set_current(
         {"host": "h", "port": 1, "user": "u", "password": "p", "dbname": "d", "schema": "public"}
     )
     assert qc_evidence.get_evidence("999").status == "not_found"
     state["exists"] = True
-    _stub_rest(monkeypatch)
     assert qc_evidence.get_evidence("999").status == "fetched"
 
 
-def _minimal_order() -> dict:
-    """not_found 測試用最小 order dict。"""
-    return {
-        "order_mid": "26KK9",
-        "order_status": "GO",
-        "price_pay": 1.0,
-        "lang_code": "zh-tw",
-        "crt_dt": "t",
-        "prod_oid": 1,
-        "prod_version": 2,
-        "pkg_oid": 3,
-        "item_oid": 4,
-        "supplier_oid": 5,
-        "lst_dt_go": "t",
-        "timezone": "tz",
-        "package_name": "p",
-        "prod_desc": "d",
-    }
-
-
-def _stub_rest(monkeypatch):
-    """補 stub 商品/供應商 bundle（not_found 測試後半用）。"""
-    monkeypatch.setattr(
-        qc_evidence,
-        "_fetch_product_bundle",
-        lambda creds, order, lang: {
-            "product_lang": None,
-            "product_setting": None,
-            "pkg_basic": None,
-            "module_setting": None,
-        },
-    )
-    monkeypatch.setattr(
-        qc_evidence, "_fetch_supplier_bundle", lambda creds, sup_oid: {"supplier_name": "s"}
-    )
-
-
-def test_ttl_knobs_read_config():
-    """兩級 TTL 讀 config：order 短（小時級）、product 長（天級）——R6 差異化政策。"""
+def test_ttl_knob_reads_config():
+    """訂單快照 TTL 讀 config（一訂單一列的單一 TTL，小時級——R6 易變資料短 TTL）。"""
     assert qc_evidence._order_ttl_s() == 6 * 3600
-    assert qc_evidence._product_ttl_s() == 30 * 86400

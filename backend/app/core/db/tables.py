@@ -443,22 +443,60 @@ prompt_sandbox_runs = Table(
 )
 
 
-# ── 訂單佐證快照（qc_evidence 兩級快取的 PG 儲存層：下單當時投影快照 + TTL）──────────
+# ── 訂單佐證快照（qc_evidence 快取的 PG 儲存層：下單當時投影快照，一訂單一列 + TTL）──────
 # runtime 派生快取（真相源＝production snapshot，可重生）。⚠️ 刻意不入 datapack
-# TABLE_LOAD_ORDER：快取不隨資料包匯出/匯入（含 PII-adjacent 商品 payload，且匯入端
-# 重抓即可）。TTL 過期由 qc_evidence 讀寫路徑懶清理（讀到過期＝miss 並刪列；寫入時
-# 順手清全表過期列，走 expires 索引）。
+# TABLE_LOAD_ORDER：快取不隨資料包匯出/匯入（含 PII-adjacent 商品內容，且匯入端重抓即可）。
+# TTL 過期由 qc_evidence 讀寫路徑懶清理（讀到過期＝miss 並刪列；寫入時順手清全表過期列，
+# 走 expires_at 索引）。**欄位徹底拆開**（非單一 payload jsonb）：ID/純量各自成欄方便 grid
+# 瀏覽與篩選，商品/規格/方案內容各自獨立 jsonb 欄（每欄鏡射一段來源 SELECT 投影，欄名/結構
+# 不改名重組——查詢層 qc_evidence._fetch_full_snapshot 逐欄核對）；欄名直接帶群組前綴（供
+# grid 瀏覽即知歸屬），API 讀出後在 qc_evidence 組裝成樹狀分組物件（order_summary/
+# supplier_info/product_info/item_info/package_info/meta）供前端顯示。
 evidence_snapshot = Table(
     "evidence_snapshot",
     metadata,
+    Column("order_oid", BigInteger, primary_key=True),
+    # order_summary 群組（order_tbl 五欄；無歧義不需前綴）
+    Column("order_mid", Text),
+    Column("order_status", Text),
+    Column("price_pay", Float),
+    Column("lang_code", Text),
+    Column("crt_dt", DateTime(timezone=True)),
+    # order_summary 群組（order_lst 八欄；pkg_oid=prod_level2_oid、pkg_name=prod_level2_name）
+    Column("prod_oid", BigInteger),
+    Column("prod_version", BigInteger),
+    Column("pkg_oid", BigInteger),
+    Column("item_oid", BigInteger),
+    Column("supplier_oid", BigInteger),
+    Column("lst_dt_go", DateTime(timezone=True)),
+    Column("timezone", Text),
+    Column("pkg_name", Text),
+    Column("prod_desc", Text),
+    # supplier_info 群組
+    Column("supplier_name", Text),
+    Column("supplier_order_handler", Text),
+    Column("supplier_msg_handler", Text),
+    # product_info 群組（ors_prod_setting 投影）
+    Column("product_summary", JSONB),  # category/timezone/product_name(單語)/sale_time_result
+    Column("product_desc_module", JSONB),  # description_module（單語渲染：行程/注意事項/介紹…）
+    # item_info 群組
+    Column("item_lang", JSONB),  # ors_prod_lang.item_summary（規格渲染文案）
     Column(
-        "cache_key", Text, primary_key=True
-    ),  # order:{oid} / prod:{oid}:{ver}:{lang}:{pkg} / sup:{oid}
-    Column("kind", Text),  # order / product / supplier（統計與清理分組）
-    Column("payload", JSONB),  # 投影後佐證 bundle（allow-list 欄位，無旅客個資）
-    Column("fetched_at", Text),  # 取數時刻（ISO UTC）
-    Column("expires_at", Text),  # 過期時刻（ISO UTC；同格式 lexical 可比較）
+        "item_setting", JSONB
+    ),  # ors_prod_setting.item_summary（規格設定：spec_rule/price/quantity）
+    # package_info 群組
+    Column("package_lang", JSONB),  # ors_prod_lang.package_summary（方案渲染文案）
+    Column("package_setting", JSONB),  # ors_prod_setting.package_summary[本方案]（多語名/GPM/退改）
+    Column("package_policy", JSONB),  # ors_pkg_basic（cancel_policy_client + tour_duration）
+    Column(
+        "package_module_setting", JSONB
+    ),  # ors_prod_module_setting（list[{prod_module_type,...}]）
+    # meta 群組（快取管理，非業務資料）
+    Column("fetched_at", DateTime(timezone=True)),
+    Column("expires_at", DateTime(timezone=True)),
     Index("idx_evidence_snapshot_expires", "expires_at"),
+    Index("idx_evidence_snapshot_prod_oid", "prod_oid"),
+    Index("idx_evidence_snapshot_supplier_oid", "supplier_oid"),
 )
 
 # ── engine（lazy；可由測試 set_engine 換成測試庫）───────────────────────────

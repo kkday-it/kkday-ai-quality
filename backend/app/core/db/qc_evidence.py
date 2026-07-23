@@ -16,12 +16,14 @@
   timeout（QueryCanceled）不重試直接降級——共享 snapshot 庫，自我限速優先。
 - **失敗永不拋出**：`get_evidence()` 統一吞錯轉 `EvidenceResult.status`——佐證失敗＝降級判決，
   不得讓佐證問題拖垮判決批次（與判決管線的單筆 fail-loud 原則刻意相反）。
-- **兩級快取落本地 PG**（`evidence_snapshot` 表；order 短 TTL/商品版本長 TTL）：真相源仍是
-  production snapshot，此表純快取可整表清空重生；刻意不入 datapack（見 tables.py 註記）。
+- **拆欄快照落本地 PG**（`evidence_snapshot` 表；PK=order_oid、一訂單一列、單一 order TTL）：
+  ID/純量各自成欄、商品/規格/方案內容各自獨立 jsonb 欄（非單一 payload blob），欄名直接帶
+  群組前綴，可直接對 DB grid 核對；真相源仍是 production snapshot，此表純快取可整表清空
+  重生；刻意不入 datapack（見 tables.py 註記）。讀出後在 `_assemble_tree()` 組裝成樹狀分組
+  物件（order_summary/supplier_info/product_info/item_info/package_info/meta）供 API/前端消費。
 
 ⚠️ 過渡管道聲明：現階段連 QC 共用 snapshot（postgresql-snapshot.kkday.com，共用帳號）純為
 可行性驗證；終態＝SA/SD（Confluence VM/2165145662）專用 replica + 服務帳號。
-快取/single-flight/熔斷 為後續層（同模組擴充）；審計落庫待 evidence 欄位 migration 就緒後接 DB。
 """
 
 from __future__ import annotations
@@ -35,8 +37,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.core import paths
@@ -271,6 +272,9 @@ def _query(creds: dict, sql: str, params: dict, *, many: bool = False):
 
 
 # ── allow-list 投影 SQL（PII 防線：個資欄位永不出現；tests/test_qc_evidence.py 斷言鎖定）────
+# 每段對應 tables.py evidence_snapshot 的一組欄位；商品/規格/方案內容欄由 ors_prod_lang /
+# ors_prod_setting 各一次查詢投影出多個目的欄（同表僅一次 round-trip，Python 端拆進對應欄）。
+
 # order_tbl：判決消費欄位僅此 5 欄（Confluence §五/§六：order_status/price_pay/lang_code + 時序）。
 _SQL_ORDER_TBL = """
 SELECT order_mid, order_status, price_pay, lang_code, crt_dt
@@ -284,26 +288,34 @@ SELECT prod_oid, prod_version, prod_level2_oid, item_oid, supplier_oid,
 FROM order_lst WHERE order_oid = %(oid)s
 ORDER BY order_lst_oid LIMIT 1
 """
-# ors_prod_lang：頁面呈現文字快照——只投影 item_summary/package_summary（判決引用的規格與方案文案）。
+# supplier：僅名稱與處理單位歸屬（legal_name 等已定案為 noise，不取）。
+_SQL_SUPPLIER = """
+SELECT supplier_name, order_handler, msg_handler
+FROM supplier WHERE supplier_oid = %(sup)s
+"""
+# ors_prod_lang：頁面呈現文字快照——拆為 item_lang/package_lang 兩個目的欄（規格/方案渲染文案）。
 _SQL_PROD_LANG = """
 SELECT jsonb_build_object(
-  'item_summary',    prod_lang->'item_summary',
-  'package_summary', prod_lang->'package_summary'
+  'item_lang',    prod_lang->'item_summary',
+  'package_lang', prod_lang->'package_summary'
 )
 FROM ors_prod_lang
 WHERE prod_oid = %(prod_oid)s AND prod_version = %(ver)s AND lang_code = %(lang)s
 """
-# ors_prod_setting：結構化設定——單語系 description_module + 實買 pkg 條目（D3 投影，實測 6.5x/4.2x）。
-# sale_time_result 可能為 null（實測樣本即缺）——jsonb_build_object 對 null 值容錯，消費端防禦。
+# ors_prod_setting：結構化設定——拆為 product_summary/product_desc_module/item_setting/
+# package_setting 四個目的欄（D3 投影，實測 6.5x/4.2x）；sale_time_result 可能為 null，
+# jsonb_build_object 對 null 值容錯，消費端防禦。
 _SQL_PROD_SETTING = """
 SELECT jsonb_build_object(
-  'timezone',           prod_setting->'product_summary'->'timezone',
-  'category',           prod_setting->'product_summary'->'category',
-  'product_name',       prod_setting->'product_summary'->'product_name'->%(lang)s,
-  'sale_time_result',   prod_setting->'product_summary'->'sale_time_result',
-  'description_module', prod_setting->'product_summary'->'description_module'->%(lang)s,
-  'item_summary',       prod_setting->'item_summary',
-  'package_summary',    (
+  'product_summary', jsonb_build_object(
+    'timezone',         prod_setting->'product_summary'->'timezone',
+    'category',         prod_setting->'product_summary'->'category',
+    'product_name',     prod_setting->'product_summary'->'product_name'->%(lang)s,
+    'sale_time_result', prod_setting->'product_summary'->'sale_time_result'
+  ),
+  'product_desc_module', prod_setting->'product_summary'->'description_module'->%(lang)s,
+  'item_setting',        prod_setting->'item_summary',
+  'package_setting',     (
     SELECT jsonb_agg(pkg) FROM jsonb_array_elements(prod_setting->'package_summary') pkg
     WHERE (pkg->>'pkg_oid')::bigint = %(pkg_oid)s
   )
@@ -311,23 +323,18 @@ SELECT jsonb_build_object(
 FROM ors_prod_setting
 WHERE prod_oid = %(prod_oid)s AND prod_version = %(ver)s
 """
-# ors_pkg_basic：結構化退改政策 + 行程時長（C-5 權威來源）。
+# ors_pkg_basic：結構化退改政策 + 行程時長（C-5 權威來源）→ package_policy 欄。
 _SQL_PKG_BASIC = """
 SELECT cancel_policy_client, tour_duration
 FROM ors_pkg_basic
 WHERE prod_oid = %(prod_oid)s AND prod_version = %(ver)s AND pkg_oid = %(pkg_oid)s
 """
-# ors_prod_module_setting：套餐模組層設定（第 7 授權表；一 pkg 多 module_type 列）。
+# ors_prod_module_setting：套餐模組層設定（第 7 授權表；一 pkg 多 module_type 列）→ module_setting 欄。
 _SQL_MODULE_SETTING = """
 SELECT prod_module_type, prod_module_setting
 FROM ors_prod_module_setting
 WHERE prod_oid = %(prod_oid)s AND prod_version = %(ver)s
   AND pkg_oid = %(pkg_oid)s AND lang_code = %(lang)s
-"""
-# supplier：僅名稱與處理單位歸屬（legal_name 等已定案為 noise，不取）。
-_SQL_SUPPLIER = """
-SELECT supplier_name, order_handler, msg_handler
-FROM supplier WHERE supplier_oid = %(sup)s
 """
 
 # 個資欄位關鍵字（deny 斷言用：任何投影 SQL / 組裝結果的 key 不得含這些字樣；allow-list 為主防線，
@@ -346,11 +353,11 @@ PII_KEYWORDS: tuple[str, ...] = (
     "access_token",
 )
 
-# PII key 防線的作用域：只掃「我們自組」的區塊（order/supplier/meta——欄位由 allow-list SQL
-# 決定，出現 PII 關鍵字＝投影被誤改）。商品內容區塊（product_lang/product_setting/pkg_basic/
-# module_setting）豁免——那是商品目錄 JSONB，key 由商品方自訂，`passportNo` 等字樣是「要求旅客
+# PII key 防線的作用域：只掃「我們自組」的樹狀分組（order_summary/supplier_info/meta——欄位由
+# allow-list SQL 決定，出現 PII 關鍵字＝投影被誤改）。商品內容分組（product_info/item_info/
+# package_info）豁免——那是商品目錄 JSONB，key 由商品方自訂，`passportNo` 等字樣是「要求旅客
 # 填護照」的 spec 欄位標籤（商品內容非旅客個資），Phase A 實測 44% 誤殺率，故不掃。
-PII_GUARD_SECTIONS: tuple[str, ...] = ("order", "supplier", "meta")
+PII_GUARD_SECTIONS: tuple[str, ...] = ("order_summary", "supplier_info", "meta")
 
 # 模組內全部投影 SQL（tests 掃描入口；新增點查必須登記於此，否則 PII 斷言測試會漏掃）。
 ALL_PROJECTION_SQL: tuple[str, ...] = (
@@ -362,15 +369,6 @@ ALL_PROJECTION_SQL: tuple[str, ...] = (
     _SQL_MODULE_SETTING,
     _SQL_SUPPLIER,
 )
-
-
-def _jsonable(v: Any) -> Any:
-    """DB 值 → JSON 可序列化（datetime→ISO、Decimal→float；jsonb 已是 dict/list 原樣）。"""
-    if isinstance(v, datetime):
-        return v.isoformat()
-    if isinstance(v, Decimal):
-        return float(v)
-    return v
 
 
 def assert_no_pii_keys(data: Any) -> None:
@@ -393,75 +391,92 @@ def assert_no_pii_keys(data: Any) -> None:
             assert_no_pii_keys(v)
 
 
-# ── 兩級快取（本地 PG evidence_snapshot 表；使用者 2026-07-22 拍板由 diskcache 改落 PG）──────
+# ── 拆欄快照快取（本地 PG evidence_snapshot 表；PK=order_oid、一訂單一列）─────────────────
 # 真相源仍是 production snapshot——此表純快取（可整表清空重生）；TTL 懶清理：
-# 讀到過期＝miss 並刪列；寫入時順手清全表過期列（走 expires 索引，量小成本可忽略）。
-def _now_iso() -> str:
-    """UTC ISO 時間字串（快取時戳/過期比較統一格式，lexical 可比較）。"""
-    return datetime.now(timezone.utc).isoformat()
+# 讀到過期＝miss 並刪列；寫入時順手清全表過期列（走 expires_at 索引，量小成本可忽略）。
+
+# 內容欄（不含 PK order_oid 與快取中繼 fetched_at/expires_at）——與 tables.py 欄位順序一致，
+# 供 `_cache_get`/`_cache_set`/`_fetch_full_snapshot` 三處共用同一份欄名，避免各自手key打錯。
+_SNAPSHOT_VALUE_COLUMNS: tuple[str, ...] = (
+    "order_mid",
+    "order_status",
+    "price_pay",
+    "lang_code",
+    "crt_dt",
+    "prod_oid",
+    "prod_version",
+    "pkg_oid",
+    "item_oid",
+    "supplier_oid",
+    "lst_dt_go",
+    "timezone",
+    "pkg_name",
+    "prod_desc",
+    "supplier_name",
+    "supplier_order_handler",
+    "supplier_msg_handler",
+    "product_summary",
+    "product_desc_module",
+    "item_lang",
+    "item_setting",
+    "package_lang",
+    "package_setting",
+    "package_policy",
+    "package_module_setting",
+)
+_SNAPSHOT_ALL_COLUMNS: tuple[str, ...] = _SNAPSHOT_VALUE_COLUMNS + ("fetched_at", "expires_at")
 
 
-def _cache_get(key: str) -> Any:
-    """PG 快取讀：命中且未過期回 payload；未命中/已過期回 None（過期列順手刪除）。"""
+def _cache_get(order_oid: int) -> dict | None:
+    """PG 快取讀：命中且未過期回扁平欄位 dict（含 fetched_at/expires_at）；
+    未命中/已過期回 None（過期列順手刪除）。
+    """
     from sqlalchemy import delete, select
 
     from app.core.db import tables as T
 
     t = T.evidence_snapshot
     with T.get_engine().begin() as c:
-        row = c.execute(select(t.c.payload, t.c.expires_at).where(t.c.cache_key == key)).first()
+        row = c.execute(select(t).where(t.c.order_oid == order_oid)).mappings().first()
         if row is None:
             return None
-        if (row.expires_at or "") <= _now_iso():
-            c.execute(delete(t).where(t.c.cache_key == key))
+        if row["expires_at"] is None or row["expires_at"] <= datetime.now(timezone.utc):
+            c.execute(delete(t).where(t.c.order_oid == order_oid))
             return None
-        return row.payload
+        return {k: row[k] for k in _SNAPSHOT_ALL_COLUMNS}
 
 
-def _cache_set(key: str, kind: str, val: Any, ttl_s: int) -> None:
-    """PG 快取寫（upsert）＋清全表過期列；寫入失敗僅記 log 不拋（快取層不得拖垮取數）。"""
-    from datetime import timedelta
-
+def _cache_set(order_oid: int, fields: dict, fetched_at: datetime, expires_at: datetime) -> None:
+    """PG 快取寫（upsert 全欄）＋清全表過期列；寫入失敗僅記 log 不拋（快取層不得拖垮取數）。"""
     from sqlalchemy import delete
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from app.core.db import tables as T
 
     t = T.evidence_snapshot
-    now = datetime.now(timezone.utc)
+    values = {
+        "order_oid": order_oid,
+        "fetched_at": fetched_at,
+        "expires_at": expires_at,
+        **{k: fields.get(k) for k in _SNAPSHOT_VALUE_COLUMNS},
+    }
     try:
         with T.get_engine().begin() as c:
-            c.execute(delete(t).where(t.c.expires_at <= now.isoformat()))
-            stmt = pg_insert(t).values(
-                cache_key=key,
-                kind=kind,
-                payload=val,
-                fetched_at=now.isoformat(),
-                expires_at=(now + timedelta(seconds=ttl_s)).isoformat(),
-            )
+            c.execute(delete(t).where(t.c.expires_at <= fetched_at))
+            stmt = pg_insert(t).values(**values)
             c.execute(
                 stmt.on_conflict_do_update(
-                    index_elements=[t.c.cache_key],
-                    set_={
-                        "kind": kind,
-                        "payload": val,
-                        "fetched_at": now.isoformat(),
-                        "expires_at": (now + timedelta(seconds=ttl_s)).isoformat(),
-                    },
+                    index_elements=[t.c.order_oid],
+                    set_={k: v for k, v in values.items() if k != "order_oid"},
                 )
             )
     except Exception:  # noqa: BLE001 —— 快取寫入失敗降級為「無快取」，取數結果照常回傳
-        _log.warning("evidence cache write failed key=%s", key, exc_info=True)
+        _log.warning("evidence cache write failed order_oid=%s", order_oid, exc_info=True)
 
 
 def _order_ttl_s() -> int:
-    """order 級 TTL（短——order_status/price_refund 易變，拿舊值會判錯方向，R6）。"""
+    """訂單快照 TTL（一訂單一列的唯一 TTL；短——order_status/price_refund 易變，拿舊值判錯方向，R6）。"""
     return int(float((_cfg().get("cache") or {}).get("order_ttl_hours", 6)) * 3600)
-
-
-def _product_ttl_s() -> int:
-    """商品級 TTL（長——prod_version 鎖版理論不可變；未取得書面 immutable 保證前防禦性有限期，R5）。"""
-    return int(float((_cfg().get("cache") or {}).get("product_ttl_days", 30)) * 86400)
 
 
 # ── single-flight（in-process；單 worker 制度性保證，見 Dockerfile --workers 1 註記）──────
@@ -472,8 +487,7 @@ _inflight: dict[str, Future] = {}
 def _singleflight(key: str, fn: Callable[[], Any]) -> Any:
     """同 key 併發請求合併為一次底層執行；follower 共享 leader 的結果或例外。
 
-    批次 ThreadPool 多 worker 撞同一 order/product key 時，避免各自打一次 production
-    （首輪 distinct 商品比率實測 88/99——重複 key 不多但單次成本 3~5s，值得合併）。
+    批次 ThreadPool 多 worker 撞同一訂單 key 時，避免各自打一次 production。
     """
     with _inflight_lock:
         fut = _inflight.get(key)
@@ -550,11 +564,14 @@ class EvidenceResult:
     data: dict | None = None
 
 
-def _fetch_order_bundle(creds: dict, oid: str) -> dict | None:
-    """order 級 DB 實查（order_tbl+order_lst 合併；cache miss 時經 single-flight 呼叫）。
+def _fetch_full_snapshot(creds: dict, oid: str) -> dict | None:
+    """一訂單一列的完整佐證快照 DB 實查（order+商品+供應商；cache miss 時經 single-flight 呼叫）。
+
+    回傳扁平欄位 dict（鍵＝`_SNAPSHOT_VALUE_COLUMNS`，對應 evidence_snapshot 各欄），
+    商品版本語系依訂單 `order_tbl.lang_code`（缺則 config `lang_fallback`）。
 
     Returns:
-        order dict；訂單不存在或關聯鏈斷回 None（呼叫端轉 not_found，不快取）。
+        扁平欄位 dict；訂單不存在或關聯鏈斷（有主單無品項）回 None（呼叫端轉 not_found，不快取）。
     """
     _breaker_allow()
     ot = _query(creds, _SQL_ORDER_TBL, {"oid": oid})
@@ -563,98 +580,154 @@ def _fetch_order_bundle(creds: dict, oid: str) -> dict | None:
         return None
     order_mid, order_status, price_pay, lang_code, crt_dt = ot
     ol = _query(creds, _SQL_ORDER_LST, {"oid": oid})
-    _breaker_record(True)
     if ol is None:
+        _breaker_record(True)
         return None
     (
         prod_oid,
         prod_version,
-        pkg_oid,
+        prod_level2_oid,
         item_oid,
         supplier_oid,
         lst_dt_go,
         tz,
-        pkg_name,
+        prod_level2_name,
         prod_desc,
     ) = ol
-    return {
-        "order_oid": int(oid),
-        "order_mid": order_mid,
-        "order_status": order_status,
-        "price_pay": _jsonable(price_pay),
-        "lang_code": lang_code,
-        "crt_dt": _jsonable(crt_dt),
-        "prod_oid": prod_oid,
-        "prod_version": prod_version,
-        "pkg_oid": pkg_oid,
-        "item_oid": item_oid,
-        "supplier_oid": supplier_oid,
-        "lst_dt_go": _jsonable(lst_dt_go),
-        "timezone": tz,
-        "package_name": pkg_name,
-        "prod_desc": prod_desc,
-    }
 
-
-def _fetch_product_bundle(creds: dict, order: dict, lang: str) -> dict:
-    """商品版本級 DB 實查（4 表投影；同 (prod,ver,lang,pkg) 的多筆訂單共用快取）。"""
-    _breaker_allow()
-    common = {
-        "prod_oid": order["prod_oid"],
-        "ver": order["prod_version"],
-        "pkg_oid": order["pkg_oid"],
-        "lang": lang,
-    }
-    pl = _query(creds, _SQL_PROD_LANG, common)
-    ps = _query(creds, _SQL_PROD_SETTING, common)
+    # 商品/供應商各表點查：pkg 維度鍵＝order_lst.prod_level2_oid（方案 oid），語系依訂單
+    lang = (lang_code or "").strip() or str(
+        (_cfg().get("summary") or {}).get("lang_fallback", "zh-tw")
+    )
+    common = {"prod_oid": prod_oid, "ver": prod_version, "pkg_oid": prod_level2_oid, "lang": lang}
+    pl_row = _query(creds, _SQL_PROD_LANG, common)
+    ps_row = _query(creds, _SQL_PROD_SETTING, common)
     pb = _query(creds, _SQL_PKG_BASIC, common)
     ms = _query(creds, _SQL_MODULE_SETTING, common, many=True)
+    sup = _query(creds, _SQL_SUPPLIER, {"sup": supplier_oid})
     _breaker_record(True)
+
+    pl = pl_row[0] if pl_row else {}
+    ps = ps_row[0] if ps_row else {}
+
     return {
-        "product_lang": pl[0] if pl else None,
-        "product_setting": ps[0] if ps else None,
-        "pkg_basic": ({"cancel_policy_client": pb[0], "tour_duration": pb[1]} if pb else None),
-        "module_setting": ({str(r[0]): r[1] for r in ms} if ms else None),
+        "order_mid": order_mid,
+        "order_status": order_status,
+        "price_pay": float(price_pay) if price_pay is not None else None,
+        "lang_code": lang_code,
+        "crt_dt": crt_dt,
+        "prod_oid": prod_oid,
+        "prod_version": prod_version,
+        "pkg_oid": prod_level2_oid,
+        "item_oid": item_oid,
+        "supplier_oid": supplier_oid,
+        "lst_dt_go": lst_dt_go,
+        "timezone": tz,
+        "pkg_name": prod_level2_name,
+        "prod_desc": prod_desc,
+        "supplier_name": sup[0] if sup else None,
+        "supplier_order_handler": sup[1] if sup else None,
+        "supplier_msg_handler": sup[2] if sup else None,
+        "product_summary": ps.get("product_summary"),
+        "product_desc_module": ps.get("product_desc_module"),
+        "item_lang": pl.get("item_lang"),
+        "item_setting": ps.get("item_setting"),
+        "package_lang": pl.get("package_lang"),
+        "package_setting": ps.get("package_setting"),
+        "package_policy": ({"cancel_policy_client": pb[0], "tour_duration": pb[1]} if pb else None),
+        "package_module_setting": (
+            [{"prod_module_type": r[0], "prod_module_setting": r[1]} for r in ms] if ms else None
+        ),
     }
 
 
-def _fetch_supplier_bundle(creds: dict, supplier_oid) -> dict | None:
-    """supplier 級 DB 實查（名稱/處理單位；低變動，共用商品級 TTL）。"""
-    _breaker_allow()
-    sup = _query(creds, _SQL_SUPPLIER, {"sup": supplier_oid})
-    _breaker_record(True)
-    if sup is None:
-        return None
-    return {"supplier_name": sup[0], "order_handler": sup[1], "msg_handler": sup[2]}
-
-
-def _cached(key: str, kind: str, ttl_s: int, fetch: Callable[[], Any]) -> tuple[Any, bool]:
+def _cached(
+    order_oid: int, ttl_s: int, fetch: Callable[[], dict | None]
+) -> tuple[dict | None, bool]:
     """快取優先讀取：命中直接回（不進 single-flight，減少鎖爭用）；miss 經 single-flight 實查。
 
     Returns:
-        (value, cache_hit)。fetch 回 None（如查無此單）不落快取——避免暫態誤判長駐。
+        (fields, cache_hit)。fields 為扁平欄位 dict（含 fetched_at/expires_at）；
+        fetch 回 None（如查無此單）不落快取——避免暫態誤判長駐。
     """
-    val = _cache_get(key)
+    val = _cache_get(order_oid)
     if val is not None:
         return val, True
 
-    def _do() -> Any:
+    def _do() -> dict | None:
         v = fetch()
-        if v is not None:
-            _cache_set(key, kind, v, ttl_s)
-        return v
+        if v is None:
+            return None
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=ttl_s)
+        _cache_set(order_oid, v, now, expires_at)
+        return {**v, "fetched_at": now, "expires_at": expires_at}
 
-    return _singleflight(key, _do), False
+    return _singleflight(str(order_oid), _do), False
+
+
+def _assemble_tree(order_oid: int, fields: dict, *, cache_hit: bool) -> dict:
+    """扁平欄位（DB row 或剛實查結果）→ 樹狀分組物件（API 回傳形狀，前端 JsonEditor 顯示用）。
+
+    分組：order_summary（order_tbl ∪ order_lst，訂單本身狀態 + 買了什麼/何時使用）與
+    supplier_info 為 allow-list 純量欄（PII 防線掃描範圍）；product_info/item_info/
+    package_info 為商品內容 jsonb 欄（PII 防線豁免區）；meta 為快取中繼資訊（非業務資料）。
+    """
+    return {
+        "order_summary": {
+            "order_oid": order_oid,
+            "order_mid": fields.get("order_mid"),
+            "order_status": fields.get("order_status"),
+            "price_pay": fields.get("price_pay"),
+            "lang_code": fields.get("lang_code"),
+            "crt_dt": fields.get("crt_dt"),
+            "prod_oid": fields.get("prod_oid"),
+            "prod_version": fields.get("prod_version"),
+            "pkg_oid": fields.get("pkg_oid"),
+            "item_oid": fields.get("item_oid"),
+            "supplier_oid": fields.get("supplier_oid"),
+            "lst_dt_go": fields.get("lst_dt_go"),
+            "timezone": fields.get("timezone"),
+            "pkg_name": fields.get("pkg_name"),
+            "prod_desc": fields.get("prod_desc"),
+        },
+        "supplier_info": {
+            "supplier_name": fields.get("supplier_name"),
+            "supplier_order_handler": fields.get("supplier_order_handler"),
+            "supplier_msg_handler": fields.get("supplier_msg_handler"),
+        },
+        "product_info": {
+            "product_summary": fields.get("product_summary"),
+            "product_desc_module": fields.get("product_desc_module"),
+        },
+        "item_info": {
+            "item_lang": fields.get("item_lang"),
+            "item_setting": fields.get("item_setting"),
+        },
+        "package_info": {
+            "package_lang": fields.get("package_lang"),
+            "package_setting": fields.get("package_setting"),
+            "package_policy": fields.get("package_policy"),
+            "package_module_setting": fields.get("package_module_setting"),
+        },
+        "meta": {
+            "fetched_at": fields.get("fetched_at"),
+            "expires_at": fields.get("expires_at"),
+            "source": "qc-snapshot",  # 過渡管道標記；服務帳號接線後改 replica 標記
+            "cache_hit": cache_hit,
+        },
+    }
 
 
 def get_evidence(order_oid: str | int | None) -> EvidenceResult:
-    """判決歸因唯一取數入口：兩級快取 + single-flight + 熔斷 + allow-list 投影點查。
+    """判決歸因唯一取數入口：拆欄快取 + single-flight + 熔斷 + allow-list 投影點查。
 
     Args:
-        order_oid: 訂單 oid；空值回 no_order_oid。
+        order_oid: 訂單 oid；空值或非數字回 no_order_oid。
 
     Returns:
-        EvidenceResult；status ∈ {fetched, cache_hit} 時帶 data，其餘 data=None
+        EvidenceResult；status ∈ {fetched, cache_hit} 時 data 為樹狀分組物件
+        （order_summary/supplier_info/product_info/item_info/package_info/meta），其餘 data=None
         （呼叫端以空佐證降級判決，永不阻斷批次）。
     """
     import psycopg2
@@ -666,68 +739,45 @@ def get_evidence(order_oid: str | int | None) -> EvidenceResult:
     creds = current()
     if creds is None:
         return EvidenceResult("degraded_unavailable")
-    oid = str(order_oid or "").strip()
-    if not oid:
+    oid_str = str(order_oid or "").strip()
+    if not oid_str:
+        return EvidenceResult("no_order_oid")
+    try:
+        oid = int(oid_str)
+    except ValueError:
         return EvidenceResult("no_order_oid")
 
     t0 = time.time()
     try:
-        order, hit_order = _cached(
-            f"order:{oid}", "order", _order_ttl_s(), lambda: _fetch_order_bundle(creds, oid)
-        )
-        if order is None:
-            _audit(oid, "not_found", t0)
+        fields, hit = _cached(oid, _order_ttl_s(), lambda: _fetch_full_snapshot(creds, oid_str))
+        if fields is None:
+            _audit(oid_str, "not_found", t0)
             return EvidenceResult("not_found")
 
-        lang = (order.get("lang_code") or "").strip() or str(
-            (_cfg().get("summary") or {}).get("lang_fallback", "zh-tw")
-        )
-        prod_key = f"prod:{order['prod_oid']}:{order['prod_version']}:{lang}:{order['pkg_oid']}"
-        prod, hit_prod = _cached(
-            prod_key, "product", _product_ttl_s(), lambda: _fetch_product_bundle(creds, order, lang)
-        )
-        sup, hit_sup = _cached(
-            f"sup:{order['supplier_oid']}",
-            "supplier",
-            _product_ttl_s(),
-            lambda: _fetch_supplier_bundle(creds, order["supplier_oid"]),
-        )
-
-        all_hit = hit_order and hit_prod and hit_sup
-        data = {
-            "order": order,
-            **(prod or {}),
-            "supplier": sup,
-            "meta": {
-                "lang": lang,
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
-                "source": "qc-snapshot",  # 過渡管道標記；服務帳號接線後改 replica 標記
-                "cache": {"order": hit_order, "product": hit_prod, "supplier": hit_sup},
-            },
-        }
-        # 第二道防線：只掃自組區塊（商品目錄內容豁免，見 PII_GUARD_SECTIONS 註解）
+        data = _assemble_tree(oid, fields, cache_hit=hit)
+        # 第二道防線：只掃自組區塊（商品內容豁免，見 PII_GUARD_SECTIONS 註解）
         assert_no_pii_keys({k: data.get(k) for k in PII_GUARD_SECTIONS})
-        status = "cache_hit" if all_hit else "fetched"
-        _audit(oid, status, t0)
+        status = "cache_hit" if hit else "fetched"
+        _audit(oid_str, status, t0)
         return EvidenceResult(status, data)
     except BreakerOpen:
-        _audit(oid, "breaker_open", t0)
+        _audit(oid_str, "breaker_open", t0)
         return EvidenceResult("degraded_unavailable")
     except pg_errors.QueryCanceled:
         _breaker_record(False)
-        _audit(oid, "timeout", t0)
+        _audit(oid_str, "timeout", t0)
         return EvidenceResult("degraded_unavailable")
     except (psycopg2.OperationalError, psycopg2.InterfaceError, pg_pool.PoolError):
         _breaker_record(False)
-        _audit(oid, "conn_fail", t0)
+        _audit(oid_str, "conn_fail", t0)
         return EvidenceResult("degraded_unavailable")
     except TimeoutError:
         # single-flight follower 等 leader 逾時（leader 卡死/池耗盡）——降級不重試
-        _audit(oid, "singleflight_timeout", t0)
+        _audit(oid_str, "singleflight_timeout", t0)
         return EvidenceResult("degraded_unavailable")
     except Exception:
-        _log.exception("evidence fetch unexpected error order_oid=%s", oid)
-        _audit(oid, "error", t0)
+        _log.exception("evidence fetch unexpected error order_oid=%s", oid_str)
+        _audit(oid_str, "error", t0)
         return EvidenceResult("error")
 
 

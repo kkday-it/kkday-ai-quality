@@ -11,8 +11,7 @@
     "breaker_cooldown_s": 60
   },
   "cache": {
-    "order_ttl_hours": 6,
-    "product_ttl_days": 30
+    "order_ttl_hours": 6
   },
   "singleflight_wait_timeout_s": 20,
   "summary": {
