@@ -30,10 +30,14 @@ _DEFAULT_STATUS_LABELS: dict[str, str] = {
     "confirmed": "已確認",
     "dismissed": "已忽略",
 }
+# verdict_by 顯示 label：人工判決存操作者 email（原樣顯示，不在此表）；系統判決固定寫入
+# "system:auto_confirm"（prejudge.py `_route_status`），供匯出/前端顯示中文而非內部技術字串。
+_DEFAULT_VERDICT_BY_LABELS: dict[str, str] = {"system:auto_confirm": "系統自動確認"}
 _POLARITY_LABEL_ZH: dict[str, str] = {}
 _TIER_LABEL_ZH: dict[str, str] = {}
 _STAGE_LABEL_ZH: dict[str, str] = {}
 _STATUS_LABEL_ZH: dict[str, str] = {}
+_VERDICT_BY_LABEL_ZH: dict[str, str] = {}
 _CONFIDENCE_TIERS: dict = {}
 
 
@@ -47,6 +51,8 @@ def _apply_pipeline_cfg(cfg: dict) -> None:
     _STAGE_LABEL_ZH.update(cfg.get("stage_labels", {}))
     _STATUS_LABEL_ZH.clear()
     _STATUS_LABEL_ZH.update(cfg.get("status_labels") or _DEFAULT_STATUS_LABELS)
+    _VERDICT_BY_LABEL_ZH.clear()
+    _VERDICT_BY_LABEL_ZH.update(cfg.get("verdict_by_labels") or _DEFAULT_VERDICT_BY_LABELS)
     _CONFIDENCE_TIERS.clear()
     _CONFIDENCE_TIERS.update(cfg.get("confidence_tiers", _DEFAULT_TIERS))
 

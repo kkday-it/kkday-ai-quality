@@ -1,10 +1,12 @@
 """問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。
 
-整列底色依 polarity（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱
-長文欄」後各欄所需高度（長文欄超出截斷顯示、不撐爆列高）。資料表尾附 C-1~C-6 六域命中欄
-（符合/不符合，供 Excel 篩選）；另附「分類統計」圖表工作表（本次導出的情緒傾向/L1/L2/
-分層/階段/模型分佈，見 export_stats.py）與「Prompts」工作表（初判 prompt active 版本快照，
-初判溯源）。
+資料表雙層表頭（見 `_style_header_grouped`）：第一列＝分類群組合併儲存格＋各群組配色
+（原始反饋/訂單商品資料/AI 初判結果/人工判決/六域命中/每個對比模型各自一色，見
+`_grouped_header_spans`），第二列＝實際欄位名稱；資料改自第三列起。整列底色依 polarity
+（正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱長文欄」後各欄所需高度
+（長文欄超出截斷顯示、不撐爆列高）。資料表尾附 C-1~C-6 六域命中欄（符合/不符合，供 Excel
+篩選）；另附「分類統計」圖表工作表（本次導出的情緒傾向/L1/L2/分層/階段/模型分佈，見
+export_stats.py）與「Prompts」工作表（初判 prompt active 版本快照，初判溯源）。
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from app.core.db._shared import (
     _STAGE_LABEL_ZH,
     _STATUS_LABEL_ZH,
     _TIER_LABEL_ZH,
+    _VERDICT_BY_LABEL_ZH,
     _domain_owner,
     _summary_langs,
     fmt_datetime,
@@ -75,8 +78,69 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     # ── 判決組（判決軸：對初判結果的裁決；快照模式歷史切片無判決軸，三欄空白屬預期）──
     ("判決狀態", "status", 10),  # 待判決/自動確認/已確認/已駁回（attr 級）
     ("判決時間", "verdict_at", 20),  # attr 級；系統判決＝路由當下、人工判決＝操作當下
-    ("判決人", "verdict_by", 20),  # 人工＝email；系統＝system:auto_confirm
+    (
+        "判決人",
+        "verdict_by",
+        20,
+    ),  # 人工＝email 原樣；系統＝system:auto_confirm 中文化為「系統自動確認」（見 _VERDICT_BY_LABEL_ZH）
 ]
+
+# 雙層表頭第一列的分類群組（key → 群組標題）：涵蓋 _EXPORT_XLSX_COLS 全部 26 欄，按語義分四組。
+# ⚠️ 新增 _EXPORT_XLSX_COLS 欄位必須同步補這裡的映射——缺映射會落入 _group_of 的「其他」
+# 防禦分支（不算錯，但群組不精確，應視為漏補）。dom_cols（dom__ 前綴）/cmp_cols（cmp__ 前綴）
+# 依鍵前綴動態判定，不需在此列舉。
+_COL_GROUPS: dict[str, str] = {
+    "source_id": "原始反饋",
+    "source_label": "原始反饋",
+    "title": "原始反饋",
+    "content": "原始反饋",
+    "score": "原始反饋",
+    "occurred_at": "原始反饋",
+    "order_mid": "訂單/商品資料",
+    "go_date": "訂單/商品資料",
+    "prod_oid": "訂單/商品資料",
+    "prod_name": "訂單/商品資料",
+    "pkg_oid": "訂單/商品資料",
+    "package_name": "訂單/商品資料",
+    "summary": "AI 初判結果",
+    "our_sentiment": "AI 初判結果",
+    "l1_label": "AI 初判結果",
+    "l2_label": "AI 初判結果",
+    "confidence": "AI 初判結果",
+    "confidence_tier": "AI 初判結果",
+    "prejudge_stage": "AI 初判結果",
+    "model": "AI 初判結果",
+    "prejudged_at": "AI 初判結果",
+    "prompt_version": "AI 初判結果",
+    "polarity_prompt_version": "AI 初判結果",
+    "status": "人工判決",
+    "verdict_at": "人工判決",
+    "verdict_by": "人工判決",
+}
+
+
+def _group_of(key: str) -> str:
+    """欄位鍵 → 雙層表頭第一列群組標題。dom__/cmp__ 前綴（動態欄，見 `_domain_match_cols`/
+    `_compare_cols`）依前綴判定；其餘查 `_COL_GROUPS`，缺映射防禦性回「其他」。"""
+    if key.startswith("dom__"):
+        return "六域命中"
+    if key.startswith("cmp__"):
+        return f"對比模型｜{key.split('__')[1]}"  # 每個對比模型各自一組（各自配色）
+    return _COL_GROUPS.get(key, "其他")
+
+
+def _grouped_header_spans(cols: list[tuple[str, str, int]]) -> list[tuple[str, int]]:
+    """cols（_EXPORT_XLSX_COLS + dom_cols + cmp_cols）→ 雙層表頭第一列的 (群組標題, 涵蓋欄數)
+    run-length 序列（相鄰同群組欄合併為一格）。"""
+    spans: list[tuple[str, int]] = []
+    for _t, key, _w in cols:
+        g = _group_of(key)
+        if spans and spans[-1][0] == g:
+            spans[-1] = (g, spans[-1][1] + 1)
+        else:
+            spans.append((g, 1))
+    return spans
+
 
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
 _XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -103,6 +167,8 @@ def _export_cell(key: str, value) -> str:
         return _STAGE_LABEL_ZH.get(value, value)
     if key == "status":
         return _STATUS_LABEL_ZH.get(value, value)
+    if key == "verdict_by":
+        return _VERDICT_BY_LABEL_ZH.get(value, value)  # 系統判決固定值中文化；人工 email 原樣
     return value
 
 
@@ -248,8 +314,8 @@ def export_problems_xlsx(
 ) -> bytes:
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
 
-    複用 rule_export._style_header（品牌綠表頭/凍結首列/斑馬/細邊框），與規則導出視覺一致。
-    傾向/分層/初判階段輸出繁中 label。openpyxl / _style_header lazy import。
+    複用 rule_export._style_header_grouped（雙層表頭：分類群組配色列 + 品牌綠具體欄位列/凍結/
+    斑馬/細邊框），與規則導出視覺一致。傾向/分層/初判階段輸出繁中 label。openpyxl 相關 lazy import。
 
     Args:
         source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
@@ -276,7 +342,7 @@ def export_problems_xlsx(
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill
 
-    from app.core.judge_config.rule_export import _style_header
+    from app.core.judge_config.rule_export import _style_header_grouped
 
     data = list_problems(
         source=source,
@@ -360,10 +426,12 @@ def export_problems_xlsx(
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
     cols = _EXPORT_XLSX_COLS + dom_cols + cmp_cols
+    group_spans = _grouped_header_spans(cols)
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
-    ws.append([c[0] for c in cols])
+    ws.append([""] * len(cols))  # 第 1 列佔位：稍後由 _style_header_grouped 填分類群組標題+配色
+    ws.append([c[0] for c in cols])  # 第 2 列：具體欄位標題
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級。
     # ⚠️ 新增歸因級欄位必須同步三處：_EXPORT_XLSX_COLS + _flat_attr + 本集合——缺此集合會
     # fallback 讀 row 級（_enrich_problem 的 status 恆 None）→ 欄位靜默空白（status 曾踩）。
@@ -382,7 +450,7 @@ def export_problems_xlsx(
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
-    r_excel = 2  # 資料起始列（表頭列 1）
+    r_excel = 3  # 資料起始列（雙層表頭：列 1 分類群組、列 2 具體欄位）
     for ri, r in enumerate(rows):
         # 每 _PROGRESS_STEP 筆回報進度並檢查取消（取消時 ctx.check 拋 Cancelled 中止組檔）
         if ctx is not None and ri % _PROGRESS_STEP == 0:
@@ -399,9 +467,10 @@ def export_problems_xlsx(
             ws.append(line)
         merges.append((r_excel, n))
         r_excel += n
-    _style_header(ws, [c[2] for c in cols], freeze_cols=4)  # 凍結表頭 + 前 4 欄（編號～評論內容）
+    # 凍結雙層表頭（列1分類群組＋列2具體欄位）+ 前 4 欄（編號～評論內容）；篩選箭頭掛列 2。
+    _style_header_grouped(ws, group_spans, [c[2] for c in cols], freeze_cols=4)
     # polarity 整列底色（正綠/中灰/負紅；未初判不上色）。置於「合併前」——此時全為普通 cell，
-    # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header 故覆蓋其斑馬紋。
+    # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header_grouped 故覆蓋其斑馬紋。
     _pol_fill = {
         "positive": PatternFill("solid", fgColor="DCF3E3"),  # 正向：淡綠
         "neutral": PatternFill("solid", fgColor="EAEBEE"),  # 中立：淡灰
@@ -647,6 +716,10 @@ def _append_legend_sheet(wb, has_compare: bool) -> None:
             "工作表結構",
             "①資料表（每列＝一條歸因；同評論多歸因時評論級欄合併儲存格）②分類統計（本次導出的分佈圖表）③Prompts（導出當下 7 支初判 prompt 的 active 版本快照）④本說明",
         ),
+        (
+            "資料表雙層表頭",
+            "第一列＝分類群組（合併儲存格＋配色：原始反饋/訂單商品資料/AI 初判結果/人工判決/六域命中；並排對比模型時每個模型各自一色）；第二列＝實際欄位名稱，篩選箭頭掛在此列，逐欄可用",
+        ),
         ("整列底色", "依評論情緒傾向：正向＝淡綠、中立＝淡灰、負向＝淡紅；未初判不上色"),
         (
             "評論級 vs 歸因級",
@@ -667,7 +740,7 @@ def _append_legend_sheet(wb, has_compare: bool) -> None:
         ("判決狀態", "判決軸：待判決／自動確認（系統判決）／已確認／已駁回（人工判決）"),
         (
             "判決時間/判決人",
-            "該歸因被裁決的時間與主體：系統判決＝system:auto_confirm＋路由當下；人工判決＝操作者 email＋操作當下；待判決＝空白",
+            "該歸因被裁決的時間與主體：系統判決＝「系統自動確認」＋路由當下；人工判決＝操作者 email＋操作當下；待判決＝空白",
         ),
         (
             "C-1~C-6 六域欄",

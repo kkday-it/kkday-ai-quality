@@ -10,5 +10,8 @@
     "auto_confirmed": "自動確認",
     "confirmed": "已確認",
     "dismissed": "已駁回"
+  },
+  "verdict_by_labels": {
+    "system:auto_confirm": "系統自動確認"
   }
 }

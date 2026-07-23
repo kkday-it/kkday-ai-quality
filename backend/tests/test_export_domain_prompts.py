@@ -45,11 +45,14 @@ def _finding(rec_oid: str, l1_code: str, l1_label: str) -> TicketFinding:
 
 
 def _sheet_cells(blob: bytes) -> tuple[list, list[list], list[str]]:
-    """xlsx bytes → (資料表表頭, 資料列, 全部工作表名)。"""
+    """xlsx bytes → (資料表具體欄位表頭, 資料列, 全部工作表名)。
+
+    雙層表頭：列1＝分類群組（合併儲存格）、列2＝具體欄位、列3+＝資料。
+    """
     wb = load_workbook(io.BytesIO(blob))
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    return list(rows[0]), [list(r) for r in rows[1:]], wb.sheetnames
+    return list(rows[1]), [list(r) for r in rows[2:]], wb.sheetnames
 
 
 def test_domain_columns_judged_vs_unjudged(temp_db) -> None:

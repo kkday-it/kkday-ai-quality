@@ -52,11 +52,11 @@ def _finding(
 
 
 def _cells(blob: bytes) -> tuple[list, list[list]]:
-    """xlsx bytes → (表頭列, 資料列 list)。"""
+    """xlsx bytes → (具體欄位表頭列, 資料列 list)。雙層表頭：列1＝分類群組、列2＝具體欄位、列3+＝資料。"""
     wb = load_workbook(io.BytesIO(blob))
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    return list(rows[0]), [list(r) for r in rows[1:]]
+    return list(rows[1]), [list(r) for r in rows[2:]]
 
 
 def _col(headers: list, name: str) -> int:
@@ -73,6 +73,21 @@ def test_export_current_mode_status_and_model_columns(temp_db) -> None:
     r = rows[0]
     assert r[_col(headers, "初判模型")] == "gpt-5-mini"
     assert r[_col(headers, "判決狀態")] == "已確認"  # _STATUS_LABEL_ZH 中文化
+
+
+def test_export_system_verdict_by_is_localized(temp_db) -> None:
+    """系統判決（G1 自動確認）留痕 verdict_by='system:auto_confirm'：導出「判決人」欄需中文化為
+    「系統自動確認」（`_shared._VERDICT_BY_LABEL_ZH`），不得原樣輸出內部技術字串。人工判決仍原樣
+    顯示 email（見 test_export_current_mode_status_and_model_columns）。"""
+    db.insert_source_batch("product_reviews", [_pr_row("AC1")])
+    f = _finding("AC1", "gpt-5-mini")
+    f.status = "auto_confirmed"
+    f.verdict_by = "system:auto_confirm"
+    db.replace_source_findings("product_reviews", "AC1", [f])
+    headers, rows = _cells(db.export_problems_xlsx(source="product_reviews"))
+    r = rows[0]
+    assert r[_col(headers, "判決狀態")] == "自動確認"
+    assert r[_col(headers, "判決人")] == "系統自動確認"
 
 
 def test_export_snapshot_model_replaces_content(temp_db) -> None:
