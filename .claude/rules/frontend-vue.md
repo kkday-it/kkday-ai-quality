@@ -98,6 +98,7 @@ paths:
 - 列操作欄範本（AttributionList）：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 歸因歷史 `text`+icon——四鈕四樣式，掃一眼即分級。
 - 有明確語義的動作**配對應 icon**（導出→`icon-download`、新增→`icon-plus`、刷新→`icon-refresh`），icon 從 `@arco-design/web-vue/es/icon` 具名 import。
 - 破壞性操作除變色外，仍須二次確認（`Modal.confirm` / `a-popconfirm`），顏色不替代確認。
+- **同類按鈕聚合為 `a-button-group`**：同一操作區內若有 2 顆以上屬於「同一組核心操作」（如某功能的分類/歷史/導出三顆，語意上是一組流程而非各自獨立的動作），一律包 `<a-button-group>` 讓它們貼齊顯示成一個視覺群組，不要讓語意相關的按鈕之間留有等寬 gap、看起來跟其他無關按鈕一樣鬆散排列；`a-button-group` 只管版位貼齊，**組內每顆按鈕仍各自帶自己的 `type`/`status`**（不因為進了 group 就統一樣式），繼續遵守上表的主次區分。與 group 語意無關、屬於另一類動作（如試驗性 `dashed` 按鈕）維持在 group 外、不強行併入。範本見 `features/judge/pages/AttributionList.vue`（初判分類/歸因歷史/導出列表併一組，Prompt 測試獨立在外）。
 
 ## 彈窗 vs 抽屜（Drawer-first · 強制）
 

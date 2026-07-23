@@ -324,27 +324,27 @@ def _complete_effort_safe(
 def _reasoning_kwargs(cfg: dict) -> dict:
     """依 provider 組出 thinking / reasoning_effort 的實際請求參數（單一出口，chat_json 與 ping 共用）。
 
-    - bytedance（Ark）：原生 `thinking:{type}` 開關走 extra_body（OpenAI SDK 非原生欄位）；實測
-      disabled 不可併送 reasoning_effort（400 Invalid combination），故 off 只送開關。
-    - openai / gemini：無獨立 thinking 參數，off ≙ reasoning_effort="none"（不支援 none 的 model
-      由 _complete_effort_safe 降級為 minimal＝該 model 最低推理檔）。
-    - thinking="default"（或缺省）：不干涉，僅依 reasoning_effort 傳遞（既有行為）。
+    2026-07-23 依三供應商官方文件全面重寫（見 llm_model.json providers[].docs）：
+    - openai / gemini：官方文件逐字確認**沒有獨立的 thinking 開關參數**——reasoning_effort 本身就是
+      唯一控制面，"none" 是使用者可直接選的正常值，不再需要一層「thinking off → 強制轉 none」的模擬。
+      `cfg["thinking"]` 對這兩家不具意義，不讀取。
+    - bytedance（Ark）：官方 SDK 型別確認 `thinking.type` 是真實原生的三態 enum（enabled/disabled/
+      auto），走 extra_body（OpenAI SDK 非原生欄位）。disabled 時實測不可併送 reasoning_effort（400
+      Invalid combination）；auto 與 reasoning_effort 的組合行為未查到官方或旁證資料，保守起見兩者
+      皆比照「不送 reasoning_effort」處理，只送開關本身。`cfg["thinking"]` 允許值：'enabled' /
+      'disabled' / 'auto'（或 'default'/缺省＝不送開關，交由 Ark 用其 API 預設）。
     """
-    thinking = cfg.get("thinking")
     eff = cfg.get("reasoning_effort")
     eff = eff if (eff and eff != "default") else None
     provider = _settings.provider_id_for(cfg.get("base_url") or "")
     if provider == "bytedance":
-        if thinking == "off":
-            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        thinking = cfg.get("thinking")
         out: dict = {}
-        if thinking == "on":
-            out["extra_body"] = {"thinking": {"type": "enabled"}}
-        if eff:
+        if thinking in ("enabled", "disabled", "auto"):
+            out["extra_body"] = {"thinking": {"type": thinking}}
+        if thinking not in ("disabled", "auto") and eff:
             out["reasoning_effort"] = eff
         return out
-    if thinking == "off":
-        return {"reasoning_effort": "none"}
     return {"reasoning_effort": eff} if eff else {}
 
 

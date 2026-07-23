@@ -1,6 +1,6 @@
-"""設定持久化（全項目共享，存 DB user_settings 表固定 __global__ row）——連線層 + 功能區默認旋鈕層。
+"""設定持久化（全項目共享，存 DB settings 表固定 __global__ 單例 row）——連線層 + 功能區默認旋鈕層。
 
-結構（user_settings.data JSON，A schema · 2026-07-22）：
+結構（settings.data JSON，A schema · 2026-07-22）：
 - LLM 連線層：`llm_connections`（{ provider_id: {base_url} }，每供應商一條：openai/gemini/bytedance）
   + `llm_tokens`（{ provider_id: token }，per-provider 機密）+ `provider_models`（各供應商自訂 model 清單）。
 - LLM 旋鈕層：`llm_area_defaults`（{ area: {provider,model,thinking,reasoning_effort,temperature} }，
@@ -50,19 +50,26 @@ QC_ENVS: tuple[str, ...] = tuple(
 
 
 def model_capabilities_for(model_id: str) -> dict:
-    """回某 model 的可配參數能力：thinking 是否支援 / reasoning_effort 值域 / temperature 鎖定規則。
+    """回某 model 的可配參數能力：thinking 控制形態 / reasoning_effort 值域 / temperature 鎖定規則。
 
-    能力預設取「該 model 所屬 provider」的 provider 級欄位（見 llm_model.json providers[].
-    supportsThinking 等，目前已驗證的差異僅到 provider 級——OpenAI reasoning model 開 thinking 時
-    temperature 鎖 1，Gemini/ByteDance 不鎖），`modelCapabilities[model_id]` 可對個別 model 覆寫任一欄位
-    （未登記則沿用 provider 預設）。查無所屬 provider（自訂/未知 model）回 openai 預設，取代前端原寫死
-    的 `tempLocked = provider === 'openai'` 與固定 REASONING 值域。
+    2026-07-23 依三供應商官方文件全面重寫（各家 doc 連結見 llm_model.json providers[].docs）：
+    OpenAI／Gemini 官方文件皆證實**沒有獨立的 thinking 開關參數**，reasoning_effort 本身就是唯一控制面
+    （`thinkingControl="effortOnly"`）；ByteDance/Ark 官方 SDK 型別確認 `thinking.type` 是真實原生的
+    三態 enum（enabled/disabled/auto，`thinkingControl="nativeSwitch"`，可用狀態見 `thinkingModes`）。
+    能力預設取「該 model 所屬 provider」的 provider 級欄位，`modelCapabilities[model_id]` 可對個別 model
+    覆寫任一欄位（未登記則沿用 provider 預設）。查無所屬 provider（自訂/未知 model）回 openai 預設。
 
     Args:
         model_id: LLM model id（如 gpt-5.4-mini）。
 
     Returns:
-        {supportsThinking, reasoningEffortOptions, temperatureLockedWhenThinking, lockedTemperatureValue}。
+        {supportsThinking, thinkingControl, thinkingModes, reasoningEffortOptions,
+        temperatureLockedWhenThinking, temperatureAlwaysLocked, lockedTemperatureValue, maxTemperature,
+        reasoningOffHint}。reasoningOffHint 僅 nativeSwitch（ByteDance）provider 有值——effortOnly
+        provider 沒有「關閉」這個獨立狀態（none 是 reasoning_effort 的正常值之一），故此文案對它們恆為
+        空字串；temperatureAlwaysLocked＝不論 thinking 狀態、伺服器端一律忽略自訂 temperature（與
+        temperatureLockedWhenThinking「僅思考生效時才鎖」為不同機制，見 llm_model.json modelCapabilities
+        的實測案例）。
     """
     owner = next(
         (
@@ -74,10 +81,16 @@ def model_capabilities_for(model_id: str) -> dict:
     ) or next((p for p in LLM_PROVIDERS if p.get("id") == "openai"), {})
     base = {
         "supportsThinking": owner.get("supportsThinking", True),
+        "thinkingControl": owner.get("thinkingControl", "effortOnly"),
+        "thinkingModes": owner.get("thinkingModes", []),
         "reasoningEffortOptions": owner.get("reasoningEffortOptions")
         or _LLM_DEFAULTS.get("reasoning", []),
         "temperatureLockedWhenThinking": owner.get("temperatureLockedWhenThinking", False),
+        "temperatureAlwaysLocked": owner.get("temperatureAlwaysLocked", False),
         "lockedTemperatureValue": owner.get("lockedTemperatureValue", 1),
+        "maxTemperature": owner.get("maxTemperature", 2),
+        "reasoningOffHint": owner.get("reasoningOffHint", ""),
+        "docs": owner.get("docs", {}),
     }
     return {**base, **LLM_MODEL_CAPABILITIES.get(model_id, {})}
 
@@ -137,9 +150,8 @@ _DEFAULT_LLM: dict = {
     "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
 }
 
-# 全項目共享設定固定 key（去帳戶隔離·2026-07-22）：user_settings 表 PK 仍為 user_id（表結構不動），
-# 業務配置不再 per-user——所有 load/save 都用此 key。email 身分僅供權限授予查詢（見 permissions），
-# 與配置存取解耦。
+# 全項目共享設定固定 key（settings 表單例 row）：所有 load/save 都用此 key。
+# email 身分僅供權限授予查詢（見 permissions），與配置存取解耦。
 GLOBAL_SETTINGS_KEY = "__global__"
 
 
@@ -245,14 +257,13 @@ def _migrate_configs_to_areas(data: dict) -> dict:
     return new
 
 
-def load_settings(user_id: str | None = None) -> dict:
+def load_settings() -> dict:
     """讀全項目共享設定（含明文機密）；未存過回空白結構複本。
 
-    去帳戶隔離：一律讀 GLOBAL_SETTINGS_KEY（傳入的 user_id 保留呼叫相容但忽略）。
     舊多套 config 結構（無 `llm_connections` 鍵）偵測到即遷移成新連線+功能區默認結構並「立即持久化」
     一次（穩定 shape，避免每次 load 重跑遷移邏輯）。
     """
-    data = db.load_user_settings(GLOBAL_SETTINGS_KEY)
+    data = db.load_settings_row(GLOBAL_SETTINGS_KEY)
     if not data:
         return _blank_settings()
     if "llm_connections" not in data:
@@ -323,10 +334,10 @@ def _sanitize(cur: dict) -> None:
         )
 
 
-def save_settings(patch: dict, user_id: str | None = None) -> dict:
+def save_settings(patch: dict) -> dict:
     """部分/整包合併寫入全項目共享設定。機密（llm_tokens / qc_passwords）空或遮罩值不覆蓋既有。
 
-    去帳戶隔離：寫 GLOBAL_SETTINGS_KEY（user_id 保留呼叫相容但忽略）。併發語義：內部 load
+    併發語義：內部 load
     最新→欄位級白名單 merge→整包 persist（競態窗口毫秒級、欄位級合併衝突面小），多人同時
     編輯不同 tab 走 last-write-wins，可接受。
     llm_connections/qc_connections 與 llm_tokens/qc_passwords 為平行 map（keyed by provider/env），
@@ -401,7 +412,7 @@ def _has_any_qc_password(s: dict) -> bool:
     return any((s.get("qc_passwords") or {}).values())
 
 
-def masked(user_id: str | None = None) -> dict:
+def masked() -> dict:
     """回傳給前端（全項目共享設定）：機密 map 逐 key 遮罩，附粗粒度 has_token / has_qc_db_password
     及逐供應商/逐環境細粒度 provider_has_token / qc_env_has_password（前端各連線卡個別顯示用）。
     """
@@ -415,7 +426,7 @@ def masked(user_id: str | None = None) -> dict:
     return cur
 
 
-def raw(user_id: str | None = None) -> dict:
+def raw() -> dict:
     """完整未遮罩配置（全項目共享·含明文 llm_tokens / qc_passwords）——供設定面板「眼睛顯示全文」與編輯回填。
 
     ⚠️ 明文回傳機密欄位：僅應在受信任的本地 / 內網環境暴露此端點；並由 settings.secret.read 權限 gating。
@@ -455,7 +466,7 @@ def _persist(data: dict) -> None:
     stored = dict(data)
     for key in ("llm_tokens", "qc_passwords"):
         stored[key] = {k: crypto.encrypt_secret(v) for k, v in (data.get(key) or {}).items()}
-    db.save_user_settings(GLOBAL_SETTINGS_KEY, stored)
+    db.save_settings_row(GLOBAL_SETTINGS_KEY, stored)
 
 
 def resolve_provider_token(eff: dict) -> str:

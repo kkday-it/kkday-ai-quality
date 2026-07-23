@@ -286,26 +286,46 @@ def test_chat_json_non_openai_response_format_unsupported(monkeypatch) -> None:
 _ARK = "https://ark.ap-southeast.bytepluses.com/api/v3"
 
 
-def test_reasoning_kwargs_bytedance_off_native_switch_without_effort() -> None:
-    """ByteDance thinking=off → 原生 extra_body 開關；不併送 reasoning_effort（Ark 400 Invalid combination）。"""
+def test_reasoning_kwargs_bytedance_disabled_native_switch_without_effort() -> None:
+    """ByteDance thinking=disabled → 原生 extra_body 開關；不併送 reasoning_effort（Ark 400 Invalid combination）。
+
+    2026-07-23 依 Ark 官方 SDK 型別（thinking.type: enabled/disabled/auto）重寫值域，取代舊版 on/off。
+    """
     out = client._reasoning_kwargs(
-        {"base_url": _ARK, "thinking": "off", "reasoning_effort": "medium"}
+        {"base_url": _ARK, "thinking": "disabled", "reasoning_effort": "medium"}
     )
     assert out == {"extra_body": {"thinking": {"type": "disabled"}}}
 
 
-def test_reasoning_kwargs_bytedance_on_sends_switch_and_effort() -> None:
-    """ByteDance thinking=on → 原生開關 + reasoning_effort 並送（Ark 支援並用、effort 調深度）。"""
-    out = client._reasoning_kwargs({"base_url": _ARK, "thinking": "on", "reasoning_effort": "high"})
+def test_reasoning_kwargs_bytedance_enabled_sends_switch_and_effort() -> None:
+    """ByteDance thinking=enabled → 原生開關 + reasoning_effort 並送（Ark 支援並用、effort 調深度）。"""
+    out = client._reasoning_kwargs(
+        {"base_url": _ARK, "thinking": "enabled", "reasoning_effort": "high"}
+    )
     assert out == {"extra_body": {"thinking": {"type": "enabled"}}, "reasoning_effort": "high"}
 
 
-def test_reasoning_kwargs_openai_off_maps_effort_none() -> None:
-    """OpenAI / Gemini 無獨立 thinking 參數：off ≙ reasoning_effort=none（不支援者由降級層轉 minimal）。"""
+def test_reasoning_kwargs_bytedance_auto_sends_switch_without_effort() -> None:
+    """ByteDance thinking=auto → 僅送開關，不併送 reasoning_effort（auto 與 reasoning_effort 的組合行為
+    未查到官方或旁證資料，保守起見比照 disabled 不送，避免對生產判決 pipeline 送出未驗證的參數組合；
+    見 llm_model.json modelCapabilities gpt-oss-120b-250805 的官方依據）。"""
     out = client._reasoning_kwargs(
-        {"base_url": "", "thinking": "off", "reasoning_effort": "medium"}
+        {"base_url": _ARK, "thinking": "auto", "reasoning_effort": "high"}
+    )
+    assert out == {"extra_body": {"thinking": {"type": "auto"}}}
+
+
+def test_reasoning_kwargs_openai_gemini_reasoning_effort_passthrough() -> None:
+    """OpenAI / Gemini 無獨立 thinking 參數（官方文件逐字確認，見 llm_model.json providers[].docs）：
+    reasoning_effort 本身即完整控制面，直接透傳，"none" 是可直接選的正常值（不再靠 thinking=off 模擬）。
+    `thinking` 欄位對這兩家不具意義，即使帶了也不影響結果。
+    """
+    out = client._reasoning_kwargs(
+        {"base_url": "", "thinking": "disabled", "reasoning_effort": "none"}
     )
     assert out == {"reasoning_effort": "none"}
+    out2 = client._reasoning_kwargs({"base_url": "", "reasoning_effort": "medium"})
+    assert out2 == {"reasoning_effort": "medium"}
 
 
 def test_reasoning_kwargs_default_passthrough() -> None:
@@ -315,6 +335,10 @@ def test_reasoning_kwargs_default_passthrough() -> None:
     )
     assert out == {"reasoning_effort": "medium"}
     assert client._reasoning_kwargs({"base_url": ""}) == {}
+    # bytedance：thinking=default（未customize）→ 不送開關，仍傳 reasoning_effort。
+    assert client._reasoning_kwargs(
+        {"base_url": _ARK, "thinking": "default", "reasoning_effort": "medium"}
+    ) == {"reasoning_effort": "medium"}
 
 
 def test_chat_json_degrades_unsupported_reasoning_effort(monkeypatch) -> None:

@@ -22,27 +22,46 @@ export interface Provider {
   defaultModel?: string;
   /** model 下拉清單；{ id, desc } 物件、排序由省到貴（成本低者在前，預設選最省）。 */
   defaultModels: ModelOption[];
-  thinking?: string; // 'on' | 'off'
-  reasoning_effort?: string;
-  /** 該供應商是否支援 thinking 開關（provider 級能力預設；modelCapabilities 可對個別 model 覆寫）。 */
+  /** 該供應商是否有任何推理能力（provider 級能力預設；modelCapabilities 可對個別 model 覆寫）。 */
   supportsThinking?: boolean;
+  /** thinking 控制形態：'effortOnly'＝無獨立開關，reasoning_effort 本身即完整控制面（OpenAI/Gemini，
+   * 官方文件證實無此參數）；'nativeSwitch'＝有真實原生 thinking 開關（ByteDance/Ark，見 thinkingModes）。 */
+  thinkingControl?: 'effortOnly' | 'nativeSwitch';
+  /** nativeSwitch 供應商的可用狀態（如 ['enabled','disabled']，個別 model 可能多一個 'auto'）。 */
+  thinkingModes?: string[];
   /** 該供應商可用的 reasoning_effort 值域（取代舊固定全域 REASONING）。 */
   reasoningEffortOptions?: string[];
-  /** 思考模式開啟時是否鎖定 temperature（OpenAI reasoning model 為 true；Gemini/ByteDance 為 false）。 */
+  /** reasoning_effort 非 none 時是否鎖定 temperature（OpenAI reasoning model 為 true；Gemini/ByteDance 為 false）。 */
   temperatureLockedWhenThinking?: boolean;
+  /** 不論 thinking 狀態、伺服器端一律忽略自訂 temperature（與上者為不同機制）；目前僅個別 model 覆寫，見 modelCapabilities。 */
+  temperatureAlwaysLocked?: boolean;
   /** 鎖定時實際送出的 temperature 值（通常 1）。 */
   lockedTemperatureValue?: number;
+  /** 該供應商 API 官方 temperature 值域上限（三供應商皆為 2；見 llm_model.json 註解）。 */
+  maxTemperature?: number;
+  /** thinking 關閉時的說明文案；僅 nativeSwitch 供應商有值（effortOnly 沒有「關閉」這個獨立狀態）。 */
+  reasoningOffHint?: string;
+  /** 官方文件連結（label → URL），供 UI 附連結直接跳轉核驗規則來源。 */
+  docs?: Record<string, string>;
 }
 
 /**
  * 供應商定義：選供應商一次帶入 base_url 與該供應商的 model 清單。
  * 資料源＝config/global/llm_model.json（GPT model id 對齊 OpenAI 官方 gpt-5.5 / gpt-5.4 / mini / nano）。
- * JSON 字面型別與 Provider[] 結構相容（api_token 選填、不在 JSON 中），以 cast 收斂。
+ * JSON 字面型別與 Provider[] 結構相容（api_token 選填、不在 JSON 中），以 cast 收斂；`docs` 各供應商
+ * 鍵名不同（各自的官方文件 label），TS 對 JSON 字面推斷出的型別是逐供應商各自精確的 key union，與
+ * `Record<string, string>` 重疊度不足以直接 cast，故先過 `unknown`（TS2352 建議的標準解法）。
  */
-export const PROVIDERS = llm.providers as Provider[];
+export const PROVIDERS = llm.providers as unknown as Provider[];
 
-/** Reasoning effort 對齊 OpenAI 官方支援值（全域值域回退）；資料源＝config/global/llm_model.json。 */
+/** reasoning_effort 完整值域（跨三供應商聯集，非單一 model 的實際支援值）；UI 恆用此清單畫按鈕，
+ * 個別 model 不支援的值另用 capabilities.reasoningEffortOptions 算 disabled，不直接從清單移除
+ * （避免同一控件在不同 model 間版位跳動）。資料源＝config/global/llm_model.json。 */
 export const REASONING: string[] = llm.reasoning;
+
+/** thinking 開關完整值域（對齊 Ark 官方 thinking.type 三態）；UI 恆用此清單畫按鈕，個別 model
+ * 不支援的模式另用 capabilities.thinkingModes 算 disabled。資料源＝config/global/llm_model.json。 */
+export const ALL_THINKING_MODES: string[] = llm.thinkingModes ?? ['enabled', 'disabled', 'auto'];
 
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
@@ -50,12 +69,18 @@ export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
 /** LLM 消費功能區清單（prejudge/prompt_debug/sandbox）；資料源＝config/global/llm_model.json areas[]。 */
 export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'sandbox'];
 
-/** 每 model 可配參數能力（thinking 支援 / reasoning_effort 值域 / temperature 鎖定規則）。 */
+/** 每 model 可配參數能力（thinking 控制形態 / reasoning_effort 值域 / temperature 鎖定規則）。 */
 export interface ModelCapability {
   supportsThinking: boolean;
+  thinkingControl: 'effortOnly' | 'nativeSwitch';
+  thinkingModes: string[];
   reasoningEffortOptions: string[];
   temperatureLockedWhenThinking: boolean;
+  temperatureAlwaysLocked: boolean;
   lockedTemperatureValue: number;
+  maxTemperature: number;
+  reasoningOffHint: string;
+  docs: Record<string, string>;
 }
 
 /** 個別 model 覆寫（優先於所屬 provider 級預設）；資料源＝config/global/llm_model.json modelCapabilities。 */
@@ -77,10 +102,25 @@ export function capabilitiesFor(modelId: string, provider?: string): ModelCapabi
     PROVIDERS.find((p) => p.id === 'openai');
   const base: ModelCapability = {
     supportsThinking: owner?.supportsThinking ?? true,
+    thinkingControl: owner?.thinkingControl ?? 'effortOnly',
+    thinkingModes: owner?.thinkingModes ?? [],
     reasoningEffortOptions: owner?.reasoningEffortOptions ?? REASONING,
     temperatureLockedWhenThinking: owner?.temperatureLockedWhenThinking ?? false,
+    temperatureAlwaysLocked: owner?.temperatureAlwaysLocked ?? false,
     lockedTemperatureValue: owner?.lockedTemperatureValue ?? 1,
+    maxTemperature: owner?.maxTemperature ?? 2,
+    reasoningOffHint: owner?.reasoningOffHint ?? '',
+    docs: owner?.docs ?? {},
   };
   return { ...base, ...MODEL_CAPABILITY_OVERRIDES[modelId] };
+}
+
+/** 回某供應商切換時應帶入的預設 model id（provider 自帶 defaultModel，缺省則取 defaultModels 首筆）。
+ * 供 UI 切換供應商時同步重置 model，避免殘留另一供應商的 model id（見 useLlmAreaDefault.setProvider）。
+ * @param providerId 供應商 id（如 openai/gemini/bytedance）。
+ */
+export function defaultModelFor(providerId: string): string {
+  const p = PROVIDERS.find((x) => x.id === providerId);
+  return p?.defaultModel ?? p?.defaultModels?.[0]?.id ?? '';
 }
 

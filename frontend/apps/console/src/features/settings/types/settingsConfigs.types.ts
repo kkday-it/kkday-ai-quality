@@ -10,8 +10,11 @@ export interface LlmConnection {
 /** LLM 消費功能區（三個前端旋鈕配置槽）。 */
 export type LlmArea = 'prejudge' | 'prompt_debug' | 'sandbox';
 
-/** thinking 旋鈕值域：default＝不送、用 API 預設；on/off＝顯式開關。 */
-export type LlmThinking = 'default' | 'on' | 'off';
+/** thinking 旋鈕值域：default＝不送、用該 model API 預設。enabled/disabled/auto 僅對
+ * `thinkingControl==='nativeSwitch'` 的供應商（目前僅 ByteDance/Ark）有意義，對齊其官方
+ * `thinking.type` 三態 enum；`thinkingControl==='effortOnly'` 的供應商（OpenAI/Gemini）沒有獨立
+ * thinking 參數，此欄位對它們恆為 'default'、不讀取（見 capabilitiesFor 的 thinkingControl）。 */
+export type LlmThinking = 'default' | 'enabled' | 'disabled' | 'auto';
 /** reasoning_effort 旋鈕值域（含 minimal，僅部分 model 支援，見 modelCapabilities）。 */
 export type LlmReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 

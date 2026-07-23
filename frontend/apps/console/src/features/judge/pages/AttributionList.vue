@@ -384,31 +384,33 @@ onMounted(init);
         @change="onVerticalChange"
       />
       <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigPicker/LlmKnobs）-->
-      <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）-->
-      <a-button
-        type="primary"
-        size="small"
-        :loading="running"
-        :disabled="!canPrejudge"
-        @click="openBatchConfirm"
-      >
-        初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
-      </a-button>
-      <!-- 歸因歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄），緊鄰初判入口 -->
-      <a-button size="small" type="text" @click="runsDrawerVisible = true">
-        <template #icon><icon-history /></template>
-        歸因歷史
-      </a-button>
-      <a-button
-        size="small"
-        type="outline"
-        :loading="exporting"
-        :disabled="!canExport"
-        @click="openExport"
-      >
-        <template #icon><icon-download /></template>
-        導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
-      </a-button>
+      <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）。
+           初判分類/歸因歷史/導出列表三顆是同一組「歸因列表核心操作」，聚合成 button-group 貼齊顯示
+           （見 rules/frontend-vue.md「同類按鈕聚合」）；Prompt 測試屬另一類試驗性動作，維持獨立不併組。 -->
+      <a-button-group size="small">
+        <a-button
+          type="primary"
+          :loading="running"
+          :disabled="!canPrejudge"
+          @click="openBatchConfirm"
+        >
+          初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
+        </a-button>
+        <!-- 歸因歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄），緊鄰初判入口 -->
+        <a-button type="text" @click="runsDrawerVisible = true">
+          <template #icon><icon-history /></template>
+          歸因歷史
+        </a-button>
+        <a-button
+          type="outline"
+          :loading="exporting"
+          :disabled="!canExport"
+          @click="openExport"
+        >
+          <template #icon><icon-download /></template>
+          導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
+        </a-button>
+      </a-button-group>
       <!-- Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」
            切換，無需先勾選即可開；有勾選時 runCount 顯示於按鈕文字提示 -->
       <a-button size="small" type="dashed" @click="openBatchTest">
