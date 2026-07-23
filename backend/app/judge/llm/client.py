@@ -1,6 +1,6 @@
 """LLM client + stub 開關。
 
-配置來源：當前 user 的 DB user_settings（前端「設定」面板管理）優先，fallback 環境變數（config.env）。
+配置來源：DB settings（全項目共享，前端「設定」面板管理）優先，fallback 環境變數（config.env）。
 無 api_token（settings 與 env 皆無）→ stub 模式（啟發式，零 key 走通 pipeline）；有 token → 真判。
 
 LLM 呼叫走 OpenAI SDK 直呼（`_complete`）；base_url 可覆寫以打各 OpenAI-compatible 端點。
@@ -389,7 +389,7 @@ def chat_json(
     cache_key: str | None = None,
     label: str | None = None,
 ) -> dict:
-    """真 LLM 結構化呼叫。配置取自 user_settings（model/base_url/temperature/reasoning）；
+    """真 LLM 結構化呼叫。配置取自 settings（model/base_url/temperature/reasoning）；
     stage 僅作為解析失敗時的 log 標籤（標示是哪個初判階段），不影響生效配置。
 
     Args:
