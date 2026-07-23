@@ -10,7 +10,7 @@
  * （內容欄標籤/對話模式/關聯資料段落/精確查詢 placeholder）依來源讀 `SOURCE_LIST_SCHEMAS`：
  * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
-import { addFindingNote, getFindingNotes, PERM, type FindingNote } from '@/api';
+import { PERM } from '@/api';
 import {
   CollapsibleSidePanel,
   ExportProgressBar,
@@ -20,8 +20,6 @@ import {
   TableLayout,
 } from '@/components';
 import { usePermission } from '@/composables/usePermission';
-import { composeLlmLabel } from '@/features/settings/utils';
-import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { Message } from '@arco-design/web-vue';
 import {
   IconCheck,
@@ -38,8 +36,9 @@ import {
   PromptSandboxDrawer,
   PromptVersionPickerGroup,
 } from '../components';
-import { useAttributionList } from '../composables';
+import { useAttributionList, useFindingNotes, useRejudgeConfirm } from '../composables';
 import {
+  CONF_TIER_CLASS,
   DIALOGUE_ROLE_COLORS,
   DIALOGUE_ROLE_LABELS,
   idPlaceholderFor,
@@ -49,6 +48,7 @@ import {
   POLARITY_COLOR,
   POLARITY_LABELS,
   SOURCES,
+  STAGE_COLOR,
   STAGE_LABELS,
   STATUS_COLOR,
   STATUS_LABEL,
@@ -59,14 +59,6 @@ import {
   type ProblemRow,
 } from '../constants';
 import { fmtDt, parseDialogue, type DialogueTurn } from '../utils';
-
-/** 初判階段語義色（未初判灰 / 已初判綠 / 待複審橙 / 待數據補充藍）。 */
-const STAGE_COLOR: Record<string, string> = {
-  unjudged: 'gray',
-  judged: 'green',
-  pending_review: 'orange',
-  pending_data: 'arcoblue',
-};
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
@@ -201,70 +193,39 @@ const onRejudge = async (id: string, promptVersions?: Record<string, number>) =>
 };
 
 // ── 確認初判分類抽屜：批量（工具列）與單列（操作欄）共用同一個 confirmOpen 抽屜，
-//    confirmScope 分流內容顯示；confirmRowId 僅 scope='row' 時有值 ──
-const confirmScope = ref<'batch' | 'row'>('batch');
-const confirmRowId = ref('');
-/** 初判設定/目標範圍面板是否展開。開抽屜時預設**展開**——「確認」按鈕收在面板 footer 內
- * （面板＝確認表單），預設收合會把主行為藏起來多一次點擊；確認後自動收合改看執行日誌。 */
-const confirmSettingsOpen = ref(false);
-const confirmVersionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
-const openRowConfirm = (record: { _group: unknown }) => {
-  confirmScope.value = 'row';
-  confirmRowId.value = String(record._group);
-  confirmSettingsOpen.value = true;
-  logEntries.value = []; // 清掉上一次執行殘留的日誌，避免誤讀成本次結果
-  logError.value = '';
-  lastRun.value = null; // 新一輪確認流程開始，清上一輪終態摘要
-  confirmOpen.value = true;
-};
-const openBatchConfirm = () => {
-  confirmScope.value = 'batch';
-  confirmSettingsOpen.value = true;
-  logEntries.value = [];
-  logError.value = '';
-  openPrejudge();
-};
-/** 抽屜「確認」：依 confirmScope 分流批量／單列執行（草稿不進正式初判，僅傳版本選擇）。
- * 不關閉抽屜——確認後自動收合設定面板，下方常駐的執行日誌區就地串流；關閉抽屜走右上 X
- * （不影響背景 job）。 */
-const onConfirmRun = () => {
-  confirmSettingsOpen.value = false;
-  if (confirmScope.value === 'row') {
-    onRejudge(confirmRowId.value, confirmVersionSelection.value.versions);
-  } else {
-    doRun(confirmVersionSelection.value.versions);
-  }
-};
+//    狀態計算/決策邏輯下沉 useRejudgeConfirm；template 結構（CollapsibleSidePanel 等）留在本檔 ──
+const {
+  confirmScope,
+  confirmRowId,
+  confirmSettingsOpen,
+  confirmVersionSelection,
+  openRowConfirm,
+  openBatchConfirm,
+  onConfirmRun,
+  confirmModelLabel,
+  confirmPinnedVersions,
+  rejudgeConfirmText,
+} = useRejudgeConfirm({
+  confirmOpen,
+  logEntries,
+  logError,
+  lastRun,
+  llmProvider,
+  llmKnobs,
+  runRejudgeRow: onRejudge,
+  runBatch: doRun,
+  openBatchTargeting: openPrejudge,
+});
 
 /** 把目前 provider + 旋鈕存為 prejudge 功能區默認（team 共用）。 */
 const onSaveLlmAreaDefault = async () => {
   try {
     await saveLlmAreaDefault();
-    Message.success('已存為本功能區默認（團隊共用）');
+    Message.success('已存為本功能區默認');
   } catch (e: any) {
     Message.error('儲存失敗：' + (e?.message || e));
   }
 };
-
-// ── 確認抽屜執行前摘要卡：把「這次會用什麼設定跑」攤開給使用者看（模型 + 版本選擇），
-//    取代原本收合面板時的大片空白；label 復用 judgeRules store 與 composeLlmLabel，勿另建對照。 ──
-const judgeRulesStore = useJudgeRulesStore();
-const confirmModelLabel = computed(() =>
-  llmKnobs.model
-    ? composeLlmLabel({
-        provider: llmProvider.value,
-        model: llmKnobs.model,
-        thinking: llmKnobs.thinking,
-        reasoning_effort: llmKnobs.reasoning_effort,
-      })
-    : '系統預設模型',
-);
-/** 指定了非 active 歷史版本的 prompt 清單（[中文名, 版本號]）；空＝全部沿用 active。 */
-const confirmPinnedVersions = computed(() =>
-  Object.entries(confirmVersionSelection.value.versions).map(
-    ([code, ver]) => [judgeRulesStore.labelFor(code), ver] as const,
-  ),
-);
 
 // ── 操作：查看歸因詳情抽屜（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
@@ -298,16 +259,7 @@ const openBatchTest = () => {
   sandboxVisible.value = true;
 };
 
-/**
- * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
- * auto_accept(≥0.8) 綠＝可採信 / jury(0.5–0.8) 琥珀＝需複審 / needs_review(<0.5) 紅＝必人工。
- * 讓判決者掃一眼信心色就知哪條要處理（呼應「< 0.8 需人工判決」）。
- */
-const CONF_TIER_CLASS: Record<string, string> = {
-  auto_accept: 'text-[rgb(var(--success-6))]',
-  jury: 'text-[rgb(var(--warning-6))]',
-  needs_review: 'text-[rgb(var(--danger-6))]',
-};
+/** 信心數字按分層上色（CONF_TIER_CLASS 見 constants/pipeline.constant；未知 tier 回預設文字色）。 */
 const confClass = (tier?: string): string =>
   CONF_TIER_CLASS[tier || ''] || 'text-[var(--color-text-1)]';
 
@@ -338,67 +290,17 @@ const dialogueTurns = (record: ProblemRow): DialogueTurn[] | null =>
 /** 精確查詢 placeholder（隨來源切換：評論 rec_oid／進線 session_oid…，與後端 natural_key 篩選對齊）。 */
 const idPlaceholder = computed(() => idPlaceholderFor(source.value));
 
-// ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）──
-const noteOpen = ref(false);
-const noteFindingId = ref('');
-const noteList = ref<FindingNote[]>([]);
-const noteDraft = ref('');
-const noteLoading = ref(false);
-const noteSaving = ref(false);
-
-/** 開某條歸因的備註抽屜並載入歷史。 */
-const openNotes = async (findingId: string) => {
-  noteFindingId.value = findingId;
-  noteDraft.value = '';
-  noteList.value = [];
-  noteOpen.value = true;
-  noteLoading.value = true;
-  try {
-    noteList.value = await getFindingNotes(findingId);
-  } catch (e: any) {
-    Message.error('載入備註失敗：' + (e?.message || e));
-  } finally {
-    noteLoading.value = false;
-  }
-};
-
-/** 送出一則備註（備註人由後端登入身分帶入），成功後附加於時間軸尾端（舊到新）。 */
-const submitNote = async () => {
-  const content = noteDraft.value.trim();
-  if (!content) return;
-  noteSaving.value = true;
-  try {
-    const created = await addFindingNote(noteFindingId.value, content);
-    noteList.value = [...noteList.value, created]; // 舊到新：新備註為最新，附加於尾端
-    noteDraft.value = '';
-    Message.success('已新增備註');
-  } catch (e: any) {
-    Message.error('新增備註失敗：' + (e?.message || e));
-  } finally {
-    noteSaving.value = false;
-  }
-};
-
-/** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
-const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
-
-/** 本次初判將使用的模型 label（跟隨 prejudge 功能區默認，抽屜可臨時覆寫）；無配置回空。 */
-const currentLlmLabel = computed(() =>
-  llmKnobs.model
-    ? composeLlmLabel({
-        provider: llmProvider.value,
-        model: llmKnobs.model,
-        thinking: llmKnobs.thinking,
-        reasoning_effort: llmKnobs.reasoning_effort,
-      })
-    : '',
-);
-
-/** 單列（重）判抽屜的說明文案（附當前模型，判前提醒用什麼 model 歸因）；有既有歸因時提醒會覆寫。 */
-const rejudgeConfirmText = computed(
-  () =>
-    `將以「${currentLlmLabel.value || '（無 LLM 配置）'}」對此列進行初判分類（若已有歸因將覆寫，人工真值標註保留），並消耗初判額度。`,
-);
+// ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）下沉 useFindingNotes ──
+const {
+  noteOpen,
+  noteList,
+  noteDraft,
+  noteLoading,
+  noteSaving,
+  openNotes,
+  submitNote,
+  fmtNoteTime,
+} = useFindingNotes();
 
 /** schema filter type → AttributionFilters 欄位鍵（現皆同名，保留映射以隔離 schema 命名）。 */
 const SCHEMA_TO_FIELD: Record<string, FilterField> = {
@@ -1075,7 +977,7 @@ onMounted(init);
             v-model="confirmSettingsOpen"
             label="初判設定"
             floating
-            panel-class="w-[560px] max-h-[70vh]"
+            panel-class="w-[560px]"
           >
             <template v-if="confirmScope === 'batch'">
               <a-divider orientation="left" :margin="12">目標範圍</a-divider>

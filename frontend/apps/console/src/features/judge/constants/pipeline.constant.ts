@@ -17,3 +17,22 @@ export const POLARITY_COLOR: Record<string, string> = {
   negative: 'red',
   neutral: 'gray',
 };
+
+/** 初判階段語義色（未初判灰 / 已初判綠 / 待複審橙 / 待數據補充藍）。 */
+export const STAGE_COLOR: Record<string, string> = {
+  unjudged: 'gray',
+  judged: 'green',
+  pending_review: 'orange',
+  pending_data: 'arcoblue',
+};
+
+/**
+ * 信心數字按分層上色（config confidence_tiers 驅動的 tier）：
+ * auto_accept(≥0.8) 綠＝可採信 / jury(0.5–0.8) 琥珀＝需複審 / needs_review(<0.5) 紅＝必人工。
+ * 讓判決者掃一眼信心色就知哪條要處理（呼應「< 0.8 需人工判決」）。
+ */
+export const CONF_TIER_CLASS: Record<string, string> = {
+  auto_accept: 'text-[rgb(var(--success-6))]',
+  jury: 'text-[rgb(var(--warning-6))]',
+  needs_review: 'text-[rgb(var(--danger-6))]',
+};
