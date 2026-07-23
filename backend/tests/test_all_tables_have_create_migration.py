@@ -48,16 +48,37 @@ def _table_appears_in_migration_history(table_name: str, combined_source: str) -
     return bool(pattern.search(combined_source))
 
 
+_CREATE_ALL_PATTERN = re.compile(r"metadata\.create_all\(")
+
+
+def _table_covered_by_baseline(table_name: str, file_texts: list[str]) -> bool:
+    """squash baseline（如 4ac23d6d20b4）以 `T.metadata.create_all()` 一次建齊多表，個別表名
+    不會以 op.create_table 字面出現。改以「同檔含 create_all 呼叫 + 表名確實出現在檔案內容
+    （baseline docstring 逐一列出建立哪些表）」佐證涵蓋——只認同一檔案內的共現，不放寬到
+    「combined_source 隨便哪裡出現過表名」，避免未來新表只改 tables.py 忘補 migration 時
+    被誤判為已涵蓋（新表名不會出現在舊 baseline 檔案裡）。"""
+    t = re.escape(table_name)
+    name_pattern = re.compile(r"\b" + t + r"\b")
+    return any(
+        _CREATE_ALL_PATTERN.search(text) and name_pattern.search(text) for text in file_texts
+    )
+
+
 def test_every_table_has_a_traceable_migration() -> None:
-    """tables.py 每張表，migration 歷史中須有字面命中或列名白名單，兩者皆無即視為孤兒表。"""
-    combined_source = "".join(f.read_text() for f in _VERSIONS_DIR.glob("*.py"))
+    """tables.py 每張表，migration 歷史中須有字面命中、squash baseline 佐證或列名白名單，三者皆無即視為孤兒表。"""
+    files = list(_VERSIONS_DIR.glob("*.py"))
+    file_texts = [f.read_text() for f in files]
+    combined_source = "".join(file_texts)
 
     orphans: list[str] = []
     for table_name in T.metadata.tables:
         if table_name in _KNOWN_DYNAMIC_LINEAGE:
             continue
-        if not _table_appears_in_migration_history(table_name, combined_source):
-            orphans.append(table_name)
+        if _table_appears_in_migration_history(table_name, combined_source):
+            continue
+        if _table_covered_by_baseline(table_name, file_texts):
+            continue
+        orphans.append(table_name)
 
     assert not orphans, (
         f"以下表在 alembic/versions/ 找不到任何建表/改名痕跡，只能靠 create_all 生出——"

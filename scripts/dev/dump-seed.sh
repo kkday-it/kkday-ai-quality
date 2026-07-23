@@ -14,16 +14,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
+DB_SERVICE="db"
 DB_NAME="kkdb_ai_quality"
 OUT="docker/seed/seed.sql.gz"
 SHOW_SHA=0
 [ "${1:-}" = "--sha" ] && SHOW_SHA=1
 
-command -v pg_dump >/dev/null 2>&1 || { echo "❌ 需 pg_dump（PostgreSQL client）" >&2; exit 1; }
 mkdir -p "$(dirname "$OUT")"
 
-echo "▶ pg_dump $DB_NAME → $OUT ..."
-pg_dump --no-owner --no-privileges --clean --if-exists -Fp -d "$DB_NAME" | gzip -9 > "$OUT"
+echo "▶ docker compose exec ${DB_SERVICE} pg_dump ${DB_NAME} → ${OUT} ..."
+docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" \
+  pg_dump --no-owner --no-privileges --clean --if-exists -U postgres -Fp -d "$DB_NAME" \
+  | gzip -9 > "$OUT"
 echo "✓ 完成：$OUT（$(du -h "$OUT" | cut -f1)）"
 
 if [ "$SHOW_SHA" = 1 ]; then

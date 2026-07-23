@@ -10,10 +10,10 @@
 |---|---|---|
 | `./start.sh`（repo 根） | 一鍵啟動（**純 Docker**）：偵測+啟動 Docker → 全服務背景起（PG+後端+前端，hot reload）→ 等就緒 → **自動開前端網頁**（Swagger 只印 URL）；停止用 `./stop.sh` | `fetch-seed`（選）＋ `docker compose -f docker-compose.dev.yml up -d` |
 | `./stop.sh`（repo 根） | 停止所有服務（**只停止·資料一律保留**；清庫刻意不提供，須顯式 `down -v`） | `docker compose -f docker-compose.dev.yml down` |
-| `./scripts/dev/dump-seed.sh` | 產全庫 seed（pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum） | `pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
+| `./scripts/dev/dump-seed.sh` | 產全庫 seed（容器化 pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum；免本機裝 PG client） | `docker compose exec -T db pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
 | `./scripts/ops/backup-db.sh` | 生產庫備份（容器化 pg_dump+gzip → `backups/db/`；`--keep N` 保留份數預設 7；crontab 排程範例見檔頭） | `docker compose exec -T db pg_dump --clean ... \| gzip` |
 | `./scripts/ops/restore-db.sh <file>` | 還原備份（**破壞性**·type-to-confirm；還原後 restart backend 自動補 migration） | `gunzip -c file \| docker compose exec -T db psql` |
-| `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原 | `gunzip -c docker/seed/seed.sql.gz \| psql kkdb_ai_quality` |
+| `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原（容器化 psql，免本機裝 PG client） | `gunzip -c docker/seed/seed.sql.gz \| docker compose exec -T db psql kkdb_ai_quality` |
 | `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |
 | `./scripts/dev/seed.sh` | 重置 mock 初判資料（20 筆全場景） | `cd backend && .venv/bin/python seed_mock.py` |
 | `./scripts/dev/test.sh` | 後端 smoke test（零 key stub） | `cd backend && ./run.sh test` |

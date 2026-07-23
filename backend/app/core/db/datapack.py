@@ -100,7 +100,12 @@ def current_alembic_head(engine: Any | None = None) -> str | None:
 # head 變化不該進來——那些是真實 schema 變化，理應讓舊資料包重新驗證（per-table 欄位比對層
 # `unknown_cols` 仍會攔截真正不相容的結構差異，見 validate_datapack 迴圈）。
 LEGACY_COMPATIBLE_HEADS: dict[str, str] = {
-    # "舊head": "新head",
+    # 2026-07-23 squash：bd77052f7222 起 53 個增量 migration 併為單一 baseline 4ac23d6d20b4，
+    # schema 內容不變，僅 migration 歷史重寫。e2f4a8c91d37 為 squash 前最後一個已提交 head；
+    # 另兩個為 squash 當下尚未提交的本機 WIP head，一併登記避免任何時點匯出的資料包被誤判失效。
+    "e2f4a8c91d37": "4ac23d6d20b4",
+    "b7f4e2a91c56": "4ac23d6d20b4",
+    "d3a68f52c910": "4ac23d6d20b4",
 }
 
 

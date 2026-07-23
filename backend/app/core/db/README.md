@@ -10,16 +10,16 @@
 | `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
 | `_shared.py` | 共用：初判/判決顯示標籤/信心閾值（`reload_pipeline_cfg`：直讀專案靜態檔 config/ai_judge/prejudge.json＋verdict.json 合併；非 DB 版本化）、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**初判 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
 
-## 雙軌 schema 契約（強制認知，改 migration 前必讀）
+## migration 鏈現況（2026-07-23 squash 後，改 migration 前必讀）
 
-**migration 鏈無法從零跑，這是刻意設計事實，不是待修 bug**：
+**鏈現在能從真正全空庫跑通到 head**——舊版「鏈從零跑會崩潰」的已知缺陷已隨 squash 消失，不再是雙軌 schema 的存在理由：
 
-- **baseline**＝`bd77052f7222_baseline_schema.py`（`down_revision=None`），只建 6 張表（`batches`/`confidence_calibration`/`intake_items`/`judgments`/`user_settings`/`users`）。
-- **鏈上第一個崩潰點**＝第 2 支 `c24e5b0964ce_roster_tables.py` 對 `prod_quality` 表 `create_index`——但沒有任何 migration 建過該表（`prod_quality`/`pkg_quality`/`inquiries`/`orders`/`packages`/`suppliers`/`products` 這批 roster 表原本只靠 `metadata.create_all` 產生，從無 create migration，見 `663fbf45e97c_drop_roster_quality_calibration_tables.py` docstring 自承）。從真正全空庫對這條鏈跑 `alembic upgrade head`，會在此崩潰。
-- **因此系統走雙軌**（見 `backend/docker-entrypoint.sh`）：**fresh 庫**（`alembic_version` 表無列）走 `init_db()`（`app/core/db/ingest.py`，`metadata.create_all()` 建表 + `_stamp_alembic_head_if_empty` 直接蓋章當前 head，跳過整條鏈）；**既有庫**（`alembic_version` 已有列）才走 `alembic upgrade head` 增量套用。dev/CI/全新環境一律走前者。
-- **為何不 squash 修掉**：`datapack.py` 的 `validate_datapack` 用 alembic head 字串完全相等比對版本兼容性——squash 換 head id 會使所有歷史資料包永久失效；`docker/seed/seed.sql.gz` 也內嵌 `alembic_version` stamp，squash 後需重產+重分發。詳細權衡與觸發時機（綁 RDS cutover 里程碑）見專案 plan/ADR，非本文件討論範圍。
-- **兩條護欄**（`backend/tests/`）：`test_migration_chain_known_gap.py` 把「鏈從全空庫崩潰於 `c24e5b0964ce`」釘成可執行斷言（若此測試意外變綠，代表鏈被接續好但文件未同步，需檢查）；`test_all_tables_have_create_migration.py` 靜態掃描每張表須有可辨識的建表/改名痕跡，防下一次 `judge_rule_versions` 式孤兒表（該表曾只存在於 `create_all`，既有庫 `upgrade head` 永遠拿不到，已於 `e2f4a8c91d37` 補真實 create migration）。
-- **新增表時**：務必在對應 migration 寫真實 `create_table`（或 `CREATE TABLE IF NOT EXISTS` 冪等版，容忍既有庫已被 `create_all` 建過），不要只改 `tables.py`——`test_all_tables_have_create_migration.py` 會在 CI 攔截漏補。
+- **baseline**＝`4ac23d6d20b4_baseline_schema_squashed_2026_07_23.py`（`down_revision=None`），取代 `bd77052f7222` 起累積的 53 個增量 migration；以 `T.metadata.create_all(bind, checkfirst=True)` 一次建齊現有全部 16 張表，不再逐檔重播舊歷史，因此不會再撞到舊鏈裡「roster 表從無 create migration」那個崩潰點。
+- **系統仍走雙軌**（見 `backend/docker-entrypoint.sh`）：**fresh 庫**走 `init_db()`（`app/core/db/ingest.py`，`metadata.create_all()` + `_stamp_alembic_head_if_empty`）；**既有庫**走 `alembic upgrade head`。保留雙軌純粹是效能/慣例考量（entrypoint 邏輯不變），不再是「否則會崩潰」的必要設計——理論上現在單走 `alembic upgrade head` 也能覆蓋兩種情境，但這是另一個獨立決策，未隨本次 squash 一併變更。
+- **squash 對既有資料的相容性處理**：`datapack.py` 的 `LEGACY_COMPATIBLE_HEADS` 已登記舊 head（`e2f4a8c91d37`/`b7f4e2a91c56`/`d3a68f52c910` → `4ac23d6d20b4`），歷史匯出的資料包仍可正常匯入；`docker/seed/seed.sql.gz` 已同步重新產生（新 stamp）。
+- **一條護欄**（`backend/tests/`）：`test_all_tables_have_create_migration.py` 靜態掃描每張表須有可辨識的建表/改名痕跡或 squash baseline 佐證，防下一次 `judge_rule_versions` 式孤兒表。`test_migration_chain_known_gap.py`（原本釘住「鏈崩潰於 `c24e5b0964ce`」的斷言）已隨此次修復依其自身指示刪除。
+- **新增表時**：務必在對應 migration 寫真實 `create_table`（或 `CREATE TABLE IF NOT EXISTS` 冪等版）——`test_all_tables_have_create_migration.py` 會在 CI 攔截漏補；**不要**再依賴「反正有 baseline」跳過，baseline 只涵蓋 squash 當下已存在的表，之後新增的表仍需各自可辨識的建表痕跡。
+- **下次 squash 的時機**：table 結構變化（新增表、加/刪欄位、改型別、rename 等）已收斂穩定（非連續變動中）時才做；**平常新增 schema 變更一律照常開新 revision 檔，不要每次都合併成一個**——每次 squash 都要重做本節上述整套收尾（`LEGACY_COMPATIBLE_HEADS` 登記、`seed.sql.gz` 重產、相關測試調整），頻繁做的成本遠高於讓檔案數量正常累加。
 
 ## attributions 初判表結構（typed 欄 · 最佳架構）
 
@@ -36,11 +36,11 @@
 | `prompt_drafts.py` | 初判 Prompt 草稿（prompt_drafts；prompt_* 每 rule_code 一份共享草稿＝未入庫的編輯中內容）：沙盒可直送測（雙跑對比），滿意後走 `save_rule_version` 入庫並刪草稿；與 judge_rule_versions 分離（版本表維持「存檔即 active」單一語意），併發 last-write-wins。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | attributions CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量初判·單交易 diff〕+ 歸因備註）。 |
-| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、兩級快取落本地 PG `evidence_snapshot` 表（order 6h/商品版本 30d，TTL 懶清理；不入 datapack）、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials_any()`（env 服務帳號→當前 user→**全庫任一 production** 三層 fallback：佐證團隊共享唯讀不綁個人設定）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
+| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、**拆欄快照快取**落本地 PG `evidence_snapshot` 表（PK=order_oid、一訂單一列、order 6h TTL 懶清理；ID/純量各自成欄、商品/規格/方案內容各自獨立 jsonb 欄，可直接對 DB grid 核對；不入 datapack）、讀出後在 `_assemble_tree()` 組裝成樹狀分組物件（order_summary/supplier_info/product_info/item_info/package_info/meta）供 API 消費、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials_any()`（env 服務帳號→當前 user→**全庫任一 production** 三層 fallback：佐證團隊共享唯讀不綁個人設定）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；初判級（僅已初判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
-| `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；資料欄尾附 **C-1~C-6 六域命中欄**〔`_domain_match_cols` 取 `prompt_source.structure()` SSOT·review 級合併·值＝符合/不符合·未初判留空·供 Excel 篩選〕；另附「分類統計」圖表表（見 `export_stats.py`）與「**Prompts**」工作表〔`_append_prompts_sheet`：7 支初判 prompt active 版本快照·版本 meta 取 `list_rule_meta`·全文 DB active 優先/檔案回退·初判溯源〕；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 attribution_history 最新快照〔`_adapt_snapshot`·判決軸留空·未初判過的評論排除·口徑寫統計表 A2〕；`compare_models`＝並排對比模型多選：基準右側每模型附一組 review 級欄「情緒·M/L1·M/L2·M」〔`_compare_cols`/`_compare_values`·值取該模型 `latest_snapshots`·鍵前綴 `cmp__{model}__*` 不撞 attr 級鍵故自動合併儲存格·未初判/判為無問題該欄空白〕）。 |
+| `export.py` | 問題列表美化 xlsx 導出（1:N fan-out + review 級欄合併儲存格；資料表雙層表頭〔`_grouped_header_spans`/`_style_header_grouped`：列 1＝分類群組合併儲存格＋配色（原始反饋/訂單商品資料/AI 初判結果/人工判決/六域命中，每個 `compare_models` 對比模型各自一色）、列 2＝具體欄位＋篩選箭頭，資料改自列 3〕；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；資料欄尾附 **C-1~C-6 六域命中欄**〔`_domain_match_cols` 取 `prompt_source.structure()` SSOT·review 級合併·值＝符合/不符合·未初判留空·供 Excel 篩選〕；另附「分類統計」圖表表（見 `export_stats.py`）與「**Prompts**」工作表〔`_append_prompts_sheet`：7 支初判 prompt active 版本快照·版本 meta 取 `list_rule_meta`·全文 DB active 優先/檔案回退·初判溯源〕；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 attribution_history 最新快照〔`_adapt_snapshot`·判決軸留空·未初判過的評論排除·口徑寫統計表 A2〕；`compare_models`＝並排對比模型多選：基準右側每模型附一組 review 級欄「情緒·M/L1·M/L2·M」〔`_compare_cols`/`_compare_values`·值取該模型 `latest_snapshots`·鍵前綴 `cmp__{model}__*` 不撞 attr 級鍵故自動合併儲存格·未初判/判為無問題該欄空白〕）。 |
 | `export_stats.py` | 導出分類統計（由 in-memory rows 直接算情緒傾向/L1/L2/信心分層/初判階段分佈，附「分類統計」表；≤6 類圓餅、>6 類橫向長條）。所見即所得。 |
 | `llm_usage.py` | AI 使用紀錄（llm_usage：per-call 寫入 + 消耗 dashboard 聚合 `llm_usage_overview`）。 |
 | `prejudge_runs.py` | 歸因歷史（prejudge_runs：run 級——每次批量/選取/單筆重新初判一列；建檔/狀態回寫/終態統計 + 列表分頁 + `prejudge_run_detail` 聚合 llm_usage per-stage 明細 + `any_judged` 重新初判判定）。 |

@@ -21,6 +21,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 SEED_FILE="docker/seed/seed.sql.gz"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
+DB_SERVICE="db"
 DB_NAME="kkdb_ai_quality"
 MODE_RESTORE=0
 USE_SAMPLE=0
@@ -90,13 +92,15 @@ _ensure_seed_present() {
 _db_is_empty() {
   # 以 product_reviews 是否存在為「空庫」判準（seed 還原後即存在）
   local reg
-  reg="$(psql -tAqc "SELECT to_regclass('public.product_reviews')" -d "$DB_NAME" 2>/dev/null | tr -d '[:space:]')"
+  reg="$(docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" \
+    psql -U postgres -tAqc "SELECT to_regclass('public.product_reviews')" -d "$DB_NAME" 2>/dev/null | tr -d '[:space:]')"
   [ -z "$reg" ] || [ "$reg" = "" ]
 }
 
 _restore() {
   echo "♻️  還原 seed → $DB_NAME ..."
-  gunzip -c "$SEED_FILE" | psql -v ON_ERROR_STOP=1 -d "$DB_NAME" >/dev/null
+  gunzip -c "$SEED_FILE" | docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" \
+    psql -U postgres -v ON_ERROR_STOP=1 -d "$DB_NAME" >/dev/null
   echo "✓ seed 還原完成"
 }
 
