@@ -384,9 +384,10 @@ onMounted(init);
         @change="onVerticalChange"
       />
       <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigPicker/LlmKnobs）-->
-      <!-- 統一操作區：主行為 primary、次要 outline、試驗性 dashed（見 rules/frontend-vue.md 按鈕規範）。
-           初判分類/歸因歷史/導出列表三顆是同一組「歸因列表核心操作」，聚合成 button-group 貼齊顯示
-           （見 rules/frontend-vue.md「同類按鈕聚合」）；Prompt 測試屬另一類試驗性動作，維持獨立不併組。 -->
+      <!-- 統一操作區：四顆全填滿、靠色相分主次，聚合成一條 button-group（見 rules/frontend-vue.md「同類按鈕聚合」）。
+           順序＝三顆「初判*」相鄰成族、導出殿後：
+           初判分類 primary(藍·主行為) → 初判 Prompt 測試 primary+warning(橙·試驗/dry-run) →
+           初判歷史 secondary(灰·檢視) → 導出列表 primary+success(綠·導出)。 -->
       <a-button-group size="small">
         <a-button
           type="primary"
@@ -396,13 +397,21 @@ onMounted(init);
         >
           初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
         </a-button>
-        <!-- 歸因歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄），緊鄰初判入口 -->
-        <a-button type="text" @click="runsDrawerVisible = true">
+        <!-- 初判 Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」切換，
+             無需先勾選即可開；dry-run 不落正式初判，group 內以 warning(橙) 填滿標示「非正式執行」 -->
+        <a-button type="primary" status="warning" @click="openBatchTest">
+          初判 Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
+        </a-button>
+        <!-- 初判歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄）。
+             在 button-group 內用 secondary（有底色）而非 text——text 無邊框會讓群組看起來不相連，
+             見 rules/frontend-vue.md「同類按鈕聚合」對 group 內禁用 text 的說明 -->
+        <a-button type="secondary" @click="runsDrawerVisible = true">
           <template #icon><icon-history /></template>
-          歸因歷史
+          初判歷史
         </a-button>
         <a-button
-          type="outline"
+          type="primary"
+          status="success"
           :loading="exporting"
           :disabled="!canExport"
           @click="openExport"
@@ -411,11 +420,6 @@ onMounted(init);
           導出列表{{ runCount ? `（已選 ${runCount}）` : '' }}
         </a-button>
       </a-button-group>
-      <!-- Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」
-           切換，無需先勾選即可開；有勾選時 runCount 顯示於按鈕文字提示 -->
-      <a-button size="small" type="dashed" @click="openBatchTest">
-        Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
-      </a-button>
     </div>
   </Teleport>
 
@@ -932,13 +936,17 @@ onMounted(init);
           </div>
         </div>
       </template>
-      <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因判決在判決歸因欄內。與批量選取解耦。 -->
+      <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因判決在判決歸因欄內。與批量選取解耦。
+           每列都會重複這組按鈕，統一用 type="text" 輕量呈現（不套用 rules/frontend-vue.md「視覺區分主次」的
+           primary/outline/dashed 分級——那條規則鎖定 toolbar/卡片動作列/彈窗 footer 這種「該區只出現一次」
+           的場景；per-row 操作欄會隨列數重複出現，用色塊反而視覺噪音，見該規則新增的例外說明）；橫向鋪開、
+           一行放不下自動換行，不再逐顆垂直堆疊佔滿列高。 -->
       <template #actions="{ record }">
-        <div class="flex flex-col items-stretch gap-1.5 py-1">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">
           <!-- 點擊直接開「確認初判分類」抽屜（模型/版本選擇+額度提示，見共用抽屜區塊），不再用小
                popconfirm——本次執行前要確認的設定已不只是「要不要覆寫」。 -->
           <a-button
-            type="primary"
+            type="text"
             size="small"
             :loading="isRowBusy(record._group)"
             :disabled="!canPrejudge"
@@ -946,15 +954,12 @@ onMounted(init);
           >
             初判分類
           </a-button>
-          <!-- Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式初判 -->
-          <a-button size="small" type="dashed" @click="openRowTest(record)"> Prompt 測試 </a-button>
+          <!-- 初判 Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式初判 -->
+          <a-button size="small" type="text" @click="openRowTest(record)"> 初判 Prompt 測試 </a-button>
           <!-- 未初判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
-          <a-button size="small" type="outline" @click="viewDetail(record)"> 查看詳情 </a-button>
-          <!-- 歸因歷史（評論級時間軸：歷次初判快照/判決轉移/備註；輕量檢視 → text）-->
-          <a-button size="small" type="text" @click="openJudgmentHistory(record)">
-            <template #icon><IconHistory /></template>
-            歸因歷史
-          </a-button>
+          <a-button size="small" type="text" @click="viewDetail(record)"> 查看詳情 </a-button>
+          <!-- 初判歷史（評論級時間軸：歷次初判快照/判決轉移/備註）-->
+          <a-button size="small" type="text" @click="openJudgmentHistory(record)"> 初判歷史 </a-button>
         </div>
       </template>
     </TableLayout>
@@ -974,12 +979,12 @@ onMounted(init);
              寬度、不推擠內容），收合狀態下摘要卡／執行日誌直接貼齊左側 tab 顯示；面板本身用
              v-show（非 v-if）保持掛載，PromptVersionPickerGroup 的預設值/emit 即使收合也立即生效；
              面板內容一頁化（目標範圍＋初判設定順排全展開，無內層頁籤，開面板即見全部配置）。 -->
-        <div class="flex min-h-0 flex-1 gap-3 overflow-hidden">
+        <div class="relative flex min-h-0 flex-1 gap-3 overflow-hidden">
           <CollapsibleSidePanel
             v-model="confirmSettingsOpen"
             label="初判設定"
             floating
-            panel-class="w-[560px]"
+            fill
           >
             <template v-if="confirmScope === 'batch'">
               <a-divider orientation="left" :margin="12">目標範圍</a-divider>
@@ -1037,7 +1042,10 @@ onMounted(init);
               <a-alert v-if="!Object.keys(llmProviderHasToken).length" type="warning">
                 尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
               </a-alert>
+              <!-- self-start：不隨 flex-col 的 align stretch 撐滿，讓分段按鈕（a-radio-group）維持
+                   內容寬度、灰色軌道只包住按鈕本身（對齊 Prompt 調試台的緊湊呈現，不拉成整條底色）-->
               <LlmConfigPicker
+                class="self-start"
                 :model-value="llmProvider"
                 :provider-has-token="llmProviderHasToken"
                 @update:model-value="setLlmProvider"

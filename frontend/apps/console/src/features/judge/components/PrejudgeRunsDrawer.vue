@@ -142,7 +142,7 @@ const paramsSummary = (r: PrejudgeRun) => {
     unmount-on-close
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
-    <template #title>歸因歷史（每次批量 / 選取 / 單筆重新初判的 LLM 使用紀錄）</template>
+    <template #title>初判歷史（每次批量 / 選取 / 單筆重新初判的 LLM 使用紀錄）</template>
 
     <!-- 內建表格模式：滿高首尾固定 + server 分頁（含「全部」）+ error 表上方顯示 -->
     <TableLayout

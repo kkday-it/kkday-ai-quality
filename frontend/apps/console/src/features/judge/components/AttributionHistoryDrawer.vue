@@ -173,7 +173,7 @@ const statusText = (e: AttributionHistoryEntry): string => {
 <template>
   <a-drawer
     v-model:visible="open"
-    title="歸因歷史"
+    title="初判歷史"
     :footer="false"
     :width="860"
     unmount-on-close

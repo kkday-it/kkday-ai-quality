@@ -24,14 +24,17 @@ withDefaults(
     /** true：面板以絕對定位懸浮在觸發長條右側（不佔版面寬度，開合不推擠旁邊內容）；
      * false（預設）：面板為並排 flex 子項，展開會佔用寬度推開內容。 */
     floating?: boolean;
+    /** 僅 floating 模式生效：面板展開時橫向撐滿到「最近 relative 祖先」的右緣（覆蓋主內容），
+     * 而非固定 `panelClass` 寬度——消費端須在面板與主內容的共同外層加 `relative`。此時 `panelClass` 寬度被忽略。 */
+    fill?: boolean;
   }>(),
-  { panelClass: 'min-w-0 flex-1', floating: false },
+  { panelClass: 'min-w-0 flex-1', floating: false, fill: false },
 );
 defineEmits<{ (e: 'update:modelValue', v: boolean): void }>();
 </script>
 
 <template>
-  <div class="relative flex min-h-0 flex-none" :class="floating ? '' : 'gap-3'">
+  <div class="flex min-h-0 flex-none" :class="[floating ? '' : 'gap-3', fill ? '' : 'relative']">
     <button
       type="button"
       class="h-24 flex-none self-start rounded-lg text-xs text-white"
@@ -53,9 +56,11 @@ defineEmits<{ (e: 'update:modelValue', v: boolean): void }>();
       v-show="modelValue"
       class="flex flex-col overflow-hidden"
       :class="[
-        panelClass,
+        fill ? '' : panelClass,
         floating
-          ? 'absolute left-full top-0 bottom-0 z-10 ml-2 rounded-lg border bg-[var(--color-bg-2)] shadow-lg'
+          ? fill
+            ? 'absolute inset-y-0 left-9 right-0 z-10 rounded-lg border bg-[var(--color-bg-2)] shadow-lg'
+            : 'absolute left-full top-0 bottom-0 z-10 ml-2 rounded-lg border bg-[var(--color-bg-2)] shadow-lg'
           : '',
       ]"
     >
