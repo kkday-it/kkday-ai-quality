@@ -85,6 +85,8 @@ paths:
 
 同一操作區（toolbar / 卡片動作列 / 彈窗 footer）並排多顆按鈕時，**禁止整排同色同樣式**（全 default 或全同型），須以 Arco `type` / `status` 依語義區分主次，讓使用者一眼分辨主行為與破壞性操作：
 
+> ⚠️ **此表不適用於表格 per-row 操作欄**（隨列數重複出現的動作按鈕，如 `TableLayout` 的 `#actions` slot）：該情境按鈕組每一列都會重複一次，用色塊分級在多列並排時反而變成視覺噪音（一整欄藍橙灰綠上下重複），一律**統一用 `type="text"`**、`flex flex-wrap` 橫向鋪開、一行放不下自動換行，不逐顆垂直堆疊佔列高（實例：2026-07-23 `AttributionList` 的列操作欄從 primary/dashed/outline/text 四樣式改為統一 text）。toolbar / 卡片動作列 / 彈窗 footer（該區只出現一次，不隨列表重複）才適用下表的主次分色。
+
 | 語義 | Arco 樣式 | 例 |
 |---|---|---|
 | **主行為**（該區唯一最重要、確認/提交） | `type="primary"` | 儲存、確認、送出 |
@@ -95,10 +97,12 @@ paths:
 
 - 主行為**每區至多一顆** primary；其餘不得搶佔主色。
 - **相鄰按鈕禁止「同 type 且同 status」**；同層級多顆 text 檢視鈕以不同 icon 區分。
-- 列操作欄範本（AttributionList）：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 歸因歷史 `text`+icon——四鈕四樣式，掃一眼即分級。
+- ~~列操作欄範本：初判分類 `primary` → 測試 `dashed` → 查看詳情 `outline` → 歸因歷史 `text`+icon~~（2026-07-23 已改為 per-row 一律 `text`，見上方例外說明；此行僅留存歷史對照，不再是範本）。
 - 有明確語義的動作**配對應 icon**（導出→`icon-download`、新增→`icon-plus`、刷新→`icon-refresh`），icon 從 `@arco-design/web-vue/es/icon` 具名 import。
 - 破壞性操作除變色外，仍須二次確認（`Modal.confirm` / `a-popconfirm`），顏色不替代確認。
-- **同類按鈕聚合為 `a-button-group`**：同一操作區內若有 2 顆以上屬於「同一組核心操作」（如某功能的分類/歷史/導出三顆，語意上是一組流程而非各自獨立的動作），一律包 `<a-button-group>` 讓它們貼齊顯示成一個視覺群組，不要讓語意相關的按鈕之間留有等寬 gap、看起來跟其他無關按鈕一樣鬆散排列；`a-button-group` 只管版位貼齊，**組內每顆按鈕仍各自帶自己的 `type`/`status`**（不因為進了 group 就統一樣式），繼續遵守上表的主次區分。與 group 語意無關、屬於另一類動作（如試驗性 `dashed` 按鈕）維持在 group 外、不強行併入。範本見 `features/judge/pages/AttributionList.vue`（初判分類/歸因歷史/導出列表併一組，Prompt 測試獨立在外）。
+- **同類按鈕聚合為 `a-button-group`**：同一操作區內若有 2 顆以上屬於「同一組核心操作」（如某功能的分類/歷史/導出三顆，語意上是一組流程而非各自獨立的動作），一律包 `<a-button-group>` 讓它們貼齊顯示成一個視覺群組，不要讓語意相關的按鈕之間留有等寬 gap、看起來跟其他無關按鈕一樣鬆散排列；`a-button-group` 只管版位貼齊，**組內每顆按鈕仍各自帶自己的 `type`/`status`**（不因為進了 group 就統一樣式），繼續遵守上表的主次區分——用**顏色**分主次，而非用「有無邊框」分。**併不併入群組看「流程歸屬」而非「按鈕型別」**：只要屬於同一條流程的一環就併入（如 dry-run 測試雖是試驗性動作，但仍是初判流程的一環，就該進群組）；唯有與 group 語意**完全無關**的另一類動作才維持在 group 外、不強行併入。範本見 `features/judge/pages/AttributionList.vue`（初判分類 `primary`(藍) → 初判 Prompt 測試 `primary status="warning"`(橙) → 初判歷史 `secondary`(灰) → 導出列表 `primary status="success"`(綠) 四顆全填滿併一組，順序＝三顆「初判*」相鄰成族、導出殿後）。
+  - ⛔ **`a-button-group` 內禁用 `type="text"`**：Arco 的群組相連感靠相鄰按鈕的**邊框/底色**合併呈現（見 [arco.design/vue/component/button#button-group](https://arco.design/vue/component/button)），`text` 按鈕無邊框無底色，夾在群組中會「浮空」、讓整組看起來鬆散不相連（實例：2026-07-23 初判歷史原為 `text`，群組看不出是一組，改 `secondary` 後才相連）。上表原本歸 `text` 的「純檢視/輕量」動作，**一旦進了 button-group，一律升級為有底色/邊框的型別**（檢視類用 `secondary` 灰底最貼近原本輕量語義，或 `outline`），靠顏色與 icon 區分，而非拿掉邊框。group 外的獨立檢視按鈕才續用 `text`。
+  - **偏好全填滿分色**：群組內按鈕優先**全部用有底色的填滿型別**（`primary` 藍 / `secondary` 灰 / `primary status="success"` 綠 / `status="warning"` 橙…），靠色相分主次，視覺上最像一條相連的分段控制列（實例：初判分類藍實心／初判歷史灰實心／導出列表綠實心）。用 `status` 色為群組視覺區分屬刻意的視覺選擇、可接受，但要對得上語義延伸：`success`(綠)→導出/產出、`warning`(橙)→試驗/dry-run/需謹慎的非正式動作（如 Prompt 測試）。仍守「主行為 primary(藍) 至多一顆」與相鄰按鈕不同色；**`danger`(紅) 嚴格保留給真破壞性動作**（刪除/清空），一律不得挪作純裝飾配色。
 
 ## 彈窗 vs 抽屜（Drawer-first · 強制）
 
