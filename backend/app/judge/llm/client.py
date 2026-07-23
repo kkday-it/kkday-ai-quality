@@ -266,10 +266,13 @@ def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
     return client.chat.completions.create(**k)
 
 
-# reasoning_effort 值域隨 provider／model 浮動（實測 2026-07：gpt-5-mini 不吃 none/xhigh、
-# gpt-5.4-mini/gpt-5.5 全吃、Gemini 不吃 xhigh、ByteDance seed 不吃 none/xhigh；Google 官方文件
-# 亦承認合法值集合會隨版本變動）——故不做靜態白名單，改「錯誤驅動降級」：400 點名 reasoning_effort
-# 時就地降級重試（none→minimal、xhigh→high），仍不行則整個拿掉（回 provider 預設）。
+# reasoning_effort 值域隨 provider／model 浮動、且比想像中破碎（實測 2026-07-23 逐值試打：
+# gpt-5-mini 只吃 minimal/low/medium/high；gpt-5.4-mini/gpt-5.4/gpt-5.5 只吃 none/low/medium/
+# high/xhigh（均不吃 minimal，此前「全吃」的說法是未逐值測試的錯誤假設，已更正）；Gemini 不吃
+# xhigh；ByteDance seed 不吃 none/xhigh；Google 官方文件亦承認合法值集合會隨版本變動）——故不做
+# 靜態白名單，改「錯誤驅動降級」：400 點名 reasoning_effort 時就地降級重試（none→minimal、
+# xhigh→high），仍不行則整個拿掉（回 provider 預設）；即使 UI 端的 modelCapabilities 覆寫有漏測
+# 的個別差異，這層也能兜住（最多降兩級後拿掉參數，見 _complete_effort_safe）。
 _EFFORT_DEGRADE = {"none": "minimal", "xhigh": "high"}
 
 

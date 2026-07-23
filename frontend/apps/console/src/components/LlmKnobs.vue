@@ -48,6 +48,20 @@ const selectedModelDesc = computed(
 
 const capabilities = computed(() => capabilitiesFor(props.modelValue.model, props.provider));
 
+/** 按鈕清單恆帶 'default' 排最前面，讓「沒有客製化、用 API 預設」有明確可視選中的按鈕，
+ * 不再出現「整組沒有任何按鈕高亮」這種曖昧狀態。'default' 是 UI 層的顯式選擇、非真實 API 值
+ * （client.py 會在組參數時濾掉，等同不送該欄位），故不受 capabilities 值域限制、恆可選。 */
+const THINKING_CHOICES = ['default', ...ALL_THINKING_MODES];
+
+/** reasoning_effort 按鈕清單：只顯示「這個供應商底下至少一個 model 用得到」的值（provider 級預設、
+ * 未套用個別 model 覆寫）——跨供應商本來就沒有的值（如 ByteDance 沒有 xhigh）直接不顯示，不是灰掉；
+ * 同供應商內個別 model 進一步限縮的值（如 gpt-5-mini 不吃 none/xhigh）才用 disabled 灰掉，兩種情境視覺
+ * 上分開處理，避免「永遠灰掉的按鈕」造成困惑。 */
+const providerReasoningOptions = computed(
+  () => PROVIDERS.find((p) => p.id === props.provider)?.reasoningEffortOptions ?? REASONING,
+);
+const REASONING_CHOICES = computed(() => ['default', ...providerReasoningOptions.value]);
+
 /** 是否「正在推理」：effortOnly 供應商（OpenAI/Gemini）沒有獨立開關，看 reasoning_effort 是否為
  * 非 none 的實際值；nativeSwitch 供應商（ByteDance）看 thinking 是否為 enabled/auto（disabled 明確
  * 不推理）。取代舊版寫死的 `thinking === 'on'` 判斷（該值域已不適用於 effortOnly 供應商）。 */
@@ -144,23 +158,23 @@ watch(
 
     <a-form-item
       v-if="capabilities.thinkingControl === 'nativeSwitch'"
-      label="思考模式"
+      label="Thinking"
       content-flex
       label-col-flex="108px"
       :label-col-style="{ whiteSpace: 'nowrap' }"
     >
       <div class="flex flex-col gap-1">
         <a-radio-group
-          :model-value="modelValue.thinking === 'default' ? undefined : modelValue.thinking"
+          :model-value="modelValue.thinking || 'default'"
           type="button"
           size="small"
           @update:model-value="(v) => patch({ thinking: v as LlmThinking })"
         >
           <a-radio
-            v-for="m in ALL_THINKING_MODES"
+            v-for="m in THINKING_CHOICES"
             :key="m"
             :value="m"
-            :disabled="!capabilities.thinkingModes.includes(m)"
+            :disabled="m !== 'default' && !capabilities.thinkingModes.includes(m)"
           >{{ m }}</a-radio>
         </a-radio-group>
         <span class="text-xs text-[#86909c]">{{
@@ -170,7 +184,7 @@ watch(
               ? '自動：模型自行判斷是否需要思考'
               : modelValue.thinking === 'enabled'
                 ? '開啟：可搭配下方 Reasoning effort'
-                : '未設定，使用 API 預設'
+                : 'Default：不送開關，交給 API 自行決定（2026-07-23 實測 seed-2-0-lite 此狀態下 API 預設為開啟思考，其他 model 未逐一驗證）'
         }}</span>
       </div>
     </a-form-item>
@@ -193,7 +207,7 @@ watch(
         <span class="text-xs text-[#86909c]">{{
           tempLocked
             ? capabilities.temperatureAlwaysLocked
-              ? `鎖定 ${capabilities.lockedTemperatureValue}（此 model 固定溫度，自訂值伺服器端會被忽略）`
+              ? `鎖定 ${capabilities.lockedTemperatureValue}（此 model 無法完全關閉推理，temperature 固定，自訂值會被伺服器拒絕或忽略）`
               : `鎖定 ${capabilities.lockedTemperatureValue}（推理生效中，官方 API 僅接受預設值）`
             : useTemp
               ? '自訂'
@@ -213,17 +227,17 @@ watch(
     >
       <div class="flex flex-col gap-1">
         <a-radio-group
-          :model-value="modelValue.reasoning_effort"
+          :model-value="modelValue.reasoning_effort || 'default'"
           type="button"
           size="small"
           :disabled="reasoningEffortDisabled"
           @update:model-value="(v) => patch({ reasoning_effort: String(v) as LlmReasoningEffort })"
         >
           <a-radio
-            v-for="r in REASONING"
+            v-for="r in REASONING_CHOICES"
             :key="r"
             :value="r"
-            :disabled="!capabilities.reasoningEffortOptions.includes(r)"
+            :disabled="r !== 'default' && !capabilities.reasoningEffortOptions.includes(r)"
           >{{ r }}</a-radio>
         </a-radio-group>
         <span class="text-xs text-[#86909c]">{{
@@ -231,7 +245,7 @@ watch(
             ? capabilities.reasoningOffHint || '不可用：目前狀態不支援送出 reasoning_effort'
             : modelValue.reasoning_effort && modelValue.reasoning_effort !== 'default'
               ? `將送出 reasoning_effort="${modelValue.reasoning_effort}"${modelValue.reasoning_effort === 'none' ? '（等同不啟用推理）' : ''}`
-              : '未選擇，使用該 model 的 API 預設值（不送此參數）'
+              : 'Default：不送此參數，使用該 model 的 API 預設值'
         }}</span>
       </div>
     </a-form-item>

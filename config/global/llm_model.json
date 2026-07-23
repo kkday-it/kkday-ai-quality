@@ -1,5 +1,4 @@
 {
-  "_comment": "LLM 供應商 / 模型預設——跨語言共用非機密單一真相源（前端 @config/global/llm_model.json、後端 settings.py 同讀）。機密（api_token）走 backend/.env / DB settings 表，勿放這裡。defaultModels[]＝{ id, desc, input, output }；desc 為下拉 hint，input/output＝美元/1M tokens 單價（判決花費估算 SSOT，後端 pricing.py 讀此；未列 input/output 者回退 price_default，Batch −50%）。embeddings[]＝embedding 模型單價（域路由特徵用；僅計價、不進聊天模型下拉）。價格隨官方調整請手動更新此檔（即時生效，reload() 清快取）。",
   "embeddings": [
     {
       "id": "text-embedding-3-small",
@@ -15,53 +14,39 @@
     "high",
     "xhigh"
   ],
-  "_reasoning_comment": "reasoning_effort 完整值域（跨三供應商聯集）；UI 恆顯示這份完整清單當按鈕，個別 model 不支援的值用 disabled 灰掉而非直接隱藏，避免同一控件在不同 model 間版位跳動。實際支援值見各 provider/modelCapabilities 的 reasoningEffortOptions。",
   "thinkingModes": ["enabled", "disabled", "auto"],
-  "_thinkingModes_comment": "thinking 開關完整值域（對齊 Ark 官方 thinking.type 三態）；UI 恆顯示完整清單，個別 model 不支援的模式用 disabled 灰掉。實際支援值見各 provider/modelCapabilities 的 thinkingModes（目前僅 ByteDance/nativeSwitch 供應商用到此控件）。",
   "areas": ["prejudge", "prompt_debug", "sandbox"],
-  "_areas_comment": "LLM 消費點功能區清單：每區可各自存一份團隊共用旋鈕默認（llm_area_defaults[area]）。",
   "modelCapabilities": {
-    "_comment": "特定 model id 的可配參數能力覆寫（優先於所屬 provider 的級別預設，見各 providers[].supportsThinking 等欄位）；前後端 model_capabilities_for()/capabilitiesFor() 同讀。",
     "seed-2-0-lite-260228": {
       "temperatureAlwaysLocked": true,
-      "lockedTemperatureValue": 1,
-      "_comment": "✅ 2026-07-23 實測驗證：送 temperature=0.0 與 temperature=2.0 各 5 次同一 prompt，兩組回覆隨機程度幾乎相同（temp=0 理論上應為確定性輸出、卻仍高度隨機）——證實此 model 伺服器端無條件忽略客端 temperature，永遠鎖定約 1，不論 thinking 開關狀態，也不報錯。⚠️ 官方文件（volcengine.com/docs/82379/1494384）逐字只點名 -260215 這個確切版本，未提及此處用的 -260228——官方文件本身不足以推斷此鎖定延伸到 -260228，但我們自己的實測結果證實它確實適用，故仍保留此覆寫（以實測為準，非文件推斷）。"
+      "lockedTemperatureValue": 1
     },
     "seed-2-0-lite-260428": {
       "temperatureAlwaysLocked": true,
-      "lockedTemperatureValue": 1,
-      "_comment": "⚠️ 推斷套用同 seed-2-0-lite-260228 的實測結論（同 Seed 2.0 lite 家族、僅日期後綴不同），未逐一重複實測此確切版本，官方文件也未點名此版本。"
+      "lockedTemperatureValue": 1
     },
     "gpt-5-mini": {
       "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
-      "_comment": "✅ 2026-07 團隊實測（見 client.py _EFFORT_DEGRADE 上方註解）：此 model 不接受 none／xhigh，選了會被 400 後自動降級；提前從選項移除，避免使用者選到必降級的值。"
+      "temperatureAlwaysLocked": true,
+      "lockedTemperatureValue": 1
     },
-    "gemini-3.1-pro-preview": {
-      "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
-      "_comment": "✅ 官方文件（ai.google.dev/gemini-api/docs/gemini-3）明載 Gemini 3 系列與 2.5 Pro 無法完全關閉思考，none 選了必被降級，故此 provider 級選項對此 model 移除 none。"
+    "gpt-5.4-mini": {
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"]
     },
-    "gemini-2.5-pro": {
-      "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
-      "_comment": "✅ 同 gemini-3.1-pro-preview：官方文件明載 2.5 Pro 無法完全關閉思考。"
+    "gpt-5.4": {
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"]
     },
-    "gemini-3.5-flash": {
-      "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
-      "_comment": "✅ 同上：屬 Gemini 3.x 系列，官方文件明載無法完全關閉思考（非 Pro 也適用，僅 2.5 世代非 Pro 可用 none）。"
-    },
-    "gemini-3.1-flash-lite": {
-      "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
-      "_comment": "✅ 同上：屬 Gemini 3.x 系列，官方文件明載無法完全關閉思考。"
+    "gpt-5.5": {
+      "reasoningEffortOptions": ["none", "low", "medium", "high", "xhigh"]
     },
     "gpt-oss-120b-250805": {
-      "thinkingModes": ["enabled", "disabled", "auto"],
-      "_comment": "✅ 2026-07-23 官方參數表（docs.byteplus.com/en/docs/ModelArk/1449737，EN 版 Supported models 清單）明確列出此 model 支援 thinking.type=auto（其餘 Seed 系列僅 enabled/disabled，ZH 版文件亦未列此 model）。⚠️ auto 與 reasoning_effort 能否併送未查到官方或旁證資料——保守起見，client.py 在 auto 狀態下比照 disabled 不送 reasoning_effort，避免對生產判決 pipeline 送出未驗證的參數組合。"
+      "thinkingModes": ["enabled", "disabled", "auto"]
     }
   },
   "modelMinVersion": "5",
   "price_default": {
     "input": 0.25,
-    "output": 2.0,
-    "_note": "未列 input/output 單價之模型的回退值（比照 mini 級 $0.25/$2.00）"
+    "output": 2.0
   },
   "providers": [
     {
@@ -98,13 +83,10 @@
       ],
       "supportsThinking": true,
       "thinkingControl": "effortOnly",
-      "_thinkingControl_comment": "✅ 2026-07-23 官方文件逐字確認（見 docs）：OpenAI 沒有獨立的 thinking 開關參數，reasoning_effort 本身就是唯一控制面，\"none\" 是正常值之一（不是靠另一個開關才能觸發）。故不提供 UI 開關，reasoning_effort 選單本身就是完整控制介面；舊版 thinking on/off 欄位與對應的強制轉換邏輯已移除（見 client.py _reasoning_kwargs 2026-07-23 重寫）。",
       "reasoningEffortOptions": ["none", "minimal", "low", "medium", "high", "xhigh"],
       "temperatureLockedWhenThinking": true,
       "lockedTemperatureValue": 1,
       "maxTemperature": 2,
-      "_temperatureLockedWhenThinking_comment": "✅ 官方 SDK 原始碼（openai-python completion_create_params.py）＋社群復現的 400 錯誤逐字確認：reasoning model 的 reasoning_effort 不為 none 時，temperature 送非預設值(1)一律硬性拒絕（400 Unsupported value...Only the default (1) value is supported），非靜默覆蓋。官方 temperature 值域 0~2。❓ reasoning_effort=none 時是否解除鎖定尚無官方文件或案例驗證，本專案保守起見仍以「reasoning_effort ≠ none」作為鎖定條件（見 LlmKnobs.vue tempLocked）。",
-      "_reasoningEffortOptions_comment": "OpenAI 的合法值集合逐 model 浮動（2026-07 實測：gpt-5-mini 不吃 none/xhigh，gpt-5.4-mini/gpt-5.5 全吃；官方 changelog 顯示此值域近 1 年新增 minimal/none/xhigh/max 四檔），刻意不做逐 model 靜態白名單，broad 清單 + client.py 的錯誤驅動降級兜底個別 model 差異。",
       "docs": {
         "Reasoning models guide（reasoning_effort 值域/none 語意）": "https://developers.openai.com/api/docs/guides/reasoning",
         "Chat Completions API reference": "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create",
@@ -120,12 +102,9 @@
       "defaultModel": "gemini-3.5-flash",
       "supportsThinking": true,
       "thinkingControl": "effortOnly",
-      "_thinkingControl_comment": "✅ 官方文件確認：Gemini 透過 OpenAI-compat 層一樣沒有獨立 thinking 開關，reasoning_effort 自動映射到原生 thinking_level（3.x）/thinking_budget（2.5），\"none\" 是正常值之一（僅部分 model 支援，見 modelCapabilities）。UI 不提供開關，reasoning_effort 選單即完整控制介面。",
-      "reasoningEffortOptions": ["none", "minimal", "low", "medium", "high"],
+      "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
       "temperatureLockedWhenThinking": false,
       "maxTemperature": 2,
-      "_maxTemperature_comment": "⚠️ 官方 Model 資源文件（ai.google.dev/api/models）temperature 值域為 [0, maxTemperature]，maxTemperature 實際隨 model 世代浮動、非全域固定 2；Gemini 3 系列文件明確預設 1.0。temperature 與 reasoning_effort 兩查證回合皆未見官方任何鎖定/拒絕條款（僅有「維持預設 1.0 效果較佳」的建議文字，非強制），故 temperatureLockedWhenThinking 維持 false，兩參數視為獨立。此 maxTemperature 值沿用既有假設，未逐 model 驗證，若特定 model 實測 400 請對應調整。",
-      "_reasoningEffortOptions_comment": "官方 OpenAI-compat 文件（ai.google.dev/gemini-api/docs/openai）reasoning_effort 映射 thinking_level/thinking_budget，值域為 none/minimal/low/medium/high，無 xhigh（2026-07 實測亦確認 Gemini 不吃 xhigh）；none 僅 2.5 非 Pro model 可用（2.5 Pro 與所有 3.x model 官方文件明載無法完全關閉思考，見 modelCapabilities 個別覆寫），其餘情境由降級機制兜底。",
       "docs": {
         "OpenAI compatibility layer（reasoning_effort 映射規則）": "https://ai.google.dev/gemini-api/docs/openai",
         "Gemini 3 開發指南（thinking_level 值域/預設 temperature）": "https://ai.google.dev/gemini-api/docs/gemini-3",
@@ -140,34 +119,16 @@
           "output": 12.0
         },
         {
-          "id": "gemini-2.5-pro",
-          "desc": "上代旗艦 · 強 · $1.25/$10",
-          "input": 1.25,
-          "output": 10.0
-        },
-        {
           "id": "gemini-3.5-flash",
           "desc": "新世代 flash · 均衡（預設）· $1.50/$9",
           "input": 1.5,
           "output": 9.0
         },
         {
-          "id": "gemini-2.5-flash",
-          "desc": "均衡 · 通用 · $0.30/$2.50",
-          "input": 0.3,
-          "output": 2.5
-        },
-        {
           "id": "gemini-3.1-flash-lite",
           "desc": "輕量 · 省 · $0.25/$1.50",
           "input": 0.25,
           "output": 1.5
-        },
-        {
-          "id": "gemini-2.5-flash-lite",
-          "desc": "極省 · 高量 · $0.10/$0.40",
-          "input": 0.1,
-          "output": 0.4
         }
       ]
     },
@@ -181,13 +142,10 @@
       "supportsThinking": true,
       "thinkingControl": "nativeSwitch",
       "thinkingModes": ["enabled", "disabled"],
-      "_thinkingControl_comment": "✅ Ark 官方 SDK 型別（volcenginesdkarkruntime/types/shared/thinking.py）確認 thinking.type 是三態 enum（enabled/disabled/auto），非布林開關；與 OpenAI/Gemini 不同，這是真實原生參數，故 UI 用選擇器而非單純開關。provider 預設僅 enabled/disabled 兩態，auto 僅少數 model 支援（見 modelCapabilities gpt-oss-120b-250805 覆寫）。",
       "reasoningEffortOptions": ["minimal", "low", "medium", "high"],
       "temperatureLockedWhenThinking": false,
       "maxTemperature": 2,
-      "_maxTemperature_comment": "✅ 2026-07-23 確認：火山引擎（Ark 中文母平台）官方對話 API 參數表明載 temperature 範圍 [0,2]、預設 1.0，與 OpenAI/Gemini 相同（來源見 docs，透過 jina.ai reader 取得完整參數表原文，非僅 SDK docstring 推測）。舊版 0~1 假設已更正。⚠️ 另查到重要旁支：文件同頁記載 doubao-seed-2-0-pro-260215／doubao-seed-2-0-lite-260215 這兩個型號的 temperature 由伺服器端無條件強制鎖定為 1（手動指定值靜默忽略、不報錯，top_p 同時鎖 0.95），與本專案既有 temperatureLockedWhenThinking（僅 thinking 開啟時鎖定、送錯值會 400）機制不同；本專案用的 -260228／-260428 官方文件未點名，但已透過自行實測獨立證實 -260228 適用同一行為（見 modelCapabilities seed-2-0-lite-260228）。",
       "reasoningOffHint": "Thinking 關閉：使用 Ark 原生開關 thinking.type=disabled（extra_body），與 reasoning_effort 不可併送（實測 API 400 Invalid combination），故關閉時只送開關、不送推理參數。",
-      "_reasoningEffortOptions_comment": "✅ Ark 官方參數表 + SDK 型別雙重確認：完整平台值域為 none/minimal/low/medium(預設)/high/xhigh/max，但 none／xhigh 僅 glm-5-2-260617 開放、max 僅 glm-5-2／deepseek-v4-pro／flash 開放；本專案用的 Seed／gpt-oss 系列一律只適用 minimal/low/medium/high，與既有設定吻合，不用改。",
       "docs": {
         "Chat API 參數表（temperature/thinking/reasoning_effort 完整定義）": "https://www.volcengine.com/docs/82379/1494384?lang=zh",
         "Deep reasoning 指南（各 model 支援的 thinking 模式清單，含 auto）": "https://docs.byteplus.com/en/docs/ModelArk/1449737",
@@ -210,16 +168,6 @@
         {
           "id": "seed-2-0-code-preview-260328",
           "desc": "Seed 2.0 · 程式碼（官方未公布單價，成本估算回退預設）"
-        },
-        {
-          "id": "seed-1-6-250915",
-          "desc": "Seed 1.6 · 標準 · $0.25/$2",
-          "input": 0.25,
-          "output": 2.0
-        },
-        {
-          "id": "seed-1-6-flash-250715",
-          "desc": "Seed 1.6 flash · 省（官方未公布單價，成本估算回退預設）"
         },
         {
           "id": "gpt-oss-120b-250805",
