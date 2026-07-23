@@ -10,8 +10,10 @@
 
 安全要點：
 - 表名 / 欄名一律比對 `tables.metadata`（白名單），未知即拒，不觸及 DB。
-- schema_version（匯出時 alembic head）與當前 DB head 不符 → 硬拒（無 force）。
-- 敏感表（users / user_settings）預設不碰；納入需顯式 include_sensitive。
+- schema_version（匯出時 alembic head）與當前 DB head 不符 → 硬拒（無 force），但相等判斷經
+  `_heads_compatible()`——一般情況等同直接比對，squash 事件可經 `LEGACY_COMPATIBLE_HEADS`
+  登記例外，避免歷史資料包因純粹的 migration 歷史重寫被誤判失效。
+- 敏感表（settings，含加密機密）預設不碰；納入需顯式 include_sensitive。
 - 匯入為單一交易 truncate-then-load，任一步失敗整體 rollback，DB 維持原狀。
 
 匯出（產生資料包）在 CLI `scripts/tools/dump_datapack.py`，與本模組共用 TABLE_LOAD_ORDER / current_alembic_head。
@@ -39,8 +41,7 @@ FORMAT_VERSION = "1.0"
 # INSERT 順序（軟關聯：帳號 → 5 來源 → 批次/規則 → 初判 → 依賴/日誌）；TRUNCATE 為反向。
 # 本專案零 DB 級 ForeignKey（軟關聯），順序非硬性；仍固定一份 SSOT 供匯入/匯出共用、利審查。
 TABLE_LOAD_ORDER: tuple[str, ...] = (
-    "users",
-    "user_settings",
+    "settings",
     "product_reviews",
     "conversations",
     "freshdesk_tickets",
@@ -56,8 +57,8 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "attribution_history",
 )
 
-# 敏感表：含帳號 / 加密機密，預設不匯入（避免跨環境金鑰不符靜默清空、或還原 users 鎖死當前帳號）。
-SENSITIVE_TABLES: frozenset[str] = frozenset({"users", "user_settings"})
+# 敏感表：含加密機密（LLM token / QC 密碼），預設不匯入（避免跨環境金鑰不符靜默清空）。
+SENSITIVE_TABLES: frozenset[str] = frozenset({"settings"})
 
 # 載入後需重置序列的 autoincrement PK 表：還原顯式 id 後，序列未同步會導致後續新增 PK 衝突。
 _SEQUENCE_TABLES: tuple[tuple[str, str], ...] = (
@@ -91,6 +92,25 @@ def current_alembic_head(engine: Any | None = None) -> str | None:
         except Exception:  # noqa: BLE001  表不存在 / 尚未 migrate
             return None
     return row[0] if row else None
+
+
+# 手動維護：squash 事件（歷史 migration 收斂成單一 baseline，schema 內容不變、只重寫歷史）
+# 發生時，把「squash 前曾發布過的 head」→「squash 後新 head」登記於此，讓 squash 前匯出的
+# 歷史資料包不因純粹的歷史重寫被誤判失效。只在真正的 squash 登記；一般 migration 造成的
+# head 變化不該進來——那些是真實 schema 變化，理應讓舊資料包重新驗證（per-table 欄位比對層
+# `unknown_cols` 仍會攔截真正不相容的結構差異，見 validate_datapack 迴圈）。
+LEGACY_COMPATIBLE_HEADS: dict[str, str] = {
+    # "舊head": "新head",
+}
+
+
+def _heads_compatible(manifest_head: str | None, current_head: str | None) -> bool:
+    """資料包 schema_version 與當前 DB head 是否相容：完全相等，或登記於 LEGACY_COMPATIBLE_HEADS。"""
+    if not manifest_head or not current_head:
+        return False
+    return (
+        manifest_head == current_head or LEGACY_COMPATIBLE_HEADS.get(manifest_head) == current_head
+    )
 
 
 def _safe_members(zf: zipfile.ZipFile) -> dict[str, str]:
@@ -157,7 +177,7 @@ def validate_datapack(zip_bytes: bytes, *, include_sensitive: bool = False) -> d
 
     Args:
         zip_bytes: 上傳的資料包 zip 位元組。
-        include_sensitive: 是否納入敏感表（users/user_settings）。
+        include_sensitive: 是否納入敏感表（settings）。
 
     Returns:
         JSON-safe dict：{ok, schema_ok, manifest_head, current_head, tables:[...], errors:[], warnings:[]}。
@@ -178,7 +198,7 @@ def validate_datapack(zip_bytes: bytes, *, include_sensitive: bool = False) -> d
 
     manifest_head = manifest.get("schema_version")
     current_head = current_alembic_head()
-    schema_ok = bool(manifest_head) and manifest_head == current_head
+    schema_ok = _heads_compatible(manifest_head, current_head)
     if not schema_ok:
         errors.append(
             f"資料包 schema_version={manifest_head} 與當前 DB head={current_head} 不符；"
@@ -227,8 +247,8 @@ def validate_datapack(zip_bytes: bytes, *, include_sensitive: bool = False) -> d
 
     if sensitive_present:
         warnings.append(
-            "資料包含 users/user_settings：跨環境還原前確認 AIQ_SECRET_KEY 與來源一致，"
-            "否則加密機密（provider token / QC 密碼）匯入後會靜默失效；還原 users 可能影響當前登入帳號。"
+            "資料包含 settings：跨環境還原前確認 AIQ_SECRET_KEY 與來源一致，"
+            "否則加密機密（provider token / QC 密碼）匯入後會靜默失效。"
         )
 
     return {
@@ -385,7 +405,7 @@ def build_datapack(
     """在記憶體組出資料包 zip 位元組（manifest + 每表 ndjson）；CLI 與匯出端點共用。
 
     Args:
-        include_sensitive: 是否併入敏感表（users/user_settings）。
+        include_sensitive: 是否併入敏感表（settings）。
         only: 只匯出指定表（None＝全部白名單）。
         generated_at: manifest 時間戳（預設現在 UTC）。
         progress: 每完成一張表回報 (已完成表數, 總表數)；供背景 job SSE 顯示進度。回呼可拋

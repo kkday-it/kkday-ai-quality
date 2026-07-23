@@ -34,6 +34,9 @@ jobs:
       - name: Ruff lint
         run: cd backend && ruff check app
       - name: Pytest
+        # 含 schema 護欄兩條：test_migration_chain_known_gap.py（已知缺陷斷言，鏈從全空庫
+        # 應在 c24e5b0964ce 崩潰，非綠燈失敗）+ test_all_tables_have_create_migration.py
+        # （靜態掃描，抓下一次 judge_rule_versions 式孤兒表）——皆已被此步驟自動收集執行。
         run: cd backend && pytest -q
 
   frontend:
