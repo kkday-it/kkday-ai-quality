@@ -30,14 +30,14 @@ from contextvars import copy_context
 
 from app.core import db
 from app.core import settings as app_settings
+from app.core.job_registry import JobStore
 from app.judge import prompt_eval, prompt_source, run_log
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
 
-# in-mem job 進度快照（單機夠用，重啟即清；job_id → snapshot dict）。
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+# in-mem job 進度快照（單機夠用，重啟即清）；共用機制層見 core.job_registry.JobStore。
+_store: JobStore = JobStore()
 
 # 筆數間併發（每筆內部域 prompt 已用自己的 ThreadPool 並行，見 prompt_eval.domain_verdicts）；
 # 沙盒測試非正式初判量級，固定小併發即可，不比照 prejudge_batch 的 per-model/自適應併發。
@@ -110,8 +110,7 @@ def start(
                 raise ValueError(f"{rule_code} 草稿驗證不過：{e}") from None
     compare = bool(compare and drafts)  # 無草稿時對比無意義，靜默降為單跑
     job_id = f"psbxjob_{uuid.uuid4().hex}"
-    with _jobs_lock:
-        _jobs[job_id] = {"status": "running", "total": len(item_ids), "done": 0, "run_id": None}
+    _store.put(job_id, {"status": "running", "total": len(item_ids), "done": 0, "run_id": None})
     threading.Thread(
         target=_run,
         args=(job_id, source, item_ids, prompt_ids, eff, scope, triggered_by),
@@ -216,10 +215,7 @@ def _run(
                 except Exception as e:  # noqa: BLE001  單筆失敗不擋全批，記錯誤供回看
                     run_log.emit("error", "job", f"{sid} 測試失敗：{e}")
                     results.append({"source_id": sid, "error": str(e)})
-                with _jobs_lock:
-                    snap = _jobs.get(job_id)
-                    if snap:
-                        snap["done"] += 1
+                _store.mutate(job_id, lambda snap: snap.update({"done": snap["done"] + 1}))
         run_log.finish(job_id)
         log_entries, _, _ = run_log.read(job_id)
         run_id = db.insert_sandbox_run(
@@ -239,23 +235,23 @@ def _run(
                 "compare": compare,
             }
         )
-        with _jobs_lock:
-            snap = _jobs.get(job_id)
-            if snap:
-                snap["status"] = "done"
-                snap["run_id"] = run_id
+        _store.mutate(job_id, lambda snap: snap.update({"status": "done", "run_id": run_id}))
     except Exception:  # noqa: BLE001  整批級失敗（如 DB 斷線）→ 標 error 供前端停輪詢
         _log.exception("Prompt 測試沙盒任務失敗 job=%s", job_id)
-        with _jobs_lock:
-            snap = _jobs.get(job_id)
-            if snap:
-                snap["status"] = "error"
+        _store.set_fields(job_id, status="error")
     finally:
         client.set_usage_context(None)
 
 
 def get_job(job_id: str) -> dict | None:
     """job 進度快照（{status: running/done/error, total, done, run_id}）；不存在回 None。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        return dict(snap) if snap is not None else None
+    return _store.get(job_id)
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在 running 的 Prompt 測試沙盒 job 標 interrupted（語義同 export_jobs）。
+
+    2026-07-23 補：先前遺漏此函式，shutdown.py 的彙總只涵蓋 4 套 registry，沙盒 job 在
+    graceful shutdown 不會被標記——低風險（dev 調適工具、不影響正式判決），現一併補上。
+    """
+    return _store.mark_interrupted(running_statuses=("running",), new_status="interrupted")

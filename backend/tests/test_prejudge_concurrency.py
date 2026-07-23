@@ -134,7 +134,7 @@ def test_bump_records_failed_items_with_cap(monkeypatch) -> None:
     from app.judge import prejudge_batch as pb
 
     jid = "test_job_bump"
-    pb._jobs[jid] = pb._new_snapshot(total=5, model="m")
+    pb._store.put(jid, pb._new_snapshot(total=5, model="m"))
     try:
         pb._bump(jid, ok=False, item_id="i1", source_id="s1", error="boom")
         pb._bump(jid, ok=True)
@@ -147,7 +147,7 @@ def test_bump_records_failed_items_with_cap(monkeypatch) -> None:
         snap = pb.get_job(jid)
         assert len(snap["failed_items"]) == 1 and snap["failed_items_truncated"] is True
     finally:
-        pb._jobs.pop(jid, None)
+        pb._store.delete(jid)
 
 
 def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:

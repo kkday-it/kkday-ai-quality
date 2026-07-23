@@ -1,7 +1,8 @@
 """上傳匯入背景 job：逐工作表分塊處理 + 進度快照（前端輪詢畫進度條，每表分開）。
 
-沿用 `prejudge_batch` 的 in-mem registry + 背景 thread 模式。上傳為 DB 寫入 I/O bound，
-單背景 thread 逐表逐塊（每塊 _CHUNK 列）處理即可，不需 ThreadPool。每張工作表獨立一段進度，
+沿用 `prejudge_batch` 的 in-mem registry + 背景 thread 模式（共用機制層見
+`core.job_registry.JobStore`）。上傳為 DB 寫入 I/O bound，單背景 thread 逐表逐塊
+（每塊 _CHUNK 列）處理即可，不需 ThreadPool。每張工作表獨立一段進度，
 前端據 `sheets[].processed / total` 畫各自進度條；job 重啟即清（單機夠用）。
 """
 
@@ -13,13 +14,13 @@ import uuid
 
 from app.core import db
 from app.core import source_mapping as srcmap
+from app.core.job_registry import JobStore
 from app.judge.ingest import entry
 
 _log = logging.getLogger(__name__)
 
-# in-mem job 進度快照（job_id → snapshot dict）；rows 另存 _job_rows（量大，不回前端）。
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+# rows 另存 _job_rows（量大，不回前端）；job 進度快照走共用 JobStore。
+_store: JobStore = JobStore()
 _job_rows: dict[str, list[dict]] = {}
 
 _CHUNK = 1000  # 每塊列數：兼顧進度更新頻率與寫入效率
@@ -27,36 +28,34 @@ _CHUNK = 1000  # 每塊列數：兼顧進度更新頻率與寫入效率
 
 def _set_status(job_id: str, status: str) -> None:
     """設定 job 終態（thread-safe）。"""
-    with _jobs_lock:
-        if job_id in _jobs:
-            _jobs[job_id]["status"] = status
+    _store.set_fields(job_id, status=status)
 
 
 def _bump_sheet(
     job_id: str, idx: int, *, add: dict | None = None, set_: dict | None = None
 ) -> None:
     """更新第 idx 張工作表進度（add=累加欄位 / set_=覆寫欄位；thread-safe）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None:
-            return
+
+    def _apply(snap: dict) -> None:
         sh = snap["sheets"][idx]
         for k, v in (add or {}).items():
             sh[k] += v
         for k, v in (set_ or {}).items():
             sh[k] = v
 
+    _store.mutate(job_id, _apply)
+
 
 def _append_errors(job_id: str, idx: int, errs: list[str]) -> None:
     """把該表壞列原因累積進快照（最多 10 筆，供前端顯示排查）。"""
     if not errs:
         return
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None:
-            return
+
+    def _apply(snap: dict) -> None:
         cur = snap["sheets"][idx]["errors"]
         cur.extend(errs[: max(0, 10 - len(cur))])
+
+    _store.mutate(job_id, _apply)
 
 
 # mixpanel $ / 大寫欄名 → 淨化為合法 SQL 欄名（對齊來源表定義；其餘來源不需）
@@ -114,10 +113,9 @@ def _run(job_id: str, filename: str, sheets_data: list[dict]) -> None:
             except Exception:  # noqa: BLE001 — 單表失敗隔離，不阻斷其餘表
                 _log.exception("上傳單表失敗 job=%s sheet=%s", job_id, name)
                 _bump_sheet(job_id, idx, set_={"status": "error"})
-            with _jobs_lock:
-                snap = _jobs.get(job_id)
-                if snap:
-                    snap["done_sheets"] += 1
+            _store.mutate(
+                job_id, lambda snap: snap.update({"done_sheets": snap["done_sheets"] + 1})
+            )
         _set_status(job_id, "done")
     except Exception:  # noqa: BLE001
         _log.exception("上傳批量任務失敗 job=%s", job_id)
@@ -195,8 +193,9 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
         )
 
     job_id = f"up_{uuid.uuid4().hex[:12]}"
-    with _jobs_lock:
-        _jobs[job_id] = {
+    _store.put(
+        job_id,
+        {
             "status": "running",  # running → done / error
             "total_sheets": len(sheets_data),
             "done_sheets": 0,
@@ -217,7 +216,8 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
             ],
             # 無效表也回報（不處理，供前端顯示原因）
             "invalid": [m for m in sheets_meta if not m["valid"]],
-        }
+        },
+    )
     if not sheets_data:  # 全無效 → 直接標終態，前端顯示 invalid 原因
         _set_status(job_id, "done")
     else:
@@ -228,24 +228,11 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
 
 
 def get_job(job_id: str) -> dict | None:
-    """取 job 進度快照複本（thread-safe，深複製 sheets）；不存在回 None（端點轉 404）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None:
-            return None
-        return {
-            "status": snap["status"],
-            "total_sheets": snap["total_sheets"],
-            "done_sheets": snap["done_sheets"],
-            "sheets": [dict(s) for s in snap["sheets"]],
-            "invalid": list(snap.get("invalid", [])),
-        }
+    """取 job 進度快照複本（thread-safe，深複製；`JobStore.get` 對巢狀 sheets/invalid 亦完整深拷貝）；
+    不存在回 None（端點轉 404）。"""
+    return _store.get(job_id)
 
 
 def mark_running_interrupted() -> list[str]:
     """graceful shutdown 收尾：把仍在 running 的上傳落庫 job 標 interrupted（語義同 export_jobs）。"""
-    with _jobs_lock:
-        hit = [jid for jid, snap in _jobs.items() if snap.get("status") == "running"]
-        for jid in hit:
-            _jobs[jid]["status"] = "interrupted"
-    return hit
+    return _store.mark_interrupted(running_statuses=("running",), new_status="interrupted")

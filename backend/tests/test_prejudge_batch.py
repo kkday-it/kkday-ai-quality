@@ -152,8 +152,8 @@ def test_pause_resume_cancel_state_machine():
     job_id = "pj_test_sm"
     gate, cancel = threading.Event(), threading.Event()
     gate.set()
-    with pb._jobs_lock:
-        pb._jobs[job_id] = pb._new_snapshot(1, "m")
+    pb._store.put(job_id, pb._new_snapshot(1, "m"))
+    with pb._controls_lock:
         pb._controls[job_id] = {"gate": gate, "cancel": cancel}
     try:
         assert pb.resume_job(job_id) is False  # running 不可 resume
@@ -169,8 +169,8 @@ def test_pause_resume_cancel_state_machine():
         assert pb.pause_job(job_id) is False
         assert pb.get_job("nonexistent") is None  # 不存在回 None（端點轉 404）
     finally:
-        with pb._jobs_lock:
-            pb._jobs.pop(job_id, None)
+        pb._store.delete(job_id)
+        with pb._controls_lock:
             pb._controls.pop(job_id, None)
 
 
@@ -196,8 +196,7 @@ def test_cancel_running_job_drains_to_cancelled(batch_env, monkeypatch):
 def test_bump_thread_safe_counts():
     """_bump 併發累計：N 線程各 bump 一次，processed/ok/failed 無競態遺失。"""
     job_id = "pj_test_bump"
-    with pb._jobs_lock:
-        pb._jobs[job_id] = pb._new_snapshot(40, "m")
+    pb._store.put(job_id, pb._new_snapshot(40, "m"))
     try:
         threads = [
             threading.Thread(target=pb._bump, args=(job_id,), kwargs={"ok": i % 4 != 0})
@@ -212,8 +211,7 @@ def test_bump_thread_safe_counts():
         assert snap["ok"] == 30 and snap["failed"] == 10
         assert pb._bump("nonexistent", ok=True) is None  # 不存在 job 靜默忽略
     finally:
-        with pb._jobs_lock:
-            pb._jobs.pop(job_id, None)
+        pb._store.delete(job_id)
 
 
 def test_copy_context_carries_settings_into_worker(batch_env, monkeypatch):

@@ -23,21 +23,23 @@ from contextvars import copy_context
 from app.core import db, pricing
 from app.core import settings as app_settings
 from app.core.config import env, is_production
+from app.core.job_registry import JobStore
 from app.judge import prejudge, run_log
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
 
-# in-mem job 進度快照（單機夠用，重啟即清；job_id → snapshot dict）。
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+# in-mem job 進度快照（單機夠用，重啟即清）；共用機制層見 core.job_registry.JobStore。
+_store: JobStore = JobStore()
 
 # 每 job 一組協作式控制旗標（暫停/取消）：
 # - gate: set＝可跑、clear＝暫停；提交迴圈每筆前 `gate.wait()`，暫停時阻塞、恢復即續。
 # - cancel: set＝停止；迴圈檢查到即 break，drain 已在跑的 future（Python thread 無法搶佔式中斷，
 #   已發出的 LLM 呼叫最壞等 llm_timeout=60s 收斂）。取消時一併 gate.set() 喚醒被暫停的迴圈。
-# 與 _jobs 同生命週期，_jobs_lock 保護 dict 存取（Event 自身 thread-safe）。
+# 與 job 快照同生命週期但非快照本身（Event 非 JSON-safe），故不進 JobStore；獨立鎖保護 dict 存取
+# （Event 自身 thread-safe，鎖只保護 dict 存取本身）。
 _controls: dict[str, dict[str, threading.Event]] = {}
+_controls_lock = threading.Lock()
 
 # 全域併發閘：多 job 疊加時把同時在跑的初判收斂到 prejudge_max_workers（見檔頭說明）。
 _sem = threading.BoundedSemaphore(env.prejudge_max_workers)
@@ -135,10 +137,8 @@ def _bump(
     error: str = "",
 ) -> None:
     """單筆初判完成後累加進度（thread-safe；processed / ok|failed；失敗附 item 明細供前端清單）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None:
-            return
+
+    def _apply(snap: dict) -> None:
         snap["processed"] += 1
         snap["ok" if ok else "failed"] += 1
         if not ok:
@@ -147,6 +147,8 @@ def _bump(
                 fi.append({"item_id": item_id, "source_id": source_id, "error": error})
             else:
                 snap["failed_items_truncated"] = True
+
+    _store.mutate(job_id, _apply)
 
 
 def _work_one(
@@ -357,16 +359,16 @@ def _run(
         tier 取 job 級設定（flex 個別呼叫 429 回退標準時此處會微幅低估；權威 per-call 計價在
         llm_usage 落庫，帶實際生效 tier）。thread-safe。
         """
-        with _jobs_lock:
-            snap = _jobs.get(job_id)
-            if snap is None:
-                return
+
+        def _apply(snap: dict) -> None:
             snap["total_tokens"] += prompt + completion
             snap["cost_usd"] = round(
                 snap["cost_usd"]
                 + pricing.cost_usd(m, prompt, completion, cached, service_tier=tier),
                 6,
             )
+
+        _store.mutate(job_id, _apply)
 
     # 版本選擇功能：job 級算一次完整快照（稽核用），逐筆只轉發使用者實際指定的 pinned 子集
     # （未指定的 prompt 仍走 to_findings 的 DB active 快取路徑，見 _work_one 說明）。
@@ -472,9 +474,7 @@ def _run(
 
 def _set_status(job_id: str, status: str) -> None:
     """設定 job 狀態（thread-safe）；同步回寫歸因歷史（best-effort，不阻斷初判）。"""
-    with _jobs_lock:
-        if job_id in _jobs:
-            _jobs[job_id]["status"] = status
+    _store.set_fields(job_id, status=status)
     try:  # 非終態（paused/running/cancelling）即時回寫；終態統計另由 _run finally 的 finish 覆蓋
         db.update_prejudge_run_status(job_id, status)
     except Exception:  # noqa: BLE001
@@ -483,17 +483,22 @@ def _set_status(job_id: str, status: str) -> None:
 
 def _drop_controls(job_id: str) -> None:
     """job 結束後清理控制旗標（避免 _controls 無限增長；job 快照仍保留供前端讀終態）。"""
-    with _jobs_lock:
+    with _controls_lock:
         _controls.pop(job_id, None)
 
 
 def pause_job(job_id: str) -> bool:
     """暫停 job：清 gate 使提交迴圈阻塞；status→paused。回 True＝成功（job 存在且 running）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None or snap["status"] != "running":
+
+    def _apply(snap: dict) -> bool:
+        if snap["status"] != "running":
             return False
         snap["status"] = "paused"
+        return True
+
+    if not _store.mutate(job_id, _apply):
+        return False
+    with _controls_lock:
         ctrl = _controls.get(job_id)
     if ctrl:
         ctrl["gate"].clear()
@@ -506,11 +511,16 @@ def pause_job(job_id: str) -> bool:
 
 def resume_job(job_id: str) -> bool:
     """恢復 job：set gate 使提交迴圈續跑；status→running。回 True＝成功（job 存在且 paused）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None or snap["status"] != "paused":
+
+    def _apply(snap: dict) -> bool:
+        if snap["status"] != "paused":
             return False
         snap["status"] = "running"
+        return True
+
+    if not _store.mutate(job_id, _apply):
+        return False
+    with _controls_lock:
         ctrl = _controls.get(job_id)
     if ctrl:
         ctrl["gate"].set()
@@ -526,11 +536,16 @@ def cancel_job(job_id: str) -> bool:
 
     回 True＝成功（job 存在且未達終態）。已初判 finding 已落庫保留；剩餘未初判可事後重跑。
     """
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        if snap is None or snap["status"] in ("done", "error", "cancelled"):
+
+    def _apply(snap: dict) -> bool:
+        if snap["status"] in ("done", "error", "cancelled"):
             return False
         snap["status"] = "cancelling"
+        return True
+
+    if not _store.mutate(job_id, _apply):
+        return False
+    with _controls_lock:
         ctrl = _controls.get(job_id)
     if ctrl:
         ctrl["cancel"].set()
@@ -575,10 +590,10 @@ def start_job(
         job_id（前端據此輪詢 get_job）。
     """
     job_id = f"pj_{uuid.uuid4().hex[:12]}"
-    with _jobs_lock:
-        _jobs[job_id] = _new_snapshot(len(item_ids), model)
-        gate = threading.Event()
-        gate.set()  # 預設可跑（暫停時清除）
+    _store.put(job_id, _new_snapshot(len(item_ids), model))
+    gate = threading.Event()
+    gate.set()  # 預設可跑（暫停時清除）
+    with _controls_lock:
         _controls[job_id] = {"gate": gate, "cancel": threading.Event()}
     try:  # 歸因歷史建檔（run 級持久化；失敗不阻斷初判——歷史為輔助紀錄）
         db.insert_prejudge_run(
@@ -607,9 +622,7 @@ def start_job(
 
 def get_job(job_id: str) -> dict | None:
     """取 job 進度快照複本（thread-safe）；不存在回 None（端點轉 404）。"""
-    with _jobs_lock:
-        snap = _jobs.get(job_id)
-        return dict(snap) if snap else None
+    return _store.get(job_id)
 
 
 def mark_running_interrupted() -> list[str]:
@@ -618,8 +631,4 @@ def mark_running_interrupted() -> list[str]:
     已判 finding 已即時落庫保留；重啟後對「剩餘未判」重新發起（scope=all）即可續作——
     與 judgment_runs 的 interrupted 語義一致（server 重啟後 in-mem 快照不在）。
     """
-    with _jobs_lock:
-        hit = [jid for jid, snap in _jobs.items() if snap.get("status") in ("running", "paused")]
-        for jid in hit:
-            _jobs[jid]["status"] = "interrupted"
-    return hit
+    return _store.mark_interrupted(running_statuses=("running", "paused"), new_status="interrupted")
