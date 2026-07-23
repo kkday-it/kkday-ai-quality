@@ -19,7 +19,7 @@ const onTab = (key: string | number) => router.push(String(key));
   <a-tabs
     :active-key="activeTab"
     type="line"
-    class="border-b border-[#f0f0f0] bg-white px-3"
+    class="border-b border-[var(--color-border)] bg-white px-3"
     @change="onTab"
   >
     <a-tab-pane v-for="t in tabs" :key="t.key" :title="t.label" />

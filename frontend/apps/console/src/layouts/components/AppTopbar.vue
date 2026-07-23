@@ -1,27 +1,25 @@
 <script setup lang="ts">
-import type { AuthUser } from '@/api';
 import { MODULES } from '../modules';
 
-// 頂部菜單欄：品牌 + 功能模組下拉（左）+ 配置 / 帳號入口（右）。
-// ⚙️ 配置＝公共設定抽屜（LLM/QC）→ open-settings；email chip＝帳號抽屜 → open-account。各自獨立抽屜。
+// 頂部菜單欄：品牌 + 功能模組下拉（左）+ 配置入口（右）。
+// ⚙️ 配置＝公共設定抽屜（LLM/QC/導出偏好）→ open-settings。
 // 功能模組下拉：選項取自 MODULES 註冊表；active 值由殼層依當前路由注入，切換時 emit 由殼層導航。
 
-// topbar 連結（配置 / 帳號）共用樣式
+// topbar 連結（配置）共用樣式
 const NAV_LINK =
-  'cursor-pointer select-none rounded-md px-3 py-1 text-sm text-[#4e5969] hover:bg-[#e8f3ff] hover:text-[#165dff]';
+  'cursor-pointer select-none rounded-md px-3 py-1 text-sm text-[var(--color-text-2)] hover:bg-[var(--color-primary-light-1)] hover:text-[rgb(var(--primary-6))]';
 
-defineProps<{ user: AuthUser | null; activeModule: string }>();
+defineProps<{ activeModule: string }>();
 defineEmits<{
   (e: 'open-settings'): void;
-  (e: 'open-account'): void;
   (e: 'switch-module', value: string): void;
 }>();
 </script>
 
 <template>
-  <div class="flex h-[52px] items-center gap-1.5 border-b border-[#f0f0f0] bg-white px-5">
-    <span class="select-none text-base font-bold text-[#165dff]">AI 質檢</span>
-    <span class="text-[#c9cdd4]">/</span>
+  <div class="flex h-[52px] items-center gap-1.5 border-b border-[var(--color-border)] bg-white px-5">
+    <span class="select-none text-base font-bold text-[rgb(var(--primary-6))]">AI 質檢</span>
+    <span class="text-[var(--color-text-4)]">/</span>
     <a-select
       :model-value="activeModule"
       class="w-[170px] font-semibold"
@@ -30,10 +28,9 @@ defineEmits<{
     >
       <a-option v-for="m in MODULES" :key="m.value" :value="m.value">{{ m.label }}</a-option>
     </a-select>
-    <!-- 配置 / 帳號 皆置於右側並列（配置＝公共設定抽屜；email chip＝帳號抽屜） -->
+    <!-- 配置入口置於右側 -->
     <span class="ml-auto flex items-center gap-2">
       <a :class="NAV_LINK" @click="$emit('open-settings')">⚙️ 配置</a>
-      <a v-if="user" :class="NAV_LINK" @click="$emit('open-account')">👤 {{ user.email }}</a>
     </span>
   </div>
 </template>

@@ -2,11 +2,13 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores';
-import { AppTopbar, FeatureTabs, SettingsDrawer, AccountDrawer } from './components';
+import { AppTopbar, FeatureTabs, SettingsDrawer } from './components';
 import { MODULES, moduleByPath } from './modules';
 
-// 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 兩個獨立抽屜（公共設定 / 帳號）。
+// 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 公共設定抽屜。
 // 公開頁（登入/註冊）全屏直通，不套殼層。
+// 帳號抽屜已整個退役（2026-07-22）：無登入系統下「當前身分」對使用者無實際操作意義，
+// 唯一有用的「導出偏好」已併入設定抽屜 export tab（見 SettingsDrawer.vue）。
 
 const route = useRoute();
 const router = useRouter();
@@ -21,16 +23,12 @@ const switchModule = (value: string) => {
   if (target && target.value !== activeModule.value.value) router.push(target.home);
 };
 
-// ⚙️ 設定＝公共配置抽屜（LLM/QC）；👤 帳號＝獨立抽屜。各自開關互不干擾。
+// ⚙️ 設定＝公共配置抽屜（LLM/QC/導出偏好）。
 const settingsVisible = ref(false);
-const accountVisible = ref(false);
 const openSettings = () => (settingsVisible.value = true);
-const openAccount = () => (accountVisible.value = true);
 
-onMounted(async () => {
-  auth.fetchMe(); // 以既有 token 拉當前 user（顯示 email）
-  await router.isReady();
-  if (route.query.settings === 'account') accountVisible.value = true; // 舊 ?settings=account 深連結 → 帳號抽屜
+onMounted(() => {
+  auth.fetchMe(); // 以既有 token 拉當前 user（be2 模式用；同時觸發權限清單載入）
 });
 </script>
 
@@ -40,10 +38,8 @@ onMounted(async () => {
     <!-- 頂部菜單欄：固定不隨內容滾動 -->
     <div class="z-10 flex-none">
       <AppTopbar
-        :user="auth.user"
         :active-module="activeModule.value"
         @open-settings="openSettings"
-        @open-account="openAccount"
         @switch-module="switchModule"
       />
       <FeatureTabs v-if="activeModule.tabs.length" :tabs="activeModule.tabs" />
@@ -56,16 +52,15 @@ onMounted(async () => {
       -->
       <div
         id="page-toolbar"
-        class="flex items-center border-b border-[#f0f0f0] bg-white px-5 py-2 empty:hidden"
+        class="flex items-center border-b border-[var(--color-border)] bg-white px-5 py-2 empty:hidden"
       ></div>
     </div>
 
     <!-- 內容區：內部滾動 -->
-    <div class="min-h-0 flex-1 overflow-y-auto bg-[#f7f8fa] p-5">
+    <div class="min-h-0 flex-1 overflow-y-auto bg-[var(--color-fill-1)] p-5">
       <router-view />
     </div>
 
     <SettingsDrawer v-model:visible="settingsVisible" />
-    <AccountDrawer v-model:visible="accountVisible" />
   </a-layout>
 </template>

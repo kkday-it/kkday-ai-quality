@@ -20,11 +20,11 @@ defineProps<{
     <template v-if="$slots.extra || hint || desc" #extra>
       <div class="flex items-center gap-1.5">
         <slot name="extra"
-          ><span v-if="hint" class="text-xs text-[#86909c]">{{ hint }}</span></slot
+          ><span v-if="hint" class="text-xs text-[var(--color-text-3)]">{{ hint }}</span></slot
         >
         <a-popover v-if="desc" :trigger="['hover', 'click']" position="br">
           <icon-info-circle
-            class="cursor-pointer text-[#86909c] transition-colors hover:text-[#165dff]"
+            class="cursor-pointer text-[var(--color-text-3)] transition-colors hover:text-[rgb(var(--primary-6))]"
           />
           <template #title>{{ title }}</template>
           <template #content>

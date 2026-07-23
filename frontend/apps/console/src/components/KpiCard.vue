@@ -15,10 +15,10 @@ defineEmits<{ (e: 'click'): void }>();
 
 <template>
   <a-card hoverable class="cursor-pointer" @click="$emit('click')">
-    <div class="text-[13px] text-[#86909c]">{{ label }}</div>
+    <div class="text-[13px] text-[var(--color-text-3)]">{{ label }}</div>
     <div class="mt-1 text-2xl font-semibold leading-[1.3]">
       {{ value }}<span v-if="unit" class="ml-0.5 text-sm font-normal">{{ unit }}</span>
     </div>
-    <div class="mt-0.5 text-xs text-[#165dff]">{{ subtext }}</div>
+    <div class="mt-0.5 text-xs text-[rgb(var(--primary-6))]">{{ subtext }}</div>
   </a-card>
 </template>
