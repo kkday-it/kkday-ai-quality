@@ -36,9 +36,13 @@ const modelOptions = computed(() => {
 });
 
 const capabilities = computed(() => capabilitiesFor(props.modelValue.model, props.provider));
-/** 思考模式開啟且該 model 鎖定 temperature（見 capabilitiesFor）→ 鎖 1、不可修改。 */
+/** temperature 鎖定：該 model 不論 thinking 開關一律鎖定（temperatureAlwaysLocked，如 ByteDance
+ * seed-2-0-lite 系列伺服器端靜默忽略自訂值，2026-07-23 實測驗證），或思考模式開啟時鎖定
+ * （temperatureLockedWhenThinking，如 OpenAI reasoning model）→ 鎖 1、不可修改。 */
 const tempLocked = computed(
-  () => props.modelValue.thinking === 'on' && capabilities.value.temperatureLockedWhenThinking,
+  () =>
+    capabilities.value.temperatureAlwaysLocked ||
+    (props.modelValue.thinking === 'on' && capabilities.value.temperatureLockedWhenThinking),
 );
 const useTemp = computed({
   get: () => !isNil(props.modelValue.temperature),
@@ -59,11 +63,22 @@ watch(
   },
   { immediate: true },
 );
+
+// 切換供應商可能連帶降低 maxTemperature（如 OpenAI/Gemini 的 2 → ByteDance 的 1）；
+// 既有自訂值超出新上限時夾回上限，避免送出該供應商 API 會拒絕的值。
+watch(
+  () => capabilities.value.maxTemperature,
+  (max) => {
+    if (!tempLocked.value && useTemp.value && (props.modelValue.temperature ?? 0) > max) {
+      patch({ temperature: max });
+    }
+  },
+);
 </script>
 
 <template>
-  <div>
-    <a-form-item label="Model" content-flex label-col-flex="80px">
+  <div class="flex flex-col gap-1">
+    <a-form-item label="Model" content-flex label-col-flex="108px" :label-col-style="{ whiteSpace: 'nowrap' }">
       <a-select
         :model-value="modelValue.model"
         allow-create
@@ -78,48 +93,61 @@ watch(
       </a-select>
     </a-form-item>
 
-    <a-row :gutter="12">
-      <a-col :flex="'auto'">
-        <a-form-item label="Temperature" content-flex label-col-flex="80px">
-          <a-space>
-            <a-switch :model-value="useTemp" :disabled="tempLocked" @update:model-value="(v) => (useTemp = Boolean(v))" />
-            <span class="text-xs text-[#86909c]">{{
-              tempLocked
-                ? `鎖定 ${capabilities.lockedTemperatureValue}（Thinking 開啟）`
-                : useTemp
-                  ? '自訂'
-                  : 'API 預設（gpt-5 系列鎖定）'
-            }}</span>
-            <a-slider
-              v-if="useTemp && !tempLocked"
-              :model-value="modelValue.temperature ?? 0"
-              :min="0"
-              :max="2"
-              :step="0.1"
-              class="w-[180px]"
-              @update:model-value="(v) => patch({ temperature: v as number })"
-            />
-            <span v-if="useTemp">{{ tempLocked ? capabilities.lockedTemperatureValue : (modelValue.temperature ?? 0) }}</span>
-          </a-space>
-        </a-form-item>
-      </a-col>
-      <a-col v-if="capabilities.supportsThinking" :flex="'160px'">
-        <a-form-item label="思考模式" content-flex label-col-flex="80px">
-          <a-space>
-            <a-switch
-              :model-value="modelValue.thinking"
-              checked-value="on"
-              unchecked-value="off"
-              @update:model-value="(v) => patch({ thinking: v as 'on' | 'off' })"
-            />
-            <span class="text-xs text-[#86909c]">{{ modelValue.thinking === 'on' ? '開啟' : '關閉' }}</span>
-          </a-space>
-        </a-form-item>
-      </a-col>
-    </a-row>
+    <a-form-item
+      v-if="capabilities.supportsThinking"
+      label="思考模式"
+      content-flex
+      label-col-flex="108px"
+      :label-col-style="{ whiteSpace: 'nowrap' }"
+    >
+      <div class="flex flex-col gap-1">
+        <a-switch
+          :model-value="modelValue.thinking"
+          checked-value="on"
+          unchecked-value="off"
+          @update:model-value="(v) => patch({ thinking: v as 'on' | 'off' })"
+        />
+        <span class="text-xs text-[#86909c]">{{ modelValue.thinking === 'on' ? '開啟' : '關閉' }}</span>
+      </div>
+    </a-form-item>
 
-    <a-form-item v-if="capabilities.supportsThinking" label="Reasoning effort" content-flex label-col-flex="80px">
-      <a-space>
+    <a-form-item label="Temperature" content-flex label-col-flex="108px" :label-col-style="{ whiteSpace: 'nowrap' }">
+      <div class="flex flex-col gap-1">
+        <a-space :wrap="false" class="w-full">
+          <a-switch :model-value="useTemp" :disabled="tempLocked" @update:model-value="(v) => (useTemp = Boolean(v))" />
+          <a-slider
+            v-if="useTemp && !tempLocked"
+            :model-value="modelValue.temperature ?? 0"
+            :min="0"
+            :max="capabilities.maxTemperature"
+            :step="0.1"
+            class="w-[140px]"
+            @update:model-value="(v) => patch({ temperature: v as number })"
+          />
+          <span v-if="useTemp" class="whitespace-nowrap">{{ tempLocked ? capabilities.lockedTemperatureValue : (modelValue.temperature ?? 0) }}</span>
+        </a-space>
+        <span class="text-xs text-[#86909c]">{{
+          tempLocked
+            ? capabilities.temperatureAlwaysLocked
+              ? `鎖定 ${capabilities.lockedTemperatureValue}（此 model 固定溫度，自訂值伺服器端會被忽略）`
+              : `鎖定 ${capabilities.lockedTemperatureValue}（Thinking 開啟）`
+            : useTemp
+              ? '自訂'
+              : capabilities.temperatureLockedWhenThinking
+                ? `API 預設（Thinking 開啟會鎖定為 ${capabilities.lockedTemperatureValue}）`
+                : 'API 預設'
+        }}</span>
+      </div>
+    </a-form-item>
+
+    <a-form-item
+      v-if="capabilities.supportsThinking"
+      label="Reasoning effort"
+      content-flex
+      label-col-flex="108px"
+      :label-col-style="{ whiteSpace: 'nowrap' }"
+    >
+      <div class="flex flex-col gap-1">
         <a-radio-group
           :model-value="modelValue.reasoning_effort"
           type="button"
@@ -129,10 +157,10 @@ watch(
         >
           <a-radio v-for="r in capabilities.reasoningEffortOptions" :key="r" :value="r">{{ r }}</a-radio>
         </a-radio-group>
-        <span v-if="modelValue.thinking === 'off'" class="text-xs text-[#86909c]">
-          Thinking 關閉：不送推理參數（不支援完全關閉的模型自動降為最低檔）
+        <span v-if="modelValue.thinking === 'off' && capabilities.reasoningOffHint" class="text-xs text-[#86909c]">
+          {{ capabilities.reasoningOffHint }}
         </span>
-      </a-space>
+      </div>
     </a-form-item>
   </div>
 </template>

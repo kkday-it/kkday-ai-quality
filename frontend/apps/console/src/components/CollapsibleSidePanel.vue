@@ -18,7 +18,8 @@ withDefaults(
     label: string;
     /** 面板是否展開。 */
     modelValue: boolean;
-    /** 展開後面板容器的 class（管寬度/最大高即可；邊框/背景/陰影/內距/捲動由元件內建）。 */
+    /** 展開後面板容器的 class（管寬度即可；高度 floating 模式已用 top-0/bottom-0 撐滿可用高度，
+     * 不需再傳 max-h，撐滿後超出才由元件內建的內部捲動接管；邊框/背景/陰影/內距/捲動由元件內建）。 */
     panelClass?: string;
     /** true：面板以絕對定位懸浮在觸發長條右側（不佔版面寬度，開合不推擠旁邊內容）；
      * false（預設）：面板為並排 flex 子項，展開會佔用寬度推開內容。 */
@@ -54,7 +55,7 @@ defineEmits<{ (e: 'update:modelValue', v: boolean): void }>();
       :class="[
         panelClass,
         floating
-          ? 'absolute left-full top-0 z-10 ml-2 rounded-lg border bg-[var(--color-bg-2)] shadow-lg'
+          ? 'absolute left-full top-0 bottom-0 z-10 ml-2 rounded-lg border bg-[var(--color-bg-2)] shadow-lg'
           : '',
       ]"
     >

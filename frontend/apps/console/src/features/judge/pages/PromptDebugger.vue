@@ -136,7 +136,7 @@ function abort(): void {
 async function saveAsDefault(): Promise<void> {
   try {
     await llm.saveAsDefault();
-    Message.success('已存為本功能區默認（團隊共用）');
+    Message.success('已存為本功能區默認');
   } catch (error) {
     Message.error('儲存失敗：' + (error instanceof Error ? error.message : error));
   }

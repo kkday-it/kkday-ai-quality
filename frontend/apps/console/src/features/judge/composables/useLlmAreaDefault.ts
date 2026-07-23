@@ -5,6 +5,7 @@
 // 各功能區本地覆寫預設不落庫，僅顯式「存為此區默認」才寫回 store/後端。
 import { computed, reactive, ref, watch } from 'vue';
 import { useSettingsConfigsStore } from '@/stores/settingsConfigs.store';
+import { defaultModelFor } from '@/features/settings/constants';
 import type { LlmArea, LlmAreaDefault } from '@/features/settings/types';
 
 type Knobs = Pick<LlmAreaDefault, 'model' | 'thinking' | 'reasoning_effort' | 'temperature'>;
@@ -55,10 +56,13 @@ export function useLlmAreaDefault(area: LlmArea) {
     }
   };
 
-  /** LlmConfigPicker 的 update:modelValue handler：切換本次用哪個供應商連線。 */
+  /** LlmConfigPicker 的 update:modelValue handler：切換本次用哪個供應商連線。
+   * 一併把 model 重置為該供應商的預設 model——不重置會殘留舊供應商的 model id
+   * （如切到 Gemini 卻仍顯示 gpt-5.4-mini），選項清單與後端也解析不到對應能力。 */
   const setProvider = (p: string): void => {
     dirty.value = true;
     provider.value = p;
+    knobs.model = defaultModelFor(p);
   };
   /** LlmKnobs 的 update:modelValue handler。 */
   const setKnobs = (next: Knobs): void => {

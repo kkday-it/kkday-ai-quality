@@ -173,6 +173,14 @@ import { StickyTabs } from '@/components';
 - **值域/選項 SSOT 同源**：對齊 canonical 時連值域一起復用（import 同一 constants），禁止在新頁面手抄枚舉陣列——手抄必 drift。
 - **第 2 次出現即評估抽共用元件**（呼應上方佈局拆分準則）：同一組控件組合出現在第 2 個頁面時，優先抽成共用元件（props 注入差異）而非各自複製模板。
 
+## 控件輔助/狀態說明文字位置（強制）
+
+控件旁的輔助說明／狀態文字（鎖定原因、目前狀態、disabled 原因等 `text-xs text-[#86909c]` 灰字）一律放在**控件橫列下方另起一行**，禁止塞進 `a-space :wrap="false"` 內緊貼控件同一列——窄容器（設定抽屜／彈窗）下同排文字會被截斷或推擠版面（實例：`LlmKnobs.vue` Reasoning effort 的 disabled 說明「Thinking 關閉：不支援完全關閉的模型自動降為最低檔」曾在抽屜內被截斷,2026-07-23 修正)。
+
+- **結構**：外層包 `<div class="flex flex-col gap-1">`，第一行放控件本體（原橫排 `a-space`／單一控件不動），第二行放說明 `<span class="text-xs text-[#86909c]">`
+- 說明文字**不加 `whitespace-nowrap`**，讓其可正常換行，避免超出容器寬度
+- Canonical 用例：`@/components/LlmKnobs.vue`（Temperature 狀態文字、思考模式狀態文字、Reasoning effort disabled 說明皆遵此結構）
+
 ## 懶加載 / Code-splitting（預設機制）
 
 首屏不需要的一律延遲載入，縮小初始 bundle（呼應 06 quality-targets：單路由 JS < 200KB gzip）：
