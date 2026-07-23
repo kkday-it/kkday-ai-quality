@@ -19,25 +19,10 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import {
-  comparePromptSandboxRuns,
-  getPromptSandboxRun,
-  getPromptSandboxStatus,
-  listPromptSandboxRuns,
-  prejudgeLogStreamUrl,
-  startPromptSandbox,
-  type PromptSandboxItemResult,
-  type PromptSandboxRunCompare,
-  type PromptSandboxRunSummary,
-  type PromptSandboxStartBody,
-  type PromptSandboxVariantResult,
-  PERM,
-  type SandboxCompareMetrics,
-} from '@/api';
-import { getRuleDraft } from '@/api/judgeRules.api';
+import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
-import { fmtDt } from '../utils';
+import { differs, fmtDt, metricRows } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
 import { CollapsibleSidePanel, LlmConfigPicker, LlmKnobs, StickyTabs, TableLayout } from '@/components';
@@ -50,9 +35,14 @@ import PromptDraftEditorDrawer from './PromptDraftEditorDrawer.vue';
 import PromptVersionPickerGroup from './PromptVersionPickerGroup.vue';
 import SandboxCompareCard from './SandboxCompareCard.vue';
 import SandboxPromptEntries from './SandboxPromptEntries.vue';
-import type { LogEntry } from './PrejudgeLogView.types';
 import { idPlaceholderFor, schemaFor, STAGE_LABELS, type FilterField } from '../constants';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+import { usePromptSandboxDrafts } from '../composables/usePromptSandboxDrafts';
+import {
+  SANDBOX_SCOPE_LABEL as SCOPE_LABEL,
+  usePromptSandboxHistory,
+} from '../composables/usePromptSandboxHistory';
+import { usePromptSandboxJob } from '../composables/usePromptSandboxJob';
 import { usePromptSandboxTargets } from '../composables/usePromptSandboxTargets';
 import type { PrejudgeListFilters } from '../composables/usePrejudgeJob';
 
@@ -96,94 +86,22 @@ const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));
 const onSaveLlmAreaDefault = async () => {
   try {
     await llm.saveAsDefault();
-    Message.success('已存為本功能區默認（團隊共用）');
+    Message.success('已存為本功能區默認');
   } catch (e: any) {
     Message.error('儲存失敗：' + (e?.message || e));
   }
 };
 
-// ── 草稿閉環狀態 ──
+// ── 草稿閉環：納入測試的 rule_code / 雙跑對比開關（PromptVersionPickerGroup 直接 emit 給本檔，
+// 與 selectedCodes/versionSelection 同源；抽屜協調邏輯下沉 usePromptSandboxDrafts）──
 /** 納入測試且處於草稿模式的 rule_code（picker emit；送測時逐條取 DB 草稿內容快照）。 */
 const draftCodes = ref<string[]>([]);
 /** 有草稿時是否雙跑對比（預設開；關＝只跑草稿省 token 但無前後對照）。 */
 const compareEnabled = ref(true);
-const pickerRef = ref<InstanceType<typeof PromptVersionPickerGroup>>();
-/** 草稿編輯抽屜。 */
-const draftEditor = ref<{ visible: boolean; code: string; baseVersion: number }>({
-  visible: false,
-  code: '',
-  baseVersion: 0,
-});
-/** 採納入庫確認抽屜（draftText＝測試 run 的草稿快照）。 */
-const adopt = ref<{ visible: boolean; code: string; draftText: string; runId: string }>({
-  visible: false,
-  code: '',
-  draftText: '',
-  runId: '',
-});
-/** run-vs-run 對比檢視（非 null 時結果分頁顯示對比而非單次 run）。 */
-const runCompare = ref<PromptSandboxRunCompare | null>(null);
-/** 測試歷史勾選（恰 2 筆可對比）。 */
-const compareSelection = ref<string[]>([]);
 
-function openDraftEditor(payload: { code: string; baseVersion: number }): void {
-  draftEditor.value = { visible: true, ...payload };
-}
-/** 草稿存檔/刪除 → 刷新 picker 草稿選項。 */
-function onDraftChanged(): void {
-  void pickerRef.value?.refreshDrafts();
-}
-/** 入庫成功 → 新版本進下拉並選中 + 草稿選項消失。 */
-function onAdopted(payload: { code: string }): void {
-  void pickerRef.value?.reloadHistory(payload.code);
-  void pickerRef.value?.refreshDrafts();
-}
-/** 從當前 run 的草稿快照發起採納。 */
-function openAdopt(code: string): void {
-  const text = activeRun.value?.drafts?.[code] ?? '';
-  if (!text) {
-    Message.warning('本次測試無此 prompt 的草稿快照');
-    return;
-  }
-  adopt.value = { visible: true, code, draftText: text, runId: activeRun.value?.run_id ?? '' };
-}
-
-// ── 對比輔助（雙跑 item 與 run-vs-run item 共用）──
-/** 兩側結果是否有實質差異（極性不同或 (prompt_id, l2_code) 集合不同）——對比卡片標記用。 */
-function differs(
-  a?: PromptSandboxVariantResult | PromptSandboxItemResult | null,
-  b?: PromptSandboxVariantResult | PromptSandboxItemResult | null,
-): boolean {
-  if (!a || !b) return true;
-  if (a.polarity !== b.polarity) return true;
-  const key = (v: PromptSandboxVariantResult | PromptSandboxItemResult) =>
-    (v.prompts ?? [])
-      .flatMap((p) => (p.attributions ?? []).map((x) => `${p.prompt_id}:${x.l2_code}`))
-      .sort()
-      .join('|');
-  return key(a) !== key(b);
-}
-/** 雙跑 run 的「結果有差異」筆數（對比頭部摘要）。 */
-const changedCount = computed(() => {
-  const rs = activeRun.value?.results ?? [];
-  return rs.filter((r) => r.compare && differs(r.baseline, r.draft)).length;
-});
-/** 當前 run 帶的草稿快照 code 清單（採納入庫動作列；不依賴 compare——只跑草稿亦可採納）。 */
-const runDraftCodes = computed(() => Object.keys(activeRun.value?.drafts ?? {}));
-/** metrics 顯示格式（null → —；比率 → 百分比）。 */
-const pct = (v: number | null | undefined): string =>
-  v == null ? '—' : `${Math.round(v * 1000) / 10}%`;
-/** metrics 摘要條目（雙跑 run 與 run-vs-run 共用渲染）。 */
-const metricRows = (m: SandboxCompareMetrics | null | undefined) =>
-  m
-    ? [
-        { label: '極性一致', value: pct(m.polarity_agree) },
-        { label: '情緒分一致', value: pct(m.sentiment_agree) },
-        { label: '歸因 Jaccard', value: pct(m.facet_jaccard_mean) },
-        { label: '主歸因一致', value: pct(m.primary_agree) },
-        { label: '筆數一致', value: pct(m.count_equal) },
-      ]
-    : [];
+const activeTab = ref<'results' | 'log' | 'history'>('results');
+/** 初判設定面板是否展開；預設收合，讓執行日誌/測試結果直接可見，不被設定區擠到下面。 */
+const settingsOpen = ref(false);
 
 // ── scope='all' 依條件批量選取（比照初判分類 usePrejudgeJob 的目標選取 pattern）──
 const targets = usePromptSandboxTargets({
@@ -214,57 +132,50 @@ const onTargetChange = () => {
 };
 watch(promptArgs, onTargetChange);
 
-const activeTab = ref<'results' | 'log' | 'history'>('results');
-/** 初判設定面板是否展開；預設收合，讓執行日誌/測試結果直接可見，不被設定區擠到下面。 */
-const settingsOpen = ref(false);
-const running = ref(false);
-type RunDetail = PromptSandboxRunSummary & {
-  results: PromptSandboxItemResult[];
-  log: LogEntry[];
-  /** 草稿測試 run：各 prompt 的草稿 md 全文快照（採納入庫的內容來源）。 */
-  drafts?: Record<string, string>;
-  /** 雙跑對比 run：baseline vs draft 等價性聚合（後端讀取時動態算）。 */
-  metrics?: SandboxCompareMetrics | null;
-};
-const activeRun = ref<RunDetail | null>(null);
-/** 防禦舊資料：歷史 run 的 log/results 可能為 null（舊 schema 落庫），v-for 迭代 null 會讓整個
- * 抽屜 render 掛掉（實測全白）——載入點統一補空陣列。 */
-const _normalizeRun = (r: RunDetail): RunDetail => {
-  r.results = r.results ?? [];
-  r.log = r.log ?? [];
-  for (const item of r.results) item.prompts = item.prompts ?? [];
-  return r;
-};
+// ── 測試歷史（與正式初判歷史完全分離）──
+const {
+  history,
+  historyLoading,
+  loadHistory,
+  compareSelection,
+  comparing,
+  viewHistoryRun: fetchHistoryRunDetail,
+  doCompareRuns: requestRunCompare,
+} = usePromptSandboxHistory();
 
-// ── 執行日誌（跑測試時 SSE 即時串流；完成/回看歷史時改顯示落庫的權威 log 快照）──
-// 逐條渲染委派同一份 PrejudgeLogView（與 PrejudgeLogDrawer 共用同一份渲染元件，但 SSE 連線生命週期自理）。
-const logEntries = ref<LogEntry[]>([]);
-const logStreaming = ref(false);
-let logEs: EventSource | null = null;
-const _closeLogStream = () => {
-  logEs?.close();
-  logEs = null;
-  logStreaming.value = false;
-};
-const _openLogStream = (jobId: string) => {
-  _closeLogStream();
-  logEntries.value = [];
-  logStreaming.value = true;
-  logEs = new EventSource(prejudgeLogStreamUrl(jobId));
-  logEs.onopen = () => {
-    logEntries.value = []; // 自動重連會整批重放 → 先清空避免重複
-  };
-  logEs.onmessage = (ev) => logEntries.value.push(JSON.parse(ev.data));
-  logEs.addEventListener('done', () => _closeLogStream());
-  logEs.addEventListener('error', (ev) => {
-    // 僅後端明確推送的 error event（帶 data）才終止；原生連線瞬斷無 data → 交給自動重連
-    // （瞬斷即關流會讓日誌永遠空白）。
-    if ((ev as MessageEvent).data) _closeLogStream();
+// ── 沙盒執行（啟動測試 + SSE 執行日誌 + 輪詢至終態 + 當前顯示結果）──
+const { running, activeRun, runCompare, logEntries, logStreaming, run, closeLogStream, invalidate } =
+  usePromptSandboxJob({
+    scope: () => props.scope,
+    source: () => props.source,
+    sourceIds: () => props.sourceIds,
+    promptArgs,
+    versionSelection,
+    draftCodes,
+    compareEnabled,
+    overrides: llm.overrides,
+    scopeBody: targets.scopeBody,
+    labelFor: (code: string): string => rulesStore.labelFor(code),
+    settingsOpen,
+    activeTab,
+    onDone: loadHistory,
   });
-};
+
+// ── 草稿閉環（編輯 → 測試 → 對比 → 入庫）：草稿編輯 / 採納入庫抽屜協調 ──
+const { pickerRef, draftEditor, adopt, openDraftEditor, onDraftChanged, onAdopted, openAdopt } =
+  usePromptSandboxDrafts({ activeRun });
+
+/** 雙跑 run 的「結果有差異」筆數（對比頭部摘要）。 */
+const changedCount = computed(() => {
+  const rs = activeRun.value?.results ?? [];
+  return rs.filter((r) => r.compare && differs(r.baseline, r.draft)).length;
+});
+/** 當前 run 帶的草稿快照 code 清單（採納入庫動作列；不依賴 compare——只跑草稿亦可採納）。 */
+const runDraftCodes = computed(() => Object.keys(activeRun.value?.drafts ?? {}));
+
 onBeforeUnmount(() => {
-  runSeq += 1; // 作廢進行中的輪詢迴圈（見 run() 的 token 機制）
-  _closeLogStream();
+  invalidate(); // 作廢進行中的輪詢迴圈（見 usePromptSandboxJob 的 token 機制）
+  closeLogStream();
 });
 
 /** 反饋原文預覽（僅單列有意義）：標題另有獨立區塊顯示（見 reviewTitle），這裡只放內文，
@@ -278,137 +189,25 @@ const scopeSummary = computed(() => {
   return `批量 · 將測試 ${targets.targetCount.value} 筆`;
 });
 
-// 輪詢世代 token：抽屜關閉/元件卸載/新一輪測試時遞增作廢舊迴圈——舊 run() 的輪詢在下一次
-// await 醒來後發現 token 過期即靜默退出，不再打 API、不覆寫使用者當下畫面（如切去看的
-// 歷史紀錄）、也不動新一輪的 running 狀態。
-let runSeq = 0;
-async function run() {
-  if (!selectedCodes.value.length) {
-    Message.warning('請至少勾選一支 Prompt');
-    return;
-  }
-  if (props.scope === 'single' && !props.sourceIds.length) {
-    Message.warning('沒有受測項目');
-    return;
-  }
-  const token = ++runSeq;
-  running.value = true;
-  activeRun.value = null;
-  runCompare.value = null; // 新一輪測試離開 run-vs-run 檢視
-  settingsOpen.value = false; // 確認即收面板：測試結果/執行日誌立即可見
-  activeTab.value = 'results';
-  try {
-    const body: PromptSandboxStartBody =
-      props.scope === 'all'
-        ? targets.scopeBody(promptArgs.value)
-        : {
-            source: props.source,
-            item_ids: props.sourceIds,
-            prompt_ids: promptArgs.value,
-            scope: props.scope,
-          };
-    body.overrides = llm.overrides.value;
-    if (Object.keys(versionSelection.value.versions).length) {
-      body.versions = versionSelection.value.versions;
-    }
-    // 草稿模式：送測時取 DB 草稿內容快照帶入（後端逐條強驗 + 落庫快照，與草稿後續演進脫鉤）
-    if (draftCodes.value.length) {
-      const fetched = await Promise.all(
-        draftCodes.value.map(async (code) => ({ code, ...(await getRuleDraft(code)) })),
-      );
-      const drafts: Record<string, string> = {};
-      for (const { code, draft } of fetched) {
-        const text = typeof draft?.content.text === 'string' ? draft.content.text : '';
-        if (!text.trim()) {
-          throw new Error(`「${rulesStore.labelFor(code)}」草稿不存在或為空，請先編輯儲存`);
-        }
-        drafts[code] = text;
-      }
-      body.drafts = drafts;
-      body.compare = compareEnabled.value;
-    }
-    const { job_id } = await startPromptSandbox(body);
-    if (token !== runSeq) return;
-    _openLogStream(job_id); // 執行日誌分頁即時串流（與輪詢並行，互不影響）
-    // 輪詢至終態（done/error）；沙盒非長批次，短間隔即可即時反映進度。
-    while (true) {
-      await new Promise((r) => setTimeout(r, 700));
-      if (token !== runSeq) return;
-      const snap = await getPromptSandboxStatus(job_id);
-      if (token !== runSeq) return;
-      if (snap.status === 'done' && snap.run_id) {
-        const detail = _normalizeRun(await getPromptSandboxRun(snap.run_id));
-        if (token !== runSeq) return;
-        activeRun.value = detail;
-        _closeLogStream();
-        logEntries.value = detail.log; // 改顯示落庫的權威快照（避免 SSE 重連/漏幀差異）
-        await loadHistory();
-        break;
-      }
-      if (snap.status === 'error') {
-        _closeLogStream();
-        Message.error('測試任務失敗');
-        break;
-      }
-    }
-  } catch (e) {
-    if (token === runSeq) Message.error(e instanceof Error ? e.message : '測試失敗');
-  } finally {
-    if (token === runSeq) running.value = false;
-  }
-}
-
-// ── 測試歷史（與正式初判歷史完全分離）──
-const history = ref<PromptSandboxRunSummary[]>([]);
-const historyLoading = ref(false);
-async function loadHistory() {
-  historyLoading.value = true;
-  try {
-    const r = await listPromptSandboxRuns();
-    history.value = r.items;
-  } catch (e) {
-    Message.error(e instanceof Error ? e.message : '載入測試歷史失敗');
-  } finally {
-    historyLoading.value = false;
-  }
-}
 /** 查看某次歷史測試：拉完整詳情（含 results + log 快照）並切到結果分頁；log 分頁同步顯示
  * 當時的完整快照（靜態，非串流）——需求「透過測試歷史回看當時的完整 log」的落地點。 */
-async function viewHistoryRun(runId: string) {
-  try {
-    _closeLogStream(); // 回看歷史時若有正在跑的即時串流先關閉，避免與靜態快照混淆
-    runCompare.value = null; // 離開 run-vs-run 檢視
-    activeRun.value = _normalizeRun(await getPromptSandboxRun(runId));
-    logEntries.value = activeRun.value.log;
+async function viewHistoryRun(runId: string): Promise<void> {
+  closeLogStream(); // 回看歷史時若有正在跑的即時串流先關閉，避免與靜態快照混淆
+  runCompare.value = null; // 離開 run-vs-run 檢視
+  await fetchHistoryRunDetail(runId, (detail) => {
+    activeRun.value = detail;
+    logEntries.value = detail.log;
     activeTab.value = 'results';
-  } catch (e) {
-    Message.error(e instanceof Error ? e.message : '載入測試紀錄失敗');
-  }
+  });
 }
 
 /** 測試歷史勾恰兩筆 → run-vs-run 對比（後端按 source_id 對齊 + metrics），結果分頁顯示。 */
-const comparing = ref(false);
-async function doCompareRuns() {
-  if (compareSelection.value.length !== 2) return;
-  comparing.value = true;
-  try {
-    const [a, b] = compareSelection.value;
-    runCompare.value = await comparePromptSandboxRuns(a, b);
+async function doCompareRuns(): Promise<void> {
+  await requestRunCompare((compare) => {
+    runCompare.value = compare;
     activeTab.value = 'results';
-  } catch (e) {
-    Message.error(e instanceof Error ? e.message : '對比失敗');
-  } finally {
-    comparing.value = false;
-  }
+  });
 }
-
-/** 範圍中文標籤（歷史列表用）。selection 為舊版「已選 N」按鈕遺留的歷史紀錄值（該按鈕已併入
- * all 的「已選內」子模式，觸發端不再產生新的 selection，此處僅為相容顯示舊資料）。 */
-const SCOPE_LABEL: Record<string, string> = {
-  single: '單列',
-  selection: '選取',
-  all: '批量',
-};
 
 // 開啟時重置狀態 + 載入歷史（選哪些 prompt 由 PromptVersionPickerGroup 的開關預設，見
 // usePromptVersionPicker：預設僅 polarity 開，免每次手動勾）；scope='all' 時初始化目標選取器。
@@ -416,12 +215,12 @@ watch(
   () => props.visible,
   async (v) => {
     if (!v) {
-      runSeq += 1; // 作廢進行中的輪詢迴圈：關抽屜後不再打 API、不覆寫重開後的畫面
+      invalidate(); // 作廢進行中的輪詢迴圈：關抽屜後不再打 API、不覆寫重開後的畫面
       running.value = false; // 被作廢的迴圈不會再動 running（token 已過期），這裡顯式復位
       activeRun.value = null;
       runCompare.value = null;
       compareSelection.value = [];
-      _closeLogStream();
+      closeLogStream();
       logEntries.value = [];
       return;
     }
@@ -468,7 +267,7 @@ watch(
         v-model="settingsOpen"
         label="初判設定"
         floating
-        panel-class="w-[560px] max-h-[70vh]"
+        panel-class="w-[560px]"
       >
         <!-- 一頁化：目標範圍（scope='all' 專屬）＋初判設定順排全展開，無內層頁籤——開面板即見
              全部配置。目標範圍比照初判分類目標選取；adhoc＝臨時貼 ID。 -->
