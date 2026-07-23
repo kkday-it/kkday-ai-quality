@@ -337,7 +337,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
 
   /** 開初判歸因彈窗：目標篩選草稿自動帶入頁面當前列表篩選（彈窗內可重選）。
    *  範圍預設：有勾選＝「已選內」且收全部階段、不收斂（初始目標＝整個勾選集合，對齊「判我勾的」直覺）；
-   *  無勾選＝全部資料且只判未初判、再判收斂預設負向+僅低信心（安全預設，避免誤重新初判全庫）。 */
+   *  無勾選＝全部資料且只判未初判；目標篩選純鏡射列表（不再預設負向），再判收斂維持僅低信心作為安全預設。 */
   const openPrejudge = () => {
     const hasSel = selectedKeys.value.length > 0;
     targetMode.value = hasSel ? 'selected' : 'scope';
@@ -350,9 +350,9 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     draftFilters.hasExternal = lf.hasExternal || '';
     draftFilters.tier = lf.confidenceTier || '';
     draftFilters.taxonomy = lf.taxonomy ? [...lf.taxonomy] : [];
-    // 傾向：帶入列表當前傾向；無選取的預設 scope（只判未初判）用 negative 兜底——
-    // 避免使用者臨時加勾已初判階段卻沒選傾向時，把整庫已初判全數重新初判。
-    draftFilters.polarity = hasSel ? [] : lf.polarity?.length ? [...lf.polarity] : ['negative'];
+    // 傾向：純鏡射列表當前傾向，列表沒篩就留空（不再用 negative 兜底）——目標篩選一律等於外部列表，
+    // 不在彈窗內自建預設；臨時加勾已初判階段卻未選傾向的誤判風險，改由送出前 targetCount 預覽把關。
+    draftFilters.polarity = hasSel ? [] : lf.polarity?.length ? [...lf.polarity] : [];
     lowConfOnly.value = !hasSel;
     lastRun.value = null; // 開新一輪設定，清上一輪終態摘要（避免與新目標混看）
     confirmOpen.value = true;
