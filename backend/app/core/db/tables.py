@@ -245,19 +245,11 @@ batches = Table(
     Column("note", Text),  # 用戶上傳時輸入的備註（每工作表一則，隨批次保存）
 )
 
-users = Table(
-    "users",
+# 全項目共享設定（單例 row：key 固定 "__global__"，見 core/settings.py）；data＝JSON 全文（機密欄位 at-rest 加密）。
+settings = Table(
+    "settings",
     metadata,
-    Column("user_id", Text, primary_key=True),
-    Column("email", Text, unique=True),
-    Column("password_hash", Text),
-    Column("created_at", Text),
-)
-
-user_settings = Table(
-    "user_settings",
-    metadata,
-    Column("user_id", Text, primary_key=True),
+    Column("key", Text, primary_key=True),
     Column("data", Text),
     Column("updated_at", Text),
 )

@@ -42,7 +42,7 @@ export interface ImportJobSnapshot {
 /**
  * 啟動全庫資料包導出背景 job（逐表回報進度）→ 回 { job_id }。
  * 進度追蹤與下載沿用通用 export_jobs：以 useExportJob(run) 傳入本函式即可。
- * @param includeSensitive 是否併入敏感表（users/user_settings，含機密）
+ * @param includeSensitive 是否併入敏感表（settings，含機密）
  */
 export const startDatapackExport = (includeSensitive = false): Promise<{ job_id: string }> =>
   j<{ job_id: string }>(`${BASE}/admin/export/start?include_sensitive=${includeSensitive}`, {
@@ -52,7 +52,7 @@ export const startDatapackExport = (includeSensitive = false): Promise<{ job_id:
 /**
  * 乾跑校驗資料包（不落庫）：上傳 zip → 回 schema 檢查與每表匯入計畫。
  * @param file 資料包 zip（由 scripts/tools/dump_datapack.py 產生）
- * @param includeSensitive 是否納入敏感表（users/user_settings）
+ * @param includeSensitive 是否納入敏感表（settings）
  */
 export const validateDatapack = (file: File, includeSensitive = false): Promise<ValidateReport> => {
   const fd = new FormData();

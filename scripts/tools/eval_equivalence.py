@@ -8,7 +8,7 @@
 不受 DB 序影響），固定清單存 data/eval/golden_set.json。
 
 跑初判走 **production 同一條路**（prejudge.to_findings，非診斷路徑），不落庫、不動 attributions；
-強制關 exact-cache 讀取（否則第二跑全命中快取＝地板假 100%）。LLM token 走 user_settings（--user）。
+強制關 exact-cache 讀取（否則第二跑全命中快取＝地板假 100%）。LLM token 走全項目共享設定。
 
 用法（scripts/ 未掛載容器，先 docker cp）：
     docker cp scripts/tools/eval_equivalence.py kkday-ai-quality-backend:/app/scripts/tools/
@@ -17,14 +17,14 @@
         --build-golden --n 700
     # 2) 基線雙跑（噪音地板）
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py \\
-        --run base1 --user alvin.bian@kkday.com
+        --run base1
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py \\
-        --run base2 --user alvin.bian@kkday.com
+        --run base2
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py \\
         --compare base1 base2          # → 地板報告
     # 3) 改動後跑一次、對基線比
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py \\
-        --run router_on --user alvin.bian@kkday.com
+        --run router_on
     docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py \\
         --compare base1 router_on      # 各指標 ≥ 地板 − 1pp 才過閘
 
@@ -46,7 +46,6 @@ _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-from app.core import db  # noqa: E402
 from app.core import settings as app_settings  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
 from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
@@ -122,12 +121,9 @@ def _summarize(findings: list) -> dict:
     }
 
 
-def run_once(tag: str, user_email: str, workers: int) -> None:
+def run_once(tag: str, workers: int) -> None:
     """金標集全量走 production 初判路徑（to_findings；不落庫），結果存 runs/<tag>.json。"""
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
-    u = db.get_user_by_email(user_email)
-    if not u:
-        raise SystemExit(f"❌ 找不到 user：{user_email}")
     eff = app_settings.effective_llm_dict(app_settings.load_settings(), area="prejudge")
     app_settings.set_current(eff)
     if client.is_stub():
@@ -231,16 +227,13 @@ def main() -> None:
     ap.add_argument("--build-golden", action="store_true", help="建金標集（分層 md5 穩定抽樣）")
     ap.add_argument("--n", type=int, default=700, help="金標集目標筆數（預設 700）")
     ap.add_argument("--run", metavar="TAG", help="跑金標集全量並存結果（runs/<TAG>.json）")
-    ap.add_argument("--user", help="user_settings token 來源（email；--run 必填）")
     ap.add_argument("--workers", type=int, default=8, help="並發 worker 數（預設 8）")
     ap.add_argument("--compare", nargs=2, metavar=("TAG_A", "TAG_B"), help="比對兩 run")
     args = ap.parse_args()
     if args.build_golden:
         build_golden(args.n)
     elif args.run:
-        if not args.user:
-            raise SystemExit("❌ --run 需 --user（user_settings token 來源）")
-        run_once(args.run, args.user, args.workers)
+        run_once(args.run, args.workers)
     elif args.compare:
         compare(*args.compare)
     else:

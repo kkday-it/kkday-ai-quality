@@ -1,6 +1,6 @@
 """登入 verifier 分流（auth_verifiers）測試。
 
-鎖：①production be2 硬閘 ②Be2 token decode（exp/email）③email 自動 provision＋併發 race。
+鎖：①production be2 硬閘 ②Be2 token decode（exp/email）③email normalize 直回身分（無 DB）。
 local 模式已不經過 get_verifier（見 auth.get_current_user 直接回固定身分，
 test_permissions.py::test_local_mode_never_401_unauthenticated 已覆蓋端到端）。
 """
@@ -38,7 +38,7 @@ def test_be2_allowed_in_development(monkeypatch) -> None:
     assert isinstance(av.get_verifier(), av.Be2TokenVerifier)
 
 
-def test_be2_rejects_expired_or_bad_token(temp_db) -> None:
+def test_be2_rejects_expired_or_bad_token() -> None:
     v = av.Be2TokenVerifier()
     assert v.resolve_user("not-a-jwt") is None
     assert v.resolve_user(_fake_be2_token({"email": "a@kkday.com"})) is None  # 缺 exp
@@ -48,12 +48,8 @@ def test_be2_rejects_expired_or_bad_token(temp_db) -> None:
     assert v.resolve_user(_fake_be2_token({"exp": time.time() + 600})) is None  # 缺 email
 
 
-def test_be2_auto_provision_and_reuse(temp_db) -> None:
-    """be2 首登自動建本地 users row（方案 A）；再登沿用同一 user_id（user_settings 鍵穩定）。"""
+def test_be2_resolves_email_identity() -> None:
+    """be2 token → claims email normalize 小寫直接作為身分（無本地 users 表，不落庫）。"""
     v = av.Be2TokenVerifier()
     tok = _fake_be2_token({"email": "Be2.User@KKday.com", "exp": time.time() + 600})
-    u1 = v.resolve_user(tok)
-    assert u1 and u1["email"] == "be2.user@kkday.com"  # normalize 小寫
-    assert u1["password_hash"] == ""  # 不可走 local 密碼登入
-    u2 = v.resolve_user(tok)
-    assert u2["user_id"] == u1["user_id"]  # 再登不重建
+    assert v.resolve_user(tok) == {"email": "be2.user@kkday.com"}

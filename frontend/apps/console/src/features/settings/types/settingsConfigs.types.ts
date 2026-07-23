@@ -1,4 +1,4 @@
-// 設定型別（對齊後端 user_settings.data 結構，A schema：連線層 + 功能區默認旋鈕層）。
+// 設定型別（對齊後端 settings 表 data 結構，A schema：連線層 + 功能區默認旋鈕層）。
 // 機密（LLM token / QC password）不在連線本體：LLM token 存 llm_tokens（per-provider）、
 // QC password 存 qc_passwords（per-env）。詳見 backend/app/core/settings.py。
 

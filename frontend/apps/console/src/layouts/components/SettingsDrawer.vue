@@ -14,11 +14,13 @@ import { usePermission } from '@/composables/usePermission';
 // gating 接線保留，日後要收緊只改 config/global/permissions.json 的 default，前端零改。
 const { can } = usePermission();
 
-// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料導入。
+// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料匯出入。
 // LLM 模型旋鈕（model/thinking/reasoning/temperature）不在此分頁——已下沉各功能區就地配置＋存為區默認。
 // 前兩 tab 自帶多套 config 管理 + 卡片內啟用切換；vertical tab 維護分組↔CATEGORY 映射（版本化）；
-// import tab＝全庫資料包安全匯入（覆蓋式；admin 閘現階段延後，見 DataImportPanel）。
-// 帳號 → 獨立抽屜（topbar email chip 開）；歸因判準規則 → AI 法官主頁路由 /judge/rules（不在此）。
+// import tab＝全庫資料包安全匯入（覆蓋式；admin 閘現階段延後）+ 導出偏好（Google Drive 資料夾，原
+// 「帳號」抽屜內容，2026-07-22 帳號抽屜整個退役後併入——與「導出資料包」按鈕消費同一份偏好，放
+// 一起最直覺，見 DataImportPanel.vue）。
+// 歸因判準規則 → AI 法官主頁路由 /judge/rules（不在此）。
 // 分頁狀態同步 URL query(?settings=llm|qc|vertical|import)，並相容舊深連結。
 type SettingsTab = 'llm' | 'qc' | 'vertical' | 'import';
 
@@ -51,7 +53,11 @@ watch(
     } else if (s === 'vertical') {
       tab.value = 'vertical';
       visible.value = true;
-    } else if (s === 'import' && can(PERM.dataDatapackImport)) {
+    } else if (
+      (s === 'import' || s === 'export' || s === 'account') &&
+      can(PERM.dataDatapackImport)
+    ) {
+      // 'export'／'account' 為舊「導出偏好」tab／帳號抽屜深連結（皆已併入 import tab，見上方註解）
       tab.value = 'import';
       visible.value = true;
     } else if (s === 'llm' || s === 'connections' || s === 'config' || s === 'model') {
@@ -62,7 +68,6 @@ watch(
       // 規則已移出設定 → 導去 AI 法官主頁路由（兼容舊深連結）
       router.replace('/judge/rules');
     }
-    // 'account' 由殼層 AccountDrawer 處理，不在此開
   },
   { immediate: true },
 );
@@ -83,7 +88,7 @@ watch(
       <a-tab-pane key="vertical" title="🧭 商品垂直分類">
         <ProductVerticalSettingsPanel :active="tab === 'vertical'" />
       </a-tab-pane>
-      <a-tab-pane v-if="can(PERM.dataDatapackImport)" key="import" title="💾 資料導入">
+      <a-tab-pane v-if="can(PERM.dataDatapackImport)" key="import" title="💾 資料匯出入">
         <DataImportPanel />
       </a-tab-pane>
     </a-tabs>

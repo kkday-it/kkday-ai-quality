@@ -5,7 +5,7 @@
 
 - **憑證抽象層** `resolve_credentials()`：env 服務帳號優先（`AIQ_EVIDENCE_DB_*`，SA/SD 核發後
   於部署層注入即自動切換）→ fallback 全項目共享的 production QC 連線
-  （user_settings.qc_connections["production"] + 解密 qc_passwords["production"]）。
+  （settings 表 qc_connections["production"] + 解密 qc_passwords["production"]）。
   job 啟動時一次性快照憑證，不中途重查。
 - **allow-list 投影**：SQL SELECT 層面只取判決消費欄位；個資欄位（contact_email/contact_tel/
   member_uuid…）永不出現在投影 SQL——非取回再過濾（PII 防線，配 tests 斷言鎖定）。

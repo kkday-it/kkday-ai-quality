@@ -10,6 +10,17 @@
 | `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
 | `_shared.py` | 共用：初判/判決顯示標籤/信心閾值（`reload_pipeline_cfg`：直讀專案靜態檔 config/ai_judge/prejudge.json＋verdict.json 合併；非 DB 版本化）、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**初判 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
 
+## 雙軌 schema 契約（強制認知，改 migration 前必讀）
+
+**migration 鏈無法從零跑，這是刻意設計事實，不是待修 bug**：
+
+- **baseline**＝`bd77052f7222_baseline_schema.py`（`down_revision=None`），只建 6 張表（`batches`/`confidence_calibration`/`intake_items`/`judgments`/`user_settings`/`users`）。
+- **鏈上第一個崩潰點**＝第 2 支 `c24e5b0964ce_roster_tables.py` 對 `prod_quality` 表 `create_index`——但沒有任何 migration 建過該表（`prod_quality`/`pkg_quality`/`inquiries`/`orders`/`packages`/`suppliers`/`products` 這批 roster 表原本只靠 `metadata.create_all` 產生，從無 create migration，見 `663fbf45e97c_drop_roster_quality_calibration_tables.py` docstring 自承）。從真正全空庫對這條鏈跑 `alembic upgrade head`，會在此崩潰。
+- **因此系統走雙軌**（見 `backend/docker-entrypoint.sh`）：**fresh 庫**（`alembic_version` 表無列）走 `init_db()`（`app/core/db/ingest.py`，`metadata.create_all()` 建表 + `_stamp_alembic_head_if_empty` 直接蓋章當前 head，跳過整條鏈）；**既有庫**（`alembic_version` 已有列）才走 `alembic upgrade head` 增量套用。dev/CI/全新環境一律走前者。
+- **為何不 squash 修掉**：`datapack.py` 的 `validate_datapack` 用 alembic head 字串完全相等比對版本兼容性——squash 換 head id 會使所有歷史資料包永久失效；`docker/seed/seed.sql.gz` 也內嵌 `alembic_version` stamp，squash 後需重產+重分發。詳細權衡與觸發時機（綁 RDS cutover 里程碑）見專案 plan/ADR，非本文件討論範圍。
+- **兩條護欄**（`backend/tests/`）：`test_migration_chain_known_gap.py` 把「鏈從全空庫崩潰於 `c24e5b0964ce`」釘成可執行斷言（若此測試意外變綠，代表鏈被接續好但文件未同步，需檢查）；`test_all_tables_have_create_migration.py` 靜態掃描每張表須有可辨識的建表/改名痕跡，防下一次 `judge_rule_versions` 式孤兒表（該表曾只存在於 `create_all`，既有庫 `upgrade head` 永遠拿不到，已於 `e2f4a8c91d37` 補真實 create migration）。
+- **新增表時**：務必在對應 migration 寫真實 `create_table`（或 `CREATE TABLE IF NOT EXISTS` 冪等版，容忍既有庫已被 `create_all` 建過），不要只改 `tables.py`——`test_all_tables_have_create_migration.py` 會在 CI 攔截漏補。
+
 ## attributions 初判表結構（typed 欄 · 最佳架構）
 
 一列 = 一條歸因，**全 typed scalar 欄**（無 JSONB blob）。初判表是查詢/聚合/篩選密集的分析核心且 schema 已穩定，故 storage 用 typed 欄（可直接 btree 索引、SQL 乾淨），巢狀物件屬呈現層於 API DTO 組（`_shared.attribution_dto`）。
@@ -20,7 +31,7 @@
 - **查詢**（GROUP BY / FILTER / SORT）：直接 `jg.c.polarity == x` / `jg.c.l1_code` / `func.max(jg.c.conf_value)`，走 `idx_attributions_{polarity,stage,l1,l2,l3,sentiment,tier}` btree 索引（l2/l3/sentiment 為 taxonomy 子樹 + 情緒篩選熱路徑）。
 - **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, model, notes_count, is_primary, status}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳兩個 migration 檔頭 docstring。
-| `users.py` | 帳號 + user_settings CRUD（`DuplicateEmailError`）。 |
+| `settings_store.py` | 全項目共享設定（settings 表·單例 `__global__` row）讀寫（`load_settings_row`/`save_settings_row`）。 |
 | `rule_versions.py` | 初判規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝product_vertical + source_mapping + prompt_polarity + prompt_C-1~6（僅涵蓋商品分類/上傳表頭校驗/初判 Prompt 三類，不含 judgment 靜態設定）。 |
 | `prompt_drafts.py` | 初判 Prompt 草稿（prompt_drafts；prompt_* 每 rule_code 一份共享草稿＝未入庫的編輯中內容）：沙盒可直送測（雙跑對比），滿意後走 `save_rule_version` 入庫並刪草稿；與 judge_rule_versions 分離（版本表維持「存檔即 active」單一語意），併發 last-write-wins。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |

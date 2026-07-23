@@ -17,7 +17,6 @@ text → OpenAI embedding → 每域一個 LogisticRegression（one-vs-rest, cla
 用法（scripts/ 未掛載容器，先 docker cp）：
     docker cp scripts/tools/train_domain_router.py kkday-ai-quality-backend:/app/scripts/tools/
     docker exec kkday-ai-quality-backend python /app/scripts/tools/train_domain_router.py \\
-        --user alvin.bian@kkday.com
 
 ⚠️ 成本：embedding 全量（~1.6k 案 × ~200 tokens）≈ $0.01 級，可忽略。
 """
@@ -35,7 +34,6 @@ _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-from app.core import db  # noqa: E402
 from app.core import settings as app_settings  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
 from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
@@ -96,7 +94,6 @@ def _pick_threshold(y_true: list[int], probs: list[float], target_recall: float)
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--user", required=True, help="user_settings token 來源（email）")
     ap.add_argument("--holdout", type=int, default=20, help="holdout 百分比（預設 20）")
     ap.add_argument("--target-recall", type=float, default=0.995, help="per-domain 召回閘門")
     ap.add_argument("--min-positives", type=int, default=30, help="低於此正樣本數不給閾值（always_on）")
@@ -106,9 +103,6 @@ def main() -> None:
 
     from sklearn.linear_model import LogisticRegression  # 重依賴 lazy（[dev] extras）
 
-    u = db.get_user_by_email(args.user)
-    if not u:
-        raise SystemExit(f"❌ 找不到 user：{args.user}")
     app_settings.set_current(
         app_settings.effective_llm_dict(
             app_settings.load_settings(), area="prejudge", overrides={"provider": args.provider or None}

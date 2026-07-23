@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
- * 💾 資料導入面板（配置抽屜第 4 tab）。
+ * 💾 資料匯出入面板（配置抽屜第 4 tab）。
  * 上傳資料包 zip（由 scripts/tools/dump_datapack.py 產生）→ 乾跑校驗預覽 → type-to-confirm →
  * 背景匯入 + SSE 逐表進度。安全：只灌白名單表、不執行 SQL（見後端 datapack）。
  * 權限：需 data.datapack.import——現在 permissions.json 的 default 清單中（人人可用），入口 tab 由
  * SettingsDrawer 以 can(PERM.dataDatapackImport) v-if 過濾，後端端點亦掛 require_permission 兜底。
+ * 內嵌 ExportPreferencesPanel（導出偏好）：本頁「導出資料包」按鈕與問題列表/規則等處的導出，
+ * 完成通知的 Google Drive 資料夾都讀同一份偏好，放在導出動作旁邊設定最直覺（2026-07-22 由獨立
+ * tab 併入，原「帳號」抽屜內容）。
  */
 import { ref, computed, onUnmounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { useExportJob } from '@/features/judge/composables';
 import { ExportProgressBar } from '@/components';
+import ExportPreferencesPanel from './ExportPreferencesPanel.vue';
 import {
   startDatapackExport,
   validateDatapack,
@@ -155,7 +159,7 @@ onUnmounted(closeStream);
 
     <!-- 共用：是否納入敏感表（導出/導入皆適用）-->
     <a-checkbox v-model="includeSensitive" @change="onToggleSensitive">
-      納入帳號 / 機密表（users、user_settings）——
+      納入機密設定表（settings：LLM token / QC 密碼）——
       導出/導入皆適用；跨環境金鑰須一致，否則機密匯入後失效
     </a-checkbox>
 
@@ -166,7 +170,7 @@ onUnmounted(closeStream);
           <template #icon><icon-download /></template>
           導出資料包
         </a-button>
-        <span class="text-sm text-[var(--kk-color-text-3)]"
+        <span class="text-sm text-[var(--color-text-3)]"
           >下載當前全庫快照 zip，供分發 / 備份</span
         >
       </div>
@@ -180,6 +184,8 @@ onUnmounted(closeStream);
         @cancel="exportJob.cancel()"
       />
     </div>
+
+    <ExportPreferencesPanel />
 
     <a-divider class="!my-1" />
 
@@ -215,10 +221,10 @@ onUnmounted(closeStream);
       <!-- 覆蓋預覽表 -->
       <a-table :data="planRows" :columns="COLS" :pagination="false" row-key="name" size="small">
         <template #action="{ record }">
-          <span v-if="record.will_truncate" class="text-[var(--kk-color-text-danger)]">
+          <span v-if="record.will_truncate" class="text-[rgb(var(--danger-6))]">
             覆蓋（清 {{ record.db_rows }} → 灌 {{ record.pack_rows }}）
           </span>
-          <span v-else class="text-[var(--kk-color-text-3)]">不碰</span>
+          <span v-else class="text-[var(--color-text-3)]">不碰</span>
         </template>
       </a-table>
 
@@ -259,7 +265,7 @@ onUnmounted(closeStream);
           >
             <template #text="{ percent }">{{ (percent * 100).toFixed(2) }}%</template>
           </a-progress>
-          <span class="text-sm text-[var(--kk-color-text-3)]">
+          <span class="text-sm text-[var(--color-text-3)]">
             {{ snapshot.done_tables }}/{{ snapshot.total_tables }} 表
             <template v-if="snapshot.current_table">· 當前 {{ snapshot.current_table }}</template>
           </span>

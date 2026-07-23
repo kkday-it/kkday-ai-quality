@@ -7,10 +7,8 @@
 執行（scripts/ 未掛載進容器，需 docker cp；比照 taxonomy_health.py 慣例）：
     docker cp scripts/dev/evidence_probe.py kkday-ai-quality-backend:/tmp/evidence_probe.py
     docker exec kkday-ai-quality-backend python /tmp/evidence_probe.py --single 47406070
-    docker exec kkday-ai-quality-backend python /tmp/evidence_probe.py --single 47406070 --user-id <uuid>
 
-憑證：--user-id 指定則用該 user 的 active production QC 連線；未指定則掃 user_settings
-取第一個可解析出 production 憑證的 user（dev 便利；正式批次一律顯式指定觸發者）。
+憑證：全項目共享設定（settings 表 __global__ 單例 row）的 production QC 連線。
 """
 
 from __future__ import annotations
@@ -21,40 +19,23 @@ import sys
 import time
 
 
-def _resolve_creds(user_id: str | None) -> tuple[str, dict] | None:
-    """取佐證憑證：指定 user 或掃全部 user_settings 取首個可解析者。
-
-    Returns:
-        (user_id, creds) 或 None（無任何 user 配好 production QC 連線）。
-    """
-    from sqlalchemy import text
-
+def _resolve_creds() -> dict | None:
+    """取佐證憑證：全項目共享設定的 production QC 連線；未配置回 None。"""
     from app.core import settings as app_settings
     from app.core.db import qc_evidence
-    from app.core.db.tables import get_engine
 
-    if user_id:
-        ids = [user_id]
-    else:
-        with get_engine().connect() as conn:
-            ids = [r[0] for r in conn.execute(text("SELECT user_id FROM user_settings"))]
-    for uid in ids:
-        creds = qc_evidence.resolve_credentials(app_settings.load_settings(uid))
-        if creds:
-            return uid, creds
-    return None
+    return qc_evidence.resolve_credentials(app_settings.load_settings())
 
 
-def run_single(order_oid: str, user_id: str | None) -> int:
+def run_single(order_oid: str) -> int:
     """單筆全鏈路查詢：印各表耗時、組裝結果摘要與逐欄核對清單。回 exit code。"""
     from app.core.db import qc_evidence
 
-    resolved = _resolve_creds(user_id)
-    if resolved is None:
-        print("❌ 無可用 production QC 憑證（無 user 配置 env=production 的 active 連線）")
+    creds = _resolve_creds()
+    if creds is None:
+        print("❌ 無可用 production QC 憑證（設定未配置 production QC 連線）")
         return 2
-    uid, creds = resolved
-    print(f"憑證來源 user={uid} host={creds['host']} dbname={creds['dbname']}")
+    print(f"憑證 host={creds['host']} dbname={creds['dbname']}")
     qc_evidence.set_current(creds)
 
     t0 = time.time()
@@ -107,7 +88,7 @@ def _pick_target_order_oids(limit: int) -> list[str]:
         return [str(r[0]) for r in conn.execute(sql, {"n": limit})]
 
 
-def run_batch(limit: int, concurrency: int, user_id: str | None) -> int:
+def run_batch(limit: int, concurrency: int) -> int:
     """批量壓測：N 筆訂單併發跑 get_evidence，輸出延遲分佈/覆蓋率報告（S2 閘門判定用）。"""
     import statistics
     from concurrent.futures import ThreadPoolExecutor
@@ -115,14 +96,13 @@ def run_batch(limit: int, concurrency: int, user_id: str | None) -> int:
     from app.core import paths
     from app.core.db import qc_evidence
 
-    resolved = _resolve_creds(user_id)
-    if resolved is None:
+    creds = _resolve_creds()
+    if creds is None:
         print("❌ 無可用 production QC 憑證")
         return 2
-    uid, creds = resolved
     qc_evidence.set_current(creds)
     oids = _pick_target_order_oids(limit)
-    print(f"標的 {len(oids)} 筆（憑證 user={uid}）併發={concurrency}")
+    print(f"標的 {len(oids)} 筆 併發={concurrency}")
 
     results: list[dict] = []
 
@@ -197,12 +177,11 @@ def main() -> int:
     ap.add_argument("--batch", action="store_true", help="批量壓測（S2：延遲分佈 + 閘門判定）")
     ap.add_argument("--limit", type=int, default=100, help="批量壓測筆數（預設 100）")
     ap.add_argument("--concurrency", type=int, default=3, help="批量壓測併發（預設=pool_size 3）")
-    ap.add_argument("--user-id", default=None, help="指定憑證來源 user_id（缺省掃描）")
     args = ap.parse_args()
     if args.single:
-        return run_single(args.single, args.user_id)
+        return run_single(args.single)
     if args.batch:
-        return run_batch(args.limit, args.concurrency, args.user_id)
+        return run_batch(args.limit, args.concurrency)
     ap.print_help()
     return 2
 

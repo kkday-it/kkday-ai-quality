@@ -2,7 +2,6 @@
 import { BASE, j } from './http.api';
 
 export interface AuthUser {
-  user_id: string;
   email: string;
 }
 

@@ -26,7 +26,7 @@ def load_user_context(user: dict = Depends(auth.get_current_user)) -> dict:
     return user
 
 
-def _activate_settings(user_id: str) -> None:
+def _activate_settings() -> None:
     """在 handler 內注入代表區設定到 contextvar（同 thread，供本檔 stub_mode 顯示判斷讀取）。"""
     from app.core import settings as app_settings
 
@@ -82,7 +82,7 @@ def get_settings(user: dict = Depends(load_user_context)) -> dict:
     """全項目共享 LLM/QC 設定（機密遮罩，附 has_token / stub_mode）。"""
     from app.core import settings as app_settings
 
-    _activate_settings(user["user_id"])
+    _activate_settings()
     data = app_settings.masked()
     data["stub_mode"] = llm_client.is_stub()
     return data
@@ -121,7 +121,7 @@ def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -
     patch = body.model_dump(exclude_none=True)
     _check_patch_permissions(user, patch)
     data = app_settings.save_settings(patch)
-    _activate_settings(user["user_id"])  # 反映新 token（stub_mode）
+    _activate_settings()  # 反映新 token（stub_mode）
     data["stub_mode"] = llm_client.is_stub()
     return data
 
@@ -136,7 +136,7 @@ def get_settings_raw(
     """
     from app.core import settings as app_settings
 
-    _activate_settings(user["user_id"])
+    _activate_settings()
     data = app_settings.raw()
     data["stub_mode"] = llm_client.is_stub()
     return data
@@ -162,7 +162,7 @@ def test_llm(
     body: TestLlmIn,
     user: dict = Depends(require_permission(permission_keys.SETTINGS_LLM_CONFIG_MANAGE)),
 ) -> dict:
-    """即時測試 LLM 連線：用「當前表單值」（body，非已儲存）送極短 prompt，**不寫入** user_settings。
+    """即時測試 LLM 連線：用「當前表單值」（body，非已儲存）送極短 prompt，**不寫入**設定。
 
     token 為空 / 遮罩時沿用已儲存該供應商（provider）明文 llm_tokens（per-provider，免重輸）。
     """

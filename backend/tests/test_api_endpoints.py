@@ -64,7 +64,7 @@ def test_start_prejudge_accepts_prompt_versions(client, auth_headers, monkeypatc
 def test_me_returns_fixed_local_identity(client) -> None:
     """本地模式無登入系統：/api/auth/me 不帶 Authorization header 也直接回固定身分。"""
     r = client.get("/api/auth/me")
-    assert r.status_code == 200 and r.json().get("user_id") == "local"
+    assert r.status_code == 200 and "@" in str(r.json().get("email"))
 
 
 # ── settings ──────────────────────────────────────────────────────

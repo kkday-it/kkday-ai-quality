@@ -11,11 +11,11 @@ import {
   type ExportJobSnapshot,
 } from '@/api';
 
-/** 「打開 Google Drive 上傳」全域預設：團隊共用資料夾（config SSOT）；未配置退個人雲端硬碟根。 */
+/** 「打開 Google Drive 上傳」的 config 內建預設：未經設定抽屜配置過偏好時的最終回退。 */
 const _GDRIVE_UPLOAD_URL =
   exportCfg.gdrive_upload_folder_url || 'https://drive.google.com/drive/my-drive';
 
-/** 取「打開 Google Drive 上傳」目的地：個人偏好（帳號抽屜可設）優先，未設/讀取失敗退全域預設。 */
+/** 取「打開 Google Drive 上傳」目的地：設定抽屜「導出偏好」（全項目共用一份）優先，未設/讀取失敗退 config 內建預設。 */
 const _gdriveUploadUrl = async (): Promise<string> => {
   try {
     return (await getSettings()).gdrive_upload_folder_url || _GDRIVE_UPLOAD_URL;
@@ -61,7 +61,7 @@ export function useExportJob() {
       es.onerror = finish; // 連線中斷（含 done 後 server 關流）；狀態非終態則於下方判定為中斷
     });
 
-  /** 下載完成通知：附「打開 Google Drive」捷徑（個人偏好資料夾優先，手動拖曳上傳，無需帳號綁定/OAuth）。 */
+  /** 下載完成通知：附「打開 Google Drive」捷徑（設定抽屜的導出偏好資料夾優先，手動拖曳上傳，無需帳號綁定/OAuth）。 */
   const _notifyDownloaded = async (successMessage: string) => {
     const href = await _gdriveUploadUrl();
     Notification.success({

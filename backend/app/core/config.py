@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     # ── 認證 ──
     # 本地模式固定身分的 email（去帳戶系統後無登入，僅供權限授予查詢/稽核欄位用；未設回通用佔位）。
     local_user_email: str = ""
-    # user_settings 機密（llm_tokens/qc_passwords）at-rest 加密 passphrase；
-    # 未設＝明文落庫（dev 相容），設定後新寫入即加密、舊列跑 scripts/tools/encrypt_user_secrets.py。
+    # settings 表機密（llm_tokens/qc_passwords）at-rest 加密 passphrase；
+    # 未設＝明文落庫（dev 相容），設定後新寫入即加密（讀取對舊明文直通相容，重存即補加密）。
     aiq_secret_key: str | None = None
     # ── 資料層（app 操作庫；PostgreSQL only。dev 預設本機，prod 經 env DATABASE_URL 覆蓋）──
     database_url: str = "postgresql+psycopg2://localhost:5432/kkdb_ai_quality"
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     evidence_db_port: int = 5432
     evidence_db_user: str = ""
     evidence_db_password: str = ""
-    # ── LLM fallback（優先級低於 DB user_settings 面板設定）──
+    # ── LLM fallback（優先級低於 DB settings 面板設定）──
     openai_api_key: str = ""
     ai_judge_model: str = (
         "gpt-5-mini"  # fallback 預設＝最低可用模型（nano 已下架，對齊 llm_model.json defaultModel）

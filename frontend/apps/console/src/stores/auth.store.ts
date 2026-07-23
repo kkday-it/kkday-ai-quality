@@ -16,7 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchMe(): Promise<void> {
     try {
       user.value = await getMe();
-      await usePermissionStore().load(); // 權限清單（be2 business-list），供 v-auth / 選單 / 守衛
+      await usePermissionStore().load(); // 權限清單（be2 business-list），供 usePermission() / 選單過濾
     } catch {
       if (AUTH_PROVIDER === 'be2') {
         token.value = null;

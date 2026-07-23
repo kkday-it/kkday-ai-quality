@@ -35,6 +35,14 @@ watch(
   },
 );
 const tokenDirty = ref(false);
+// loadSecrets() 是 parent onMounted 才觸發的非同步請求，一定晚於本元件 setup 完成——
+// tokenKnown 剛掛載時必是空字串，需這個 watch 補上遲到的明文回填（未手動編輯時才覆蓋，避免蓋掉輸入中的值）。
+watch(
+  () => props.tokenKnown,
+  (v) => {
+    if (!tokenDirty.value) form.value.api_token = v ?? '';
+  },
+);
 const saving = ref(false);
 const testing = ref(false);
 const hasTokenDisplay = computed(() => props.hasToken || (tokenDirty.value && !!form.value.api_token));
@@ -116,29 +124,23 @@ watch(testResult, async (r) => {
       </span>
     </template>
     <a-form ref="formRef" :model="form" layout="vertical">
-      <a-row :gutter="12">
-        <a-col :span="12">
-          <a-form-item field="api_token" label="API Token">
-            <a-input-password
-              v-model="form.api_token"
-              :disabled="!canManage"
-              :placeholder="hasTokenDisplay ? '已設定（留空不變更）' : '請輸入 token'"
-              allow-clear
-              @input="tokenDirty = true"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item field="base_url" label="Base URL">
-            <a-input
-              v-model="form.base_url"
-              :disabled="!canManage"
-              :placeholder="providerMeta?.base_url || '空＝供應商預設端點'"
-              allow-clear
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
+      <a-form-item field="base_url" label="Base URL">
+        <a-input
+          v-model="form.base_url"
+          :disabled="!canManage"
+          :placeholder="providerMeta?.base_url || '空＝供應商預設端點'"
+          allow-clear
+        />
+      </a-form-item>
+      <a-form-item field="api_token" label="API Token">
+        <a-input-password
+          v-model="form.api_token"
+          :disabled="!canManage"
+          :placeholder="hasTokenDisplay ? '已設定（留空不變更）' : '請輸入 token'"
+          allow-clear
+          @input="tokenDirty = true"
+        />
+      </a-form-item>
 
       <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>

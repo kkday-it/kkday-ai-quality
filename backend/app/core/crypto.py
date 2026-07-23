@@ -1,11 +1,11 @@
 """機密 at-rest 加密（Fernet 對稱加密；key 來自 backend/.env 的 AIQ_SECRET_KEY）。
 
-user_settings 的 llm_tokens / qc_passwords 落庫前加密、讀出後解密——邊界統一在
+settings 表的 llm_tokens / qc_passwords 落庫前加密、讀出後解密——邊界統一在
 app/core/settings.py 的 load/save，其餘模組（judge 路徑、端點）永遠只見明文，零改動。
 
 設計：
 - 密文帶 ``enc:v1:`` 前綴，與明文舊資料可區分 → 加密冪等（已加密不重複加密）、
-  舊明文列可直通讀取（漸進遷移，migrate 腳本見 scripts/tools/encrypt_user_secrets.py）。
+  舊明文值可直通讀取（漸進相容：下次 save 即重新加密落庫）。
 - AIQ_SECRET_KEY 為任意字串 passphrase，SHA-256 derive 成 Fernet 金鑰；未設定時
   明文直通並 warn 一次（dev 可回滾：回滾前先跑遷移腳本 --decrypt 把密文轉回明文）。
 - 解密失敗（key 遺失/換過）回空字串並記 error，避免把 ``enc:...`` 垃圾值當 token 送出。
@@ -31,7 +31,7 @@ ENC_PREFIX = "enc:v1:"
 if not (env.aiq_secret_key or "").strip() and is_production():
     raise RuntimeError(
         f"APP_ENV={env.app_env} 為正式環境，必須設定 AIQ_SECRET_KEY；"
-        "拒絕以明文儲存 user_settings 機密（provider token / QC 密碼）。"
+        "拒絕以明文儲存 settings 機密（provider token / QC 密碼）。"
         '生成：python -c "import secrets; print(secrets.token_urlsafe(32))"'
     )
 
@@ -46,8 +46,7 @@ def _fernet():
     secret = (env.aiq_secret_key or "").strip()
     if not secret:
         log.warning(
-            "AIQ_SECRET_KEY 未設定，user_settings 機密將以明文落庫"
-            "（設定後跑 scripts/tools/encrypt_user_secrets.py 補加密既有列）"
+            "AIQ_SECRET_KEY 未設定，settings 機密將以明文落庫（設定後於設定頁重存一次即補加密）"
         )
         return None
     from cryptography.fernet import Fernet  # lazy：未啟用加密時不強制依賴

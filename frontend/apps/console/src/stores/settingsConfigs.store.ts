@@ -31,6 +31,8 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   /** 逐供應商 / 逐環境是否已配機密（連線卡個別顯示狀態點用，不含明文；遮罩端點即含此欄位）。 */
   const providerHasToken = ref<Record<string, boolean>>({});
   const qcEnvHasPassword = ref<Record<string, boolean>>({});
+  /** 導出完成通知「打開 Google Drive 上傳」的全項目共用目的資料夾（空＝系統預設）。 */
+  const gdriveUploadFolderUrl = ref('');
   const stubMode = ref(true);
   const loading = ref(false);
   const loaded = ref(false);
@@ -42,6 +44,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     qcConnections.value = bundle.qc_connections ?? {};
     providerHasToken.value = bundle.provider_has_token ?? {};
     qcEnvHasPassword.value = bundle.qc_env_has_password ?? {};
+    gdriveUploadFolderUrl.value = bundle.gdrive_upload_folder_url ?? '';
     stubMode.value = !!bundle.stub_mode;
   }
 
@@ -115,6 +118,12 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     await persist(patch, password ? { qcPasswords: { [env]: password } } : undefined);
   }
 
+  // ── 導出偏好（全項目共用一份，日常操作免特殊權限）──
+  /** 存 Google Drive 上傳資料夾偏好；空字串＝清除（後端存 None → 導出通知退回系統預設資料夾）。 */
+  async function saveGdriveUploadFolderUrl(url: string): Promise<void> {
+    await persist({ gdrive_upload_folder_url: url });
+  }
+
   return {
     llmConnections,
     llmAreaDefaults,
@@ -123,6 +132,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     qcPasswords,
     providerHasToken,
     qcEnvHasPassword,
+    gdriveUploadFolderUrl,
     stubMode,
     loading,
     loaded,
@@ -131,5 +141,6 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
     saveLlmConnection,
     saveLlmAreaDefault,
     saveQcConnection,
+    saveGdriveUploadFolderUrl,
   };
 });

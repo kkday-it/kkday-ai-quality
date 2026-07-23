@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("/api/auth/me")
 def me(user: dict = Depends(auth.get_current_user)) -> dict:
     """回傳當前身分（本地模式為固定身分；be2 模式為 token 解析出的使用者）。"""
-    return {"user_id": user.get("user_id"), "email": user.get("email")}
+    return {"email": user.get("email")}
 
 
 @router.get("/api/auth/permissions")

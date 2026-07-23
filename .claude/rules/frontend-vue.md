@@ -36,7 +36,9 @@ paths:
 
 - **元件**：彈窗/抽屜 → `a-modal`/`a-drawer`；表單/表格/樹/級聯/上傳 → `a-form`/`a-table`/`a-tree`/`a-cascader`/`a-upload`；提示/回饋 → `Message`/`Notification`/`a-alert`；導覽 → `a-anchor`/`a-tabs`/`a-breadcrumb`/`a-steps`；資料展示 → `a-descriptions`/`a-statistic`/`a-timeline`/`a-collapse`/`a-empty`/`a-skeleton`——動手寫一個「看起來很基礎」的 UI 片段（loading 骨架、空狀態、麵包屑、步驟條…）前，先查 Arco 是否已有對應元件，十之八九有。
 - **方法 / API**：確認對話走 `Modal.confirm`/`a-popconfirm`（不自寫確認彈窗）；全域訊息走 `Message`/`Notification`（不自己疊 toast）；表單驗證走 `a-form` 的 `rules`（不手寫 validate 邏輯）；圖示一律 `@arco-design/web-vue/es/icon` 具名 import（不外找 icon 套件、不用 emoji/SVG 拼湊）。
-- **樣式 / 語義**：顏色、狀態、尺寸優先用 Arco 的 `type`/`status`/`size`/`color` prop 或 DS token（`var(--color-xxx)` / `rgb(var(--primary-6))`），不要為了微調樣式另外手刻一套視覺規範；Arco prop 不夠精細才退到 `:deep()`（見上方樣式鐵律優先級）。
+- **樣式 / 語義**：顏色、狀態、尺寸優先用 Arco 的 `type`/`status`/`size`/`color` prop 或 **Arco 內建 CSS 變數**（`var(--color-text-1)`~`var(--color-text-4)`、`rgb(var(--primary-6))`、`rgb(var(--danger-6))` 等，定義於 `@arco-design/web-vue/dist/arco.css`），不要為了微調樣式另外手刻一套視覺規範；Arco prop 不夠精細才退到 `:deep()`（見上方樣式鐵律優先級）。
+
+  > ⛔ **永遠不要在本專案使用 KKday 消費者前台 Design System 的 `var(--kk-*)` token**（如 `--kk-color-text-3`、`--kk-color-text-danger`）。本專案（內部後台 console）技術棧鐵律為 Arco Design Vue，**從未安裝、也不會安裝**該套消費者前台 DS（給 kkday.com 商品頁用，見 `~/.claude/skills/kkday-design-system/`）。`--kk-*` 在本專案是未定義的自訂屬性，`color` 屬性套用未定義變數會在 computed-value time 判定為 invalid，靜默退回繼承色而不報錯——外觀「看起來正常」但顏色語意沒有生效，非常隱蔽（實例：2026-07-23 `DataImportPanel.vue` 4 處誤用被修正）。上一段刻意避免再用「DS token」稱呼 Arco 自己的 CSS 變數，就是為了不再與這裡的 `--kk-*` 撞名混淆。
 - **圖表** → `vue-echarts` 的 `<v-chart>`，不引入其他圖表庫（Arco 本身無重量級圖表元件，此為既定例外）。
 - **判斷「Arco 沒有」前先查文件**：以 [arco.design/vue/component](https://arco.design/vue/component) 為準（禁照搬 React 版寫法），拿不準就先搜再下結論，不要單憑印象斷定「Arco 沒有這個」就直接自寫。
 - **元件薄**：只管渲染 + 互動，業務邏輯下沉 composable / util；function > 50 行或元件塞多職責 → 拆分。

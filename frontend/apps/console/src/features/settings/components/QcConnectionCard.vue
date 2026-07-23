@@ -42,6 +42,14 @@ watch(
   },
 );
 const pwDirty = ref(false);
+// loadSecrets() 是 parent onMounted 才觸發的非同步請求，一定晚於本元件 setup 完成——
+// passwordKnown 剛掛載時必是空字串，需這個 watch 補上遲到的明文回填（未手動編輯時才覆蓋，避免蓋掉輸入中的值）。
+watch(
+  () => props.passwordKnown,
+  (v) => {
+    if (!pwDirty.value) form.value.password = v ?? '';
+  },
+);
 const saving = ref(false);
 const testing = ref(false);
 const hasPasswordDisplay = computed(() => props.hasPassword || (pwDirty.value && !!form.value.password));
@@ -111,12 +119,12 @@ watch(testResult, async (r) => {
     </template>
     <a-form :model="form" layout="vertical">
       <a-row :gutter="12">
-        <a-col :span="10">
+        <a-col :span="12">
           <a-form-item field="host" label="Host">
             <a-input v-model="form.host" :disabled="!canManage" :placeholder="envMeta.host" allow-clear />
           </a-form-item>
         </a-col>
-        <a-col :span="6">
+        <a-col :span="12">
           <a-form-item field="port" label="Port">
             <a-input-number
               v-model="form.port"
@@ -128,21 +136,25 @@ watch(testResult, async (r) => {
             />
           </a-form-item>
         </a-col>
-        <a-col :span="8">
+      </a-row>
+      <a-row :gutter="12">
+        <a-col :span="12">
           <a-form-item field="user" label="User">
             <a-input v-model="form.user" :disabled="!canManage" placeholder="資料庫帳號" allow-clear />
           </a-form-item>
         </a-col>
+        <a-col :span="12">
+          <a-form-item field="password" label="Password">
+            <a-input-password
+              v-model="form.password"
+              :disabled="!canManage"
+              :placeholder="hasPasswordDisplay ? '已設定（留空不變更）' : '請輸入密碼'"
+              allow-clear
+              @input="pwDirty = true"
+            />
+          </a-form-item>
+        </a-col>
       </a-row>
-      <a-form-item field="password" label="Password">
-        <a-input-password
-          v-model="form.password"
-          :disabled="!canManage"
-          :placeholder="hasPasswordDisplay ? '已設定（留空不變更）' : '請輸入密碼'"
-          allow-clear
-          @input="pwDirty = true"
-        />
-      </a-form-item>
 
       <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>

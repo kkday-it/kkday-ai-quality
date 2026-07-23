@@ -28,7 +28,7 @@ def get_current_user(
     from app.core.permissions.deps import auth_config
 
     if str(auth_config().get("authProvider") or "local").lower() != "be2":
-        return {"user_id": "local", "email": env.local_user_email or "local@kkday.internal"}
+        return {"email": env.local_user_email or "local@kkday.internal"}
 
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="未提供認證 token")
@@ -38,5 +38,5 @@ def get_current_user(
 
     user = get_verifier().resolve_user(credentials.credentials)
     if not user:
-        raise HTTPException(status_code=401, detail="token 無效或已過期，或使用者不存在")
+        raise HTTPException(status_code=401, detail="token 無效或已過期")
     return user

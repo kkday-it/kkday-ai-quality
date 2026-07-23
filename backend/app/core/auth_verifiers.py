@@ -4,8 +4,9 @@
 `auth.get_current_user` 直接回固定身分，本模組僅在 `authProvider=be2` 時才介入。
 
 - **Be2TokenVerifier**：be2 中央 Auth Service accessToken（Cookie authToken 的 JWT）。
-  身分解析＝方案 A：claims email → 以 email 查/建本地 users row（自動 provision·password_hash
-  置空），`user_settings` 全項目共享（去帳戶隔離·見 core/settings.py），業務表身分留痕（email）零遷移。
+  身分解析＝claims email 直接作為身分（無本地 users 表——身分僅供權限查詢
+  `permissions.json` 的 `grants[email]` 與業務表稽核留痕，皆以 email 為鍵，
+  不需落庫任何帳號列）；設定為全項目共享單例（見 core/settings.py）。
 
 ⚠️ Be2 驗簽待補（TODO·不臆造）：be2 系前端全部只做 payload base64 decode（kkday-auth-sdk-js
 `parseClaims` 同）、真驗證在 Auth Service / api-gateway（Entry Config＋`x-kkday-auth-svc-status`）。
@@ -17,25 +18,20 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
-import uuid
 from typing import Protocol
 
-from app.core import db
 from app.core.config import is_production
-
-_log = logging.getLogger(__name__)
 
 
 class AuthVerifier(Protocol):
-    """登入 verifier 介面：token → user dict（user_id/email…）或 None（無效）。"""
+    """登入 verifier 介面：token → user dict（email…）或 None（無效）。"""
 
     def resolve_user(self, token: str) -> dict | None:  # pragma: no cover - Protocol
         ...
 
 
 class Be2TokenVerifier:
-    """be2 Auth Service accessToken → email 自動 provision 本地 users row。
+    """be2 Auth Service accessToken → claims email 直接作為身分。
 
     claims 取 email（實測 be2 JWT 含 authOid/subAuthOid/platformId/exp；email 欄位名以
     接入時實際 token 為準——常見 `email`/`account`，兩者皆試）。exp 過期即拒。
@@ -57,17 +53,7 @@ class Be2TokenVerifier:
         email = str(claims.get("email") or claims.get("account") or "").strip().lower()
         if "@" not in email:
             return None
-        user = db.get_user_by_email(email)
-        if not user:
-            # 自動 provision：be2 身分首登即建本地列（password_hash 空＝不可走 local 密碼登入），
-            # user_settings 以此 user_id 為鍵、業務表留痕仍用 email——歷史資料零遷移（方案 A）。
-            try:
-                db.create_user(str(uuid.uuid4()), email, "")
-                _log.info("be2 首登自動 provision 本地使用者：%s", email)
-            except db.DuplicateEmailError:  # 併發首登 race：重查即可
-                pass
-            user = db.get_user_by_email(email)  # 重查完整列（create_user 回傳不含 password_hash）
-        return user
+        return {"email": email}
 
 
 def get_verifier() -> AuthVerifier:

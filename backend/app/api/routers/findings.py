@@ -40,7 +40,7 @@ def batch_patch_finding_status(
     """
     if not body.source_ids:
         raise HTTPException(status_code=422, detail="source_ids 不可為空")
-    actor = user.get("email") or user.get("user_id") or "unknown"
+    actor = user.get("email") or "unknown"
     result = db.batch_update_finding_status(body.source, body.source_ids, body.status, actor=actor)
     return {"status": body.status, **result}
 
@@ -55,7 +55,7 @@ def patch_finding_status(
 
     同值冪等 no-op；實際轉移記操作者/時間 audit + 評論級歷史（attribution_history kind='verdict'）。
     """
-    actor = user.get("email") or user.get("user_id") or "unknown"
+    actor = user.get("email") or "unknown"
     if not db.update_finding_status(finding_id, body.status, actor=actor):
         raise HTTPException(status_code=404, detail="finding not found")
     return {"finding_id": finding_id, "status": body.status}
@@ -92,9 +92,7 @@ def add_finding_note(
         raise HTTPException(status_code=422, detail="備註內容不可為空")
     if db.get_finding(finding_id) is None:
         raise HTTPException(status_code=404, detail="finding not found")
-    return db.add_finding_note(
-        finding_id, author=user.get("email") or user.get("user_id") or "unknown", content=content
-    )
+    return db.add_finding_note(finding_id, author=user.get("email") or "unknown", content=content)
 
 
 @router.get("/api/attribution-history")
@@ -133,6 +131,6 @@ def add_attribution_history_note(
     return db.add_history_note(
         body.source,
         body.source_id,
-        author=user.get("email") or user.get("user_id") or "unknown",
+        author=user.get("email") or "unknown",
         content=content,
     )

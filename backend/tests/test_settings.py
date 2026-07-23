@@ -175,7 +175,7 @@ def test_migrate_configs_to_areas_llm(temp_db):
         "active_llm_config_id": "cfg-gemini",
         "llm_tokens": {"cfg-openai": "sk-openai", "cfg-gemini": "sk-gemini"},
     }
-    db.save_user_settings(app_settings.GLOBAL_SETTINGS_KEY, legacy)
+    db.save_settings_row(app_settings.GLOBAL_SETTINGS_KEY, legacy)
 
     loaded = app_settings.load_settings()
     assert loaded["llm_connections"]["openai"]["base_url"] == "https://api.openai.com/v1"
@@ -188,7 +188,7 @@ def test_migrate_configs_to_areas_llm(temp_db):
         assert loaded["llm_area_defaults"][area]["model"] == "gemini-3.5-flash"
         assert loaded["llm_area_defaults"][area]["reasoning_effort"] == "high"
     # 遷移後立即持久化為新 shape（重讀一次不再觸發遷移分支）
-    raw_row = db.load_user_settings(app_settings.GLOBAL_SETTINGS_KEY)
+    raw_row = db.load_settings_row(app_settings.GLOBAL_SETTINGS_KEY)
     assert "llm_connections" in raw_row
 
 
@@ -204,7 +204,7 @@ def test_migrate_configs_to_areas_qc(temp_db):
         "active_qc_config_id": "qc-b",
         "qc_passwords": {"qc-a": "pw-a", "qc-b": "pw-b"},
     }
-    db.save_user_settings(app_settings.GLOBAL_SETTINGS_KEY, legacy)
+    db.save_settings_row(app_settings.GLOBAL_SETTINGS_KEY, legacy)
 
     loaded = app_settings.load_settings()
     assert loaded["qc_connections"]["production"]["host"] == "b.example"  # active 優先

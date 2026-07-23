@@ -1,7 +1,7 @@
 """資料層存取（SQLAlchemy Core · PostgreSQL）— db package barrel。
 
-原單一 db.py（~1400 行）按職責拆為子模組（users / rule_versions / ingest / findings / problems /
-prejudge_targets / attribution / export + _shared 共用）；此 barrel re-export 全部公開函式，
+原單一 db.py（~1400 行）按職責拆為子模組（settings_store / rule_versions / ingest / findings /
+problems / prejudge_targets / attribution / export + _shared 共用）；此 barrel re-export 全部公開函式，
 使既有 `from app.core import db` + `db.list_problems(...)` 等呼叫端零改動。
 schema：`init_db()` 用 metadata.create_all（dev/測試）；prod schema 演進交 Alembic（見 alembic/）。
 """
@@ -76,28 +76,22 @@ from app.core.db.rule_versions import (
     save_rule_version,
     seed_rules_from_files,
 )
-from app.core.db.users import (
-    DuplicateEmailError,
-    create_user,
-    get_user_by_email,
-    load_user_settings,
-    save_user_settings,
+from app.core.db.settings_store import (
+    load_settings_row,
+    save_settings_row,
 )
 
 __all__ = [
     "RULE_CODES",
-    "DuplicateEmailError",
     "ai_judge_overview_stats",
     "attribution_breakdown",
     "attribution_overview",
     "create_batch",
-    "create_user",
     "default_rule_content",
     "export_problems_xlsx",
     "get_items_by_ids",
     "get_rule_active",
     "get_rule_version",
-    "get_user_by_email",
     "init_db",
     "insert_finding",
     "insert_source_batch",
@@ -105,14 +99,14 @@ __all__ = [
     "list_problems",
     "list_rule_history",
     "list_rule_meta",
-    "load_user_settings",
+    "load_settings_row",
     "prejudge_target_ids",
     "replace_source_findings",
     "reset_all_rule_defaults",
     "reset_rule_default",
     "restore_rule_version",
     "save_rule_version",
-    "save_user_settings",
+    "save_settings_row",
     "seed_rules_from_files",
     "get_finding",
     "add_finding_note",

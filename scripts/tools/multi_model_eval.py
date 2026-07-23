@@ -8,13 +8,13 @@
 
 兩模式：
 - --build-set：建評測集 JSON（免 token）。預設該週有外部 free_tag 且已初判的 product_reviews。
-- --run --config-id <id> --user <email>：以該配置逐則重新初判評測集，收集每則 sentiment/polarity/歸因。
+- --run --config-id <id>：以該配置逐則重新初判評測集，收集每則 sentiment/polarity/歸因。
 
 用法（backend venv）：
     cd backend
     .venv/bin/python ../scripts/tools/multi_model_eval.py --build-set \
         --date-from 2026-06-30 --date-to 2026-07-09 --out ../tmp/multi_model/evalset.json
-    .venv/bin/python ../scripts/tools/multi_model_eval.py --user you@kkday.com \
+    .venv/bin/python ../scripts/tools/multi_model_eval.py \
         --eval-set ../tmp/multi_model/evalset.json --config-id <字節/Gemini config id> \
         --out ../tmp/multi_model/bytedance.json [--limit 6]
 """
@@ -146,7 +146,6 @@ def main() -> None:
     ap.add_argument("--date-to", default="2026-07-09", help="評測集日期窗迄（不含）")
     ap.add_argument("--all-freetag", action="store_true", help="不限已初判（預設只收已初判，對齊現有 Sheet）")
     ap.add_argument("--eval-set", help="評測集 JSON 路徑（run 模式必填）")
-    ap.add_argument("--user", help="以該帳號 DB settings 啟用真 LLM")
     ap.add_argument("--area", default="prejudge", help="功能區默認旋鈕基準（prejudge/prompt_debug/sandbox）")
     ap.add_argument("--provider", default="", help="覆寫供應商連線（切換模型；空＝area 默認）")
     ap.add_argument("--model", default="", help="覆寫 model（空＝area 默認）")
@@ -164,13 +163,9 @@ def main() -> None:
         print(f"✅ 評測集 {len(evalset)} 則（{args.date_from}~{args.date_to}）→ {args.out}")
         return
 
-    if not (args.eval_set and args.user):
-        ap.error("run 模式需 --eval-set + --user")
+    if not args.eval_set:
+        ap.error("run 模式需 --eval-set")
 
-    u = db.get_user_by_email(args.user)
-    if not u:
-        print(f"❌ 找不到 user：{args.user}")
-        sys.exit(1)
     overrides = {"provider": args.provider or None, "model": args.model or None}
     eff = app_settings.effective_llm_dict(
         app_settings.load_settings(), area=args.area, overrides=overrides
