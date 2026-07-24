@@ -165,10 +165,11 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復規則配置頁「整體配置」規則（source_mapping）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）。
+    """恢復 RuleManager「全部恢復默認」涵蓋的規則（source_mapping + prompt_polarity + prompt_C-1~6，
+    共 8 條）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）；不論觸發時當前開著哪一頁，
+    範圍恆一致（使用者 2026-07-24 拍板：全域單一動作，非依頁面分流）。
 
-    **排除**（見 RuleManager）：product_vertical（設定抽屜獨立管理）、prompt_*（初判 Prompt，各自獨立
-    「恢復默認」；判準文本＝人工調適標的，bulk 不應連帶覆蓋 prompt 手改）。
+    **排除**：product_vertical（設定抽屜獨立管理，非 RuleManager 範圍）。
     缺默認檔的 code 跳過不中斷，回報於 skipped。
 
     Returns:
@@ -176,12 +177,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    # 各有獨立編輯入口·不納入 bulk reset-all；prompt_*（初判 Prompt）另有「初判 Prompt」分組
-    # 各自恢復默認，且判準文本＝人工調適標的，bulk「恢復整體配置默認」不應連帶覆蓋 prompt 手改。
-    _EXCLUDED = {
-        "product_vertical",
-        *(c for c in RULE_CODES if c.startswith("prompt_")),
-    }
+    _EXCLUDED = {"product_vertical"}  # 設定抽屜獨立管理，非 RuleManager「全部恢復默認」範圍
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

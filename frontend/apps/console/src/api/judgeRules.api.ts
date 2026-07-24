@@ -79,7 +79,7 @@ export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
     headers: JSON_HEADERS,
   });
 
-/** 恢復整體配置（source_mapping）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
+/** 恢復全部規則（source_mapping + 7 支初判 Prompt，排除 product_vertical）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
 export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipped: string[] }> =>
   j<{ reset: RuleSaveResult[]; skipped: string[] }>(`${BASE}/judge-rules/reset-default-all`, {
     method: 'POST',

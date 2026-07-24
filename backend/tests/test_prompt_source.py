@@ -263,8 +263,12 @@ def test_load_without_versions_behavior_unchanged(temp_db):
     assert p3 is ps._cache["00_polarity"]  # versions 無對應 rule_code → 視同無 versions
 
 
-def test_bulk_reset_excludes_prompts(temp_db):
-    """reset_all_rule_defaults（歸因分類 bulk）不掃 prompt_*（各有獨立恢復入口）。"""
+def test_bulk_reset_covers_prompts_and_source_mapping(temp_db):
+    """reset_all_rule_defaults（RuleManager「全部恢復默認」，2026-07-24 改為全域單一動作）涵蓋
+    source_mapping + 全部 7 支 prompt_*，僅排除 product_vertical（設定抽屜獨立管理）。
+    """
     res = db.reset_all_rule_defaults(author="pytest")
     reset_codes = {r["rule_code"] for r in res["reset"]}
-    assert not (reset_codes & set(ps.PROMPT_RULE_CODES))
+    assert set(ps.PROMPT_RULE_CODES) <= reset_codes
+    assert "source_mapping" in reset_codes
+    assert "product_vertical" not in reset_codes

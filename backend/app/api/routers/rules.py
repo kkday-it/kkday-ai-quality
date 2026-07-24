@@ -244,7 +244,8 @@ def get_version(code: str, version: int, user: dict = Depends(auth.get_current_u
 def reset_default_all(
     user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
 ) -> dict:
-    """恢復所有歸因分類（C-N，排除 schema）為檔案默認，各新增一個版本覆蓋當前。
+    """恢復 RuleManager「全部恢復默認」涵蓋的規則（source_mapping + 7 支初判 Prompt，排除
+    product_vertical）為檔案默認，各新增一個版本覆蓋當前；範圍為全域單一動作，不依觸發頁面而變。
 
     缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
     """

@@ -151,12 +151,12 @@ function doExport() {
   return runExport(startRulesExport, exportName('初判 Prompt 包', 'zip'), '已導出 Prompt 包');
 }
 
-/** 恢復整體配置（source_mapping）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
+/** 恢復全部規則（source_mapping + 7 支初判 Prompt）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
 function doResetAll() {
   Modal.confirm({
     title: '恢復所有規則為默認',
     content:
-      '確定將整體配置（source_mapping 上傳表頭校驗）恢復為檔案默認？各新增一個版本覆蓋當前（保留歷史）。',
+      '確定將全部規則（source_mapping 上傳表頭校驗 + 7 支初判 Prompt）恢復為檔案默認？各自新增一個版本覆蓋當前（保留歷史）。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {

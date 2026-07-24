@@ -102,7 +102,7 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     await Promise.all([loadList(), selectRule(activeCode.value)]);
   }
 
-  /** 恢復整體配置（source_mapping）為檔案默認，各新增版本；重載清單與當前選中，回傳 {reset, skipped}。 */
+  /** 恢復全部規則（source_mapping + 7 支初判 Prompt）為檔案默認，各新增版本；重載清單與當前選中，回傳 {reset, skipped}。 */
   async function resetAllDefault() {
     const res = await resetAllRuleDefaults();
     await Promise.all([loadList(), selectRule(activeCode.value)]);
