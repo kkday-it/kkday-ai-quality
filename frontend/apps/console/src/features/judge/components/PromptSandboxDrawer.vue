@@ -25,7 +25,15 @@ import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { differs, fmtDt, metricRows } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
-import { CollapsibleSidePanel, LlmConfigPicker, LlmKnobs, StickyTabs, TableLayout } from '@/components';
+import {
+  CollapsibleSidePanel,
+  LlmConfigPicker,
+  LlmConfigTestResult,
+  LlmKnobs,
+  StickyTabs,
+  TableLayout,
+} from '@/components';
+import { useLlmConfigTest } from '@/composables';
 // 相對路徑 import（非走 barrel）：本檔自身即為 components barrel 的一員，經 barrel 迴繞 import
 // 同資料夾元件會觸發 circular dep（見 barrel-exports 規則）。
 import AttributionFilterBar from './AttributionFilterBar.vue';
@@ -76,6 +84,7 @@ const emit = defineEmits<{
 const rulesStore = useJudgeRulesStore();
 const selectedCodes = ref<string[]>([]);
 const llm = useLlmAreaDefault('sandbox');
+const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
 const { can } = usePermission();
 const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
@@ -348,7 +357,17 @@ watch(
             class="mb-2"
             @update:model-value="llm.setKnobs"
           />
-          <div class="mb-2 flex justify-end">
+          <div class="mb-2 flex justify-end gap-2">
+            <a-button
+              v-if="can(PERM.settingsLlmConfigManage)"
+              type="primary"
+              status="warning"
+              size="small"
+              :loading="llmTest.testing.value"
+              :disabled="!llm.knobs.model"
+              @click="llmTest.onTest"
+              >測試連線</a-button
+            >
             <a-button
               size="small"
               :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
@@ -356,6 +375,12 @@ watch(
               >存為此區默認</a-button
             >
           </div>
+          <LlmConfigTestResult
+            :result="llmTest.testResult.value"
+            :provider="llm.provider.value"
+            :knobs="llm.knobs"
+            class="mb-2"
+          />
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
             Prompt 版本（開關控制是否納入本次測試；每支預設沿用 active，可切歷史版本或 📝
             草稿；編輯鈕可即時修改草稿）

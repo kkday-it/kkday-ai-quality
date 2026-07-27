@@ -10,13 +10,15 @@ import {
   type PromptDebugResult,
   type PromptDebugUsage,
 } from '@/api';
-import { LlmConfigPicker, LlmKnobs } from '@/components';
+import { LlmConfigPicker, LlmConfigTestResult, LlmKnobs } from '@/components';
+import { useLlmConfigTest } from '@/composables';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 
 const router = useRouter();
 const llm = useLlmAreaDefault('prompt_debug');
+const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
 const { can } = usePermission();
 
 const defaults = ref<PromptDebugDefaults | null>(null);
@@ -294,7 +296,17 @@ function displayValue(value: unknown): string {
           <div class="mt-3">
             <LlmKnobs :model-value="llm.knobs" :provider="llm.provider.value" @update:model-value="llm.setKnobs" />
           </div>
-          <div class="mt-2 flex justify-end">
+          <div class="mt-2 flex justify-end gap-2">
+            <a-button
+              v-if="can(PERM.settingsLlmConfigManage)"
+              type="primary"
+              status="warning"
+              size="small"
+              :loading="llmTest.testing.value"
+              :disabled="streaming || !llm.knobs.model"
+              @click="llmTest.onTest"
+              >測試連線</a-button
+            >
             <a-button
               size="small"
               :disabled="streaming || !can(PERM.settingsLlmAreaDefaultWrite)"
@@ -302,6 +314,7 @@ function displayValue(value: unknown): string {
               >存為此區默認</a-button
             >
           </div>
+          <LlmConfigTestResult :result="llmTest.testResult.value" :provider="llm.provider.value" :knobs="llm.knobs" />
         </div>
 
         <div class="debug-panel flex min-h-[360px] flex-1 flex-col">
