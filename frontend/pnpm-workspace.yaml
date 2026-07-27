@@ -1,6 +1,15 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+overrides:
+  # Dependabot 高風險漏洞修復（皆為深層間接依賴，非直接聲明）：
+  # ⚠️ brace-expansion 不可用版本區間限定選擇器（@2/@5）：pnpm 對 unbounded ">=" range
+  # 會跨大版重新解析，導致部分 edge 仍卡在舊小版（實測 minimatch@9 路徑卡在 5.0.6 未生效），
+  # 改單一無條件覆寫全樹統一版本，pnpm install 後靜態檢查（vue-tsc/eslint）驗證過相容。
+  'brace-expansion': '>=5.0.8' # GHSA-3jxr-9vmj-r5cp + GHSA-mh99-v99m-4gvg（ReDoS/OOM）
+  'fast-uri': '>=3.1.4' # GHSA-v2hh-gcrm-f6hx + GHSA-4c8g-83qw-93j6（host confusion）
+  'dompurify': '>=3.4.12' # GHSA-c2j3-45gr-mqc4（CUSTOM_ELEMENT_HANDLING bypass）
+  'postcss': '>=8.5.18' # GHSA-r28c-9q8g-f849（sourcemap 路徑穿越）
 allowBuilds:
   # core-js 的 postinstall 僅印贊助橫幅、無實際建置需求 → 設 false 拒絕執行即可解除 ERR_PNPM_IGNORED_BUILDS
   core-js: false
