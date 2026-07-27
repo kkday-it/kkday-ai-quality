@@ -31,7 +31,7 @@
 ## 裁決流程
 
 1. 用一句話辨識完整對話的主要進線主訴。
-2. 逐一比對每個 Category 的 Definition、Include 與 Exclude；Exclude 的轉向規則優先於字面關鍵字。
+2. 逐一比對每個 Category 的 Definition、Include 與 Exclude；Exclude 的轉向規則優先於字面關鍵字。部分 Category 附 `calibration`（實測校準判例）：與 Definition/Include/Exclude 字面衝突時，一律以 `calibration` 為準。
 3. 選定 category 後，僅在該 category 的 likely_cause 受控選項內判斷；證據不足就選 unclear。
 4. 檢查 `[93]` 雙欄規則、OOT 欄位互斥規則與所有 enum 是否成立。
 5. 最後輸出 JSON。

@@ -2,6 +2,7 @@
 export { default as AttributionDetailDrawer } from './AttributionDetailDrawer.vue';
 export { default as AttributionFilterBar } from './AttributionFilterBar.vue';
 export { default as PrejudgeLogView } from './PrejudgeLogView.vue';
+export { default as PromptDebugBatchDrawer } from './PromptDebugBatchDrawer.vue';
 export { default as PromptSandboxDrawer } from './PromptSandboxDrawer.vue';
 export { default as PromptVersionPickerGroup } from './PromptVersionPickerGroup.vue';
 export { default as PrejudgeRunsDrawer } from './PrejudgeRunsDrawer.vue';

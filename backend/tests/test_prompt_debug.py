@@ -29,12 +29,15 @@ def _base_result(**overrides):
 
 
 def test_defaults_are_derived_from_taxonomy() -> None:
+    """雙契約 payload：v2/v3 各自帶 Prompt/schema/欄位卡，enum 皆由分類 SSOT 派生。"""
     payload = prompt_debug.defaults_payload()
-    schema = payload["output_schema"]
+    assert payload["default_contract"] == "v2"
     assert payload["category_count"] == 25
     assert payload["theme_count"] == 5
+    v2 = payload["contracts"]["v2"]
+    schema = v2["output_schema"]
     assert "__OUT_OF_TAXONOMY__" in schema["properties"]["category"]["enum"]
-    assert [field["key"] for field in payload["output_fields"]] == [
+    assert [field["key"] for field in v2["output_fields"]] == [
         "theme",
         "category",
         "likely_cause",
@@ -48,12 +51,18 @@ def test_defaults_are_derived_from_taxonomy() -> None:
         "confidence",
         "tail_theme",
     ]
-    assert "oot_subtype" not in {field["key"] for field in payload["output_fields"]}
+    assert "oot_subtype" not in {field["key"] for field in v2["output_fields"]}
     assert payload["sources"]["field_definitions_document"]["document_id"] == (
         "1FFFqsGPUhOd0oVG4uDbSgVfsdqdYYRuy5fLIE0tYpMA"
     )
     assert "$schema" not in schema
-    assert "{{TAXONOMY_JSON}}" not in payload["system_prompt"]
+    assert "{{TAXONOMY_JSON}}" not in v2["system_prompt"]
+    # v3 新規格重點差異：全欄禁 null（n/a 哨兵）、keywords 陣列、urgency 1–5、無 tail_theme
+    v3 = payload["contracts"]["v3"]
+    v3_keys = {field["key"] for field in v3["output_fields"]}
+    assert {"keywords", "urgency", "no_actionable_content", "oot_subtype"} <= v3_keys
+    assert "tail_theme" not in v3_keys
+    assert "n/a" in v3["output_schema"]["properties"]["modify_target"]["enum"]
 
 
 def test_slashes_inside_controlled_causes_are_not_split() -> None:
@@ -124,7 +133,7 @@ def test_stream_frames_uses_final_chunk_usage_for_same_call(monkeypatch) -> None
         ]
     )
     monkeypatch.setattr(prompt_debug.app_settings, "resolve_provider_token", lambda _: "sk-test")
-    monkeypatch.setattr(prompt_debug, "_create_stream", lambda cfg, kwargs: (chunks, []))
+    monkeypatch.setattr(prompt_debug, "_request_compat", lambda cfg, kwargs: (chunks, []))
     recorded: list[dict] = []
     monkeypatch.setattr(
         prompt_debug,

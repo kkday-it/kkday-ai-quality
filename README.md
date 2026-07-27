@@ -120,6 +120,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
 | GET/POST | `/api/v1/prejudge/prompt-debug/defaults` · `/prompt-debug/stream` | 售後根因 Prompt 調試台：載入受控分類預設 Prompt，任意 IM session 以 SSE 串流裁決，完成後回傳交叉欄位校驗、token 與單次 USD 估算；不寫正式 attributions |
+| POST/GET | `/api/v1/prejudge/prompt-debug/batch/*` | 調試台批量跑批：multipart `start`（上傳 CSV/XLSX，以當前 Prompt/契約整批 strict 裁決；run 目錄落 `data/prompt_debug_batch/<run_id>/`）/ `runs` 列表 / `runs/{run_id}` 進度輪詢 / `cancel` 停止 / `resume` 斷點續跑（只補未成功筆；`rerun` 全部重打；manifest 鎖輸入/Prompt/schema/model）/ `files/{kind}` 下載（csv/jsonl/preds/input）。啟動/停止/續跑需 `prejudge.run` 權限 |
 | GET | `/api/v1/prejudge/runs` · `/runs/{job_id}` | 初判紀錄（run 級 LLM 使用紀錄：批量/選取/單筆重新初判；詳情含 per-stage token/費用明細）|
 | POST/GET | `/api/v1/prejudge/prompt-sandbox/*` | 歸因列表「Prompt 測試」沙盒（ungated·不落正式初判）：啟動（可帶 `versions` 選版本、`drafts` 草稿全文快照、`compare` 雙跑對比）/ count 筆數預覽 / status 輪詢 / runs 測試歷史（詳情含 LLM log 快照；雙跑 run 另附 drafts 快照＋等價性 metrics）/ `runs/compare?a=&b=` 兩筆 run 結果對齊對比 |
 | GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照/判決轉移/備註三類事件；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |

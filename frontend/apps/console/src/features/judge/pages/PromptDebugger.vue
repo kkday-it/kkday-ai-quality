@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { useRouter } from 'vue-router';
 import {
   getPromptDebugDefaults,
   streamPromptDebug,
+  type PromptDebugContractKey,
   type PromptDebugDefaults,
   type PromptDebugMeta,
   type PromptDebugResult,
@@ -16,15 +17,27 @@ import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 
+// 跑批抽屜點開才載（重元件 lazy，非首屏必需）
+const PromptDebugBatchDrawer = defineAsyncComponent(
+  () => import('../components/PromptDebugBatchDrawer.vue'),
+);
+
 const router = useRouter();
 const llm = useLlmAreaDefault('prompt_debug');
 const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
 const { can } = usePermission();
 
 const defaults = ref<PromptDebugDefaults | null>(null);
+const contract = ref<PromptDebugContractKey>('v2');
 const systemPrompt = ref('');
 const inputText = ref('');
 const loadingDefaults = ref(false);
+
+/** 目前選定契約的預設 Prompt／欄位卡／說明。 */
+const activeContract = computed(() => defaults.value?.contracts[contract.value] ?? null);
+const contractList = computed(() => (defaults.value ? Object.values(defaults.value.contracts) : []));
+
+const batchVisible = ref(false);
 
 const streaming = ref(false);
 const rawOutput = ref('');
@@ -45,8 +58,8 @@ const canRun = computed(
 );
 const displayedResults = computed(() => {
   const parsed = result.value?.parsed;
-  if (!parsed || !defaults.value) return [];
-  return defaults.value.output_fields
+  if (!parsed || !activeContract.value) return [];
+  return activeContract.value.output_fields
     .filter((field) => Object.prototype.hasOwnProperty.call(parsed, field.key))
     .map((field) => ({ ...field, value: parsed[field.key] }));
 });
@@ -55,11 +68,23 @@ async function loadDefaults(): Promise<void> {
   loadingDefaults.value = true;
   try {
     defaults.value = await getPromptDebugDefaults();
-    systemPrompt.value = defaults.value.system_prompt;
+    contract.value = defaults.value.default_contract;
+    systemPrompt.value = defaults.value.contracts[contract.value].system_prompt;
   } catch (error) {
     Message.error(error instanceof Error ? error.message : '載入預設 Prompt 失敗');
   } finally {
     loadingDefaults.value = false;
+  }
+}
+
+/** 切換輸出契約：編輯框仍是任一契約預設（未動過）→ 換載新契約預設；已貼入自訂 Prompt → 保留不覆蓋。 */
+function onContractChange(): void {
+  if (!defaults.value) return;
+  const knownDefaults = Object.values(defaults.value.contracts).map((c) => c.system_prompt);
+  if (!systemPrompt.value.trim() || knownDefaults.includes(systemPrompt.value)) {
+    systemPrompt.value = defaults.value.contracts[contract.value].system_prompt;
+  } else {
+    Message.info('已切換輸出契約；保留你貼入的 Prompt，若要載入該契約預設請按「恢復預設」');
   }
 }
 
@@ -83,7 +108,7 @@ const samples = [
 ];
 
 function resetPrompt(): void {
-  if (defaults.value) systemPrompt.value = defaults.value.system_prompt;
+  if (activeContract.value) systemPrompt.value = activeContract.value.system_prompt;
 }
 
 function clearRun(): void {
@@ -105,6 +130,7 @@ async function run(): Promise<void> {
       {
         text: inputText.value,
         system_prompt: systemPrompt.value,
+        contract: contract.value,
         overrides: llm.overrides.value,
       },
       {
@@ -157,6 +183,7 @@ function openLlmSettings(): void {
 function displayValue(value: unknown): string {
   if (value === null || value === '') return '—';
   if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+  if (Array.isArray(value)) return value.length ? value.join('、') : '[]（空）';
   if (typeof value === 'object') return JSON.stringify(value, null, 2);
   return String(value);
 }
@@ -218,12 +245,29 @@ function displayValue(value: unknown): string {
           <div>
             <div class="panel-title">System Prompt</div>
             <div class="panel-sub">
-              已注入 Google Doc 的 {{ defaults?.category_count ?? '—' }} 類操作定義；可直接改寫做
-              A/B 調試
+              已注入 {{ defaults?.category_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B
+              調試
             </div>
           </div>
           <a-button size="small" :disabled="loadingDefaults || streaming" @click="resetPrompt"
             >恢復預設</a-button
+          >
+        </div>
+        <div class="mb-3 flex flex-col gap-1">
+          <a-radio-group
+            v-model="contract"
+            type="button"
+            size="small"
+            :disabled="loadingDefaults || streaming"
+            @change="onContractChange"
+          >
+            <a-radio v-for="option in contractList" :key="option.key" :value="option.key">
+              {{ option.label }}
+            </a-radio>
+          </a-radio-group>
+          <span class="text-xs text-[#86909c]"
+            >輸出契約：{{ activeContract?.description ?? '—'
+            }}；schema 與欄位校驗隨契約切換，貼哪版 Prompt 就選哪版</span
           >
         </div>
         <a-textarea
@@ -268,6 +312,13 @@ function displayValue(value: unknown): string {
         <div class="mt-3 flex items-center justify-between gap-3">
           <span class="text-xs text-[#86909c]">{{ inputText.length.toLocaleString() }} 字元</span>
           <a-space>
+            <a-button
+              type="outline"
+              :disabled="streaming || !systemPrompt.trim()"
+              @click="batchVisible = true"
+            >
+              跑批
+            </a-button>
             <a-button v-if="streaming" status="danger" @click="abort">停止</a-button>
             <a-button v-else type="primary" size="large" :disabled="!canRun" @click="run">
               開始裁決
@@ -384,12 +435,23 @@ function displayValue(value: unknown): string {
             </div>
           </div>
           <div v-if="meta" class="mt-2 text-[11px] text-[#86909c]">
-            {{ meta.model }} · {{ meta.provider }} · reasoning={{ meta.reasoning_effort }} ·
-            temperature={{ meta.temperature ?? 'default' }}
+            {{ meta.model }} · {{ meta.provider }} · 契約={{ meta.contract }} · reasoning={{
+              meta.reasoning_effort
+            }}
+            · temperature={{ meta.temperature ?? 'default' }}
           </div>
         </div>
       </section>
     </div>
+
+    <PromptDebugBatchDrawer
+      v-model:visible="batchVisible"
+      :system-prompt="systemPrompt"
+      :contract="contract"
+      :contract-label="activeContract?.label ?? contract"
+      :model="llm.knobs.model"
+      :overrides="llm.overrides.value"
+    />
   </div>
 </template>
 
