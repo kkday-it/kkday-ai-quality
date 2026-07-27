@@ -1,7 +1,7 @@
 {
  "_meta": {
   "about": "5 反饋來源 → 統一問題列表的欄位映射 SSOT。驅動：上傳表頭自動辨識(指紋)、必備欄校驗、原始列正規化(raw→canonical)。",
-  "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值；merge_fields（canonical 欄→[原始欄,...]）將多個原始欄依序串接（換行分隔）成單一 canonical 欄，用於單一原始欄無法承載全部內容的來源（如 conversations 的 chatbot_conversation+human_conversation→content）。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。",
+  "notes": "source 由本檔的 key 自動填；field_map 未列的原始欄一律進 source_metadata(特殊欄)；const_fields 為無對應欄時的常數補值；merge_fields（canonical 欄→[原始欄,...]）將多個原始欄依序串接（換行分隔）成單一 canonical 欄，用於單一原始欄無法承載全部內容的來源（現行 5 來源皆無使用，機制保留供未來需要時啟用）。required_headers 同時作為自動辨識指紋與必備欄校驗。顯示 label 不在本檔——SSOT 唯一在 config/global/sources.json（後端 source_mapping.source_label 委派 sources.label_for），避免兩處漂移。",
   "version": "1.0",
   "canonical_fields": [
    "source",
@@ -18,9 +18,7 @@
    "member_uuid",
    "score",
    "lang",
-   "trip_stage",
-   "msg_handler",
-   "cs_task_type"
+   "trip_stage"
   ]
  },
  "$schema": "./source_mapping.schema.json",
@@ -42,25 +40,22 @@
   },
   "conversations": {
    "field_map": {
+    "session_oid": "source_record_id",
+    "inbound_time": "occurred_at",
+    "conversation_full": "content",
     "prod_oid": "prod_oid",
     "order_oid": "order_oid",
-    "session_oid": "source_record_id",
     "supplier_oid": "supplier_oid",
     "supplier_name": "supplier_name",
-    "conversation_type": "channel",
     "trip_stage": "trip_stage",
-    "msg_handler": "msg_handler",
-    "cs_task_type_name": "cs_task_type",
-    "session_datetime_tw": "occurred_at"
-   },
-   "merge_fields": {
-    "content": ["chatbot_conversation", "human_conversation"]
+    "go_date": "go_date",
+    "product_category": "product_category"
    },
    "const_fields": {},
    "required_headers": [
     "session_oid",
-    "chatbot_conversation",
-    "human_conversation"
+    "inbound_time",
+    "conversation_full"
    ]
   },
   "product_reviews": {

@@ -45,10 +45,7 @@ def _jg_unwrap(r: dict) -> dict:
 
 
 def _extract_prod_name(raw: dict) -> str:
-    """從 raw 取商品名：優先 prod_name_zh_tw（進線）；其次 order_snap_json 內各語系 prod_name。"""
-    direct = raw.get("prod_name_zh_tw") or raw.get("prod_name")
-    if direct:
-        return str(direct)
+    """從 raw 的 order_snap_json（多語商品名快照 JSON）取商品名：各語系優先序 zh-tw/zh-hk/zh-cn/en，任一語系兜底。"""
     snap = raw.get("order_snap_json")
     if not snap:
         return ""
@@ -154,7 +151,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
     spec = source_registry.spec_for(src)
     canon = _srcmap.normalize_row(src, row) if src in _srcmap.sources() else {}
     source_id = row.get(spec.natural_key) if spec else canon.get("source_record_id")
-    # 商品名：product_reviews.order_snap_json（多語快照 JSON）/ conversations.prod_name_zh_tw
+    # 商品名：product_reviews.order_snap_json（多語快照 JSON）/ conversations.product_name
     snap = row.get("order_snap_json")
     base = {
         "source_id": source_id,
@@ -165,7 +162,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "prod_oid": canon.get("prod_oid") or "",
         "prod_name": _extract_prod_name({"order_snap_json": snap})
         if snap
-        else (row.get("prod_name_zh_tw") or ""),
+        else (row.get("product_name") or ""),
         "package_name": _extract_package_name({"order_snap_json": snap}) if snap else "",
         "pkg_oid": canon.get("pkg_oid") or "",
         "content": canon.get("content") or "",
@@ -180,12 +177,28 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         ),  # 同名源欄（pr/conv/mixpanel 有；freshdesk/appf 無→None）
         "supplier_oid": canon.get("supplier_oid"),
         "supplier_name": canon.get("supplier_name"),
-        # 進線特有欄（conversations field_map 升 canonical；其他來源無此欄 → None，前端有值才顯示）
+        # 進線特有欄（trip_stage/go_date 走 canonical field_map；其餘 conversations 專屬源欄直讀，
+        # 比照 order_mid 既有作法；其他來源無此欄 → None，前端有值才顯示）
         "trip_stage": canon.get("trip_stage"),
-        "msg_handler": canon.get("msg_handler"),
-        "cs_task_type": canon.get("cs_task_type"),
         "go_date": canon.get("go_date"),
-        "member_uuid": canon.get("member_uuid"),
+        "member_uuid": row.get("member_uuid"),
+        "bucket": row.get("bucket"),  # 分桶字面值（BQ 端預算）
+        "msg_handler_bucket": row.get("msg_handler_bucket"),  # 處理方：KKDAY/SUPPLIER
+        "godate_diff": row.get("godate_diff"),  # 出發日差字面值
+        "order_status_now": row.get("order_status_now"),
+        "order_lang": row.get("order_lang"),
+        "order_price": row.get("order_price"),
+        "order_profit": row.get("order_profit"),
+        "order_create_source_code": row.get("order_create_source_code"),
+        "order_create_time": row.get("order_create_time"),
+        "product_tz": row.get("product_tz"),
+        "vertical": row.get("vertical"),  # 商品垂直分類字面值（BQ 端預算）
+        "bd_tag_cd": row.get("bd_tag_cd"),
+        "bd_tag": row.get("bd_tag"),
+        "PM": row.get("PM"),
+        "cs_tag_oid": row.get("cs_tag_oid"),
+        "cs_tag_name": row.get("cs_tag_name"),
+        "user_message_count": row.get("user_message_count"),
         "traveller_type": canon.get("traveller_type"),
         "product_category_main": _parse_category_main(canon.get("product_category")),
         "source_record_id": source_id,  # 評論ID（＝特徵 id）
@@ -326,6 +339,8 @@ def list_problems(
     status: list[str] | None = None,
     model: list[str] | None = None,
     has_external: bool | None = None,
+    bucket: list[str] | None = None,
+    vertical: list[str] | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
@@ -349,6 +364,11 @@ def list_problems(
         status: 判決狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
         model: 初判模型多選（attributions.model IN——當前初判維度；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
+        bucket: 進線分桶多選（conversations 專屬直欄；transferred/chatbot_only/human_supplier/
+            human_kkday/human_other；其餘來源無此欄，忽略）。
+        vertical: 進線商品垂直分類多選（conversations 專屬直欄字面值，如 Tour/Hotel/Flight；
+            與 product_vertical 為不同概念——後者是跨來源 CATEGORY 代碼分組，此為 BQ 端預算的
+            粗顆粒業務垂直；其餘來源無此欄，忽略）。
 
     Returns:
         {"rows": [統一記錄], "total": 符合篩選總數}。
@@ -378,6 +398,8 @@ def list_problems(
         sentiment=sentiment,
         status=status,
         model=model,
+        bucket=bucket,
+        vertical=vertical,
     )
 
 
@@ -403,6 +425,8 @@ def _list_problems_spec(
     sentiment: list[int] | None = None,
     status: list[str] | None = None,
     model: list[str] | None = None,
+    bucket: list[str] | None = None,
+    vertical: list[str] | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN attributions。
 
@@ -444,6 +468,12 @@ def _list_problems_spec(
         if model:
             # 初判模型多選（當前初判維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))
+        if bucket and "bucket" in tbl.c:
+            # 進線分桶多選（conversations 專屬直欄，其餘來源無此欄忽略）
+            stmt = stmt.where(tbl.c["bucket"].in_(bucket))
+        if vertical and "vertical" in tbl.c:
+            # 進線商品垂直分類多選（conversations 專屬直欄字面值，非 product_vertical 分組語義）
+            stmt = stmt.where(tbl.c["vertical"].in_(vertical))
         if taxonomy:
             # 歸因分類多選：任意層級 code，l1/l2_code 任一 IN 命中＝子樹語義
             # （選 L1 涵蓋整域，含只判到 L2 的列；選 L2 精確到面向）

@@ -15,10 +15,12 @@ import {
   CollapsibleSidePanel,
   ExportProgressBar,
   LlmConfigPicker,
+  LlmConfigTestResult,
   LlmKnobs,
   StateGuard,
   TableLayout,
 } from '@/components';
+import { useLlmConfigTest } from '@/composables';
 import { usePermission } from '@/composables/usePermission';
 import { Message } from '@arco-design/web-vue';
 import {
@@ -38,13 +40,15 @@ import {
 } from '../components';
 import { useAttributionList, useFindingNotes, useRejudgeConfirm } from '../composables';
 import {
+  BUCKET_COLORS,
+  BUCKET_LABELS,
   CONF_TIER_CLASS,
   DIALOGUE_ROLE_COLORS,
   DIALOGUE_ROLE_LABELS,
+  DIALOGUE_SEGMENT_LABELS,
   idPlaceholderFor,
-  INBOUND_CHANNEL_LABELS,
-  INBOUND_HANDLER_LABELS,
   INBOUND_TRIP_STAGE_LABELS,
+  MSG_HANDLER_BUCKET_LABELS,
   POLARITY_COLOR,
   POLARITY_LABELS,
   SOURCES,
@@ -217,6 +221,8 @@ const {
   openBatchTargeting: openPrejudge,
 });
 
+const llmTest = useLlmConfigTest(() => llmProvider.value, () => llmKnobs);
+
 /** 把目前 provider + 旋鈕存為 prejudge 功能區默認（team 共用）。 */
 const onSaveLlmAreaDefault = async () => {
   try {
@@ -287,6 +293,9 @@ const hasSection = (s: ContextSection): boolean => schema.value.contextSections.
 /** 內容欄對話輪次：dialogue 模式且解析出 [ROLE]: 前綴才回輪次；否則 null → 原樣全文 fallback。 */
 const dialogueTurns = (record: ProblemRow): DialogueTurn[] | null =>
   schema.value.contentMode === 'dialogue' ? parseDialogue(String(record.content || '')) : null;
+/** 該輪是否為新段落起點（首輪或與前一輪段落不同）：機器人／真人客服階段切換時插入分隔標籤。 */
+const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
+  idx === 0 || turns[idx - 1].segment !== turns[idx].segment;
 /** 精確查詢 placeholder（隨來源切換：評論 rec_oid／進線 session_oid…，與後端 natural_key 篩選對齊）。 */
 const idPlaceholder = computed(() => idPlaceholderFor(source.value));
 
@@ -312,6 +321,8 @@ const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   taxonomy: 'taxonomy',
   hasExternal: 'hasExternal',
   dateRange: 'dateRange',
+  bucket: 'bucket',
+  vertical: 'vertical',
 };
 /** 工具列篩選欄位：schema 決定的維度 + 通用精確查詢（rec/prod/order id 恆顯示）。 */
 const toolbarFields = computed<FilterField[]>(() => {
@@ -612,20 +623,27 @@ onMounted(init);
                    非對話模式或解析失敗 fallback 原樣全文 -->
               <template v-if="record.content">
                 <div v-if="dialogueTurns(record)" class="flex flex-col gap-1">
-                  <div
-                    v-for="(t, ti) in dialogueTurns(record)"
-                    :key="ti"
-                    class="text-xs leading-relaxed"
-                  >
-                    <a-tag
-                      v-if="t.role"
-                      size="small"
-                      :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
-                      class="mr-1"
-                      >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
+                  <template v-for="(t, ti) in dialogueTurns(record)" :key="ti">
+                    <!-- 段落分隔：機器人／真人客服階段切換時插入標籤（對齊 conversation_full 的 ‖ 分段）-->
+                    <div
+                      v-if="t.segment && isNewSegment(dialogueTurns(record) || [], ti)"
+                      class="mt-1 text-[10px] font-semibold text-[var(--color-text-3)]"
                     >
-                    <span class="whitespace-pre-wrap text-[var(--color-text-2)]">{{ t.text }}</span>
-                  </div>
+                      {{ DIALOGUE_SEGMENT_LABELS[t.segment] || t.segment }}
+                    </div>
+                    <div class="text-xs leading-relaxed">
+                      <a-tag
+                        v-if="t.role"
+                        size="small"
+                        :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
+                        class="mr-1"
+                        >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
+                      >
+                      <span class="whitespace-pre-wrap text-[var(--color-text-2)]">{{
+                        t.text
+                      }}</span>
+                    </div>
+                  </template>
                 </div>
                 <div
                   v-else
@@ -843,6 +861,10 @@ onMounted(init);
                 OID {{ cell(record.order_oid) }} · 出發
                 {{ fmtDt(record.go_date, true) || '—' }}
               </div>
+              <!-- 進線專屬：訂單目前狀態 / 金額（其餘來源無此欄，恆不顯示）-->
+              <div v-if="record.order_status_now || record.order_price" class="text-[var(--color-text-2)]">
+                {{ cell(record.order_status_now) }} · {{ cell(record.order_price) }}
+              </div>
             </div>
           </div>
           <!-- 商品 -->
@@ -889,32 +911,49 @@ onMounted(init);
               <div class="text-[var(--color-text-2)]">OID {{ cell(record.supplier_oid) }}</div>
             </div>
           </div>
-          <!-- 進線屬性（conversations 專屬：行程階段/管道/處理方/工單類型，有值才顯示）-->
+          <!-- 進線屬性（conversations 專屬精選核心欄：分桶/行程階段/垂直分類/處理方/BD/PM/客服標籤/訊息數，有值才顯示）-->
           <div v-if="hasSection('inbound')" class="flex items-center gap-1.5">
             <span
               class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >進線</span
             >
             <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <a-tag v-if="record.bucket" size="small" :color="BUCKET_COLORS[String(record.bucket)] || 'gray'">
+                {{ BUCKET_LABELS[String(record.bucket)] || record.bucket }}
+              </a-tag>
               <a-tag v-if="record.trip_stage" size="small" color="arcoblue">
                 {{ INBOUND_TRIP_STAGE_LABELS[String(record.trip_stage)] || record.trip_stage }}
               </a-tag>
-              <a-tag v-if="record.channel" size="small" color="purple">
-                {{ INBOUND_CHANNEL_LABELS[String(record.channel)] || record.channel }}
+              <a-tag v-if="record.vertical" size="small" color="cyan">
+                {{ record.vertical }}
               </a-tag>
-              <span v-if="record.msg_handler" class="text-[var(--color-text-2)]">
+              <span v-if="record.msg_handler_bucket" class="text-[var(--color-text-2)]">
                 處理方
-                {{ INBOUND_HANDLER_LABELS[String(record.msg_handler)] || record.msg_handler }}
+                {{
+                  MSG_HANDLER_BUCKET_LABELS[String(record.msg_handler_bucket)] ||
+                  record.msg_handler_bucket
+                }}
               </span>
-              <span v-if="record.cs_task_type" class="text-[var(--color-text-2)]">
-                {{ record.cs_task_type }}
+              <span v-if="record.bd_tag" class="text-[var(--color-text-2)]">
+                BD {{ record.bd_tag }}
+              </span>
+              <span v-if="record.PM" class="text-[var(--color-text-2)]"> PM {{ record.PM }} </span>
+              <span v-if="record.cs_tag_name" class="text-[var(--color-text-2)]">
+                {{ record.cs_tag_name }}
+              </span>
+              <span v-if="record.user_message_count" class="text-[var(--color-text-2)]">
+                訊息數 {{ record.user_message_count }}
               </span>
               <span
                 v-if="
+                  !record.bucket &&
                   !record.trip_stage &&
-                  !record.channel &&
-                  !record.msg_handler &&
-                  !record.cs_task_type
+                  !record.vertical &&
+                  !record.msg_handler_bucket &&
+                  !record.bd_tag &&
+                  !record.PM &&
+                  !record.cs_tag_name &&
+                  !record.user_message_count
                 "
                 class="text-gray-300"
                 >—</span
@@ -1051,7 +1090,17 @@ onMounted(init);
                 @update:model-value="setLlmProvider"
               />
               <LlmKnobs :model-value="llmKnobs" :provider="llmProvider" @update:model-value="setLlmKnobs" />
-              <div class="flex justify-end">
+              <div class="flex justify-end gap-2">
+                <a-button
+                  v-if="can(PERM.settingsLlmConfigManage)"
+                  type="primary"
+                  status="warning"
+                  size="small"
+                  :loading="llmTest.testing.value"
+                  :disabled="!llmKnobs.model"
+                  @click="llmTest.onTest"
+                  >測試連線</a-button
+                >
                 <a-button
                   size="small"
                   :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
@@ -1059,6 +1108,7 @@ onMounted(init);
                   >存為此區默認</a-button
                 >
               </div>
+              <LlmConfigTestResult :result="llmTest.testResult.value" :provider="llmProvider" :knobs="llmKnobs" />
               <div>
                 <div class="mb-1 text-xs text-gray-500">
                   Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）

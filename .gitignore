@@ -19,6 +19,8 @@ __pycache__/
 
 # AI 法官 intake 真實樣本（含客戶對話/訂單ID 等個資，禁止 commit）
 backend/fixtures/intake/*.csv
+# 例外：全合成小量樣本（零真實客戶資料），供開發者對照新格式，允許 commit
+!backend/fixtures/intake/conversations_sample_30col.csv
 
 # config 線上編輯的 working-copy 備份（git 本身即版本歷史）
 config/taxonomy/.backups/

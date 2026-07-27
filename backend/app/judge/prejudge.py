@@ -143,7 +143,7 @@ def _now_iso() -> str:
 
 
 def _text_of(item: dict) -> str:
-    """取初判主輸入文字：優先 comment（intake_items）/ content（canonical 主文），回退 raw 內常見文字欄。
+    """取初判主輸入文字：優先 comment（app_feedback 源欄）/ content（canonical 主文），回退 raw 內常見文字欄。
 
     有 canonical title（product_reviews rec_title / freshdesk subject）時前置「標題：」一行——
     標題常單獨承載問題點（標題罵、內文短），一併送判並讓 evidence_quote 可自標題落地。
@@ -156,7 +156,7 @@ def _text_of(item: dict) -> str:
                 raw = json.loads(raw)
             except (ValueError, TypeError):
                 raw = {}
-        for k in ("content", "comment", "chatbot_conversation", "human_conversation", "feedback"):
+        for k in ("content", "comment", "conversation_full", "feedback"):
             v = raw.get(k)
             if isinstance(v, str) and v.strip():
                 txt = v.strip()
@@ -545,7 +545,7 @@ def to_findings(
     finding_id：非負向/未歸因＝`fd_{item_id}`；多歸因每條＝`fd_{item_id}__{l1_domain}__{l2_code}`（面向級去重→唯一）。
 
     Args:
-        item: 進線列 dict（intake_items / product_reviews 欄；已 _normalize_raw）。
+        item: 反饋列 dict（5 來源專表任一之欄；已 _normalize_raw）。
         model: 主初判模型；stub 走啟發式極性、負向回未歸因單筆。
         versions: 版本選擇功能（{rule_code: 指定版本號}），透傳給 `prompt_source.load`；不帶時
             行為與既有 production 路徑完全一致（皆讀 DB active）。

@@ -119,27 +119,138 @@ _COL_GROUPS: dict[str, str] = {
 }
 
 
-def _group_of(key: str) -> str:
+def _group_of(key: str, groups: dict[str, str]) -> str:
     """欄位鍵 → 雙層表頭第一列群組標題。dom__/cmp__ 前綴（動態欄，見 `_domain_match_cols`/
-    `_compare_cols`）依前綴判定；其餘查 `_COL_GROUPS`，缺映射防禦性回「其他」。"""
+    `_compare_cols`）依前綴判定；其餘查傳入的 groups 映射（通用來源＝`_COL_GROUPS`、
+    conversations 專屬版面＝`_CONV_COL_GROUPS`），缺映射防禦性回「其他」。"""
     if key.startswith("dom__"):
         return "六域命中"
     if key.startswith("cmp__"):
         return f"對比模型｜{key.split('__')[1]}"  # 每個對比模型各自一組（各自配色）
-    return _COL_GROUPS.get(key, "其他")
+    return groups.get(key, "其他")
 
 
-def _grouped_header_spans(cols: list[tuple[str, str, int]]) -> list[tuple[str, int]]:
-    """cols（_EXPORT_XLSX_COLS + dom_cols + cmp_cols）→ 雙層表頭第一列的 (群組標題, 涵蓋欄數)
+def _grouped_header_spans(
+    cols: list[tuple[str, str, int]], groups: dict[str, str]
+) -> list[tuple[str, int]]:
+    """cols（各版面欄集 + dom_cols + cmp_cols）→ 雙層表頭第一列的 (群組標題, 涵蓋欄數)
     run-length 序列（相鄰同群組欄合併為一格）。"""
     spans: list[tuple[str, int]] = []
     for _t, key, _w in cols:
-        g = _group_of(key)
+        g = _group_of(key, groups)
         if spans and spans[-1][0] == g:
             spans[-1] = (g, spans[-1][1] + 1)
         else:
             spans.append((g, 1))
     return spans
+
+
+# conversations 專屬 30 欄匯出（欄序＝CSV 30 欄，五分組：進線/訂單/商品/供應商/客服標籤對話）
+# + 尾附 AI 判決結果（沿用 _EXPORT_XLSX_COLS 的歸因級欄定義，非平行另寫一份）。
+# ⚠️ 欄鍵＝_enrich_problem dto 實際鍵名，非全部逐字等於 CSV 表頭：session_oid→source_id、
+# inbound_time→occurred_at、product_name→prod_name、product_category→product_category_main
+# （皆走既有 canonical/衍生欄，避免重複另存一份 raw 別名）、conversation_full→content。
+_CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
+    ("進線編號", "source_id", 16),
+    ("分桶", "bucket", 14),
+    ("進線時間", "occurred_at", 20),
+    ("行程階段", "trip_stage", 14),
+    ("出發日差", "godate_diff", 10),
+    ("處理方", "msg_handler_bucket", 10),
+    ("會員 UUID", "member_uuid", 22),  # ⚠️ 個資
+    ("訂單編號", "order_oid", 16),
+    ("訂單號", "order_mid", 16),
+    ("訂單建立時間", "order_create_time", 20),
+    ("訂單目前狀態", "order_status_now", 14),
+    ("訂單語系", "order_lang", 10),
+    ("出發日", "go_date", 14),
+    ("訂單金額", "order_price", 12),
+    ("訂單利潤", "order_profit", 12),
+    ("訂單建立來源", "order_create_source_code", 14),
+    ("商品編號", "prod_oid", 12),
+    ("商品名稱", "prod_name", 28),
+    ("商品時區", "product_tz", 12),
+    ("商品垂直分類", "vertical", 12),
+    ("BD 標籤代碼", "bd_tag_cd", 12),
+    ("BD 標籤", "bd_tag", 16),
+    ("PM", "PM", 12),
+    ("商品分類", "product_category_main", 14),
+    ("供應商編號", "supplier_oid", 12),
+    ("供應商名稱", "supplier_name", 20),
+    ("客服標籤編號", "cs_tag_oid", 12),
+    ("客服標籤名稱", "cs_tag_name", 16),
+    ("旅客訊息數", "user_message_count", 10),
+    ("進線對話全文", "content", 48),
+] + [
+    c
+    for c in _EXPORT_XLSX_COLS
+    if c[1]
+    in {
+        "summary",
+        "our_sentiment",
+        "l1_label",
+        "l2_label",
+        "confidence",
+        "confidence_tier",
+        "prejudge_stage",
+        "model",
+        "prejudged_at",
+        "prompt_version",
+        "polarity_prompt_version",
+        "status",
+        "verdict_at",
+        "verdict_by",
+    }
+]
+
+# conversations 專屬版面的雙層表頭第一列分組（五分組 + AI 判決結果尾段）；與通用 `_COL_GROUPS`
+# 分開一份，因同名欄鍵（如 order_mid/go_date/prod_oid）在兩版面歸屬的群組標題不同，不可共用。
+_CONV_COL_GROUPS: dict[str, str] = {
+    "source_id": "進線資訊",
+    "bucket": "進線資訊",
+    "occurred_at": "進線資訊",
+    "trip_stage": "進線資訊",
+    "godate_diff": "進線資訊",
+    "msg_handler_bucket": "進線資訊",
+    "member_uuid": "訂單資訊",
+    "order_oid": "訂單資訊",
+    "order_mid": "訂單資訊",
+    "order_create_time": "訂單資訊",
+    "order_status_now": "訂單資訊",
+    "order_lang": "訂單資訊",
+    "go_date": "訂單資訊",
+    "order_price": "訂單資訊",
+    "order_profit": "訂單資訊",
+    "order_create_source_code": "訂單資訊",
+    "prod_oid": "商品資訊",
+    "prod_name": "商品資訊",
+    "product_tz": "商品資訊",
+    "vertical": "商品資訊",
+    "bd_tag_cd": "商品資訊",
+    "bd_tag": "商品資訊",
+    "PM": "商品資訊",
+    "product_category_main": "商品資訊",
+    "supplier_oid": "供應商資訊",
+    "supplier_name": "供應商資訊",
+    "cs_tag_oid": "客服標籤對話",
+    "cs_tag_name": "客服標籤對話",
+    "user_message_count": "客服標籤對話",
+    "content": "客服標籤對話",
+    "summary": "AI 判決結果",
+    "our_sentiment": "AI 判決結果",
+    "l1_label": "AI 判決結果",
+    "l2_label": "AI 判決結果",
+    "confidence": "AI 判決結果",
+    "confidence_tier": "AI 判決結果",
+    "prejudge_stage": "AI 判決結果",
+    "model": "AI 判決結果",
+    "prejudged_at": "AI 判決結果",
+    "prompt_version": "AI 判決結果",
+    "polarity_prompt_version": "AI 判決結果",
+    "status": "AI 判決結果",
+    "verdict_at": "AI 判決結果",
+    "verdict_by": "AI 判決結果",
+}
 
 
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
@@ -153,7 +264,7 @@ def _export_cell(key: str, value) -> str:
     """導出單格：時間欄正規化、傾向/分層/初判階段 code→繁中、情緒分數字化，其餘原樣。"""
     if value is None or value == "":
         return ""
-    if key in ("occurred_at", "prejudged_at", "verdict_at"):
+    if key in ("occurred_at", "prejudged_at", "verdict_at", "order_create_time"):
         return fmt_datetime(value)
     if key == "go_date":
         return fmt_datetime(value, date_only=True)
@@ -310,6 +421,8 @@ def export_problems_xlsx(
     rec_oid: str | None = None,
     prod_oid: str | None = None,
     order_oid: str | None = None,
+    bucket: list[str] | None = None,
+    vertical: list[str] | None = None,
     ctx: ExportCtx | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
@@ -319,8 +432,10 @@ def export_problems_xlsx(
 
     Args:
         source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
-        stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid:
-            同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分）。
+        stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid/
+        bucket/vertical:
+            同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分；bucket/vertical
+            僅 conversations 生效）。
         snapshot_model: 輸出結果版本——None/空＝當前初判（現行為）；指定模型＝內容替換為該
             模型的 attribution_history 最新快照（真多模型對比輸出）。篩選仍依**當前初判**圈選
             評論（表級照常、初判級口徑落差以統計表附註揭露）；該模型未初判過的評論整列排除。
@@ -361,6 +476,8 @@ def export_problems_xlsx(
         rec_oid=rec_oid,
         prod_oid=prod_oid,
         order_oid=order_oid,
+        bucket=bucket,
+        vertical=vertical,
         limit=10_000_000,
     )
     rows = data["rows"]
@@ -425,8 +542,10 @@ def export_problems_xlsx(
     total = len(rows)
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
-    cols = _EXPORT_XLSX_COLS + dom_cols + cmp_cols
-    group_spans = _grouped_header_spans(cols)
+    # conversations 專屬 30 欄版面（欄序=CSV 30 欄，五分組）；其餘來源沿用通用 26 欄跨來源版面。
+    conv_mode = source == "conversations"
+    cols = (_CONV_EXPORT_COLS if conv_mode else _EXPORT_XLSX_COLS) + dom_cols + cmp_cols
+    group_spans = _grouped_header_spans(cols, _CONV_COL_GROUPS if conv_mode else _COL_GROUPS)
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)

@@ -10,11 +10,13 @@
 import { computed, toRef } from 'vue';
 import type { CascadeNode } from '@/api';
 import {
+  BUCKET_FILTER_OPTS,
   HAS_EXTERNAL_OPTS,
   POLARITY_FILTER_OPTS,
   STAGE_OPTS,
   STATUS_OPTS,
   TIER_OPTS,
+  VERTICAL_FILTER_OPTS,
   type AttributionFilters,
   type FilterField,
 } from '../constants';
@@ -65,6 +67,8 @@ const FIELD_FLEX: Record<FilterField, string> = {
   recOid: '190px',
   prodOid: '190px',
   orderOid: '190px',
+  bucket: '190px',
+  vertical: '190px',
 };
 const has = (f: FilterField) => props.fields.includes(f);
 
@@ -78,6 +82,8 @@ const SECONDARY_FIELDS: FilterField[] = [
   'model',
   'taxonomy',
   'hasExternal',
+  'bucket',
+  'vertical',
 ];
 const hasPrimary = computed(() => PRIMARY_FIELDS.some((f) => props.fields.includes(f)));
 const hasSecondary = computed(() => SECONDARY_FIELDS.some((f) => props.fields.includes(f)));
@@ -293,6 +299,31 @@ function applyRecentDays(n: number): void {
           placeholder="外部評論"
           class="w-full"
           :options="HAS_EXTERNAL_OPTS"
+          @change="onChange"
+        />
+      </a-col>
+      <!-- 進線分桶 / 商品垂直分類（conversations 專屬直欄篩選）-->
+      <a-col v-if="has('bucket')" :flex="FIELD_FLEX.bucket">
+        <a-select
+          v-model="state.bucket"
+          multiple
+          :size="size"
+          :max-tag-count="1"
+          placeholder="進線分桶"
+          class="w-full"
+          :options="BUCKET_FILTER_OPTS"
+          @change="onChange"
+        />
+      </a-col>
+      <a-col v-if="has('vertical')" :flex="FIELD_FLEX.vertical">
+        <a-select
+          v-model="state.vertical"
+          multiple
+          :size="size"
+          :max-tag-count="1"
+          placeholder="商品垂直分類"
+          class="w-full"
+          :options="VERTICAL_FILTER_OPTS"
           @change="onChange"
         />
       </a-col>

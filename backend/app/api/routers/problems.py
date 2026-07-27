@@ -50,6 +50,8 @@ def get_problems(
     status: str | None = None,
     model: str | None = None,
     has_external: bool | None = None,
+    bucket: str | None = None,
+    vertical: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
     limit: int = 100,
@@ -64,6 +66,8 @@ def get_problems(
     status（判決狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
     model（初判模型 CSV 多選：attributions.model IN——當前初判維度）。
     has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
+    bucket（進線分桶 CSV 多選：conversations 專屬直欄，其餘來源忽略）。
+    vertical（進線商品垂直分類 CSV 多選：conversations 專屬直欄字面值，與 product_verticals 為不同概念，其餘來源忽略）。
     date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
     未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
@@ -85,6 +89,8 @@ def get_problems(
         status=_csv_strs(status),
         model=_csv_strs(model),
         has_external=has_external,
+        bucket=_csv_strs(bucket),
+        vertical=_csv_strs(vertical),
         sort_by=sort_by,
         sort_dir=sort_dir,
         limit=limit,
@@ -118,6 +124,9 @@ class ExportProblemsIn(BaseModel):
     rec_oid: str | None = None
     prod_oid: str | None = None
     order_oid: str | None = None
+    # 進線分桶 / 商品垂直分類（conversations 專屬直欄；其餘來源忽略，與列表篩選對齊）
+    bucket: list[str] | None = None
+    vertical: list[str] | None = None
 
 
 @router.post("/api/problems/export")
@@ -155,6 +164,8 @@ def export_problems(
             rec_oid=body.rec_oid,
             prod_oid=body.prod_oid,
             order_oid=body.order_oid,
+            bucket=body.bucket,
+            vertical=body.vertical,
             ctx=ctx,
         )
 

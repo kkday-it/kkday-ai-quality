@@ -82,7 +82,7 @@ async def upload_inbound(
 
     selections：JSON 字串 `[{"sheet_name","source"}]`（來自 /validate 後用戶勾選）。
     大檔（數萬列）改走背景 job + 前端輪詢 `/api/inbound/upload/status` 畫每表進度條；逐列容錯、
-    壞列跳過並回報原因。product_reviews 走專表 ingestor，其餘來源沿用 intake_items 通用路徑。
+    壞列跳過並回報原因。5 來源統一：原始源列直接 upsert 各自來源專表（見 `upload_batch.py`）。
     """
     content = await file.read()
     try:

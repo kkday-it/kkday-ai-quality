@@ -131,39 +131,44 @@ conversations = Table(
     "conversations",
     metadata,
     Column("session_oid", Text, primary_key=True),  # 特徵 id
-    Column("zendesk_ticket_id", Text),
-    Column("session_date_tw", Text),
-    Column("session_datetime_tw", Text),  # canonical occurred_at
+    Column(
+        "bucket", Text
+    ),  # 分桶字面值（BQ 端預算）：transferred/chatbot_only/human_supplier/human_kkday/human_other
+    Column("inbound_time", Text),  # canonical occurred_at
+    Column("trip_stage", Text),  # canonical trip_stage
+    Column("godate_diff", Text),  # 出發日差字面值（BQ 端預算，整數字串）
+    Column("msg_handler_bucket", Text),  # 處理方字面值：KKDAY/SUPPLIER
+    Column("member_uuid", Text),  # ⚠️ 會員 id（個資）
+    Column("order_oid", Text),  # canonical order_oid
     Column("order_mid", Text),
-    Column("order_oid", Text),
+    Column("order_create_time", Text),
+    Column("order_status_now", Text),
     Column("order_lang", Text),
-    Column("order_price_pay", Text),
+    Column("go_date", Text),  # canonical go_date（出發日）
+    Column("order_price", Text),
     Column("order_profit", Text),
     Column("order_create_source_code", Text),
-    Column("prod_oid", Text),
+    Column("prod_oid", Text),  # canonical prod_oid
     Column("product_name", Text),
-    Column("prod_name_zh_tw", Text),
-    Column("prod_bd_tag_note", Text),
-    Column("product_category", Text),
-    Column("order_go_date", Text),
-    Column("product_timezone", Text),
-    Column("trip_stage", Text),
-    Column("order_status", Text),
-    Column("supplier_oid", Text),
-    Column("supplier_name", Text),
-    Column("msg_handler", Text),
-    Column("review_score", Text),
-    Column("review_content", Text),
-    Column("cs_task_type_name", Text),
-    Column("inbound_session_count", Text),
-    Column("conversation_type", Text),  # canonical channel
-    Column("user_msg_count", Text),
-    Column("agent_msg_count", Text),
-    Column("chatbot_conversation", Text),  # canonical content（併 human_conversation）
-    Column("human_conversation", Text),  # canonical content（併 chatbot_conversation）
-    Column("session_direction", Text),
-    Index("idx_conversations_datetime", "session_datetime_tw"),
+    Column("product_tz", Text),
+    Column("vertical", Text),  # 商品垂直分類字面值（BQ 端預算）
+    Column("bd_tag_cd", Text),
+    Column("bd_tag", Text),
+    Column(
+        "PM", Text
+    ),  # 大寫欄名逐字對齊 CSV 表頭（SQLAlchemy 自動加引號保留大小寫，勿手滑小寫化）
+    Column("product_category", Text),  # canonical product_category
+    Column("supplier_oid", Text),  # canonical supplier_oid
+    Column("supplier_name", Text),  # canonical supplier_name
+    Column("cs_tag_oid", Text),
+    Column("cs_tag_name", Text),
+    Column("user_message_count", Text),
+    Column("conversation_full", Text),  # canonical content（初判主輸入）
+    Index("idx_conversations_inbound_time", "inbound_time"),
     Index("idx_conversations_prod_oid", "prod_oid"),
+    Index("idx_conversations_bucket", "bucket"),
+    Index("idx_conversations_vertical", "vertical"),
+    Index("idx_conversations_product_category", "product_category"),
 )
 
 freshdesk_tickets = Table(

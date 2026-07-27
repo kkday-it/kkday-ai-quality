@@ -577,7 +577,7 @@ def start_job(
         eff: effective LLM dict（settings.effective_llm_dict 產；含 model/token/reasoning）。
         model: 主初判模型名（Stage2/2b；stub 模式引擎自走啟發式）。
         source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
-            None＝沿用 intake_items 舊行為）。
+            None＝不限定來源的舊版相容路徑）。
         triggered_by: 觸發人（user email；歸因歷史落庫）。
         kind: 觸發型態（batch/selected/single；歸因歷史落庫，端點解析）。
         rejudge: 標的先前已有初判（本次為重新初判；端點判定）。

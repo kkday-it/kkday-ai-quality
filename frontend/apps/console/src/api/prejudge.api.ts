@@ -33,6 +33,10 @@ export interface GetProblemsParams {
   hasExternal?: string;
   /** 歸因分類過濾（多選任意層級 code；後端 l1/l2_code 任一 IN 命中＝子樹語義）。 */
   taxonomy?: string[];
+  /** 進線分桶過濾（多選；conversations 專屬直欄，其餘來源忽略）。 */
+  bucket?: string[];
+  /** 進線商品垂直分類過濾（多選；conversations 專屬直欄字面值，與 productVerticals 為不同概念）。 */
+  vertical?: string[];
   /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
   sortBy?: string;
   /** 排序方向（asc/desc；預設 desc）。 */
@@ -65,6 +69,8 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.status?.length) q.set('status', params.status.join(','));
   if (params.model?.length) q.set('model', params.model.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
+  if (params.bucket?.length) q.set('bucket', params.bucket.join(','));
+  if (params.vertical?.length) q.set('vertical', params.vertical.join(','));
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);
@@ -109,6 +115,9 @@ export const startProblemsExport = (p: {
   rec_oid?: string;
   prod_oid?: string;
   order_oid?: string;
+  /** 進線分桶 / 商品垂直分類（conversations 專屬直欄；其餘來源忽略，與列表篩選對齊）。 */
+  bucket?: string[];
+  vertical?: string[];
 }): Promise<{ job_id: string; filename: string }> =>
   j<{ job_id: string; filename: string }>(`${BASE}/problems/export`, {
     method: 'POST',

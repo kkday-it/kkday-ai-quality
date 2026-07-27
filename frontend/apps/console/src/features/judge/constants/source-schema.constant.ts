@@ -53,6 +53,16 @@ export interface HasExternalFilterDef {
   type: 'hasExternal';
 }
 
+/** 進線分桶篩選（多選；conversations 專屬直欄，選項來自 BUCKET_LABELS）。 */
+export interface BucketFilterDef {
+  type: 'bucket';
+}
+
+/** 進線商品垂直分類篩選（多選；conversations 專屬直欄字面值，與 productVertical 為不同概念）。 */
+export interface InboundVerticalFilterDef {
+  type: 'vertical';
+}
+
 /** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
 export type SourceFilterDef =
   | PolarityFilterDef
@@ -63,7 +73,9 @@ export type SourceFilterDef =
   | TaxonomyFilterDef
   | HasExternalFilterDef
   | ProductVerticalFilterDef
-  | DateRangeFilterDef;
+  | DateRangeFilterDef
+  | BucketFilterDef
+  | InboundVerticalFilterDef;
 
 /** 關聯資料欄可顯示的段落（依來源裁剪：如 conversations 無方案/旅客，改顯進線屬性段）。 */
 export type ContextSection = 'order' | 'product' | 'package' | 'supplier' | 'traveller' | 'inbound';
@@ -190,11 +202,13 @@ const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];
 
-/** 組某來源的篩選：共用集（+ product_reviews 專屬「有無外部評論」）。 */
+/** 組某來源的篩選：共用集（+ product_reviews 專屬「有無外部評論」；+ conversations 專屬「分桶／商品垂直分類」）。 */
 function filtersFor(source: string): SourceFilterDef[] {
   const base = [...BASE_FILTERS];
   // 有無外部評論：僅 product_reviews 有融合欄（sentiment/free_tag）
   if (source === 'product_reviews') base.push({ type: 'hasExternal' });
+  // 分桶／商品垂直分類：僅 conversations 有直欄（bucket/vertical）
+  if (source === 'conversations') base.push({ type: 'bucket' }, { type: 'vertical' });
   return base;
 }
 

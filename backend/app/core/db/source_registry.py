@@ -44,7 +44,7 @@ _REGISTRY: dict[str, SourceSpec] = {
         table=T.conversations,
         natural_key="session_oid",
         category_col="product_category",
-        date_col="session_datetime_tw",
+        date_col="inbound_time",
     ),
     "freshdesk_tickets": SourceSpec(
         source="freshdesk_tickets",

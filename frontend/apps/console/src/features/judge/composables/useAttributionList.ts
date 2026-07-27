@@ -179,6 +179,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
       if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
       if (!filterTypes.has('dateRange')) filters.dateRange = [];
+      if (!filterTypes.has('bucket')) filters.bucket = [];
+      if (!filterTypes.has('vertical')) filters.vertical = [];
       // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
       filters.recOid = '';
       filters.prodOid = '';
@@ -263,6 +265,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           snapshot_model: exportSnapshotModel.value || undefined,
           compare_models: exportCompareModels.value.length ? exportCompareModels.value : undefined,
           taxonomy: p.taxonomy,
+          bucket: p.bucket,
+          vertical: p.vertical,
           has_external: p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
           date_from: p.dateFrom,
           date_to: p.dateTo,
