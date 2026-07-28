@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { controlForField, defaultCorrection } from './reviewControl.util';
+import { controlForField, defaultCorrection, optionsUnderParent } from './reviewControl.util';
 
 /** 貼近後端 output_schema 真實形狀的最小樣本（欄名/約束取自 prompt_debug.output_schema）。 */
 const schema = {
@@ -90,5 +90,50 @@ describe('defaultCorrection', () => {
     expect(defaultCorrection({ kind: 'number', min: 2 }, 'x')).toBe(2);
     expect(defaultCorrection({ kind: 'tags' }, null)).toEqual([]);
     expect(defaultCorrection({ kind: 'textarea' }, null)).toBe('');
+  });
+});
+
+describe('optionsUnderParent', () => {
+  /** 貼近後端 output_cascade 的最小樣本：L1 theme → L2 category → L3 likely_cause。 */
+  const cascade = {
+    category: {
+      parent: 'theme',
+      options_by_parent: {
+        '[101] 訂單取消': ['退款進度/狀態不透明', '取消政策本身僵化'],
+        '[93] 訂單申請修改': ['特殊需求/加購無自助入口'],
+        '其他': ['__OUT_OF_TAXONOMY__'],
+      },
+    },
+    likely_cause: {
+      parent: 'category',
+      options_by_parent: {
+        退款進度或狀態不透明: ['退款作業時程長', 'unclear'],
+        __OUT_OF_TAXONOMY__: ['n/a'],
+      },
+    },
+  };
+
+  it('依已選上層值收窄到該分支底下', () => {
+    expect(optionsUnderParent(cascade, 'category', '[101] 訂單取消')).toEqual([
+      '退款進度/狀態不透明',
+      '取消政策本身僵化',
+    ]);
+    expect(optionsUnderParent(cascade, 'category', '[93] 訂單申請修改')).toEqual([
+      '特殊需求/加購無自助入口',
+    ]);
+  });
+
+  it('OOT 兩層都只剩單一合法值', () => {
+    expect(optionsUnderParent(cascade, 'category', '其他')).toEqual(['__OUT_OF_TAXONOMY__']);
+    expect(optionsUnderParent(cascade, 'likely_cause', '__OUT_OF_TAXONOMY__')).toEqual(['n/a']);
+  });
+
+  // 回 null（而非空陣列）讓呼叫端退回攤平值域——空陣列會把選單清空，人就卡住無法填正解
+  it('無級聯規則／上層值不在表內／上層未選 → null 表示不限縮', () => {
+    expect(optionsUnderParent(cascade, 'sentiment', 'positive')).toBeNull();
+    expect(optionsUnderParent(cascade, 'category', '[999]不存在的主題')).toBeNull();
+    expect(optionsUnderParent(cascade, 'category', '')).toBeNull();
+    expect(optionsUnderParent(cascade, 'category', undefined)).toBeNull();
+    expect(optionsUnderParent(undefined, 'category', '[101] 訂單取消')).toBeNull();
   });
 });

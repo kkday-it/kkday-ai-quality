@@ -73,6 +73,39 @@ export function controlForField(
   return { kind: 'textarea', minLength: field.minLength, maxLength: field.maxLength };
 }
 
+/** 單一下層欄位的級聯規則（後端 `output_cascade` 的一項）。 */
+export interface CascadeRule {
+  /** 上層欄位鍵（category 的父是 theme、likely_cause 的父是 category）。 */
+  parent: string;
+  /** 上層值 → 該分支底下的可選清單。 */
+  options_by_parent: Record<string, string[]>;
+}
+
+/** 後端 `output_cascade` 全文：下層欄位鍵 → 級聯規則。 */
+export type OutputCascade = Record<string, CascadeRule>;
+
+/**
+ * 取某欄在指定上層值底下的可選清單。
+ *
+ * 用途是把「填正解」的下拉限縮到已選上層的分支——schema enum 是攤平的全域值域，
+ * 直接用會讓人挑得到 theme 與 category 不相配的組合（`validate_result` 雖然擋得下來，
+ * 但那已經是存檔當下，回頭改成本高）。
+ *
+ * @param cascade 後端 `output_cascade`；未提供＝後端還沒回來或該版本沒有級聯資料
+ * @param key 要限縮的欄位鍵
+ * @param parentValue 上層欄位當前有效的值
+ * @returns 該分支底下的可選清單；此欄無級聯規則、或上層值不在表內（人還沒選 / 值已過期）時回 `null` 表示不限縮
+ */
+export function optionsUnderParent(
+  cascade: OutputCascade | undefined,
+  key: string,
+  parentValue: unknown,
+): string[] | null {
+  const rule = cascade?.[key];
+  if (!rule || typeof parentValue !== 'string') return null;
+  return rule.options_by_parent[parentValue] ?? null;
+}
+
 /**
  * 標錯某欄時，正解輸入框的預填值。
  *

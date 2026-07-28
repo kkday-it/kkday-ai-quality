@@ -13,7 +13,7 @@ def _base_result(**overrides):
     """一筆合法的非 OOT 判定（單一契約：全欄禁 null、keywords 陣列、urgency 1–5）。"""
     value = {
         "category": "憑證/取票資訊未送達或不知如何使用",
-        "theme": "[104]訂單確認問題",
+        "theme": "[104] 訂單確認問題",
         "likely_cause": "憑證送達延遲",
         "modify_target": "n/a",
         "summary": "旅客出發前仍未收到電子票，要求協助確認送達時程。",
@@ -70,6 +70,40 @@ def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
     )
 
 
+def test_output_cascade_narrows_each_level_to_its_parent_branch() -> None:
+    """L1→L2→L3 級聯由 SSOT 派生：下層清單必須是上層那一支底下的值，且與 schema enum 同源。"""
+    taxonomy = prompt_debug.load_taxonomy()
+    cascade = prompt_debug.output_cascade(taxonomy)
+    schema = prompt_debug.output_schema(taxonomy)
+
+    assert cascade["category"]["parent"] == "theme"
+    assert cascade["likely_cause"]["parent"] == "category"
+
+    by_theme = cascade["category"]["options_by_parent"]
+    # 5 個主題 + OOT 分支；攤平後恰為 schema 的 category enum（不多不少，證明沒有漏掛的類）
+    assert len(by_theme) == 6
+    assert sorted(c for opts in by_theme.values() for c in opts) == sorted(
+        schema["properties"]["category"]["enum"]
+    )
+    assert by_theme["其他"] == ["__OUT_OF_TAXONOMY__"]
+
+    # 每個 category 都掛在自己 theme 底下（抽一類驗證，避免只是形狀對但歸屬錯）
+    assert "取消政策揭露不清" in by_theme["[101] 訂單取消"]
+    assert "取消政策揭露不清" not in by_theme["[93] 訂單申請修改"]
+
+    by_category = cascade["likely_cause"]["options_by_parent"]
+    assert by_category["__OUT_OF_TAXONOMY__"] == ["n/a"]
+    for row in taxonomy["categories"]:
+        assert by_category[row["name"]] == row["likely_causes"]
+
+
+def test_defaults_payload_carries_cascade_for_review_controls() -> None:
+    """人工評判的下拉靠 payload 的 output_cascade 收窄，缺了它 L2 會退回攤平的 25 類。"""
+    payload = prompt_debug.defaults_payload()
+    assert payload["output_cascade"]["category"]["parent"] == "theme"
+    assert payload["output_cascade"]["likely_cause"]["parent"] == "category"
+
+
 def test_slashes_inside_controlled_causes_are_not_split() -> None:
     taxonomy = prompt_debug.load_taxonomy()
     causes = {cause for category in taxonomy["categories"] for cause in category["likely_causes"]}
@@ -90,16 +124,16 @@ def test_validate_result_enforces_summary_length_from_field_definition() -> None
 
 def test_validate_result_rejects_cross_category_cause_and_theme() -> None:
     issues = prompt_debug.validate_result(
-        _base_result(theme="[101]訂單取消", likely_cause="退款作業時程長")
+        _base_result(theme="[101] 訂單取消", likely_cause="退款作業時程長")
     )
-    assert "theme 必須是 [104]訂單確認問題" in issues
+    assert "theme 必須是 [104] 訂單確認問題" in issues
     assert "likely_cause 不屬於該 category 的受控選項" in issues
 
 
 def test_validate_result_accepts_oot_contract() -> None:
     value = _base_result(
         category="__OUT_OF_TAXONOMY__",
-        theme="OOT跳出",
+        theme="其他",
         likely_cause="n/a",
     )
     assert prompt_debug.validate_result(value) == []
@@ -112,7 +146,7 @@ def test_validate_result_enforces_no_actionable_content_linkage() -> None:
     )
     value = _base_result(
         category="__OUT_OF_TAXONOMY__",
-        theme="OOT跳出",
+        theme="其他",
         likely_cause="n/a",
         no_actionable_content=True,
         keywords=[],
@@ -123,7 +157,7 @@ def test_validate_result_enforces_no_actionable_content_linkage() -> None:
 def test_validate_result_requires_modify_target_for_93() -> None:
     value = _base_result(
         category="修改受限（商品規則/供應商政策不允許改）",
-        theme="[93]訂單申請修改",
+        theme="[93] 訂單申請修改",
         likely_cause="商品規則不允許改",
     )
     assert "[93] category 必須填 modify_target（不可為 n/a）" in prompt_debug.validate_result(value)

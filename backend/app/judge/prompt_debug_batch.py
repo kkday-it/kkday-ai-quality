@@ -219,7 +219,8 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
     allowed = {
         "likely_cause": not is_oot,
         # 認 theme_code 前綴、不比對全稱：全稱由 config SSOT 的 theme_code+theme_label 拼出
-        # （目前為「[93]訂單申請修改」無空格），寫死全稱曾因多一個空格而讓 [93] 的 modify_target 全被清空
+        # （現為「[93] 訂單申請修改」，2026-07-28 起碼名之間有一個空格），寫死全稱曾因多一個
+        # 空格而讓 [93] 的 modify_target 全被清空——那次的空格後來真的加進來了，這行前綴比對是唯一沒被波及的原因
         "modify_target": str(parsed.get("theme") or "").startswith("[93]"),
     }
     row: dict[str, Any] = {columns[0]: item_id}

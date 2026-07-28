@@ -10,13 +10,21 @@
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { createPromptDebugReview } from '@/api';
-import { controlForField, defaultCorrection, type ReviewControl } from '../utils';
+import {
+  controlForField,
+  defaultCorrection,
+  optionsUnderParent,
+  type OutputCascade,
+  type ReviewControl,
+} from '../utils';
 
 const props = defineProps<{
   /** 要評判的欄位（key/label/hint + AI 判的值）；來源＝呼叫端依 output_fields 過濾後的結果卡。 */
   fields: Array<{ key: string; label: string; hint: string; value: unknown }>;
   /** 後端 output_schema 全文，用來推導每欄填正解的控件與值域。 */
   schema?: Record<string, unknown>;
+  /** 後端 output_cascade：把 L2/L3 的選單限縮在已選 L1/L2 底下（見 `optionsUnderParent`）。 */
+  cascade?: OutputCascade;
   /** AI 判定全文（存進案例的 ai_output；與 fields 的差別是它不受顯示過濾影響）。 */
   aiOutput: Record<string, unknown>;
   /** 當時的調試文本原文。 */
@@ -43,9 +51,28 @@ const corrections = ref<Record<string, any>>({});
 const comment = ref('');
 const saving = ref(false);
 
-/** 每欄的控件（schema 不變就不用重算）。 */
+/**
+ * 某欄「當前有效的值」＝標錯且填了正解就以正解為準，否則沿用 AI 原判。
+ *
+ * 級聯要跟著人最終會存下去的值走：L1 標錯改成 [101] 後，L2 的選單就該是 [101] 底下那幾類，
+ * 而不是還跟著 AI 判錯的 [93]。
+ */
+function effectiveValue(key: string): unknown {
+  return verdicts.value[key] === 'bad' ? corrections.value[key] : props.aiOutput[key];
+}
+
+/** 每欄的控件；受控 select 若有級聯規則，值域再依當前有效的上層值收窄。 */
 const controls = computed<Record<string, ReviewControl>>(() =>
-  Object.fromEntries(props.fields.map((f) => [f.key, controlForField(props.schema, f.key)])),
+  Object.fromEntries(
+    props.fields.map((f) => {
+      const control = controlForField(props.schema, f.key);
+      const rule = props.cascade?.[f.key];
+      if (control.kind !== 'select' || !rule) return [f.key, control];
+      const narrowed = optionsUnderParent(props.cascade, f.key, effectiveValue(rule.parent));
+      // 上層還沒選（或值不在表內）→ narrowed 為 null，維持攤平值域，不要把選單清空卡住評判
+      return [f.key, narrowed ? { kind: 'select', options: narrowed } : control];
+    }),
+  ),
 );
 
 /** 模板用的扁平控件描述：值域全部攤成具名欄位，模板才不必寫型別斷言（vue-tsc 解析不了）。 */
@@ -102,6 +129,22 @@ watch(
     comment.value = '';
   },
 );
+
+/**
+ * 上層正解一改，已填的下層正解可能已不屬於新分支——就地清掉，逼人重選。
+ *
+ * 留著會存出 theme 與 category 不相配的案例（後端 `validate_result` 擋得下來，但那時
+ * 人已經離開這一題了）。清成空字串會被 `missingKeys` 擋在存檔前，比靜默存錯值好。
+ */
+watch(controls, (next) => {
+  for (const [key, control] of Object.entries(next)) {
+    if (control.kind !== 'select') continue;
+    const value = corrections.value[key];
+    if (typeof value === 'string' && value && !control.options.includes(value)) {
+      corrections.value[key] = '';
+    }
+  }
+});
 
 /** a-radio-group 的 change 回呼型別是 unknown，在此收窄，模板才不必寫斷言。 */
 function onVerdictChange(key: string, value: unknown): void {

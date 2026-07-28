@@ -431,6 +431,7 @@ function openLlmSettings(): void {
               v-if="displayedResults.length && result.parsed"
               :fields="displayedResults"
               :schema="defaults?.output_schema"
+              :cascade="defaults?.output_cascade"
               :ai-output="result.parsed"
               :conversation="inputText"
               :prompt-version="isEdited ? '' : (defaults?.prompt_version ?? '')"

@@ -10,6 +10,15 @@ export interface PromptDebugDefaults {
   /** 最新版 system prompt 全文。 */
   system_prompt: string;
   output_schema: Record<string, unknown>;
+  /**
+   * 受控欄的上下層級聯（L1 theme → L2 category → L3 likely_cause）：
+   * 下層欄位鍵 → `{ parent: 上層欄位鍵, options_by_parent: 各上層值底下的可選清單 }`。
+   * schema 的 enum 是攤平的全域值域，填正解時要靠這份把選單限縮到已選上層底下。
+   */
+  output_cascade: Record<
+    string,
+    { parent: string; options_by_parent: Record<string, string[]> }
+  >;
   output_fields: Array<{
     key: string;
     label: string;

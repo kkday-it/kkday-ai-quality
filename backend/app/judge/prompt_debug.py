@@ -31,10 +31,20 @@ _TAXONOMY_FILE = AI_JUDGE_DIR / "after_sales_root_cause.json"
 # 送 Structured Outputs 的 schema 標籤（非檔名，僅供 API 端回報用）
 _SCHEMA_NAME = "after_sales_root_cause"
 
+# 跳出分支的兩個受控值。theme 於 2026-07-28 由「OOT跳出」改為「其他」——對齊裁判表寫法，也與
+# category 落表層早已把 __OUT_OF_TAXONOMY__ 顯示成「其他」的口徑一致（原本兩邊各講各的）。
+# 收成模組常數而非散在 schema／級聯／校驗各處：這串是模型要逐字輸出的值，漏改一處就是靜默錯配。
+_OOT_THEME = "其他"
+_OOT_CATEGORY = "__OUT_OF_TAXONOMY__"
+
 # 與裁判表首列的 AI 判定欄位同序：keywords 陣列全量填、urgency 1–5 整數、
 # no_actionable_content、全欄禁 null（不適用填 n/a）。
 OUTPUT_FIELDS = [
-    {"key": "theme", "label": "根因主題（AI 判定，L1）", "hint": "主題代碼與名稱；OOT 為 OOT跳出"},
+    {
+        "key": "theme",
+        "label": "根因主題（AI 判定，L1）",
+        "hint": "主題代碼與名稱（碼與名之間一個空格）；跳出為 其他",
+    },
     {
         "key": "category",
         "label": "根因分類（AI 判定，L2）",
@@ -96,7 +106,47 @@ def _category_map(taxonomy: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _theme_value(row: dict[str, Any]) -> str:
-    return f"{row['theme_code']}{row['theme_label']}"
+    """主題代碼與名稱間留一個空格（`[119] 單據/發票`）——2026-07-28 起對齊裁判表寫法。
+
+    ⚠️ 判斷「是不是 [93]」一律比對 `theme_code` 前綴、不要拿全稱去比（見 `prompt_debug_batch._csv_row`）：
+    這個空格正是那裡踩過的坑。
+    """
+    return f"{row['theme_code']} {row['theme_label']}"
+
+
+def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """受控欄的上下層級聯關係（L1 theme → L2 category → L3 likely_cause）。
+
+    schema 的 enum 是**攤平**的全域值域（`output_schema` 刻意讓 likely_cause 跨類 flat，
+    免得 strict schema 在邊界類扭曲取樣），但人在調試台填正解時不該看到攤平清單——選了
+    `[101] 訂單取消` 卻還能挑到 [93] 的 category，等於把 `validate_result` 才擋得下來的
+    錯誤留到存檔當下才報。這份映射就是給填正解的控件用的「已選上層 → 下層可選值」。
+
+    回傳形狀刻意做成**通用結構**（下層欄位鍵 → `{parent, options_by_parent}`）而非寫死
+    `theme_to_categories` 之類的具名鍵：前端照著它長控件即可，未來新增條件式欄位不必兩邊同步改。
+
+    Args:
+        taxonomy: 分類 SSOT；省略時現讀。
+
+    Returns:
+        `{下層欄位鍵: {"parent": 上層欄位鍵, "options_by_parent": {上層值: [下層值]}}}`。
+    """
+    taxonomy = taxonomy or load_taxonomy()
+    categories = taxonomy.get("categories", [])
+
+    theme_to_categories: dict[str, list[str]] = {}
+    category_to_causes: dict[str, list[str]] = {}
+    for row in categories:
+        theme_to_categories.setdefault(_theme_value(row), []).append(str(row["name"]))
+        category_to_causes[str(row["name"])] = list(row.get("likely_causes", []))
+    # OOT 分支不在 categories 裡，但它同樣是一組合法的 L1→L2→L3 路徑（兩層都只有一個值）
+    theme_to_categories[_OOT_THEME] = [_OOT_CATEGORY]
+    category_to_causes[_OOT_CATEGORY] = ["n/a"]
+
+    return {
+        "category": {"parent": "theme", "options_by_parent": theme_to_categories},
+        "likely_cause": {"parent": "category", "options_by_parent": category_to_causes},
+    }
 
 
 def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -107,8 +157,8 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     taxonomy = taxonomy or load_taxonomy()
     categories = taxonomy.get("categories", [])
-    category_values = [row["name"] for row in categories] + ["__OUT_OF_TAXONOMY__"]
-    theme_values = list(dict.fromkeys(_theme_value(row) for row in categories)) + ["OOT跳出"]
+    category_values = [row["name"] for row in categories] + [_OOT_CATEGORY]
+    theme_values = list(dict.fromkeys(_theme_value(row) for row in categories)) + [_OOT_THEME]
     likely_values = list(
         dict.fromkeys(cause for row in categories for cause in row.get("likely_causes", []))
     ) + ["n/a"]
@@ -184,6 +234,7 @@ def defaults_payload() -> dict[str, Any]:
         "system_prompt": prompt_debug_versions.latest_prompt(),
         "output_fields": OUTPUT_FIELDS,
         "output_schema": output_schema(taxonomy),
+        "output_cascade": output_cascade(taxonomy),
         "taxonomy_version": taxonomy["version"],
         "category_count": len(taxonomy["categories"]),
         "theme_count": len(taxonomy["themes"]),
@@ -214,9 +265,9 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
         if not 2 <= len(word) <= 6
     )
 
-    if value["category"] == "__OUT_OF_TAXONOMY__":
-        if value["theme"] != "OOT跳出":
-            issues.append("OOT 的 theme 必須是 OOT跳出")
+    if value["category"] == _OOT_CATEGORY:
+        if value["theme"] != _OOT_THEME:
+            issues.append(f"跳出的 theme 必須是 {_OOT_THEME}")
         if value["likely_cause"] != "n/a":
             issues.append("OOT 的 likely_cause 必須是 n/a")
         if value["modify_target"] != "n/a":
@@ -238,7 +289,7 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
     if not is_modify and value["modify_target"] != "n/a":
         issues.append("非 [93] category 的 modify_target 必須是 n/a")
     if value["no_actionable_content"]:
-        issues.append("no_actionable_content=true 時 category 必須是 __OUT_OF_TAXONOMY__")
+        issues.append(f"no_actionable_content=true 時 category 必須是 {_OOT_CATEGORY}")
     if not keywords:
         issues.append("非 OOT 的 keywords 至少 1 個")
     return issues
