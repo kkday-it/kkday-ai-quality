@@ -1,6 +1,7 @@
 // 歸因列表資料與互動邏輯（分頁 / 篩選 / 選取 / 初判歸因批次 / CSV 導出）——由 AttributionList.vue 下沉，
 // 使頁面薄化為模板+綁定；來源切換時整組篩選按新 schema 清空殘留值。
 import { computed, reactive, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
+import { useLocalStorage } from '@vueuse/core';
 import {
   startProblemsExport,
   patchStatus,
@@ -19,6 +20,7 @@ import {
   filtersToParams,
   schemaFor,
   type Attribution,
+  type AttributionFilters,
   type ProblemRow,
 } from '../constants';
 import { exportName } from '../utils';
@@ -53,7 +55,21 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   // ── 篩選狀態（單一 reactive 物件＝SSOT；工具列/導出/初判共用 AttributionFilterBar 綁定此形狀）──
   // 各來源 schema 決定哪些欄位生效；切來源時一併清空殘留值（見下方 watch）。
-  const filters = reactive(emptyFilters());
+  // 持久化跨 session（比照全局垂直分類 store 的 localStorage 慣例，見 verticalFilter.store）：獨立
+  // useLocalStorage ref 鏡射 filters，deep watch 寫回；filters 本身維持 reactive 物件 identity 不變，
+  // 呼叫端既有 v-model / Object.assign 綁定不用改。mergeDefaults 保新增欄位時舊 localStorage 資料相容。
+  const FILTERS_STORAGE_KEY = 'aiq.attributionList.filters';
+  const persistedFilters = useLocalStorage<AttributionFilters>(FILTERS_STORAGE_KEY, emptyFilters(), {
+    mergeDefaults: true,
+  });
+  const filters = reactive(cloneFilters(persistedFilters.value));
+  watch(
+    filters,
+    () => {
+      persistedFilters.value = cloneFilters(filters);
+    },
+    { deep: true },
+  );
   const cascadeOptions = ref<CascadeNode[]>([]); // 歸因分類級聯選項（全局 L1→L2 樹，載一次共用）
   /** 載入歸因分類級聯樹（初始一次；全局分類與來源無關）；失敗回空不阻斷列表。 */
   const loadCascadeOptions = async () => {
@@ -165,21 +181,30 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     loadUnjudged();
   };
 
+  /** 依當前來源 schema 清空不支援的篩選欄位（type 名對齊 source-schema 的 filter type）；
+   *  切來源 watch 與「還原 localStorage 後校驗一次」共用，避免另一來源的殘留值誤帶入查詢。 */
+  const clearIncompatibleFilters = () => {
+    const filterTypes = new Set(schema.value.filters.map((f) => f.type));
+    if (!filterTypes.has('polarity')) filters.polarity = [];
+    if (!filterTypes.has('stage')) filters.stage = [];
+    if (!filterTypes.has('tier')) filters.tier = '';
+    if (!filterTypes.has('status')) filters.status = [];
+    if (!filterTypes.has('model')) filters.model = [];
+    if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
+    if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
+    if (!filterTypes.has('dateRange')) filters.dateRange = [];
+    if (!filterTypes.has('bucket')) filters.bucket = [];
+  };
+  // 篩選現已持久化（見上），還原後先按當前（預設）來源 schema 校驗一次：source 本身不持久化，
+  // 重整一律回到預設來源，若 localStorage 殘留另一來源專屬欄位（如 conversations 的 bucket），
+  // 需在首次查詢前清掉，避免送出當前來源不支援的參數。
+  clearIncompatibleFilters();
+
   // 切換來源：整組篩選按新 schema 清空殘留值（避免舊來源篩選值誤帶入新來源查詢）
   watch(
     () => toValue(source),
     () => {
-      const filterTypes = new Set(schema.value.filters.map((f) => f.type));
-      // schema-gated 欄位：新來源不支援者清空（type 名對齊 source-schema 的 filter type）
-      if (!filterTypes.has('polarity')) filters.polarity = [];
-      if (!filterTypes.has('stage')) filters.stage = [];
-      if (!filterTypes.has('tier')) filters.tier = '';
-      if (!filterTypes.has('status')) filters.status = [];
-      if (!filterTypes.has('model')) filters.model = [];
-      if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
-      if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
-      if (!filterTypes.has('dateRange')) filters.dateRange = [];
-      if (!filterTypes.has('bucket')) filters.bucket = [];
+      clearIncompatibleFilters();
       // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
       filters.recOid = '';
       filters.prodOid = '';
@@ -189,9 +214,13 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     },
   );
 
-  // 全局垂直分類（選中）變更 → 列表 + 未初判 count 即時重載（縱覽頁另有自己的 watch）。
+  // 全局垂直分類變更 → 列表 + 未初判 count 即時重載。watch 生效篩選 activeGroups（非原始
+  // filter）：重整頁面時 filter 已同步從 localStorage 還原，但驗證用的 allOptions 選項池要靠
+  // loadOptions() 非同步載入，此時 activeGroups 暫為空陣列；若 watch 原始 filter，等 allOptions
+  // 載入完成、activeGroups 才變回正確值時 filter 本身沒變，watch 不會觸發，導致 checkbox 顯示
+  // 已選但查詢仍未套用篩選。縱覽頁 useAttributionDashboard 已用 activeGroups，此處比照修正。
   watch(
-    () => verticalFilter.filter,
+    () => verticalFilter.activeGroups,
     () => onFilterChange(),
     { deep: true },
   );
