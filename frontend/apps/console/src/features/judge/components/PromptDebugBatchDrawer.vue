@@ -25,7 +25,7 @@ import {
   type PromptDebugBatchStatus,
 } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
-import { fmtDt } from '../utils';
+import { fmtBeijingDt } from '../utils';
 
 const props = defineProps<{
   /** 是否顯示。 */
@@ -170,7 +170,9 @@ async function onStart(): Promise<void> {
       workers: form.workers,
       overrides: props.overrides,
     });
-    Message.success(`跑批已啟動：${snap.run_id}（目標 ${snap.total} 條，斷點復用 ${snap.resumed}）`);
+    Message.success(
+      `跑批已啟動：${snap.run_id}（目標 ${snap.total} 條，斷點復用 ${snap.resumed}）`,
+    );
     activeSnap.value = snap;
     track(snap.run_id);
     await refreshRuns();
@@ -207,7 +209,10 @@ async function onCancel(runId: string): Promise<void> {
   }
 }
 
-async function onDownload(run: PromptDebugBatchRunRow, kind: PromptDebugBatchFileKind): Promise<void> {
+async function onDownload(
+  run: PromptDebugBatchRunRow,
+  kind: PromptDebugBatchFileKind,
+): Promise<void> {
   try {
     const blob = await downloadPromptDebugBatchFile(run.run_id, kind);
     const names: Record<PromptDebugBatchFileKind, string> = {
@@ -260,8 +265,9 @@ watch(
       本批將鎖定啟動當下的配置：Prompt
       <b>{{ promptEdited ? '頁面臨時編輯版（未存檔）' : `最新版 ${promptVersion || '—'}` }}</b>
       （<b>{{ systemPrompt.length.toLocaleString() }}</b> 字元）· 模型
-      <b>{{ model || '（功能區默認）' }}</b>；產物落在
-      <code>data/prompt_debug_batch/&lt;run_id&gt;/</code>（jsonl 逐筆斷點，中斷可續跑）。
+      <b>{{ model || '（功能區默認）' }}</b
+      >；產物落在 <code>data/prompt_debug_batch/&lt;run_id&gt;/</code>（jsonl
+      逐筆斷點，中斷可續跑）。
     </a-alert>
 
     <!-- 新跑批表單 -->
@@ -372,7 +378,9 @@ watch(
       </div>
 
       <a-alert v-if="activeSnap.error" type="error" class="mt-3">{{ activeSnap.error }}</a-alert>
-      <a-alert v-for="w in activeSnap.warnings" :key="w" type="warning" class="mt-2">{{ w }}</a-alert>
+      <a-alert v-for="w in activeSnap.warnings" :key="w" type="warning" class="mt-2">{{
+        w
+      }}</a-alert>
 
       <div v-if="activeSnap.recent.length" class="recent-list mt-3">
         <div
@@ -401,7 +409,8 @@ watch(
           :header="`失敗明細 ${activeSnap.failed_items.length}${activeSnap.failed_items_truncated ? '+' : ''} 筆`"
         >
           <div v-for="f in activeSnap.failed_items" :key="f.item_id" class="text-xs text-[#4e5969]">
-            <span class="font-medium">{{ f.item_id }}</span>：{{ f.error }}
+            <span class="font-medium">{{ f.item_id }}</span
+            >：{{ f.error }}
           </div>
         </a-collapse-item>
       </a-collapse>
@@ -425,9 +434,9 @@ watch(
         :scroll="{ x: 860 }"
       >
         <template #columns>
-          <a-table-column title="時間" :width="150">
+          <a-table-column title="時間（北京）" :width="150">
             <template #cell="{ record }">
-              <div class="text-xs">{{ fmtDt(record.created_at) }}</div>
+              <div class="text-xs">{{ fmtBeijingDt(record.created_at) }}</div>
               <div class="text-[11px] text-[#86909c]">{{ record.run_id }}</div>
             </template>
           </a-table-column>
@@ -435,7 +444,8 @@ watch(
             <template #cell="{ record }">
               <div class="truncate text-xs" :title="record.input_name">{{ record.input_name }}</div>
               <div class="text-[11px] text-[#86909c]">
-                offset {{ record.offset }} · limit {{ record.limit || '全部' }} · {{ record.workers }} 併發
+                offset {{ record.offset }} · limit {{ record.limit || '全部' }} ·
+                {{ record.workers }} 併發
               </div>
             </template>
           </a-table-column>
