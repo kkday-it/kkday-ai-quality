@@ -34,35 +34,32 @@ import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import {
   AttributionDetailDrawer,
   AttributionFilterBar,
+  ExternalReviewPanel,
   PrejudgeLogView,
   PromptSandboxDrawer,
   PromptVersionPickerGroup,
+  RecordContextPanel,
 } from '../components';
 import { useAttributionList, useFindingNotes, useRejudgeConfirm } from '../composables';
 import {
-  BUCKET_COLORS,
-  BUCKET_LABELS,
   CONF_TIER_CLASS,
   DIALOGUE_ROLE_COLORS,
   DIALOGUE_ROLE_LABELS,
   DIALOGUE_SEGMENT_LABELS,
   idPlaceholderFor,
-  INBOUND_TRIP_STAGE_LABELS,
-  MSG_HANDLER_BUCKET_LABELS,
   POLARITY_COLOR,
   POLARITY_LABELS,
+  SECTION_LABEL_CLASS,
   SOURCES,
   STAGE_COLOR,
   STAGE_LABELS,
   STATUS_COLOR,
   STATUS_LABEL,
   TIER_LABELS,
-  TRAVELLER_TYPE_LABELS,
-  type ContextSection,
   type FilterField,
   type ProblemRow,
 } from '../constants';
-import { fmtDt, parseDialogue, type DialogueTurn } from '../utils';
+import { fmtDt, parseDialogue, sentimentClass, type DialogueTurn } from '../utils';
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 
@@ -269,27 +266,15 @@ const openBatchTest = () => {
 const confClass = (tier?: string): string =>
   CONF_TIER_CLASS[tier || ''] || 'text-[var(--color-text-1)]';
 
-// ── 外部評論融合欄（sentiment / free_tag 輔助訊號）顯示輔助 ──
-/** 外部情緒分上色：1-2 負向紅、3 中性琥珀、4-5 正向綠（對齊評論系統分段定義）。 */
-const extSentimentClass = (v?: string | number | null): string => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 'text-[var(--color-text-1)]';
-  if (n <= 2) return 'text-[rgb(var(--danger-6))]';
-  if (n < 4) return 'text-[rgb(var(--warning-6))]';
-  return 'text-[rgb(var(--success-6))]';
-};
-/** free_tag 面向分 → Arco tag color（低分痛點紅、中性橙、高分綠）。 */
-const extTagColor = (v?: string | number | null): string => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 'gray';
-  if (n <= 2) return 'red';
-  if (n < 4) return 'orange';
-  return 'green';
-};
+/** 反饋內容欄「補充」區塊是否有內容：外部評論融合維度有值，或該來源有 supplementSections 段落
+ *  （如進線屬性）。兩者皆無的列整塊不顯示，避免空區塊佔列高與多一條分隔線。 */
+const hasSupplement = (record: ProblemRow): boolean =>
+  !!record.ext_sentiment ||
+  !!(record.ext_free_tag as unknown[] | undefined)?.length ||
+  schema.value.supplementSections.length > 0;
 
 // ── 來源顯示差異化（schema 驅動：內容標籤/對話模式/關聯段落/精確查詢 placeholder）──
-/** 關聯資料欄是否顯示某段落（schema contextSections 白名單；conversations 無方案/旅客）。 */
-const hasSection = (s: ContextSection): boolean => schema.value.contextSections.includes(s);
+// 關聯資料欄的段落顯示（hasSection）已隨模板一併下沉 RecordContextPanel 元件（見 #context slot）。
 /** 內容欄對話輪次：dialogue 模式且解析出 [ROLE]: 前綴才回輪次；否則 null → 原樣全文 fallback。 */
 const dialogueTurns = (record: ProblemRow): DialogueTurn[] | null =>
   schema.value.contentMode === 'dialogue' ? parseDialogue(String(record.content || '')) : null;
@@ -351,20 +336,6 @@ const COLS = computed(() => [SEQ_COL, ...schema.value.columns]);
 /** 表格水平捲動總寬（欄寬合計 + selection 欄），欄多時橫向捲動不擠壓內容。 */
 const SCROLL_X = computed(() => COLS.value.reduce((w, c) => w + (Number(c.width) || 120), 0) + 48);
 
-/** 欄位缺值防禦顯示（'—'）；部分來源（mixpanel）OID 為 JSON 陣列字串 `["x"]` → 攤平顯示。 */
-const cell = (v: unknown): string => {
-  if (v === null || v === undefined || v === '') return '—';
-  const s = String(v);
-  if (s.startsWith('[') && s.endsWith(']')) {
-    try {
-      const arr = JSON.parse(s);
-      if (Array.isArray(arr)) return arr.length ? arr.map(String).join('、') : '—';
-    } catch {
-      /* 非 JSON 陣列 → 原樣顯示 */
-    }
-  }
-  return s;
-};
 
 onMounted(init);
 </script>
@@ -579,16 +550,15 @@ onMounted(init);
         </a-row>
       </template>
       <template #seq="{ record }">{{ record._seq }}</template>
-      <!-- 反饋內容欄：比照關聯資料左標籤式，主塊標籤依來源（反饋內容／進線對話／工單內容…，schema.contentLabel），
-           另有「外部評論」（評論系統融合維度：sentiment 情緒分 + free_tag 面向標籤；輔助訊號，僅有值才顯示）。 -->
+      <!-- 反饋內容欄：兩區塊，標籤跨來源統一為「原文」/「補充」（不按來源改名，否則同一欄在商品評論
+           /進線間出現四種名稱；統一兩字使左側標籤欄等寬對齊）——①原文＝該則反饋的內容本體（評論
+           全文或進線對話輪次）②補充＝關於這則反饋自身的附加屬性（外部評論融合維度 +
+           schema.supplementSections 段落，如進線的分桶/行程階段/處理方/訊息數）。 -->
       <template #review="{ record }">
         <div class="flex flex-col gap-1 py-1">
-          <!-- 主內容塊（星等/標題僅評論形來源有值；進線走對話輪次渲染）-->
+          <!-- ① 原文（星等/標題僅評論形來源有值；進線走對話輪次渲染）-->
           <div class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >{{ schema.contentLabel }}</span
-            >
+            <span :class="SECTION_LABEL_CLASS">原文</span>
             <div class="min-w-0">
               <div class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <a-rate
@@ -609,8 +579,8 @@ onMounted(init);
                 <span v-else class="text-xs text-gray-300">未初判</span>
                 <!-- 我方情緒分 1-5（重新初判後回填；與外部評論情緒分同尺度直接對比）-->
                 <span v-if="record.our_sentiment" class="flex items-center gap-1 text-xs">
-                  <span class="text-[var(--color-text-3)]">情緒分</span>
-                  <span class="font-semibold" :class="extSentimentClass(record.our_sentiment)">
+                  <span class="text-[var(--color-text-3)]">情緒分:</span>
+                  <span class="font-semibold" :class="sentimentClass(record.our_sentiment)">
                     {{ record.our_sentiment }}/5
                   </span>
                 </span>
@@ -660,46 +630,27 @@ onMounted(init);
               </div>
             </div>
           </div>
-          <!-- 外部評論（評論系統 LLM 標籤；無融合資料的列不顯示此塊）-->
+          <!-- ② 補充：supplementSections 段落（conversations 的進線屬性）+ 外部評論融合維度
+               （product_reviews）；共用單一外層標籤，內部各段不再各自帶標籤（showLabels=false），
+               兩者皆無值的列整塊不顯示 -->
           <div
-            v-if="record.ext_sentiment || record.ext_free_tag?.length"
+            v-if="hasSupplement(record)"
             class="flex gap-1.5 border-t border-[var(--color-border-1)] pt-1"
           >
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >外部評論</span
-            >
-            <div class="min-w-0 text-xs leading-relaxed">
-              <div
-                v-if="record.ext_sentiment"
-                class="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"
-              >
-                <span class="text-[var(--color-text-3)]">情緒分</span>
-                <span class="font-semibold" :class="extSentimentClass(record.ext_sentiment)">
-                  {{ record.ext_sentiment }} / 5
-                </span>
-              </div>
-              <!-- 每面向一行：tag_name（按分上色 tag）｜tag_value（獨立上色數字）｜tag_list（逐詞 Arco tag）-->
-              <div
-                v-for="(t, ti) in record.ext_free_tag || []"
-                :key="ti"
-                class="mb-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1"
-              >
-                <span
-                  v-if="t.tag_value !== null && t.tag_value !== undefined && t.tag_value !== ''"
-                  class="font-semibold"
-                  :class="extSentimentClass(t.tag_value)"
-                >
-                  {{ t.tag_value }}
-                </span>
-                <a-tag size="small" :color="extTagColor(t.tag_value)">{{ t.tag_name }}</a-tag>
-                <a-tag v-for="(w, wi) in t.tag_list || []" :key="wi" size="small" color="gray">
-                  {{ w }}
-                </a-tag>
-              </div>
-              <div v-if="record.ext_lst_oid" class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
-                ext#{{ record.ext_lst_oid }}
-              </div>
+            <span :class="SECTION_LABEL_CLASS">補充</span>
+            <div class="flex min-w-0 flex-col gap-1">
+              <!-- 進線等「這則反饋自身的屬性」段落，複用 RecordContextPanel 同一份渲染 -->
+              <RecordContextPanel
+                v-if="schema.supplementSections.length"
+                :record="record"
+                :sections="schema.supplementSections"
+                :show-labels="false"
+              />
+              <!-- 外部評論（評論系統 LLM 標籤；無融合資料的列不渲染）——與詳情抽屜共用同一元件 -->
+              <ExternalReviewPanel
+                v-if="record.ext_sentiment || record.ext_free_tag?.length"
+                :record="record"
+              />
             </div>
           </div>
         </div>
@@ -716,8 +667,7 @@ onMounted(init);
           >
             <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
             <div v-if="a.content?.summary" class="flex gap-1.5">
-              <span
-                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              <span :class="SECTION_LABEL_CLASS"
                 >摘要</span
               >
               <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
@@ -726,8 +676,7 @@ onMounted(init);
             </div>
             <!-- 歸因（L1→L2 麵包屑）-->
             <div class="flex gap-1.5">
-              <span
-                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              <span :class="SECTION_LABEL_CLASS"
                 >歸因</span
               >
               <div class="min-w-0">
@@ -753,8 +702,7 @@ onMounted(init);
             </div>
             <!-- 信心（值 + 分層 + 初判模型；stage 僅異常態顯示——三軸標籤收斂：status 移操作列）-->
             <div class="flex gap-1.5">
-              <span
-                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              <span :class="SECTION_LABEL_CLASS"
                 >信心</span
               >
               <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -785,8 +733,7 @@ onMounted(init);
             </div>
             <!-- 操作（判決徽章 + 確認採信(綠)/忽略駁回(紅)/備註；再點選中態＝撤銷判決）-->
             <div class="flex gap-1.5">
-              <span
-                class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              <span :class="SECTION_LABEL_CLASS"
                 >操作</span
               >
               <div class="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -844,163 +791,11 @@ onMounted(init);
         </template>
         <span v-else class="text-gray-300">—</span>
       </template>
-      <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤（name）
-               + 右側內容（值），主要值深色、次要明細 --color-text-2（加深，避免太淺看不清）。 -->
+      <!-- 關聯資料合併欄：訂單 → 商品 → 方案 → 供應商 → 旅客（源數據），各段左側小標籤 + 右側內容；
+           渲染邏輯已抽為共用元件 RecordContextPanel（商品評論／售前售後進線／其餘反饋來源共用同一份，
+           段落依 schema.contextSections 裁剪，不再各自維護一份模板）。 -->
       <template #context="{ record }">
-        <!-- 段落依來源 schema.contextSections 裁剪：評論形來源全五段；conversations 無方案/旅客（恆空），改列進線屬性段 -->
-        <div class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
-          <!-- 訂單 -->
-          <div v-if="hasSection('order')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >訂單</span
-            >
-            <div class="min-w-0">
-              <div class="font-medium text-[var(--color-text-1)]">
-                {{ cell(record.order_mid) }}
-              </div>
-              <div class="text-[var(--color-text-2)]">
-                OID {{ cell(record.order_oid) }} · 出發
-                {{ fmtDt(record.go_date, true) || '—' }}
-              </div>
-              <!-- 訂單目前狀態（conversations 專屬）/ 金額 / 建立來源（product_reviews 亦有欄；
-                   其餘來源皆無值，恆不顯示）-->
-              <div
-                v-if="record.order_status_now || record.order_price || record.order_create_source_code"
-                class="text-[var(--color-text-2)]"
-              >
-                <template v-if="record.order_status_now">狀態 {{ record.order_status_now }} · </template>
-                金額 {{ cell(record.order_price) }} · 平台 {{ cell(record.order_create_source_code) }}
-              </div>
-            </div>
-          </div>
-          <!-- 商品 -->
-          <div v-if="hasSection('product')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >商品</span
-            >
-            <div class="min-w-0">
-              <div v-if="record.prod_name" class="font-medium text-[var(--color-text-1)]">
-                {{ record.prod_name }}
-              </div>
-              <span v-else class="text-gray-300">—</span>
-              <div class="text-[var(--color-text-2)]">OID {{ cell(record.prod_oid) }} · {{ cell(record.lang) }}</div>
-            </div>
-          </div>
-          <!-- 方案 -->
-          <div v-if="hasSection('package')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >方案</span
-            >
-            <div class="min-w-0">
-              <div v-if="record.package_name" class="text-[var(--color-text-1)]">
-                {{ record.package_name }}
-              </div>
-              <span v-else class="text-gray-300">—</span>
-              <div class="text-[var(--color-text-2)]">OID {{ cell(record.pkg_oid) }}</div>
-            </div>
-          </div>
-          <!-- 供應商（conversations 有名稱，優先顯示；OID 附註）-->
-          <div v-if="hasSection('supplier')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >供應商</span
-            >
-            <div class="min-w-0">
-              <div v-if="record.supplier_name" class="font-medium text-[var(--color-text-1)]">
-                {{ record.supplier_name }}
-              </div>
-              <div class="text-[var(--color-text-2)]">OID {{ cell(record.supplier_oid) }}</div>
-            </div>
-          </div>
-          <!-- 進線屬性（conversations 專屬：分桶/行程階段/處理方/客服標籤/訊息數，其餘來源恆空不顯示）-->
-          <div v-if="hasSection('inbound')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >進線</span
-            >
-            <div class="flex min-w-0 flex-col gap-1">
-              <div v-if="record.bucket || record.trip_stage" class="flex flex-wrap items-center gap-1.5">
-                <a-tag v-if="record.bucket" size="small" :color="BUCKET_COLORS[String(record.bucket)] || 'gray'">
-                  {{ BUCKET_LABELS[String(record.bucket)] || record.bucket }}
-                </a-tag>
-                <a-tag v-if="record.trip_stage" size="small" color="arcoblue">
-                  {{ INBOUND_TRIP_STAGE_LABELS[String(record.trip_stage)] || record.trip_stage }}
-                </a-tag>
-              </div>
-              <div
-                v-if="record.msg_handler_bucket || record.cs_tag_name || record.user_message_count"
-                class="text-[var(--color-text-2)]"
-              >
-                <template v-if="record.msg_handler_bucket"
-                  >處理方
-                  {{
-                    MSG_HANDLER_BUCKET_LABELS[String(record.msg_handler_bucket)] ||
-                    record.msg_handler_bucket
-                  }}</template
-                >
-                <template v-if="record.cs_tag_name">
-                  <template v-if="record.msg_handler_bucket"> · </template>{{ record.cs_tag_name }}</template
-                >
-                <template v-if="record.user_message_count">
-                  <template v-if="record.msg_handler_bucket || record.cs_tag_name"> · </template>訊息數
-                  {{ record.user_message_count }}</template
-                >
-              </div>
-              <span
-                v-if="
-                  !record.bucket &&
-                  !record.trip_stage &&
-                  !record.msg_handler_bucket &&
-                  !record.cs_tag_name &&
-                  !record.user_message_count
-                "
-                class="text-gray-300"
-                >—</span
-              >
-            </div>
-          </div>
-          <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值，
-               獨立於上方「進線」段之外的共用段落） -->
-          <div v-if="hasSection('org')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >組織分工</span
-            >
-            <div class="flex min-w-0 flex-col gap-1">
-              <div v-if="record.vertical" class="flex flex-wrap items-center gap-1.5">
-                <a-tag size="small" color="cyan">{{ record.vertical }}</a-tag>
-              </div>
-              <div v-if="record.bd_tag" class="text-[var(--color-text-2)]">
-                BD TAG {{ record.bd_tag
-                }}<template v-if="record.bd_tag_note"> · {{ record.bd_tag_note }}</template>
-              </div>
-              <div v-if="record.PM" class="text-[var(--color-text-2)]">PM {{ record.PM }}</div>
-              <span
-                v-if="!record.vertical && !record.bd_tag && !record.PM"
-                class="text-gray-300"
-                >—</span
-              >
-            </div>
-          </div>
-          <!-- 旅客 -->
-          <div v-if="hasSection('traveller')" class="flex gap-1.5">
-            <span
-              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
-              >旅客</span
-            >
-            <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-              <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
-                {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
-              </a-tag>
-              <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
-                {{ record.member_uuid }}
-              </span>
-            </div>
-          </div>
-        </div>
+        <RecordContextPanel :record="record" :sections="schema.contextSections" />
       </template>
       <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因判決在判決歸因欄內。與批量選取解耦。
            每列都會重複這組按鈕，統一用 type="text" 輕量呈現（不套用 rules/frontend-vue.md「視覺區分主次」的
@@ -1376,7 +1171,7 @@ onMounted(init);
     </a-drawer>
 
     <!-- 操作欄：查看歸因詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
-    <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" />
+    <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" :source="source" />
 
     <!-- Prompt 測試沙盒：單列 / 批量（內建依條件目標選取）共用；跑選定 prompt 子集，ungated、
          與正式初判分離落庫 -->

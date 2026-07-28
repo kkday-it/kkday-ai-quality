@@ -7,5 +7,6 @@ export * from './exportName.util';
 export * from './pageSpec.util';
 export * from './jsonDiff.util';
 export * from './dialogue.util';
+export * from './sentiment.util';
 export * from './logView.util';
 export * from './sandboxCompare.util';

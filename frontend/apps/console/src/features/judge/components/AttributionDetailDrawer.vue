@@ -8,33 +8,44 @@
 import { computed, watch } from 'vue';
 import { IconRefresh } from '@arco-design/web-vue/es/icon';
 import { AsyncSection, JsonEditor } from '@/components';
+import ExternalReviewPanel from './ExternalReviewPanel.vue';
+import RecordContextPanel from './RecordContextPanel.vue';
 import {
   ACTION_LABEL,
-  BUCKET_COLORS,
-  BUCKET_LABELS,
   DIALOGUE_ROLE_COLORS,
   DIALOGUE_ROLE_LABELS,
   DIALOGUE_SEGMENT_LABELS,
   EVIDENCE_EMPTY_TEXT,
   EVIDENCE_STATUS_COLOR,
   EVIDENCE_STATUS_LABEL,
-  INBOUND_TRIP_STAGE_LABELS,
-  MSG_HANDLER_BUCKET_LABELS,
   POLARITY_COLOR,
   POLARITY_LABELS,
+  schemaFor,
   STAGE_LABELS,
   STATUS_COLOR,
   STATUS_LABEL,
   TIER_LABELS,
-  TRAVELLER_TYPE_LABELS,
   type Attribution,
   type ProblemRow,
 } from '../constants';
 import { useOrderEvidence } from '../composables';
-import { fmtDt, parseDialogue, type DialogueTurn } from '../utils';
+import { fmtDt, parseDialogue, sentimentClass, type DialogueTurn } from '../utils';
 
 const visible = defineModel<boolean>('visible', { default: false });
-const props = defineProps<{ row: ProblemRow | null }>();
+const props = defineProps<{
+  row: ProblemRow | null;
+  /** 反饋來源 code：決定「補充」/「關聯資料」的段落歸屬（與列表共用 `schemaFor` 同一份 schema）。 */
+  source: string;
+}>();
+
+/** 「補充」區塊段落（該反饋自身的附加屬性，如進線的分桶/行程階段/處理方）。 */
+const supplementSections = computed(() => schemaFor(props.source).supplementSections);
+/** 「關聯資料」區塊段落（訂單/商品/方案等關聯實體）。 */
+const contextSections = computed(() => schemaFor(props.source).contextSections);
+/** 是否有外部評論融合資料（無則不渲染該區塊，避免空表）。 */
+const hasExternal = computed(
+  () => !!props.row?.ext_sentiment || !!(props.row?.ext_free_tag as unknown[] | undefined)?.length,
+);
 
 // 訂單佐證 lazy fetch：抽屜開啟且有 order_oid 才打（後端帶快取，重開便宜）
 const { loading: evLoading, error: evError, result: evResult, load: evLoad } = useOrderEvidence();
@@ -68,7 +79,6 @@ const attrPath = (a: Attribution): string =>
 const attrCode = (a: Attribution): string => a.l2?.code || a.l1?.code || '';
 
 /** 欄位缺值顯示（'—'）。 */
-const cell = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
 
 /** summary_langs 中「非 zh-tw」的其他語系（原文語言摘要，zh-tw 已是主顯示）。 */
 const otherLangs = (a: Attribution): [string, string][] =>
@@ -106,6 +116,13 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
           <a-tag v-if="row.polarity" size="small" :color="POLARITY_COLOR[row.polarity]">
             {{ POLARITY_LABELS[row.polarity] || row.polarity }}
           </a-tag>
+          <!-- 我方情緒分 1-5（重新初判後回填；與下方外部評論情緒分同尺度可直接對比）-->
+          <span v-if="row.our_sentiment" class="flex items-center gap-1 text-xs">
+            <span class="text-[var(--color-text-3)]">情緒分:</span>
+            <span class="font-semibold" :class="sentimentClass(row.our_sentiment)">
+              {{ row.our_sentiment }}/5
+            </span>
+          </span>
           <span v-if="row.title" class="text-sm font-medium text-[var(--color-text-1)]">
             {{ row.title }}
           </span>
@@ -142,115 +159,21 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
         </div>
       </div>
 
-      <!-- ② 關聯資料：與列表「關聯資料」欄同源欄位，descriptions 完整鋪開 -->
-      <a-descriptions
-        title="關聯資料"
-        :column="1"
-        size="medium"
-        bordered
-        :label-style="{ width: '88px' }"
-      >
-        <!-- 進線屬性（conversations 專屬：分桶/行程階段/處理方/出發日差，其餘來源無此欄恆顯示「—」）-->
-        <a-descriptions-item
-          v-if="row.bucket || row.trip_stage || row.msg_handler_bucket || row.godate_diff"
-          label="進線屬性"
-        >
-          <div class="flex flex-wrap items-center gap-1.5">
-            <a-tag v-if="row.bucket" size="small" :color="BUCKET_COLORS[String(row.bucket)] || 'gray'">
-              {{ BUCKET_LABELS[String(row.bucket)] || row.bucket }}
-            </a-tag>
-            <a-tag v-if="row.trip_stage" size="small" color="arcoblue">
-              {{ INBOUND_TRIP_STAGE_LABELS[String(row.trip_stage)] || row.trip_stage }}
-            </a-tag>
-            <span v-if="row.msg_handler_bucket" class="text-xs text-[var(--color-text-2)]">
-              處理方
-              {{
-                MSG_HANDLER_BUCKET_LABELS[String(row.msg_handler_bucket)] || row.msg_handler_bucket
-              }}
-            </span>
-            <span v-if="row.godate_diff" class="text-xs text-[var(--color-text-2)]">
-              出發日差 {{ row.godate_diff }}
-            </span>
-          </div>
-        </a-descriptions-item>
-        <a-descriptions-item label="訂單">
-          <div class="font-medium">{{ cell(row.order_mid) }}</div>
-          <div class="text-xs text-[var(--color-text-2)]">
-            OID {{ cell(row.order_oid) }} · 出發
-            {{ fmtDt(String(row.go_date ?? ''), true) || '—' }}
-          </div>
-          <!-- 進線專屬：訂單狀態（其餘來源恆空不顯示）/ 金額 / 利潤 -->
-          <div
-            v-if="row.order_status_now || row.order_price || row.order_profit"
-            class="text-xs text-[var(--color-text-2)]"
-          >
-            <template v-if="row.order_status_now">狀態 {{ row.order_status_now }} · </template>
-            金額 {{ cell(row.order_price) }} · 利潤 {{ cell(row.order_profit) }}
-          </div>
-          <div
-            v-if="row.order_lang || row.order_create_source_code || row.order_create_time"
-            class="text-xs text-[var(--color-text-2)]"
-          >
-            語系 {{ cell(row.order_lang) }} · 建立來源 {{ cell(row.order_create_source_code) }} ·
-            建立時間 {{ fmtDt(String(row.order_create_time ?? '')) || '—' }}
-          </div>
-        </a-descriptions-item>
-        <a-descriptions-item label="商品">
-          <div v-if="row.prod_name" class="font-medium">
-            {{ row.prod_name }}
-          </div>
-          <div class="text-xs text-[var(--color-text-2)]">
-            OID {{ cell(row.prod_oid) }} · {{ cell(row.lang) }}
-          </div>
-          <!-- 進線專屬：商品時區（其餘來源恆空不顯示）-->
-          <div v-if="row.product_tz" class="text-xs text-[var(--color-text-2)]">
-            時區 {{ cell(row.product_tz) }}
-          </div>
-        </a-descriptions-item>
-        <a-descriptions-item label="方案">
-          <div v-if="row.package_name">{{ row.package_name }}</div>
-          <div class="text-xs text-[var(--color-text-2)]">OID {{ cell(row.pkg_oid) }}</div>
-        </a-descriptions-item>
-        <a-descriptions-item label="供應商">
-          <div v-if="row.supplier_name" class="font-medium">{{ row.supplier_name }}</div>
-          <div class="text-xs text-[var(--color-text-2)]">OID {{ cell(row.supplier_oid) }}</div>
-        </a-descriptions-item>
-        <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值）-->
-        <a-descriptions-item
-          v-if="row.vertical || row.bd_tag || row.bd_tag_cd || row.bd_tag_note || row.PM"
-          label="組織分工"
-        >
-          <div v-if="row.vertical" class="mb-1">
-            <a-tag size="small" color="cyan">{{ row.vertical }}</a-tag>
-          </div>
-          <div v-if="row.bd_tag || row.bd_tag_cd || row.bd_tag_note" class="text-xs text-[var(--color-text-2)]">
-            BD TAG {{ cell(row.bd_tag) }}（{{ cell(row.bd_tag_cd) }}） {{ cell(row.bd_tag_note) }}
-          </div>
-          <div v-if="row.PM" class="text-xs text-[var(--color-text-2)]">PM {{ row.PM }}</div>
-        </a-descriptions-item>
-        <!-- 客服標籤（conversations 專屬；其餘來源恆空不顯示）-->
-        <a-descriptions-item
-          v-if="row.cs_tag_name || row.cs_tag_oid || row.user_message_count"
-          label="客服標籤"
-        >
-          <span v-if="row.cs_tag_name">{{ row.cs_tag_name }}</span>
-          <span v-if="row.cs_tag_oid" class="ml-1.5 text-xs text-[var(--color-text-2)]"
-            >({{ row.cs_tag_oid }})</span
-          >
-          <span v-if="row.user_message_count" class="ml-1.5 text-xs text-[var(--color-text-2)]">
-            訊息數 {{ row.user_message_count }}
-          </span>
-        </a-descriptions-item>
-        <a-descriptions-item label="旅客">
-          <a-tag v-if="row.traveller_type" size="small" color="arcoblue">
-            {{ TRAVELLER_TYPE_LABELS[String(row.traveller_type)] || row.traveller_type }}
-          </a-tag>
-          <span v-if="row.member_uuid" class="ml-1.5 break-all text-xs text-[var(--color-text-2)]">
-            {{ row.member_uuid }}
-          </span>
-          <span v-if="!row.traveller_type && !row.member_uuid">—</span>
-        </a-descriptions-item>
-      </a-descriptions>
+      <!-- ② 補充：關於這則反饋自身的附加屬性——進線屬性/客服標籤（supplementSections）+ 外部評論
+           融合維度。與列表「補充」區塊同一份歸屬（schemaFor），僅版型不同（此處完整鋪開）。 -->
+      <RecordContextPanel
+        v-if="supplementSections.length"
+        :record="row"
+        variant="detail"
+        title="補充"
+        :sections="supplementSections"
+      />
+      <ExternalReviewPanel v-if="hasExternal" :record="row" variant="detail" />
+
+      <!-- ③ 關聯資料：訂單/商品/方案等關聯實體，收斂為共用元件 RecordContextPanel
+           （detail 版型＝descriptions 完整鋪開，含列表放不下的利潤／語系／建立時間／商品時區
+           ／BD TAG code；欄位歸屬與列表共用同一份真相源）。 -->
+      <RecordContextPanel :record="row" variant="detail" :sections="contextSections" />
 
       <!-- ②b 訂單佐證（production 下單當時商品快照·lazy fetch·三態）-->
       <div v-if="row.order_oid">

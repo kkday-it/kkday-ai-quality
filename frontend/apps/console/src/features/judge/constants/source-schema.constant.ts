@@ -67,7 +67,8 @@ export type SourceFilterDef =
   | DateRangeFilterDef
   | BucketFilterDef;
 
-/** 關聯資料欄可顯示的段落（依來源裁剪：如 conversations 無方案/旅客，改顯進線屬性段）。 */
+/** 可渲染的資料段落（由 RecordContextPanel 統一渲染；依來源裁剪，並分派到「關聯資料」欄或
+ *  「反饋補充」區塊——見 SourceListSchema 的 contextSections / supplementSections）。 */
 export type ContextSection =
   | 'order'
   | 'product'
@@ -76,6 +77,22 @@ export type ContextSection =
   | 'traveller'
   | 'inbound'
   | 'org';
+
+/** 資料段落左側小標籤樣式（列表欄的「原文」/「補充」與 RecordContextPanel compact 版型
+ *  共用，確保各段標籤欄等寬對齊；跨檔共用故收斂於此，勿再各處手抄同一串 utility class）。 */
+export const SECTION_LABEL_CLASS =
+  'flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]';
+
+/** 全部資料段落（RecordContextPanel 未指定 sections 時的預設＝不裁剪，靠各欄位自身 v-if 決定）。 */
+export const ALL_CONTEXT_SECTIONS: ContextSection[] = [
+  'order',
+  'product',
+  'package',
+  'supplier',
+  'traveller',
+  'inbound',
+  'org',
+];
 
 /** 單一來源的歸因列表 schema：欄位 + 篩選器 + 顯示差異化（展開行已廢除，關聯明細改複合欄位平鋪主列）。 */
 export interface SourceListSchema {
@@ -87,8 +104,13 @@ export interface SourceListSchema {
   idNoun: string;
   /** 內容渲染模式：text＝原樣全文；dialogue＝按 [ROLE]: 前綴解析成對話輪次（解析失敗 fallback 原樣）。 */
   contentMode: 'text' | 'dialogue';
-  /** 關聯資料欄顯示段落白名單（模板固定順序渲染；該來源恆空的段落不列，避免整欄「—」噪音）。 */
+  /** 「關聯資料」欄段落白名單＝訂單/商品/方案等**關聯實體**（固定順序渲染；該來源恆空的段落
+   *  不列，避免整欄「—」噪音）。 */
   contextSections: ContextSection[];
+  /** 反饋內容欄「補充」區塊的段落白名單＝關於**這則反饋自身**的附加屬性（如進線的分桶/行程階段/
+   *  處理方/訊息數）。與外部評論融合維度（ext_sentiment/ext_free_tag）同置於該區塊；無此類屬性
+   *  的來源給空陣列。 */
+  supplementSections: ContextSection[];
 }
 
 /** 歸因分類層（L1/L2 共用形狀）。 */
@@ -157,8 +179,9 @@ export interface ProblemRow {
 /**
  * 統一主列欄位（**全 5 反饋來源共用**，無展開行，複合欄合併同類資訊）。
  * 排列原則：**源數據在前，初判數據在後**。序號欄由 AttributionList 統一前置。
- *   1. 反饋內容（星等+傾向+標題+內容全文+ID·時間，可按反饋時間排序）
- *   2. 關聯資料（訂單→商品→方案→供應商→旅客，各段小標籤；缺欄防禦式「—」，故各來源皆適用）
+ *   1. 反饋內容（兩區塊：「原文」＝星等+傾向+標題+內容全文+ID·時間；「補充」＝該反饋自身的附加
+ *      屬性，見 `supplementSections` 與外部評論融合維度。可按反饋時間排序）
+ *   2. 關聯資料（訂單→商品→方案→供應商→旅客等關聯實體，各段小標籤；缺欄防禦式「—」，各來源皆適用）
  *   3. 判決歸因（L1→L2 + 摘要 + 信心/分層/階段 + per-歸因判決，每條一塊）
  *   4. 操作（整列級 歸因/重新初判 + 查看詳情）
  * 複合欄（review/context/verdict/actions）以 slotName 客製渲染，欄位 key 皆 `_enrich_problem` 現成
@@ -169,7 +192,7 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
     title: '反饋內容（時間）', // 闊號＝排序依據：此欄可排序，依 occurred_at 反饋時間
     dataIndex: 'occurred_at',
     slotName: 'review',
-    width: 320,
+    width: 340,
     sortable: { sortDirections: ['ascend', 'descend'] },
   },
   {
@@ -221,7 +244,10 @@ const DEFAULT_CONTEXT_SECTIONS: ContextSection[] = [
 /** 各來源顯示差異化配置（欄位/篩選共用，僅標籤/內容模式/關聯段落依來源語義客製）。 */
 const SOURCE_DISPLAY: Record<
   string,
-  Pick<SourceListSchema, 'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections'>
+  Pick<
+    SourceListSchema,
+    'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections' | 'supplementSections'
+  >
 > = {
   // 'org'＝組織分工（vertical/BD TAG/PM，bd_tag 系統）：product_reviews 與 conversations 皆有值，
   // 獨立於 'inbound'（bucket/行程階段/處理方/客服標籤/訊息數，conversations 專屬）之外的共用段落。
@@ -230,43 +256,50 @@ const SOURCE_DISPLAY: Record<
     idNoun: '評論',
     contentMode: 'text',
     contextSections: [...DEFAULT_CONTEXT_SECTIONS, 'org'],
+    supplementSections: [], // 外部評論融合維度由反饋補充區塊直接渲染，無額外段落
   },
-  // 進線＝客服對話：無方案/旅客欄（恆空不列），改列進線屬性段 + 組織分工段；內容按 [ROLE]: 解析輪次
+  // 進線＝客服對話：無方案/旅客欄（恆空不列），關聯資料只留關聯實體 + 組織分工；進線自身屬性
+  // （分桶/行程階段/處理方/訊息數）改歸「反饋補充」區塊；內容按 [ROLE]: 解析輪次
   conversations: {
     contentLabel: '進線對話',
     idNoun: '進線',
     contentMode: 'dialogue',
-    contextSections: ['order', 'product', 'supplier', 'inbound', 'org'],
+    contextSections: ['order', 'product', 'supplier', 'org'],
+    supplementSections: ['inbound'],
   },
   freshdesk_tickets: {
     contentLabel: '工單內容',
     idNoun: '工單',
     contentMode: 'text',
     contextSections: DEFAULT_CONTEXT_SECTIONS,
+    supplementSections: [],
   },
   app_feedback: {
     contentLabel: '反饋內容',
     idNoun: '反饋',
     contentMode: 'text',
     contextSections: DEFAULT_CONTEXT_SECTIONS,
+    supplementSections: [],
   },
   mixpanel_tracker: {
     contentLabel: '反饋內容',
     idNoun: '反饋',
     contentMode: 'text',
     contextSections: DEFAULT_CONTEXT_SECTIONS,
+    supplementSections: [],
   },
 };
 
 /** 未知來源的顯示配置回退（泛稱反饋 + 全段落）。 */
 const FALLBACK_DISPLAY: Pick<
   SourceListSchema,
-  'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections'
+  'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections' | 'supplementSections'
 > = {
   contentLabel: '反饋內容',
   idNoun: '反饋',
   contentMode: 'text',
   contextSections: DEFAULT_CONTEXT_SECTIONS,
+  supplementSections: [],
 };
 
 /** 5 反饋來源皆用統一複合欄 + 共用篩選；顯示差異（標籤/內容模式/關聯段落）依 SOURCE_DISPLAY。 */

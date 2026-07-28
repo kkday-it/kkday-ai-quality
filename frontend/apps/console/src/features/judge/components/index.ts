@@ -6,6 +6,8 @@ export { default as PromptDebugBatchDrawer } from './PromptDebugBatchDrawer.vue'
 export { default as PromptSandboxDrawer } from './PromptSandboxDrawer.vue';
 export { default as PromptVersionPickerGroup } from './PromptVersionPickerGroup.vue';
 export { default as PrejudgeRunsDrawer } from './PrejudgeRunsDrawer.vue';
+export { default as ExternalReviewPanel } from './ExternalReviewPanel.vue';
+export { default as RecordContextPanel } from './RecordContextPanel.vue';
 export { default as RuleHistoryPanel } from './RuleHistoryPanel.vue';
 export { default as VersionDiffCompare } from './VersionDiffCompare.vue';
 export { default as BdTagVerticalPanel } from './BdTagVerticalPanel.vue';
