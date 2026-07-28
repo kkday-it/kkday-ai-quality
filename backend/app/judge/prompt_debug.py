@@ -448,7 +448,7 @@ def stream_frames(
             "job_id": job_id,
             "model": cfg["model"],
             "provider": app_settings.provider_id_for(cfg["base_url"]),
-            "base_url": cfg["base_url"] or "https://api.openai.com/v1",
+            "base_url": cfg["base_url"] or app_settings.default_base_url_for("openai"),
             "temperature": cfg["temperature"],
             "thinking": cfg["thinking"],
             "reasoning_effort": cfg["reasoning_effort"],

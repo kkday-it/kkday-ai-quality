@@ -145,7 +145,8 @@ def _is_masked(v: object) -> bool:
 # 單套 LLM 旋鈕的非機密預設：area 默認缺項時的底，effective_llm_dict 查無 area 默認時亦回退至此。
 _DEFAULT_LLM: dict = {
     "provider": "openai",  # openai | gemini | bytedance | custom
-    "base_url": "",  # 空＝OpenAI 預設端點
+    # 空＝交由 effective_llm_dict 補「該 provider 的官方預設端點」（default_base_url_for），不再意指 OpenAI
+    "base_url": "",
     "model": (LLM_PROVIDERS or [{}])[0].get(
         "defaultModel", "gpt-5-mini"
     ),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
@@ -323,7 +324,9 @@ def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | No
     conn = (s.get("llm_connections") or {}).get(provider) or {}
     return {
         "provider": provider,
-        "base_url": conn.get("base_url", _DEFAULT_LLM["base_url"]),
+        # 未存過 base_url 的連線一律補「該 provider 的官方預設端點」，不留空：空值在下游會被
+        # fallback 成 OpenAI 端點，等於拿 Gemini/ByteDance 的 token 打 api.openai.com（必 401）。
+        "base_url": conn.get("base_url") or default_base_url_for(provider),
         "model": knobs.get("model") or _DEFAULT_LLM["model"],
         "temperature": knobs.get("temperature"),
         "thinking": knobs.get("thinking") or "default",
@@ -515,3 +518,21 @@ def resolve_provider_token(eff: dict) -> str:
     if provider_id_for(eff.get("base_url") or "") == "openai":
         return env.openai_api_key
     return ""
+
+
+def default_base_url_for(provider_id: str) -> str:
+    """回某供應商的官方預設端點（SSOT＝config/global/llm_model.json `providers[].base_url`）。
+
+    連線未存 base_url（新環境、只填 token 就按儲存）時的補值來源。`provider_id_for` 的反向操作，
+    兩者共用同一份供應商目錄，故 `provider_id_for(default_base_url_for(p)) == p` 恆成立。
+
+    Args:
+        provider_id: 供應商 id（openai/gemini/bytedance）。
+
+    Returns:
+        該供應商 base_url；未知 provider 回 openai 的（與 provider_id_for 的未知歸 openai 對稱）。
+    """
+    hit = next((p for p in LLM_PROVIDERS if p.get("id") == provider_id), None) or next(
+        (p for p in LLM_PROVIDERS if p.get("id") == "openai"), {}
+    )
+    return str(hit.get("base_url", ""))

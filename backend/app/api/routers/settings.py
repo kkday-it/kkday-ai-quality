@@ -169,6 +169,11 @@ def test_llm(
     from app.core import settings as app_settings
 
     saved = app_settings.load_settings()  # 含明文 llm_tokens
+    # base_url 空 → 補該供應商官方預設端點（不可留空：下游 fallback 是 OpenAI 端點，會拿
+    # Gemini/ByteDance 的 token 打 api.openai.com 而回 401 invalid_api_key，錯誤訊息極誤導）
+    base_url = (body.base_url or "").strip() or app_settings.default_base_url_for(
+        body.provider or ""
+    )
     # per-provider token：表單明文優先；空/遮罩 → 沿用已儲存該供應商的 llm_tokens[provider]
     form_tok = body.api_token
     if form_tok and "***" not in str(form_tok) and "…" not in str(form_tok):
@@ -179,12 +184,12 @@ def test_llm(
         token = app_settings.resolve_provider_token(
             {
                 "api_token": (saved.get("llm_tokens") or {}).get(body.provider or ""),
-                "base_url": (body.base_url or "").strip(),
+                "base_url": base_url,
             }
         )
     cfg = {
         "token": token,
-        "base_url": (body.base_url or "").strip(),
+        "base_url": base_url,
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
         "thinking": body.thinking or "default",

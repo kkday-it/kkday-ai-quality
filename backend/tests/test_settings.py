@@ -35,11 +35,30 @@ def test_effective_llm_dict_uses_area_default():
 
 
 def test_effective_llm_dict_falls_back_to_stub_when_area_empty():
-    """查無 area 默認（未設或該區無資料）→ 回退 _DEFAULT_LLM（stub，無 token）。"""
+    """查無 area 默認（未設或該區無資料）→ 回退 _DEFAULT_LLM（stub，無 token）。
+
+    base_url 不留空：補該 provider 的官方預設端點（空值下游會被 fallback 成 OpenAI 端點）。
+    """
     eff = app_settings.effective_llm_dict(app_settings._blank_settings(), area="sandbox")
     assert eff["provider"] == "openai"
     assert eff["api_token"] == ""
-    assert eff["base_url"] == ""
+    assert eff["base_url"] == app_settings.default_base_url_for("openai")
+
+
+def test_effective_llm_dict_fills_provider_default_base_url_when_connection_blank():
+    """連線只存了 token、base_url 留空 → 補「該 provider」的預設端點，不得退成 OpenAI 端點。
+
+    回歸：base_url 空時下游一律 fallback api.openai.com，等於拿 Gemini token 打 OpenAI → 401
+    invalid_api_key（2026-07-28）。
+    """
+    s = {
+        "llm_connections": {"gemini": {"base_url": ""}},
+        "llm_tokens": {"gemini": "AQ.fake"},
+        "llm_area_defaults": {"prejudge": {"provider": "gemini", "model": "gemini-3.5-flash"}},
+    }
+    eff = app_settings.effective_llm_dict(s, area="prejudge")
+    assert eff["base_url"] == app_settings.default_base_url_for("gemini")
+    assert app_settings.provider_id_for(eff["base_url"]) == "gemini"
 
 
 def test_effective_llm_dict_none_area_falls_back_to_default_knobs_not_other_areas():

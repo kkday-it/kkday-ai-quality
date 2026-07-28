@@ -438,7 +438,7 @@ def chat_json(
     log_label = label or stage
     # 100% 對齊：直接記「實際送 API 的完整 kwargs」（去 messages，另存 prompt 全文；token 不在 kwargs，無洩漏）
     req_params = {k: v for k, v in kwargs.items() if k != "messages"}
-    req_params["base_url"] = cfg["base_url"] or "https://api.openai.com/v1"
+    req_params["base_url"] = cfg["base_url"] or _settings.default_base_url_for("openai")
     run_log.emit("llm_request", stage, f"LLM 請求 {cfg['model']}", req_params, label=log_label)
     run_log.emit(
         "llm_prompt", stage, "Prompt 全文", {"system": system, "user": user}, label=log_label
@@ -598,8 +598,11 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
     """
     import time
 
-    cfg = cfg or _resolve()
-    base = cfg["base_url"] or "https://api.openai.com/v1"
+    # 未配置任何連線時的最終兜底（正常路徑 base_url 已由 effective_llm_dict / test-llm 端點補到非空）；
+    # 就地寫回 cfg 而非只算顯示值，確保終端機顯示的 base_url 與 _complete 實際打的端點永遠一致。
+    cfg = dict(cfg or _resolve())
+    cfg["base_url"] = cfg["base_url"] or _settings.default_base_url_for("openai")
+    base = cfg["base_url"]
     if not cfg["token"]:
         return {
             "ok": False,
