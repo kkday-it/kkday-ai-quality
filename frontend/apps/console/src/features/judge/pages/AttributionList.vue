@@ -619,34 +619,37 @@ onMounted(init);
                 </span>
               </div>
               <!-- 進線對話：按 [ROLE]: 前綴解析輪次（角色 tag + 該輪文字），一眼辨發話方；
-                   非對話模式或解析失敗 fallback 原樣全文 -->
+                   非對話模式或解析失敗 fallback 原樣全文。內容區固定高度內滾動，避免長對話/長文
+                   把整列列高撐爆（列高改由關聯資料/判決歸因等其他欄決定），完整內容仍可從「查看詳情」抽屜看。 -->
               <template v-if="record.content">
-                <div v-if="dialogueTurns(record)" class="flex flex-col gap-1">
-                  <template v-for="(t, ti) in dialogueTurns(record)" :key="ti">
-                    <!-- 段落分隔：機器人／真人客服階段切換時插入標籤（對齊 conversation_full 的 ‖ 分段）-->
-                    <div
-                      v-if="t.segment && isNewSegment(dialogueTurns(record) || [], ti)"
-                      class="mt-1 text-[10px] font-semibold text-[var(--color-text-3)]"
-                    >
-                      {{ DIALOGUE_SEGMENT_LABELS[t.segment] || t.segment }}
-                    </div>
-                    <div class="text-xs leading-relaxed">
-                      <a-tag
-                        v-if="t.role"
-                        size="small"
-                        :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
-                        class="mr-1"
-                        >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
+                <div v-if="dialogueTurns(record)" class="max-h-40 overflow-y-auto pr-1">
+                  <div class="flex flex-col gap-1">
+                    <template v-for="(t, ti) in dialogueTurns(record)" :key="ti">
+                      <!-- 段落分隔：機器人／真人客服階段切換時插入標籤（對齊 conversation_full 的 ‖ 分段）-->
+                      <div
+                        v-if="t.segment && isNewSegment(dialogueTurns(record) || [], ti)"
+                        class="mt-1 text-[10px] font-semibold text-[var(--color-text-3)]"
                       >
-                      <span class="whitespace-pre-wrap text-[var(--color-text-2)]">{{
-                        t.text
-                      }}</span>
-                    </div>
-                  </template>
+                        {{ DIALOGUE_SEGMENT_LABELS[t.segment] || t.segment }}
+                      </div>
+                      <div class="text-xs leading-relaxed">
+                        <a-tag
+                          v-if="t.role"
+                          size="small"
+                          :color="DIALOGUE_ROLE_COLORS[t.role] || 'gray'"
+                          class="mr-1"
+                          >{{ DIALOGUE_ROLE_LABELS[t.role] || t.role }}</a-tag
+                        >
+                        <span class="whitespace-pre-wrap text-[var(--color-text-2)]">{{
+                          t.text
+                        }}</span>
+                      </div>
+                    </template>
+                  </div>
                 </div>
                 <div
                   v-else
-                  class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]"
+                  class="max-h-40 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-relaxed text-[var(--color-text-2)]"
                 >
                   {{ record.content }}
                 </div>
