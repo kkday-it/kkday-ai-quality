@@ -49,7 +49,6 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "mixpanel_tracker",
     "batches",
     "judge_rule_versions",
-    "prompt_drafts",
     # 人工評判案例庫：手工累積的判準金標，跨環境搬遷時最該帶走的資產之一（與 prompt_sandbox_runs
     # 那種「跑一次就過期的測試歷史」不同性質，故入包）。
     "prompt_debug_reviews",

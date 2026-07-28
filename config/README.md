@@ -13,7 +13,7 @@
 - `export.json` — 導出行為配置（前端消費）：`gdrive_upload_folder_url`＝導出完成通知「打開 Google Drive 上傳」捷徑的 config 內建最終回退資料夾 URL；實際生效值優先讀「設定 › 導出偏好」tab 配置的全項目共用一份（存 settings 的 `gdrive_upload_folder_url`，非 per-user；皆空＝退回個人 my-drive）
 
 ## ai_judge/（判準領域）
-> **判準文字唯一真相源為 `prompts/*.md`**（Prompt-as-Source 架構，7 支：00_polarity +
+> **判準文字唯一真相源為 `prompts/<id>/v*.md` 版本庫**（Prompt-as-Source 架構，7 支：00_polarity +
 > 01~06_C-N）。判準由 LLM 直讀各域 prompt 的 System 區塊，分類結構（域機器值/L2 面向）由
 > `app.judge.prompt_source.structure()` 從 prompt 派生（不讀 DB 樹）。
 

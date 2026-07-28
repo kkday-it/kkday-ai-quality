@@ -20,7 +20,7 @@
   → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 初判階段）
   → attributions（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
   → 歸因列表 / 歸因概覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出
-判準來源＝prompts/*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，DB append-only 版本化 + 檔案 fallback）
+判準來源＝prompts/<id>/v*.md（Prompt-as-Source，RuleManager「初判 Prompt」md 編輯，檔案版本庫 + ACTIVE 指標）
 ```
 
 ## Monorepo 結構
@@ -138,7 +138,7 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## 架構要點
 - **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），attributions 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、初判階段），列表右側堆疊呈現、導出 fan-out。
-- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
+- **判準 SSOT**＝`prompts/<id>/v*.md`（Prompt-as-Source：7 支各自一個版本資料夾，一版一檔＋`ACTIVE` 指標檔決定生效版；RuleManager「初判 Prompt」md 編輯，存檔帶基線比對防互蓋。2026-07-28 起全面去 DB）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；無角色，email 直接授予 `config/global/permissions.json` 的 `default ∪ grants[email]`，`no_auth_grant_all=true` 時無條件全通過）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（原 pilot：auth login + AUTH.* error code，已隨去帳戶系統退役，下個 pilot 待選），詳見 `frontend/apps/console/src/i18n/README.md`。

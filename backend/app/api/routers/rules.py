@@ -21,10 +21,13 @@ from pydantic import BaseModel
 from app.core import auth, db
 from app.core.permissions import permission_keys, require_permission
 from app.judge import prompt_rule_service as prs
+from app.judge import prompt_source
 
 router = APIRouter(prefix="/api/judge-rules", tags=["judge-rules"])
 
-_VALID_CODES = set(db.RULE_CODES)
+# 合法 rule code＝DB 表管理的（bd_tag_vertical / source_mapping）∪ 檔案版本庫管理的 7 支 prompt。
+# 兩套儲存各有自己的 code 清單，API 層是唯一需要看到聯集的地方。
+_VALID_CODES = set(db.RULE_CODES) | set(prompt_source.PROMPT_RULE_CODES)
 
 
 def _reload_judge_cache() -> None:

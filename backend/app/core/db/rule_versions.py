@@ -26,19 +26,12 @@ from app.core.db import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
+# 本表管理的 rule。初判 Prompt（prompt_*）已於 2026-07-28 遷出至檔案版本庫
+# （`app.judge.prompt_versions`），不再列於此——`list_rule_meta` 以本元組過濾，留著會讓已遷出的
+# 舊資料列在前端「幽靈重現」。API 層的合法 code 是本元組與 prompt code 的聯集（見 rules.py）。
 RULE_CODES = (
     "bd_tag_vertical",
     "source_mapping",
-    # 初判 Prompt（Prompt-as-Source 架構）：初判 prompt 唯一真相源＝prompts/*.md，
-    # 經此機制 DB 版本化（線上熱編 + 歷史 + 恢復默認）。content={"_meta":..., "text": md 全文}，
-    # 非 L1/L2/L3 歸因樹（default seed 讀 md 而非 JSON，見 default_rule_content）。
-    "prompt_polarity",
-    "prompt_C-1",
-    "prompt_C-2",
-    "prompt_C-3",
-    "prompt_C-4",
-    "prompt_C-5",
-    "prompt_C-6",
 )
 
 
@@ -56,15 +49,7 @@ def _rule_file(code: str) -> Path:
 
 
 def default_rule_content(code: str) -> dict:
-    """讀默認檔內容（恢復默認用）；檔不存在拋 FileNotFoundError。
-
-    prompt_*（初判 Prompt）默認 seed 非 JSON 檔，而是 prompts/*.md 原文——委派
-    prompt_source.default_prompt_content 讀 md 包成 {"_meta":..., "text": md} 版本化格式。
-    """
-    if code.startswith("prompt_"):
-        from app.judge.prompt_source import default_prompt_content  # lazy：避免頂層循環依賴
-
-        return default_prompt_content(code)
+    """讀默認檔內容（恢復默認用）；檔不存在拋 FileNotFoundError。"""
     return json.loads(_rule_file(code).read_text(encoding="utf-8"))
 
 
@@ -75,7 +60,7 @@ def _jrv():  # 縮寫
 def list_rule_meta() -> list[dict]:
     """列現行 RULE_CODES 的 active 版 meta（rule_code/version/author/note/created_at/label），無 active 者略。
 
-    label 取 `_meta.label`（各 rule content 的顯示名慣例，含 prompt_* 的 default_prompt_content）；
+    label 取 `_meta.label`（各 rule content 的顯示名慣例）；
     缺值回 None 由前端 fallback 補（JSONB 路徑抽出，避免拉整份 content）。
 
     以 RULE_CODES 過濾（非撈全表 active）：非當前版本化的 rule_code 之歷史列仍留在 DB，若不過濾
@@ -179,9 +164,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    # bd_tag_vertical＝設定抽屜獨立管理；prompt_* 已遷出 DB（見上方 docstring）。
-    # 以前綴判定而非 import app.judge.prompt_source：db 層不該反向依賴 judge 層。
-    _EXCLUDED = {"bd_tag_vertical", *(c for c in RULE_CODES if c.startswith("prompt_"))}
+    _EXCLUDED = {"bd_tag_vertical"}  # 設定抽屜獨立管理，非「全部恢復默認」範圍
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

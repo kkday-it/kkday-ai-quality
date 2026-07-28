@@ -4,12 +4,10 @@
 - structure()：6 支域 prompt 的 `## Taxonomy` 派生分類樹 + 域 meta（含 evidence_gated）供 ai_judge 建索引。
 - Schema l2_code enum 由 `## Taxonomy` 派生注入（prompt 不手寫 code 清單、零 drift）。
 
-測試庫（temp_db）為空 → prompt_source 回退讀 prompts md（git 版控現行），故測試確定性、不依賴 DB。
+prompt_source 讀 `prompts/<id>/ACTIVE` 指向的版本（git 版控現行），故測試確定性、不依賴 DB。
 """
 
 from __future__ import annotations
-
-import copy
 
 import pytest
 
@@ -201,46 +199,6 @@ def test_structure_from_taxonomy(temp_db):
 
 
 # ─────────────────────────── DB 版本化 / seed ───────────────────────────
-def test_default_prompt_content_wraps_md(temp_db):
-    """default_prompt_content 讀 md 包成 {_meta, text} 版本化格式。"""
-    c = db.default_rule_content("prompt_C-3")
-    assert c["_meta"]["kind"] == "prompt"
-    assert c["_meta"]["label"]
-    assert "## System" in c["text"] and "## Schema" in c["text"]
-
-
-def test_seed_and_load_prefers_db(temp_db):
-    """seed 後 prompt_* 有 active 版；改 DB active 後 load 取回 DB 版（非檔案）。"""
-    res = db.seed_rules_from_files()
-    for code in ps.PROMPT_RULE_CODES:
-        assert res.get(code) == "seeded"
-        assert db.get_rule_active(code) is not None
-    content = copy.deepcopy(db.get_rule_active("prompt_polarity"))
-    content["text"] = content["text"].replace("# ", "# [DB版] ", 1)
-    db.save_rule_version("prompt_polarity", content, note="test", author="pytest")
-    ps.reload()
-    assert ps.load("00_polarity")["title"].startswith("[DB版]")
-
-
-# ─────────────────────────── versions（版本選擇：初判分類 + 沙盒）───────────────────────────
-def test_load_with_versions_reads_pinned_historical_version(temp_db):
-    """versions 指定歷史版本號 → 讀那個特定版本內容，不寫 `_cache`、不影響 active 版判斷。"""
-    ps.reload()
-    db.seed_rules_from_files()
-    active_before = ps.load("00_polarity")["title"]
-    v1_content = copy.deepcopy(db.get_rule_active("prompt_polarity"))
-
-    v2_content = copy.deepcopy(v1_content)
-    v2_content["text"] = v2_content["text"].replace("# ", "# [v2] ", 1)
-    saved = db.save_rule_version("prompt_polarity", v2_content, note="test", author="pytest")
-    ps.reload()
-
-    # 指定舊版本（v1）→ 讀到舊版內容，即使 active 已經是 v2。
-    pinned = ps.load("00_polarity", versions={"prompt_polarity": 1})
-    assert pinned["title"] == active_before
-    # 指定的版本不寫入 `_cache`；一般呼叫仍拿到目前 active（v2）版本。
-    assert ps.load("00_polarity")["title"] == "[v2] " + active_before
-    assert saved["version"] == 2
 
 
 def test_load_versions_unknown_version_raises(temp_db):
@@ -261,14 +219,3 @@ def test_load_without_versions_behavior_unchanged(temp_db):
     assert p1 is ps._cache["00_polarity"]
     assert p2 is ps._cache["00_polarity"]
     assert p3 is ps._cache["00_polarity"]  # versions 無對應 rule_code → 視同無 versions
-
-
-def test_bulk_reset_covers_prompts_and_source_mapping(temp_db):
-    """reset_all_rule_defaults（RuleManager「全部恢復默認」，2026-07-24 改為全域單一動作）涵蓋
-    source_mapping + 全部 7 支 prompt_*，僅排除 bd_tag_vertical（設定抽屜獨立管理）。
-    """
-    res = db.reset_all_rule_defaults(author="pytest")
-    reset_codes = {r["rule_code"] for r in res["reset"]}
-    assert set(ps.PROMPT_RULE_CODES) <= reset_codes
-    assert "source_mapping" in reset_codes
-    assert "bd_tag_vertical" not in reset_codes

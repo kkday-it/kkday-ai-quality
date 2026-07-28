@@ -1,10 +1,29 @@
 # prompts/ — 初判引擎契約 + 調適閉環操作手冊
 
-`prompts/*.md`（7 支：`00_polarity` + `01_C-1`~`06_C-6`）是初判引擎的**唯一真相源**
-（Prompt-as-Source 架構）——判準文字、六域分類結構、面向目錄皆由此派生，禁止另存平行副本。
-本檔說明：① 引擎如何讀取這 7 支檔 ② 調適（改判準）時的標準操作流程。
+`prompts/<prompt_id>/`（7 支：`00_polarity` + `01_C-1_content`~`06_C-6_customer`）是初判引擎的
+**唯一真相源**（Prompt-as-Source 架構）——判準文字、六域分類結構、面向目錄皆由此派生，禁止另存平行副本。
+本檔說明：① 版本庫佈局 ② 引擎如何讀取 ③ 調適（改判準）時的標準操作流程。
 
-> 引擎採**即時讀取**（`prompt_source.load()`：DB 熱編 active 版優先→本檔案 fallback），不產生靜態快照比對。
+## 版本庫佈局（2026-07-28 起）
+
+```
+prompts/01_C-1_content/
+  ACTIVE                 單行純文字＝當前生效的版本名（唯一決定線上跑哪一版）
+  v20260724041913.md     一版一檔全文快照，immutable；frontmatter 以 HTML 註解夾帶 author/note
+  v20260728153000.md
+prompts/drafts/          未入庫的編輯中內容（已入 .gitignore，不進版本控制）
+```
+
+- **生效版由 `ACTIVE` 指標檔決定，不是「檔名最大的那個」**。售後調試台（`prompts/debug/`）採檔名
+  字典序，2026-07-28 當天就因此連續三次靜默互蓋；顯式指標讓「哪版生效」與「誰最後存檔」解耦，
+  切回舊版也成為明確動作。
+- **並發安全來自 `expected_base_version` 樂觀鎖，不是來自「檔案進了 git」**。實測顯示同分支循序
+  commit 屬 fast-forward，git 從不因語意互蓋而報衝突。存檔前基線不符即 409，這道檢查不可移除。
+- 版本識別為 `v` + 14 位 **UTC** 時間戳（定長，故字典序即時序，可直接比大小判新舊）。
+
+> 引擎採**即時讀取**（`prompt_source.load()` 讀 `ACTIVE` 指向的版本），不產生靜態快照比對。
+> 線上跑的就是 git 上看得到的那一份——舊架構的 DB 熱編層（`judge_rule_versions` 的 `prompt_*`）
+> 已於 2026-07-28 全面退役，它正是本檔宣稱「禁止另存平行副本」卻實際存在的那份平行副本。
 
 ## 引擎契約（初判程式碼如何讀這 7 支檔）
 
@@ -17,9 +36,9 @@
   `children`＝**可變深度**。分類的**類別＋層級＋域 metadata＋證據閘**全在此，程式碼零 taxonomy 假設。改
   prompt → `reload()` → 全套（篩選樹/enum/域 meta）即時跟著換。模型判分類靠 `## System` 的 `<facet_catalog>`
   例句（decision_process 明示 l2_code 從 facet_catalog 選），故 `## Taxonomy` 只餵機器、不進模型 context。
-- **載入層**：`prompt_source.load(prompt_id)`——DB（`judge_rule_versions` 的 `prompt_polarity`/
-  `prompt_C-1~6`，RuleManager「初判 Prompt」熱編）優先，缺 active 版時 fallback 讀本目錄檔；模組級快取，
-  存檔後 `reload()` 清空。域 prompt load 時把 `## Taxonomy` 派生的 code 注入 Schema 的 `l2_code.enum`。
+- **載入層**：`prompt_source.load(prompt_id)`——讀 `prompts/{id}/ACTIVE` 指向的版本（缺 ACTIVE
+  或指標懸空一律 fail-loud，不靜默 fallback）；模組級快取，存檔後 `reload()` 清空。域 prompt load
+  時把 `## Taxonomy` 派生的 code 注入 Schema 的 `l2_code.enum`。版本庫本體見 `app/judge/prompt_versions.py`。
 - **結構派生**：`structure()` 從各域 `## Taxonomy` 派生 `{domain, domain_label, action, owner,
   evidence_gated, facets, tree}`（域機器值＝檔名尾綴）。`ai_judge` 讀 `structure()` 建索引供消費端；
   `evidence_gated` 域集合供 `prejudge` 證據封頂（取代舊 config 的 evidence_gated_domains）。
@@ -32,7 +51,7 @@
 ## 調適閉環操作手冊（編 → 測 → 歷史 → 修 → 存版）
 
 ```
-RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）──▶ 新版本（append-only）
+RuleManager「初判 Prompt」md 編輯 ──存檔（validate + 基線比對）──▶ 新版本檔 ＋ ACTIVE 更新
         │                                                              │
         ▼                                                              │
    歸因列表「Prompt 測試」沙盒抽屜（PromptSandboxDrawer，走診斷理由 overlay：命中附 reason，
@@ -52,7 +71,7 @@ RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）�
 
 | 檔案 | 用途 |
 |---|---|
-| `prompts/*.md`（7 支） | 唯一真相源，見上方引擎契約 |
+| `prompts/<id>/v*.md`（7 支各自的版本庫） | 唯一真相源，見上方引擎契約與版本庫佈局 |
 | `BASELINE.md` | 7 支 prompt 的基線指標快照（`eval_prompt_single.py` 量測）：調任一支後重跑 `--n 20` 對比，±0.05~0.10 屬 run-to-run 噪音帶 |
 | `../../scripts/tools/eval_prompt_single.py` | CLI 單支評測 harness（production 現行初判參照集，`--compare` A/B、`--repeats` 穩定度） |
 | `debug/after_sales_root_cause/*.md` | **另一條線**（與上方 7 支初判 prompt 無關）：售後根因調試台的 Prompt 版本庫，時間戳一版一檔全文快照，最新版即線上口徑；`CHANGELOG.md` 記每版的誤判案與改法。載入見 `app/judge/prompt_debug_versions.py` |

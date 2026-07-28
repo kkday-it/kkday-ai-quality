@@ -296,17 +296,6 @@ judge_rule_versions = Table(
 # 分離：版本表維持「存檔即 active」單一語意；草稿＝未入庫的編輯中內容——沙盒可直接送測（雙跑對比），
 # 驗證滿意後一鍵入庫成新 active 版（隨後刪本列），或捨棄。併發=last-write-wins，
 # updated_by/updated_at 供前端顯示編輯線索；base_version 供 stale 偵測（< active 版本號時提示分叉過時）。
-prompt_drafts = Table(
-    "prompt_drafts",
-    metadata,
-    Column("rule_code", Text, primary_key=True),  # 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
-    Column(
-        "content", JSONB, nullable=False
-    ),  # {"_meta":..., "text": md 全文}（同 rule content 格式）
-    Column("base_version", Integer, nullable=False),  # 從哪個版本分叉
-    Column("updated_by", Text),  # 最後編輯人（user email）
-    Column("updated_at", DateTime(timezone=True), server_default=func.now()),
-)
 
 # 歸因備註（append-only 歷史；每條歸因 finding_id 可累積多則備註，記備註人/時間/內容）。
 # 獨立表：重新初判（replace_source_findings 刪+插 attributions）不影響備註（依 finding_id 關聯，同域重新初判 id 不變）。

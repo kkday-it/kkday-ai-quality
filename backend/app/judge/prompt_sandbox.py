@@ -31,7 +31,7 @@ from contextvars import copy_context
 from app.core import db
 from app.core import settings as app_settings
 from app.core.job_registry import JobStore
-from app.judge import prompt_eval, prompt_source, run_log
+from app.judge import prompt_eval, prompt_rule_service, prompt_source, run_log
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ def start(
         for rule_code, version in versions.items():
             if rule_code not in prompt_source.PROMPT_RULE_CODES:
                 raise ValueError(f"未知 rule_code：{rule_code}")
-            if db.get_rule_version(rule_code, version) is None:
+            if prompt_rule_service.get_version_content(rule_code, version) is None:
                 raise ValueError(f"{rule_code} 無版本 {version}")
     if drafts:
         for rule_code, text in drafts.items():

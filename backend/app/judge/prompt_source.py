@@ -142,26 +142,13 @@ def parse_md(text: str) -> dict[str, Any]:
 def _raw_text(prompt_id: str) -> str:
     """取某 prompt 的 md 原文＝版本庫 `prompts/{id}/ACTIVE` 指向的那一版。
 
-    ⚠️ 過渡期 fallback：版本庫資料夾尚未建立時退回讀舊的平鋪 `prompts/{id}.md`，讓遷移腳本
-    （`scripts/tools/migrate_prompt_db_to_files.py`）跑之前系統仍能運作。遷移完成後這段
-    fallback 即為死碼，**須連同舊平鋪檔一起清退**（見 plan 的 Phase 5）。
-
     Raises:
-        FileNotFoundError: 版本庫與舊平鋪檔都沒有（引擎 fail-loud，不靜默走空 prompt）。
+        VersionNotFoundError: 版本庫未初始化或 ACTIVE 指向不存在的版本——引擎 fail-loud，
+            不靜默 fallback 到別的來源（那會讓線上判準悄悄變成另一套）。
     """
     from app.judge import prompt_versions
 
-    try:
-        return prompt_versions.active_text(prompt_id)
-    except prompt_versions.VersionNotFoundError:
-        pass
-
-    from app.core.paths import PROMPTS_DIR
-
-    path = PROMPTS_DIR / f"{prompt_id}.md"
-    if not path.exists():
-        raise FileNotFoundError(f"版本庫未初始化且舊平鋪 prompt 檔不存在：{path}") from None
-    return path.read_text(encoding="utf-8")
+    return prompt_versions.active_text(prompt_id)
 
 
 def load(
@@ -185,7 +172,7 @@ def load(
 
     Raises:
         ValueError: 未知 prompt_id、md 解析失敗，或指定的 versions 版本名不存在。
-        FileNotFoundError: 版本庫未初始化且無舊平鋪檔（僅無 versions/drafts 命中時才走到此路徑）。
+        VersionNotFoundError: 版本庫未初始化（僅無 versions/drafts 命中時才走到此路徑）。
     """
     if prompt_id not in _PROMPT_RULE:
         raise ValueError(f"未知 prompt_id：{prompt_id}")
@@ -225,27 +212,6 @@ def reload() -> None:
 
 
 # ─────────────────────────── 默認 seed content（供 rule_versions）───────────────────────────
-def default_prompt_content(rule_code: str) -> dict[str, Any]:
-    """rule_code（prompt_*）→ 默認 seed content（DB 版本化格式）。
-
-    讀 prompts/{id}.md 原文，包成 {"_meta": {label, kind:"prompt"}, "text": md 全文}。
-    _meta.label 供 list_rule_meta 左選單顯示（prompt_* 無 tree，回退 _meta.label）。
-
-    Raises:
-        ValueError: 非 prompt rule_code。
-        FileNotFoundError: 對應 md 檔不存在（比照其他 rule 默認檔缺失行為）。
-    """
-    prompt_id = _RULE_PROMPT.get(rule_code)
-    if prompt_id is None:
-        raise ValueError(f"非 prompt rule_code：{rule_code}")
-    from app.core.paths import PROMPTS_DIR
-
-    md = (PROMPTS_DIR / f"{prompt_id}.md").read_text(encoding="utf-8")  # 不存在→FileNotFoundError
-    parse_md(md)  # 早驗：默認檔本身壞掉時 seed 立即失敗，不把壞 prompt 種進 DB
-    return {
-        "_meta": {"label": _PROMPT_LABEL.get(prompt_id, prompt_id), "kind": "prompt"},
-        "text": md,
-    }
 
 
 # ─────────────────────────── 結構（各域 prompt `## Taxonomy` 派生）───────────────────────────

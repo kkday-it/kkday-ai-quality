@@ -19,7 +19,9 @@ RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/pyproject
 # config/ + constants/ 為前後端共用 SSOT，後端 runtime 讀取（config 經 AIQ_CONFIG_DIR；constants 走 REPO_ROOT/constants=/app/constants）
 COPY config/ config/
 COPY constants/ constants/
-# prompts/：判決 Prompt 唯一真相源（prompt_source 檔案 fallback 讀 /app/prompts/*.md）；頂層 SSOT 目錄。
+# prompts/：初判 Prompt 唯一真相源（版本庫 /app/prompts/<id>/ ＋ ACTIVE 指標）；頂層 SSOT 目錄。
+# ⚠️ 此處是 COPY 進映像檔、prod 未掛 volume：容器內寫入不持久（重啟歸零）且進不了 git
+#（build context 排除 .git）。改判準的正途是 dev 編輯 → commit → 部署。
 COPY prompts/ prompts/
 COPY backend/ backend/
 
