@@ -57,15 +57,15 @@ export function useAttributionDashboard(
 ) {
   // 全局商品垂直分類篩選（工具列複選 = 規則配置頁 = 縱覽，SSOT，控制整個 AI 法官總數）。
   const verticalFilter = useVerticalFilterStore();
-  // 確保選項已載入（activeGroups「全選＝不篩選」判定需 options）；首次亦補成全選。
+  // 確保選項已載入（供下拉顯示；預設空＝不篩選，不需要補成全選）。
   verticalFilter.loadOptions();
   const effVerticals = () =>
     verticalFilter.activeGroups.length ? [...verticalFilter.activeGroups] : undefined;
-  /** 縱覽工具列可選分類＝規則配置頁設定的選項池。 */
+  /** 縱覽工具列可選 Vertical＝全部（依規則配置頁拖曳排序）。 */
   const verticalOptions = computed(() => verticalFilter.toolbarOptions);
   /** 縱覽工具列篩選選中（與歸因列表同一份 SSOT，改任一處兩頁同步）。 */
   const verticalGroups = computed(() => verticalFilter.filter);
-  /** 複選變更：寫回全局 store（剩 1 不可移除由 setFilter 守衛）→ watch activeGroups 觸發縱覽重載。 */
+  /** 複選變更：可清空（＝不篩選）；寫回全局 store → watch activeGroups 觸發縱覽重載。 */
   const onVerticalChange = (v: unknown) =>
     verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
 
@@ -110,7 +110,7 @@ export function useAttributionDashboard(
       source: toValue(source),
       dateFrom: toValue(query.dateFrom),
       dateTo: toValue(query.dateTo),
-      productVerticals: effVerticals(),
+      verticals: effVerticals(),
       model: effModel(),
     };
     try {
@@ -157,7 +157,7 @@ export function useAttributionDashboard(
         source: toValue(source),
         dateFrom: toValue(query.dateFrom),
         dateTo: toValue(query.dateTo),
-        productVerticals: effVerticals(),
+        verticals: effVerticals(),
         model: effModel(),
       })) as AttributionBreakdown;
     } catch (e: unknown) {

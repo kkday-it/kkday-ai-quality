@@ -8,5 +8,5 @@ export { default as PromptVersionPickerGroup } from './PromptVersionPickerGroup.
 export { default as PrejudgeRunsDrawer } from './PrejudgeRunsDrawer.vue';
 export { default as RuleHistoryPanel } from './RuleHistoryPanel.vue';
 export { default as VersionDiffCompare } from './VersionDiffCompare.vue';
-export { default as ProductVerticalPanel } from './ProductVerticalPanel.vue';
-export { default as ProductVerticalSettingsPanel } from './ProductVerticalSettingsPanel.vue';
+export { default as BdTagVerticalPanel } from './BdTagVerticalPanel.vue';
+export { default as BdTagVerticalSettingsPanel } from './BdTagVerticalSettingsPanel.vue';

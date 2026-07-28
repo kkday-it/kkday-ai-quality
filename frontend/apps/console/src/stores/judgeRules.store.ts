@@ -1,4 +1,4 @@
-// 初判規則狀態（product_vertical/source_mapping + prompt_* 的 active content / dirty / 歷史 / 存檔恢復）。
+// 初判規則狀態（bd_tag_vertical/source_mapping + prompt_* 的 active content / dirty / 歷史 / 存檔恢復）。
 // 檔案＝默認 seed，DB＝live+歷史；所有寫操作走後端版本化，store 只持有當前選中 rule 的編輯態。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
@@ -20,7 +20,7 @@ import {
 export const RULE_LABELS_FALLBACK: Record<string, string> = {
   // 商品垂直分類：seed 檔已含 _meta.label，但既有 DB 若在補 _meta 前即 seed 過（label 為 None）時，
   // 由此 fallback 補顯示名，避免選單顯示原始 code。
-  product_vertical: '商品垂直分類',
+  bd_tag_vertical: '商品垂直分類',
   // 上傳表頭校驗：seed 檔含 _meta.label，DB 未 seed 時由此 fallback。
   source_mapping: '上傳表頭校驗',
 };

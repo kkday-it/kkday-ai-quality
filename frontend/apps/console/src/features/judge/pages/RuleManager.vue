@@ -19,7 +19,6 @@ import StateGuard from '@/components/StateGuard.vue';
 import { ExportProgressBar } from '@/components';
 import { startRulesExport } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
-import { useVerticalFilterStore } from '@/stores';
 import RuleHistoryPanel from '../components/RuleHistoryPanel.vue';
 import PromptHistoryPanel from '../components/PromptHistoryPanel.vue';
 import { versionLabel, exportName } from '../utils';
@@ -45,8 +44,6 @@ const { can } = usePermission();
 const canManage = computed(() => can(PERM.judgeRuleManage));
 
 const store = useJudgeRulesStore();
-// 全局商品垂直分類篩選（查詢用，非判準）：開關 + 選中分類，統一控制歸因列表 / 縱覽 / 未初判。
-const verticalFilter = useVerticalFilterStore();
 /** 初判 Prompt（Prompt-as-Source）：rule_code 前綴 prompt_（prompt_polarity + prompt_C-1~6）。
  * content 形態＝{_meta, text: md}——獨立成群、走 md 編輯器 + md 歷史 diff，不套 JSON 編輯器。 */
 const isPromptCode = (code: string): boolean => code.startsWith('prompt_');
@@ -84,7 +81,6 @@ const editorKey = computed(
 const lastCode = useLocalStorage<string>('aiq.ruleManager.lastCode', 'source_mapping');
 
 onMounted(async () => {
-  verticalFilter.loadOptions();
   await store.loadList();
   // 上次選中的 rule_code 若已不存在（規則退役等）→ 回退整體配置，避免選到空規則。
   const code = store.metas.some((m) => m.rule_code === lastCode.value)
@@ -205,26 +201,6 @@ function doResetAll() {
             </a-menu-item>
           </a-menu-item-group>
         </a-menu>
-
-        <!-- 商品垂直分類「選項池」配置（查詢用，非判準）：決定歸因列表工具列篩選器可選哪些分類 -->
-        <div class="flex-none rounded-lg border p-3">
-          <div class="mb-2 flex items-center justify-between">
-            <span class="text-xs font-medium">商品垂直分類選項池</span>
-          </div>
-          <a-select
-            :model-value="verticalFilter.pool"
-            multiple
-            size="small"
-            placeholder="選分類分組"
-            :max-tag-count="1"
-            :options="verticalFilter.allOptions.map((g) => ({ value: g, label: g }))"
-            @change="(v) => verticalFilter.setPool(v as string[])"
-          />
-          <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-3)]">
-            配置歸因列表工具列可選的分類（選項池／總
-            list）；實際篩選於工具列進行，此處不直接篩資料（複選；至少 1 個）。
-          </div>
-        </div>
       </div>
 
       <!-- 右：工具列 + 編輯區（直欄撐滿，編輯區 flex-1 內捲） -->

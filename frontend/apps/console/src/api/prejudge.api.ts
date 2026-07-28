@@ -11,8 +11,8 @@ export interface GetProblemsParams {
   polarity?: string[];
   /** 初判階段篩選（多選；unjudged/judged/pending_review/pending_data；CSV 傳後端）。 */
   stage?: string[];
-  /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單再篩，分組清單 server-authoritative）。 */
-  productVerticals?: string[];
+  /** 商品垂直分類名（多選；後端展開為 bd_tag 代碼清單再篩，清單 server-authoritative）。 */
+  verticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
   dateFrom?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
@@ -35,8 +35,6 @@ export interface GetProblemsParams {
   taxonomy?: string[];
   /** 進線分桶過濾（多選；conversations 專屬直欄，其餘來源忽略）。 */
   bucket?: string[];
-  /** 進線商品垂直分類過濾（多選；conversations 專屬直欄字面值，與 productVerticals 為不同概念）。 */
-  vertical?: string[];
   /** 排序欄（occurred_at/score/go_date/confidence；非白名單回退 occurred_at）。 */
   sortBy?: string;
   /** 排序方向（asc/desc；預設 desc）。 */
@@ -58,8 +56,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.judged !== undefined) q.set('judged', String(params.judged));
   if (params.polarity?.length) q.set('polarity', params.polarity.join(','));
   if (params.stage?.length) q.set('stage', params.stage.join(','));
-  if (params.productVerticals?.length)
-    q.set('product_verticals', params.productVerticals.join(','));
+  if (params.verticals?.length) q.set('verticals', params.verticals.join(','));
   if (params.dateFrom) q.set('date_from', params.dateFrom);
   if (params.dateTo) q.set('date_to', params.dateTo);
   if (params.recOid) q.set('rec_oid', params.recOid);
@@ -70,7 +67,6 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.model?.length) q.set('model', params.model.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.bucket?.length) q.set('bucket', params.bucket.join(','));
-  if (params.vertical?.length) q.set('vertical', params.vertical.join(','));
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);
@@ -87,8 +83,8 @@ export const startProblemsExport = (p: {
   source?: string;
   judged?: boolean;
   item_ids?: string[];
-  /** 商品垂直分類名（多選；後端展開為 CATEGORY 代碼清單）。 */
-  product_verticals?: string[];
+  /** 商品垂直分類名（多選；後端展開為 bd_tag 代碼清單）。 */
+  verticals?: string[];
   /** 日期區間起（含，'YYYY-MM-DD'）。 */
   date_from?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
@@ -115,9 +111,8 @@ export const startProblemsExport = (p: {
   rec_oid?: string;
   prod_oid?: string;
   order_oid?: string;
-  /** 進線分桶 / 商品垂直分類（conversations 專屬直欄；其餘來源忽略，與列表篩選對齊）。 */
+  /** 進線分桶（conversations 專屬直欄；其餘來源忽略，與列表篩選對齊）。 */
   bucket?: string[];
-  vertical?: string[];
 }): Promise<{ job_id: string; filename: string }> =>
   j<{ job_id: string; filename: string }>(`${BASE}/problems/export`, {
     method: 'POST',
@@ -139,7 +134,7 @@ export interface PrejudgeBody {
   scope?: string;
   /** 本次執行 LLM 覆寫（provider+旋鈕）；缺省沿用 prejudge 功能區默認。 */
   overrides?: LlmOverrides;
-  product_verticals?: string[];
+  verticals?: string[];
   /** 目標選取（scope=all；stage 驅動）：階段清單/傾向收斂/信心上限。 */
   stages?: string[];
   target_polarity?: string[];
@@ -247,8 +242,8 @@ export interface AttrQuery {
   dateTo?: string;
   /** 趨勢粒度 year|month|day（省略＝後端預設 month；僅 overview 有效） */
   granularity?: string;
-  /** 全局商品垂直分類分組（多選；僅 product_reviews 生效） */
-  productVerticals?: string[];
+  /** 全局商品垂直分類（多選；bd_tag_col 存在的來源生效） */
+  verticals?: string[];
   /** 初判模型多選（attributions.model IN——當前初判維度；僅套初判級指標，total_intake 不受影響） */
   model?: string[];
 }
@@ -264,7 +259,7 @@ export const getAttributionOverview = (opts: AttrQuery = {}) => {
   if (opts.dateFrom) q.set('date_from', opts.dateFrom);
   if (opts.dateTo) q.set('date_to', opts.dateTo);
   if (opts.granularity) q.set('granularity', opts.granularity);
-  if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
+  if (opts.verticals?.length) q.set('verticals', opts.verticals.join(','));
   if (opts.model?.length) q.set('model', opts.model.join(','));
   return j(`${BASE}/problems/attribution_overview?${q.toString()}`);
 };
@@ -279,25 +274,26 @@ export const getAttributionBreakdown = (l1: string, opts: AttrQuery = {}) => {
   if (opts.source) q.set('source', opts.source);
   if (opts.dateFrom) q.set('date_from', opts.dateFrom);
   if (opts.dateTo) q.set('date_to', opts.dateTo);
-  if (opts.productVerticals?.length) q.set('product_verticals', opts.productVerticals.join(','));
+  if (opts.verticals?.length) q.set('verticals', opts.verticals.join(','));
   if (opts.model?.length) q.set('model', opts.model.join(','));
   return j(`${BASE}/problems/attribution_breakdown?${q.toString()}`);
 };
 
-/** 商品垂直分類解析結果：分組名 → 該組涵蓋的 CATEGORY 代碼清單（server-authoritative）。
- *  group_order＝分組顯示順序（顯式排序欄；jsonb 不保 key 序，舊版本內容可能缺欄）。 */
-export interface ProductVerticalResolved {
-  groups: Record<string, string[]>;
-  group_order?: string[];
+/** 商品垂直分類解析結果：verticals＝去重排序後的 Vertical 名稱清單（篩選下拉選項，server-authoritative）；
+ *  items＝bd_tag 代碼 → {note,pm,vertical} 對照（設定頁表格編輯器用）。 */
+export interface VerticalResolved {
+  verticals: string[];
+  items: Record<string, { note?: string; pm: string; vertical: string }>;
 }
 
 /**
- * 取已解析的商品垂直分類（供篩選下拉；選項顯示分組名、送出亦送分組名，CATEGORY 代碼清單由後端展開）。
- * 資料源＝rule_code=product_vertical 的 active 版本（judge_rule_versions，可編輯版本化）；後端 product_vertical loader 解析。
- * @returns {groups:{分組名:[CATEGORY代碼,...]}}
+ * 取已解析的商品垂直分類（供篩選下拉；選項顯示/送出皆為 Vertical 名稱，bd_tag 代碼由後端展開）。
+ * 資料源＝rule_code=bd_tag_vertical 的 active 版本（judge_rule_versions，可編輯版本化）；後端
+ * bd_tag_vertical loader 解析。取代舊制 getProductVerticalResolved（CATEGORY_xxx 分組）。
+ * @returns {verticals:[名稱,...], items:{代碼:{note,pm,vertical}}}
  */
-export const getProductVerticalResolved = (): Promise<ProductVerticalResolved> =>
-  j<ProductVerticalResolved>(`${BASE}/judge-rules/product-vertical/resolved`);
+export const getVerticalResolved = (): Promise<VerticalResolved> =>
+  j<VerticalResolved>(`${BASE}/judge-rules/bd-tag-vertical/resolved`);
 
 /** 歸因歷史單列（run 級：一次批量/選取/單筆重新初判＝一列；與 llm_usage 以 job_id 關聯）。 */
 /** 批次初判中失敗的單筆（後端 snapshot.failed_items；error＝例外首行截斷）。 */

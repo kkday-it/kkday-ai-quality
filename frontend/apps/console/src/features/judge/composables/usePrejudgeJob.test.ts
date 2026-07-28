@@ -143,7 +143,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     expect(body).toMatchObject({
       source: 'product_reviews',
       scope: 'all',
-      product_verticals: ['Tour'],
+      verticals: ['Tour'],
       stages: ['unjudged'],
     });
     expect(body).not.toHaveProperty('target_polarity');

@@ -4,11 +4,6 @@
 import type { TableColumnData } from '@arco-design/web-vue';
 import { SOURCES } from './source.constant';
 
-/** 商品垂直分類篩選（多選；選項來自 rule_code=product_vertical 的 active 版本動態解析）。 */
-export interface ProductVerticalFilterDef {
-  type: 'productVertical';
-}
-
 /** 日期區間篩選（對應後端某個時間欄位，如評論時間或出發日）。 */
 export interface DateRangeFilterDef {
   type: 'dateRange';
@@ -58,12 +53,9 @@ export interface BucketFilterDef {
   type: 'bucket';
 }
 
-/** 進線商品垂直分類篩選（多選；conversations 專屬直欄字面值，與 productVertical 為不同概念）。 */
-export interface InboundVerticalFilterDef {
-  type: 'vertical';
-}
-
-/** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。 */
+/** 單一來源可用篩選器（discriminated union，依 type 決定渲染的 UI 與送出的查詢參數）。
+ *  ⚠️ 全局商品垂直分類（bd_tag 維度）不在此 per-source schema 內——它是跨來源、不受 source 切換
+ *  影響的獨立工具列控件（見 verticalFilter.store），非本檔案管的「來源專屬篩選器」。 */
 export type SourceFilterDef =
   | PolarityFilterDef
   | StageFilterDef
@@ -72,13 +64,18 @@ export type SourceFilterDef =
   | ModelFilterDef
   | TaxonomyFilterDef
   | HasExternalFilterDef
-  | ProductVerticalFilterDef
   | DateRangeFilterDef
-  | BucketFilterDef
-  | InboundVerticalFilterDef;
+  | BucketFilterDef;
 
 /** 關聯資料欄可顯示的段落（依來源裁剪：如 conversations 無方案/旅客，改顯進線屬性段）。 */
-export type ContextSection = 'order' | 'product' | 'package' | 'supplier' | 'traveller' | 'inbound';
+export type ContextSection =
+  | 'order'
+  | 'product'
+  | 'package'
+  | 'supplier'
+  | 'traveller'
+  | 'inbound'
+  | 'org';
 
 /** 單一來源的歸因列表 schema：欄位 + 篩選器 + 顯示差異化（展開行已廢除，關聯明細改複合欄位平鋪主列）。 */
 export interface SourceListSchema {
@@ -207,8 +204,8 @@ function filtersFor(source: string): SourceFilterDef[] {
   const base = [...BASE_FILTERS];
   // 有無外部評論：僅 product_reviews 有融合欄（sentiment/free_tag）
   if (source === 'product_reviews') base.push({ type: 'hasExternal' });
-  // 分桶／商品垂直分類：僅 conversations 有直欄（bucket/vertical）
-  if (source === 'conversations') base.push({ type: 'bucket' }, { type: 'vertical' });
+  // 分桶：僅 conversations 有直欄
+  if (source === 'conversations') base.push({ type: 'bucket' });
   return base;
 }
 
@@ -226,18 +223,20 @@ const SOURCE_DISPLAY: Record<
   string,
   Pick<SourceListSchema, 'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections'>
 > = {
+  // 'org'＝組織分工（vertical/BD TAG/PM，bd_tag 系統）：product_reviews 與 conversations 皆有值，
+  // 獨立於 'inbound'（bucket/行程階段/處理方/客服標籤/訊息數，conversations 專屬）之外的共用段落。
   product_reviews: {
     contentLabel: '反饋內容',
     idNoun: '評論',
     contentMode: 'text',
-    contextSections: DEFAULT_CONTEXT_SECTIONS,
+    contextSections: [...DEFAULT_CONTEXT_SECTIONS, 'org'],
   },
-  // 進線＝客服對話：無方案/旅客欄（恆空不列），改列進線屬性段；內容按 [ROLE]: 解析輪次
+  // 進線＝客服對話：無方案/旅客欄（恆空不列），改列進線屬性段 + 組織分工段；內容按 [ROLE]: 解析輪次
   conversations: {
     contentLabel: '進線對話',
     idNoun: '進線',
     contentMode: 'dialogue',
-    contextSections: ['order', 'product', 'supplier', 'inbound'],
+    contextSections: ['order', 'product', 'supplier', 'inbound', 'org'],
   },
   freshdesk_tickets: {
     contentLabel: '工單內容',

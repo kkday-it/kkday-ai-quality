@@ -179,13 +179,13 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
             OID {{ cell(row.order_oid) }} · 出發
             {{ fmtDt(String(row.go_date ?? ''), true) || '—' }}
           </div>
-          <!-- 進線專屬：訂單狀態/金額/利潤/語系/建立來源與時間（其餘來源恆空不顯示）-->
+          <!-- 進線專屬：訂單狀態（其餘來源恆空不顯示）/ 金額 / 利潤 -->
           <div
             v-if="row.order_status_now || row.order_price || row.order_profit"
             class="text-xs text-[var(--color-text-2)]"
           >
-            {{ cell(row.order_status_now) }} · {{ cell(row.order_price) }} · 利潤
-            {{ cell(row.order_profit) }}
+            <template v-if="row.order_status_now">狀態 {{ row.order_status_now }} · </template>
+            金額 {{ cell(row.order_price) }} · 利潤 {{ cell(row.order_profit) }}
           </div>
           <div
             v-if="row.order_lang || row.order_create_source_code || row.order_create_time"
@@ -200,18 +200,11 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
             {{ row.prod_name }}
           </div>
           <div class="text-xs text-[var(--color-text-2)]">
-            OID {{ cell(row.prod_oid) }} · {{ cell(row.product_category_main) }} ·
-            {{ cell(row.lang) }}
+            OID {{ cell(row.prod_oid) }} · {{ cell(row.lang) }}
           </div>
-          <!-- 進線專屬：商品時區/垂直分類/BD 標籤/PM（其餘來源恆空不顯示）-->
-          <div
-            v-if="row.product_tz || row.vertical"
-            class="text-xs text-[var(--color-text-2)]"
-          >
-            時區 {{ cell(row.product_tz) }} · 垂直分類 {{ cell(row.vertical) }}
-          </div>
-          <div v-if="row.bd_tag || row.bd_tag_cd || row.PM" class="text-xs text-[var(--color-text-2)]">
-            BD {{ cell(row.bd_tag) }}（{{ cell(row.bd_tag_cd) }}） · PM {{ cell(row.PM) }}
+          <!-- 進線專屬：商品時區（其餘來源恆空不顯示）-->
+          <div v-if="row.product_tz" class="text-xs text-[var(--color-text-2)]">
+            時區 {{ cell(row.product_tz) }}
           </div>
         </a-descriptions-item>
         <a-descriptions-item label="方案">
@@ -221,6 +214,19 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
         <a-descriptions-item label="供應商">
           <div v-if="row.supplier_name" class="font-medium">{{ row.supplier_name }}</div>
           <div class="text-xs text-[var(--color-text-2)]">OID {{ cell(row.supplier_oid) }}</div>
+        </a-descriptions-item>
+        <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值）-->
+        <a-descriptions-item
+          v-if="row.vertical || row.bd_tag || row.bd_tag_cd || row.bd_tag_note || row.PM"
+          label="組織分工"
+        >
+          <div v-if="row.vertical" class="mb-1">
+            <a-tag size="small" color="cyan">{{ row.vertical }}</a-tag>
+          </div>
+          <div v-if="row.bd_tag || row.bd_tag_cd || row.bd_tag_note" class="text-xs text-[var(--color-text-2)]">
+            BD TAG {{ cell(row.bd_tag) }}（{{ cell(row.bd_tag_cd) }}） {{ cell(row.bd_tag_note) }}
+          </div>
+          <div v-if="row.PM" class="text-xs text-[var(--color-text-2)]">PM {{ row.PM }}</div>
         </a-descriptions-item>
         <!-- 客服標籤（conversations 專屬；其餘來源恆空不顯示）-->
         <a-descriptions-item

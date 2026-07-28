@@ -1,10 +1,10 @@
-// 初判規則管理 API（RULE_CODES：product_vertical + source_mapping + prompt_* 的版本化）。
+// 初判規則管理 API（RULE_CODES：bd_tag_vertical + source_mapping + prompt_* 的版本化）。
 // 後端 /api/judge-rules：檔案＝默認 seed、DB＝live+歷史；存檔前依 code 型別驗證，非法回 422；存檔後熱重載。
-// 本 API 管理範圍：product_vertical + source_mapping + prompt_polarity/prompt_C-1~6（版本化）；
+// 本 API 管理範圍：bd_tag_vertical + source_mapping + prompt_polarity/prompt_C-1~6（版本化）；
 // 判準 prompt 描述、極性閘門與證據政策為 judgment.json 靜態設定（改值需重啟後端），不在此 API 範圍。
 import { BASE, JSON_HEADERS, j } from './http.api';
 
-/** rule code：'product_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'。 */
+/** rule code：'bd_tag_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'。 */
 export type RuleCode = string;
 
 /** 某 rule 的 active 版 meta（清單用）。 */
@@ -79,7 +79,7 @@ export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
     headers: JSON_HEADERS,
   });
 
-/** 恢復全部規則（source_mapping + 7 支初判 Prompt，排除 product_vertical）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
+/** 恢復全部規則（source_mapping + 7 支初判 Prompt，排除 bd_tag_vertical）為檔案默認，各新增一版覆蓋當前；skipped＝無默認檔跳過的 code。 */
 export const resetAllRuleDefaults = (): Promise<{ reset: RuleSaveResult[]; skipped: string[] }> =>
   j<{ reset: RuleSaveResult[]; skipped: string[] }>(`${BASE}/judge-rules/reset-default-all`, {
     method: 'POST',

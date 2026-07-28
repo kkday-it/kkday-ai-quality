@@ -1,18 +1,18 @@
-// 商品垂直分類（product_vertical）獨立編輯態：抽屜專用。
+// 商品垂直分類（bd_tag_vertical）獨立編輯態：抽屜專用。取代舊制 product_vertical（CATEGORY_xxx 分組）。
 // **刻意不共用 useJudgeRulesStore**——那是 singleton，其 activeCode 被規則配置頁同時消費，
-// 抽屜若透過它 selectRule('product_vertical') 會改共用 activeCode，令規則頁背景誤渲染本規則。
-// 本 composable 持有自己的 local state，直接呼叫 rule 版本化 API（固定 code=product_vertical），
+// 抽屜若透過它 selectRule('bd_tag_vertical') 會改共用 activeCode，令規則頁背景誤渲染本規則。
+// 本 composable 持有自己的 local state，直接呼叫 rule 版本化 API（固定 code=bd_tag_vertical），
 // 與規則頁完全解耦。
 import { computed, ref } from 'vue';
 import { getRule, getRuleHistory, resetRuleDefault, saveRule } from '@/api/judgeRules.api';
 
-const CODE = 'product_vertical';
+const CODE = 'bd_tag_vertical';
 
 /**
  * 商品垂直分類單規則編輯（載入 / 編輯 / 存檔 / 恢復默認 + active 版本 meta）。
  * @returns 隔離的編輯態與操作；不觸碰任何全域 store 的 activeCode。
  */
-export function useProductVerticalRule() {
+export function useBdTagVerticalRule() {
   const baseline = ref<Record<string, unknown> | null>(null); // 載入時 content（dirty 基準）
   const edited = ref<Record<string, unknown> | null>(null); // 編輯中 content
   const editValid = ref(true);
@@ -47,7 +47,7 @@ export function useProductVerticalRule() {
     }
   }
 
-  /** 分組表單回報變更（合法才更新編輯態）。 */
+  /** 表格編輯器回報變更（合法才更新編輯態）。 */
   function setEdited(content: unknown, valid: boolean) {
     editValid.value = valid;
     if (valid) edited.value = content as Record<string, unknown>;

@@ -299,7 +299,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     return {
       source: toValue(source),
       scope: 'all',
-      product_verticals: effVerticals.value,
+      verticals: effVerticals.value,
       stages: targetStages.value,
       within_ids: targetMode.value === 'selected' ? [...selectedKeys.value] : undefined,
       date_from: lf.dateFrom,

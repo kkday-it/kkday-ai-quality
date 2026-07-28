@@ -1,88 +1,53 @@
-// 全局商品垂直分類篩選（兩層 SSOT，跨頁共享，狀態持久化跨 session）：
-// ① 選項池 pool（規則配置頁配置）＝工具列篩選器可選的分類清單（總 list）；本身不直接篩資料。
-// ② 篩選 filter（歸因列表工具列選中，限 pool 內）＝實際套用到 列表 / 縱覽 / 未判 / 初判 scope 的篩選。
-// 嚴格限制：filter 永遠送後端展開成 CATEGORY 代碼做 IN 過濾（即使全選），使數據範圍鎖在選項池涵蓋的
-// 分類內、排除未歸入任何分組的其他分類（用戶明確要求「不要獲取全部分類」）；僅選項池未初始化時不篩。
+// 全局商品垂直分類篩選（跨頁共享，狀態持久化跨 session）：
+// ① 顯示順序＝直接採用後端 bd_tag_vertical 規則 verticals 選項池的陣列順序（get_verticals_resolved()
+//    保序回傳）；順序調整改在「商品垂直分類」設定頁的 Vertical 選項池編輯器拖曳，本 store 不再自管
+//    本地順序（2026-07-27 前舊機制：規則配置頁另開一份拖曳排序清單＋本地 order 持久化，已退役）。
+// ② 篩選 filter（歸因列表工具列選中）＝實際套用到 列表 / 縱覽 / 未判 / 初判 scope 的篩選；
+//    **預設空＝不篩選**（不像舊版自動全選），使用者需主動勾選才會收斂資料範圍。
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { useLocalStorage } from '@vueuse/core';
-import { getProductVerticalResolved } from '@/api';
+import { getVerticalResolved } from '@/api';
 
 export const useVerticalFilterStore = defineStore('verticalFilter', () => {
-  /** 全部可能分組（來自 config/product_vertical；不持久化，每 session 由 loadOptions 補齊）。 */
+  /** 全部 Vertical，依 bd_tag_vertical 選項池陣列順序（不持久化，每 session 由 loadOptions 補齊）。 */
   const allOptions = ref<string[]>([]);
-  /** 選項池：規則配置頁配置的可選分類（＝工具列篩選器選項）；空＝尚未初始化（loadOptions 補成全部）。 */
-  const pool = useLocalStorage<string[]>('aiq.verticalFilter.pool', []);
-  /** 工具列實際篩選選中（限 pool 內）；空＝尚未初始化（loadOptions 補成全 pool）。 */
+  /** 工具列實際篩選選中（複選）；預設空＝不篩選。 */
   const filter = useLocalStorage<string[]>('aiq.verticalFilter.filter', []);
 
-  /** 工具列可選分類＝選項池成員（順序以 allOptions＝config group_order 權威序為準，拖排即時反映；
-   *  並限制在 allOptions 內，防 config 移除分組後殘留）。 */
-  const toolbarOptions = computed(() =>
-    allOptions.value.length
-      ? allOptions.value.filter((g) => pool.value.includes(g))
-      : [...pool.value],
+  /** 工具列可選 Vertical＝直接沿用後端選項池順序（順序由「商品垂直分類」設定頁拖曳維護）。 */
+  const toolbarOptions = computed(() => allOptions.value);
+
+  /** 生效篩選（供各查詢統一讀取）：篩選為空＝不篩選（後端不收窄，回全部來源資料）。 */
+  const activeGroups = computed<string[]>(() =>
+    filter.value.filter((v) => toolbarOptions.value.includes(v)),
   );
 
-  /**
-   * 生效篩選（供各查詢統一讀取）：**嚴格限制**——即使全選也送分組名，後端展開成 CATEGORY 代碼做
-   * IN 過濾，使數據範圍永遠鎖在選項池涵蓋的分類內（不放行未歸入任何分組的其他分類）。
-   * 僅選項池尚未初始化（opts 為空）時回空陣列＝不篩選，避免載入前把資料濾空。
-   * 設定頁改選項池本身不直接篩資料，只變更可選範圍（隨後 filter 修剪 ⊆ pool 再生效）。
-   */
-  const activeGroups = computed<string[]>(() => {
-    const opts = toolbarOptions.value;
-    if (!opts.length) return []; // 未初始化＝不篩選（兜底，避免濾空）
-    const sel = filter.value.filter((g) => opts.includes(g));
-    return sel.length ? [...sel] : [];
-  });
-
-  /** 載入全部分組並初始化 pool / filter（首次皆預設全選）；失敗吞例外回空。
-   *  順序以後端 group_order（顯式排序欄）為準，缺欄回退 groups keys（jsonb 序）。
-   *  可重複呼叫：商品垂直分類存檔後由設定面板主動重呼，使已掛載消費端即時反映新分組/新順序。 */
+  /** 載入全部 Vertical（可重複呼叫：商品垂直分類存檔後由設定面板主動重呼，使已掛載消費端
+   *  即時反映新增/刪除/重排的 Vertical）；失敗吞例外回空。不動 filter——純顯示用資料源更新。 */
   const loadOptions = async () => {
     try {
-      const r = await getProductVerticalResolved();
-      const keys = Object.keys(r.groups || {});
-      const order = (r.group_order ?? []).filter((g: string) => keys.includes(g));
-      allOptions.value = [...order, ...keys.filter((g) => !order.includes(g))];
-      if (!pool.value.length) pool.value = [...allOptions.value];
-      if (!filter.value.length) filter.value = [...pool.value];
+      const r = await getVerticalResolved();
+      allOptions.value = [...(r.verticals ?? [])];
     } catch {
       allOptions.value = [];
     }
   };
 
   /**
-   * 設定選項池（規則配置頁，複選）：至少保留 1 個；同步修剪 filter ⊆ pool（被移除項不殘留，
-   * 修剪後為空則補成全 pool），確保工具列篩選永遠落在可選範圍內。
-   * @param next 新選項池分組名清單
-   */
-  const setPool = (next: string[]) => {
-    if (!next.length) return; // 至少保留 1 個
-    pool.value = [...next];
-    const trimmed = filter.value.filter((g) => next.includes(g));
-    filter.value = trimmed.length ? trimmed : [...next];
-  };
-
-  /**
-   * 設定工具列篩選（歸因列表，複選）：至少保留 1 個（剩 1 不可移除）；限制在 pool 內。
-   * @param next 新篩選選中分組名清單
+   * 設定工具列篩選（歸因列表，複選）：可清空（＝不篩選，非舊版「剩 1 不可移除」限制）。
+   * @param next 新篩選選中 Vertical 名稱清單
    */
   const setFilter = (next: string[]) => {
-    const cleaned = next.filter((g) => pool.value.includes(g));
-    if (!cleaned.length) return; // 剩 1 不可移除
-    filter.value = [...cleaned];
+    filter.value = next.filter((v) => toolbarOptions.value.includes(v));
   };
 
   return {
     allOptions,
-    pool,
     filter,
     toolbarOptions,
     activeGroups,
     loadOptions,
-    setPool,
     setFilter,
   };
 });

@@ -1,8 +1,10 @@
 // 歸因列表篩選狀態 SSOT：型別 + 空值 + 選項 + 計數 + → API 參數轉換。
 // 三處共用（工具列 / 導出彈窗 / 初判目標篩選）皆以此型別為單一真相，避免各寫一份而漂移。
+// ⚠️ 進線專屬「vertical」（conversations 直欄字面值精確比對）已於 2026-07-27 退役，統一併入全局
+// 商品垂直分類篩選（見 verticalFilter.store，bd_tag 維度、跨來源生效，不在此 per-field 型別內）。
 import { POLARITY_LABELS, STAGE_LABELS, TIER_LABELS } from './pipeline.constant';
 import { STATUS_LABEL } from './status.constant';
-import { BUCKET_LABELS, INBOUND_VERTICAL_OPTIONS } from './inbound.constant';
+import { BUCKET_LABELS } from './inbound.constant';
 
 /** 歸因列表可篩選欄位（值型別對齊各控制項 v-model）。 */
 export interface AttributionFilters {
@@ -30,8 +32,6 @@ export interface AttributionFilters {
   orderOid: string;
   /** 進線分桶（多選；conversations 專屬直欄）。 */
   bucket: string[];
-  /** 進線商品垂直分類（多選；conversations 專屬直欄字面值，與全局 productVertical 為不同概念）。 */
-  vertical: string[];
 }
 
 /** 可渲染的篩選欄位鍵（`<AttributionFilterBar>` 的 fields 取值）。 */
@@ -51,7 +51,6 @@ export const emptyFilters = (): AttributionFilters => ({
   prodOid: '',
   orderOid: '',
   bucket: [],
-  vertical: [],
 });
 
 /** 深拷貝一份篩選（種子彈窗草稿用，避免與來源共用參照）。 */
@@ -64,7 +63,6 @@ export const cloneFilters = (f: AttributionFilters): AttributionFilters => ({
   taxonomy: [...f.taxonomy],
   dateRange: [...f.dateRange],
   bucket: [...f.bucket],
-  vertical: [...f.vertical],
 });
 
 /** 有無外部評論選項（''=全部 由 allow-clear 表達）。 */
@@ -87,11 +85,6 @@ export const BUCKET_FILTER_OPTS = Object.entries(BUCKET_LABELS).map(([value, lab
   value,
   label,
 }));
-/** 進線商品垂直分類篩選選項（conversations 專屬；value=label，BQ 端預算字面值已可讀）。 */
-export const VERTICAL_FILTER_OPTS = INBOUND_VERTICAL_OPTIONS.map((value) => ({
-  value,
-  label: value,
-}));
 
 /** 已套用的篩選項數（計數徽章用；空值不計）。 */
 export const countActiveFilters = (f: AttributionFilters): number =>
@@ -106,8 +99,7 @@ export const countActiveFilters = (f: AttributionFilters): number =>
   (f.recOid.trim() ? 1 : 0) +
   (f.prodOid.trim() ? 1 : 0) +
   (f.orderOid.trim() ? 1 : 0) +
-  (f.bucket.length ? 1 : 0) +
-  (f.vertical.length ? 1 : 0);
+  (f.bucket.length ? 1 : 0);
 
 /** 篩選 → getProblems / 導出 API 參數（統一轉換，空值一律 undefined 不送）。
  *  傾向直接按 attributions.polarity 多選篩（正向/中性/負向）。 */
@@ -126,6 +118,5 @@ export const filtersToParams = (f: AttributionFilters) => {
     prodOid: f.prodOid.trim() || undefined,
     orderOid: f.orderOid.trim() || undefined,
     bucket: f.bucket.length ? f.bucket : undefined,
-    vertical: f.vertical.length ? f.vertical : undefined,
   };
 };

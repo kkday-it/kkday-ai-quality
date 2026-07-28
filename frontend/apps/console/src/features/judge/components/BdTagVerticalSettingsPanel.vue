@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 「配置」抽屜 › 商品垂直分類 tab：分組（Tour / Exp / Charter / Tix …）↔ CATEGORY 代碼映射的維護入口。
+ * 「配置」抽屜 › 商品垂直分類 tab：BD 分工代碼 → PM/Vertical 對照的維護入口。
  *
- * 商品垂直分類屬全域配置（seed = config/global/product_vertical.json），非歸因判準；由此抽屜**獨立維護**。
+ * 商品垂直分類屬全域配置（seed = config/global/bd_tag_vertical.json，源自 BD 分工表 Google Sheet），
+ * 非歸因判準；由此抽屜**獨立維護**。取代舊制 product_vertical（CATEGORY_xxx→分組，2026-07-27 全棧退役）。
  * **不共用 judgeRules store**——那是 singleton，其 activeCode 被規則配置頁同時消費，共用會令規則頁背景
- * 誤渲染本規則。改用隔離的 useProductVerticalRule composable（自己的 local state），走同一後端版本化
+ * 誤渲染本規則。改用隔離的 useBdTagVerticalRule composable（自己的 local state），走同一後端版本化
  * 管線（存檔 / 歷史 / 恢復默認），與規則頁完全解耦。
  */
 import { ref, watch } from 'vue';
@@ -12,8 +13,8 @@ import { Message, Modal } from '@arco-design/web-vue';
 import { IconHistory } from '@arco-design/web-vue/es/icon';
 import StateGuard from '@/components/StateGuard.vue';
 import { useVerticalFilterStore } from '@/stores/verticalFilter.store';
-import { useProductVerticalRule } from '../composables';
-import ProductVerticalPanel from './ProductVerticalPanel.vue';
+import { useBdTagVerticalRule } from '../composables';
+import BdTagVerticalPanel from './BdTagVerticalPanel.vue';
 import RuleHistoryDrawer from './RuleHistoryDrawer.vue';
 import { versionLabel } from '../utils';
 
@@ -33,7 +34,7 @@ const {
   setEdited,
   save,
   resetDefault,
-} = useProductVerticalRule();
+} = useBdTagVerticalRule();
 
 const loaded = ref(false);
 const saving = ref(false);
@@ -52,7 +53,7 @@ watch(
   { immediate: true },
 );
 
-/** 分組表單回報變更 → 寫入隔離編輯態（合法才更新）。 */
+/** 表格編輯器回報變更 → 寫入隔離編輯態（合法才更新）。 */
 function onChange(payload: { json: unknown; valid: boolean }) {
   setEdited(payload.json, payload.valid);
 }
@@ -61,7 +62,7 @@ async function doSave() {
   saving.value = true;
   try {
     await save(saveNote.value.trim());
-    // 主動刷新全局垂直分類選項（順序/分組即時反映到已掛載的歸因列表/縱覽工具列，免切頁重載）
+    // 主動刷新全局垂直分類選項（即時反映到已掛載的歸因列表/縱覽工具列，免切頁重載）
     await useVerticalFilterStore().loadOptions();
     Message.success('已存入 PostgreSQL（新版本）');
     saveOpen.value = false;
@@ -73,7 +74,7 @@ async function doSave() {
   }
 }
 
-/** 恢復為檔案默認（config/global/product_vertical.json）；二次確認，保留歷史可還原。 */
+/** 恢復為檔案默認（config/global/bd_tag_vertical.json）；二次確認，保留歷史可還原。 */
 function doReset() {
   Modal.confirm({
     title: '恢復默認',
@@ -121,9 +122,9 @@ async function onRestored() {
 
     <div class="min-h-0 flex-1">
       <StateGuard :loading="loading" :error="error">
-        <ProductVerticalPanel
+        <BdTagVerticalPanel
           v-if="edited"
-          :key="`pv-${version ?? 0}`"
+          :key="`btv-${version ?? 0}`"
           class="h-full"
           :content="edited"
           @change="onChange"

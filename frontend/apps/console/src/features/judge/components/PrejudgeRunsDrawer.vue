@@ -123,8 +123,8 @@ const paramsSummary = (r: PrejudgeRun) => {
   const parts: string[] = [];
   if (Array.isArray(p.stages) && p.stages.length)
     parts.push(`階段：${(p.stages as string[]).join('、')}`);
-  if (Array.isArray(p.product_verticals) && p.product_verticals.length)
-    parts.push(`垂直分類：${(p.product_verticals as string[]).join('、')}`);
+  if (Array.isArray(p.verticals) && p.verticals.length)
+    parts.push(`垂直分類：${(p.verticals as string[]).join('、')}`);
   if (p.target_polarity) parts.push(`傾向：${String(p.target_polarity)}`);
   if (p.max_confidence != null) parts.push(`信心上限：${String(p.max_confidence)}`);
   if (Array.isArray(p.item_ids) && p.item_ids.length)

@@ -36,17 +36,17 @@ import { usePrejudgeJob } from './usePrejudgeJob';
 export function useAttributionList(source: MaybeRefOrGetter<string>) {
   const schema = computed(() => schemaFor(toValue(source)));
 
-  // ── 全局商品垂直分類篩選（兩層 SSOT）：工具列複選＝實際篩選；可選分類＝規則配置頁設定的選項池──
+  // ── 全局商品垂直分類篩選：工具列複選＝實際篩選；可選 Vertical＝全部（順序於規則配置頁拖曳調整）──
   const verticalFilter = useVerticalFilterStore();
-  /** 工具列可選分類＝規則配置頁設定的選項池（總 list）。 */
+  /** 工具列可選 Vertical＝全部（依規則配置頁拖曳排序）。 */
   const verticalOptions = computed(() => verticalFilter.toolbarOptions);
-  /** 工具列篩選選中（複選；預設全選選項池，剩 1 不可移除，由 store.setFilter 守衛）。 */
+  /** 工具列篩選選中（複選；預設空＝不篩選）。 */
   const verticalGroups = computed(() => verticalFilter.filter);
-  /** 生效的垂直分類（送查詢用）：全 pool/未選＝不篩選（回 undefined），子集才送分組名。 */
+  /** 生效的垂直分類（送查詢用）：未選＝不篩選（回 undefined），有選才送 Vertical 名稱。 */
   const effVerticals = computed<string[] | undefined>(() =>
     verticalFilter.activeGroups.length ? [...verticalFilter.activeGroups] : undefined,
   );
-  /** 複選變更：剩 1 不可移除（清空由 store.setFilter 忽略）；寫回全局 store（列表/縱覽/scope 同步）。 */
+  /** 複選變更：可清空（＝不篩選）；寫回全局 store（列表/縱覽/scope 同步）。 */
   const onVerticalChange = (v: unknown) => {
     verticalFilter.setFilter(Array.isArray(v) ? (v as string[]) : []);
   };
@@ -102,7 +102,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     return {
       source: toValue(source),
       ...filtersToParams(filters),
-      productVerticals: effVerticals.value,
+      verticals: effVerticals.value,
       sortBy: sortBy || undefined,
       sortDir: (sortDir as 'asc' | 'desc') || 'desc',
     };
@@ -149,7 +149,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       const r = await getProblems({
         source: toValue(source),
         judged: false,
-        productVerticals: effVerticals.value,
+        verticals: effVerticals.value,
         limit: 1,
       });
       unjudged.value = r.total || 0;
@@ -180,7 +180,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
       if (!filterTypes.has('dateRange')) filters.dateRange = [];
       if (!filterTypes.has('bucket')) filters.bucket = [];
-      if (!filterTypes.has('vertical')) filters.vertical = [];
       // rec_oid / prod_oid / order_oid / 排序為通用能力（非 schema-gated），切來源一律歸零避免誤帶
       filters.recOid = '';
       filters.prodOid = '';
@@ -256,7 +255,7 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
       () =>
         startProblemsExport({
           source: toValue(source),
-          product_verticals: effVerticals.value,
+          verticals: effVerticals.value,
           polarity: p.polarity,
           stage: p.stage,
           confidence_tier: p.confidenceTier,
@@ -266,7 +265,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           compare_models: exportCompareModels.value.length ? exportCompareModels.value : undefined,
           taxonomy: p.taxonomy,
           bucket: p.bucket,
-          vertical: p.vertical,
           has_external: p.hasExternal === undefined ? undefined : p.hasExternal === 'true',
           date_from: p.dateFrom,
           date_to: p.dateTo,

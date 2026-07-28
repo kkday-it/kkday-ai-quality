@@ -322,7 +322,6 @@ const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   hasExternal: 'hasExternal',
   dateRange: 'dateRange',
   bucket: 'bucket',
-  vertical: 'vertical',
 };
 /** 工具列篩選欄位：schema 決定的維度 + 通用精確查詢（rec/prod/order id 恆顯示）。 */
 const toolbarFields = computed<FilterField[]>(() => {
@@ -382,7 +381,7 @@ onMounted(init);
         :options="SOURCE_OPTS"
         @change="onFilterChange"
       />
-      <!-- 商品垂直分類複選（全局 SSOT；預設全選，剩 1 不可移除；即使全選也嚴格限制在所選分類內）-->
+      <!-- 商品垂直分類複選（全局 SSOT；預設不篩選，勾選才收斂範圍；順序於「配置」規則頁拖曳調整）-->
       <span class="text-sm text-gray-500">商品垂直分類</span>
       <a-select
         :model-value="verticalGroups"
@@ -390,7 +389,7 @@ onMounted(init);
         size="small"
         style="width: 220px"
         :max-tag-count="1"
-        placeholder="選分類分組"
+        placeholder="全部（未篩選）"
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
@@ -850,7 +849,7 @@ onMounted(init);
           <!-- 訂單 -->
           <div v-if="hasSection('order')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >訂單</span
             >
             <div class="min-w-0">
@@ -861,16 +860,21 @@ onMounted(init);
                 OID {{ cell(record.order_oid) }} · 出發
                 {{ fmtDt(record.go_date, true) || '—' }}
               </div>
-              <!-- 進線專屬：訂單目前狀態 / 金額（其餘來源無此欄，恆不顯示）-->
-              <div v-if="record.order_status_now || record.order_price" class="text-[var(--color-text-2)]">
-                {{ cell(record.order_status_now) }} · {{ cell(record.order_price) }}
+              <!-- 訂單目前狀態（conversations 專屬）/ 金額 / 建立來源（product_reviews 亦有欄；
+                   其餘來源皆無值，恆不顯示）-->
+              <div
+                v-if="record.order_status_now || record.order_price || record.order_create_source_code"
+                class="text-[var(--color-text-2)]"
+              >
+                <template v-if="record.order_status_now">狀態 {{ record.order_status_now }} · </template>
+                金額 {{ cell(record.order_price) }} · 平台 {{ cell(record.order_create_source_code) }}
               </div>
             </div>
           </div>
           <!-- 商品 -->
           <div v-if="hasSection('product')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >商品</span
             >
             <div class="min-w-0">
@@ -878,16 +882,13 @@ onMounted(init);
                 {{ record.prod_name }}
               </div>
               <span v-else class="text-gray-300">—</span>
-              <div class="text-[var(--color-text-2)]">
-                OID {{ cell(record.prod_oid) }} · {{ cell(record.product_category_main) }} ·
-                {{ cell(record.lang) }}
-              </div>
+              <div class="text-[var(--color-text-2)]">OID {{ cell(record.prod_oid) }} · {{ cell(record.lang) }}</div>
             </div>
           </div>
           <!-- 方案 -->
           <div v-if="hasSection('package')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >方案</span
             >
             <div class="min-w-0">
@@ -901,7 +902,7 @@ onMounted(init);
           <!-- 供應商（conversations 有名稱，優先顯示；OID 附註）-->
           <div v-if="hasSection('supplier')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >供應商</span
             >
             <div class="min-w-0">
@@ -911,47 +912,45 @@ onMounted(init);
               <div class="text-[var(--color-text-2)]">OID {{ cell(record.supplier_oid) }}</div>
             </div>
           </div>
-          <!-- 進線屬性（conversations 專屬精選核心欄：分桶/行程階段/垂直分類/處理方/BD/PM/客服標籤/訊息數，有值才顯示）-->
-          <div v-if="hasSection('inbound')" class="flex items-center gap-1.5">
+          <!-- 進線屬性（conversations 專屬：分桶/行程階段/處理方/客服標籤/訊息數，其餘來源恆空不顯示）-->
+          <div v-if="hasSection('inbound')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >進線</span
             >
-            <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-              <a-tag v-if="record.bucket" size="small" :color="BUCKET_COLORS[String(record.bucket)] || 'gray'">
-                {{ BUCKET_LABELS[String(record.bucket)] || record.bucket }}
-              </a-tag>
-              <a-tag v-if="record.trip_stage" size="small" color="arcoblue">
-                {{ INBOUND_TRIP_STAGE_LABELS[String(record.trip_stage)] || record.trip_stage }}
-              </a-tag>
-              <a-tag v-if="record.vertical" size="small" color="cyan">
-                {{ record.vertical }}
-              </a-tag>
-              <span v-if="record.msg_handler_bucket" class="text-[var(--color-text-2)]">
-                處理方
-                {{
-                  MSG_HANDLER_BUCKET_LABELS[String(record.msg_handler_bucket)] ||
-                  record.msg_handler_bucket
-                }}
-              </span>
-              <span v-if="record.bd_tag" class="text-[var(--color-text-2)]">
-                BD {{ record.bd_tag }}
-              </span>
-              <span v-if="record.PM" class="text-[var(--color-text-2)]"> PM {{ record.PM }} </span>
-              <span v-if="record.cs_tag_name" class="text-[var(--color-text-2)]">
-                {{ record.cs_tag_name }}
-              </span>
-              <span v-if="record.user_message_count" class="text-[var(--color-text-2)]">
-                訊息數 {{ record.user_message_count }}
-              </span>
+            <div class="flex min-w-0 flex-col gap-1">
+              <div v-if="record.bucket || record.trip_stage" class="flex flex-wrap items-center gap-1.5">
+                <a-tag v-if="record.bucket" size="small" :color="BUCKET_COLORS[String(record.bucket)] || 'gray'">
+                  {{ BUCKET_LABELS[String(record.bucket)] || record.bucket }}
+                </a-tag>
+                <a-tag v-if="record.trip_stage" size="small" color="arcoblue">
+                  {{ INBOUND_TRIP_STAGE_LABELS[String(record.trip_stage)] || record.trip_stage }}
+                </a-tag>
+              </div>
+              <div
+                v-if="record.msg_handler_bucket || record.cs_tag_name || record.user_message_count"
+                class="text-[var(--color-text-2)]"
+              >
+                <template v-if="record.msg_handler_bucket"
+                  >處理方
+                  {{
+                    MSG_HANDLER_BUCKET_LABELS[String(record.msg_handler_bucket)] ||
+                    record.msg_handler_bucket
+                  }}</template
+                >
+                <template v-if="record.cs_tag_name">
+                  <template v-if="record.msg_handler_bucket"> · </template>{{ record.cs_tag_name }}</template
+                >
+                <template v-if="record.user_message_count">
+                  <template v-if="record.msg_handler_bucket || record.cs_tag_name"> · </template>訊息數
+                  {{ record.user_message_count }}</template
+                >
+              </div>
               <span
                 v-if="
                   !record.bucket &&
                   !record.trip_stage &&
-                  !record.vertical &&
                   !record.msg_handler_bucket &&
-                  !record.bd_tag &&
-                  !record.PM &&
                   !record.cs_tag_name &&
                   !record.user_message_count
                 "
@@ -960,18 +959,43 @@ onMounted(init);
               >
             </div>
           </div>
-          <!-- 旅客 -->
-          <div v-if="hasSection('traveller')" class="flex items-center gap-1.5">
+          <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值，
+               獨立於上方「進線」段之外的共用段落） -->
+          <div v-if="hasSection('org')" class="flex gap-1.5">
             <span
-              class="min-w-[3rem] shrink-0 rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
+              >組織分工</span
+            >
+            <div class="flex min-w-0 flex-col gap-1">
+              <div v-if="record.vertical" class="flex flex-wrap items-center gap-1.5">
+                <a-tag size="small" color="cyan">{{ record.vertical }}</a-tag>
+              </div>
+              <div v-if="record.bd_tag" class="text-[var(--color-text-2)]">
+                BD TAG {{ record.bd_tag
+                }}<template v-if="record.bd_tag_note"> · {{ record.bd_tag_note }}</template>
+              </div>
+              <div v-if="record.PM" class="text-[var(--color-text-2)]">PM {{ record.PM }}</div>
+              <span
+                v-if="!record.vertical && !record.bd_tag && !record.PM"
+                class="text-gray-300"
+                >—</span
+              >
+            </div>
+          </div>
+          <!-- 旅客 -->
+          <div v-if="hasSection('traveller')" class="flex gap-1.5">
+            <span
+              class="flex min-w-[3rem] shrink-0 items-center justify-center self-stretch whitespace-nowrap rounded bg-[var(--color-fill-2)] px-1.5 py-0.5 text-center text-[11px] font-medium text-[var(--color-text-2)]"
               >旅客</span
             >
-            <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
-              {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
-            </a-tag>
-            <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
-              {{ record.member_uuid }}
-            </span>
+            <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+              <a-tag v-if="record.traveller_type" size="small" color="arcoblue">
+                {{ TRAVELLER_TYPE_LABELS[String(record.traveller_type)] || record.traveller_type }}
+              </a-tag>
+              <span v-if="record.member_uuid" class="break-all text-[var(--color-text-2)]">
+                {{ record.member_uuid }}
+              </span>
+            </div>
           </div>
         </div>
       </template>

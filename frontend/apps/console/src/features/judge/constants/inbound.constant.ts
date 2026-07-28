@@ -57,20 +57,3 @@ export const INBOUND_TRIP_STAGE_LABELS: Record<string, string> = {
   D0: '出發當日',
   'Post-trip': '行後',
 };
-
-/** 進線商品垂直分類 vertical 篩選選項（BigQuery 端預算字面值，已是可讀英文業務類別，不再翻譯；
- *  比照既有 product_vertical 分組選項原樣顯示的慣例）。 */
-export const INBOUND_VERTICAL_OPTIONS: string[] = [
-  'Tour',
-  'Hotel',
-  'Flight',
-  'Experience',
-  'Charter',
-  'Tickets',
-  'Trans',
-  'Airport Transfer',
-  'F&B',
-  'MICE',
-  'COMM',
-  'Others',
-];

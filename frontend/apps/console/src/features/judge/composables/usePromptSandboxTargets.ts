@@ -76,7 +76,7 @@ export function usePromptSandboxTargets(deps: PromptSandboxTargetsDeps) {
       source: toValue(source),
       scope: 'all',
       prompt_ids: promptIds,
-      product_verticals: toValue(effVerticals),
+      verticals: toValue(effVerticals),
       stages: targetStages.value,
       within_ids: targetMode.value === 'selected' ? [...toValue(selectedKeys)] : undefined,
       date_from: lf.dateFrom,
