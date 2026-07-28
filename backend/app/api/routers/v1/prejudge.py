@@ -72,7 +72,7 @@ class PrejudgeIn(BaseModel):
     source: str | None = None
     scope: str | None = None  # "all"＝依 stages 目標選取（item_ids 未給時生效）
     overrides: LlmOverridesIn | None = None  # 本次臨時旋鈕覆寫；缺省沿用 prejudge 功能區默認
-    product_verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
+    verticals: list[str] | None = None  # 全局商品垂直分類（scope=all 時約束標的集合）
     # 目標選取（scope=all；stage 驅動）：預設只收未初判；加選已初判階段時可再收斂傾向/信心
     stages: list[str] | None = None  # 預設 ["unjudged"]
     target_polarity: list[str] | None = None  # 已初判分支傾向收斂（多選 IN；如 ["negative"]）
@@ -102,7 +102,7 @@ def _resolve_target_ids(body: PrejudgeIn) -> list[str]:
     if body.scope == "all":
         return db.prejudge_target_ids(
             body.source,
-            body.product_verticals,
+            body.verticals,
             stages=body.stages,
             target_polarity=body.target_polarity,
             max_confidence=body.max_confidence,

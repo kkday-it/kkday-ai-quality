@@ -78,13 +78,6 @@ class TicketFinding(BaseModel):
     # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。
     order_oid: str = ""  # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
     supplier_oid: str = ""  # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
-    # ── 軸A intake_vector 轉存（自 NormalizedTicket 複製，dashboard 進線漏斗用）──
-    symptom_tag1: str = ""
-    symptom_tag2: str = ""
-    symptom_tag3: str = ""
-    trip_stage: str = ""
-    product_category: str = ""
-    failure_type: str = ""
     root_cause_candidates: list[str] = Field(default_factory=list)  # 預判候選域（初判前可給）
     evidence_level: EvidenceLevel = "symptom_only"  # 初判當下實際證據層級
     # ── 軸B 初判 vector（初判後 evidence-gated；responsible_party 由 domain 推導）──
@@ -111,7 +104,7 @@ class TicketFinding(BaseModel):
         """初判 payload → attributions typed 欄位 dict（落庫形狀 SSOT）。
 
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
-        殘留 / legacy 欄（verdict 軸、symptom_tag、severity、evidence_level…）一律不入庫。finding_id / source /
+        殘留 / legacy 欄（verdict 軸、severity、evidence_level…）一律不入庫。finding_id / source /
         source_id / prod_oid / status / created_at / needs_review
         由 db.findings._finding_values 補齊（來源關聯 + 人工判決軸）。
 

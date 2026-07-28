@@ -1,0 +1,50 @@
+{
+  "_comment": "商品垂直分類（bd_tag_vertical：BD 分工代碼 → PM/Vertical）預設 seed。可編輯版本化規則（rule_code=bd_tag_vertical，走 judge_rule_versions DB 版本化，經「配置」抽屜〔商品垂直分類 tab〕編輯/歷史/恢復默認）；本檔為「恢復默認」的檔案來源。取代舊制 product_vertical（CATEGORY_xxx 分組），改以 BD 分工表 Google Sheet（14r0_oZShsX2MiXtwnrd8hAsSMmQJN8hwHqQsOpJ5xaw）為權威來源。供歸因列表商品垂直分類篩選展開 bd_tag 代碼、及 product_reviews 來源補算 vertical/PM 顯示欄。",
+  "_meta": {
+    "label": "商品垂直分類"
+  },
+  "pms": ["Wanwan", "Bily", "Kiki", "Qian", "N/A(Bily)"],
+  "verticals": [
+    "COMM",
+    "Airport Transfer",
+    "Trans",
+    "Charter",
+    "Tickets",
+    "Tour",
+    "Experience",
+    "F&B",
+    "Others",
+    "Hotel",
+    "MICE",
+    "Flight"
+  ],
+  "items": {
+    "0001": { "note": "網路通訊｜SIM Card", "pm": "Wanwan", "vertical": "COMM" },
+    "0002": { "note": "交通｜機場交通 (專車接送)", "pm": "Wanwan", "vertical": "Airport Transfer" },
+    "0003": { "note": "交通｜城市移動大眾運輸 (incl. 市內巴士/地鐵/船交通卡等)", "pm": "Bily", "vertical": "Trans" },
+    "0004": { "note": "交通｜私人包車/包機/包船", "pm": "Kiki", "vertical": "Charter" },
+    "0005": { "note": "票券｜景點票/城市景點套票/SHOW票/樂園票", "pm": "Kiki", "vertical": "Tickets" },
+    "0006": { "note": "行程｜郊區行程 (incl. 有Guide/無Guide/景點接駁等)", "pm": "Kiki", "vertical": "Tour" },
+    "0007": { "note": "交通｜長程移動交通 (incl. 跨市交通/高鐵/JR PASS/KR PASS等)", "pm": "Bily", "vertical": "Trans" },
+    "0008": { "note": "體驗｜定點特殊體驗 (incl. 跳傘/SPA/DIY課程/傳統服飾體驗等)", "pm": "Kiki", "vertical": "Experience" },
+    "0009": { "note": "行程｜市區導覽行程 (incl. walking tour/景點觀光巴士等)", "pm": "Kiki", "vertical": "Tour" },
+    "0010": { "note": "F&B｜F&B 餐飲相關 (incl. 餐廳訂位/餐券等)", "pm": "N/A(Bily)", "vertical": "F&B" },
+    "0011": { "note": "實體商品｜實體商品 (incl. 蔬果/伴手禮/實體物等)", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0012": { "note": "住宿｜住宿 (incl. 民宿/飯店/露營等)", "pm": "Qian", "vertical": "Hotel" },
+    "0013": { "note": "活動｜MICE 會展產業 (期間限定的會議/獎勵旅遊/大型會議/展覽/演唱會...)", "pm": "Kiki", "vertical": "MICE" },
+    "0014": { "note": "網路通訊｜Wi-Fi", "pm": "Wanwan", "vertical": "COMM" },
+    "0015": { "note": "行李配送/寄放", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0016": { "note": "用品租借 (incl. 行李箱/GoPro/露營裝備...)", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0017": { "note": "證件｜旅遊文件代辦服務 (incl. 護照/簽證...)", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0018": { "note": "交通｜交通工具租借 (incl. 租車/租摩托車...)", "pm": "Bily", "vertical": "Trans" },
+    "0019": { "note": "機票｜跨境機票", "pm": "N/A(Bily)", "vertical": "Flight" },
+    "0020": { "note": "機票｜國內機票", "pm": "N/A(Bily)", "vertical": "Flight" },
+    "0021": { "note": "機票｜跨境機票＋酒店", "pm": "N/A(Bily)", "vertical": "Flight" },
+    "0022": { "note": "機票｜跨境多日遊套裝商品(含機＋酒, 行程, 票券, 陸地交通等組合)", "pm": "N/A(Bily)", "vertical": "Flight" },
+    "0023": { "note": "郵輪假期", "pm": "Bily", "vertical": "Trans" },
+    "0027": { "note": "補差價商品/額外手續費/訂金", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0028": { "note": "現金券/兌換券/優惠券/購物券", "pm": "N/A(Bily)", "vertical": "Others" },
+    "0029": { "note": "交通｜機場交通 (大眾交通票券)", "pm": "Bily", "vertical": "Trans" },
+    "9999": { "note": "其他", "pm": "N/A(Bily)", "vertical": "Others" }
+  }
+}

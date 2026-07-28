@@ -48,8 +48,7 @@
     "supplier_oid": "supplier_oid",
     "supplier_name": "supplier_name",
     "trip_stage": "trip_stage",
-    "go_date": "go_date",
-    "product_category": "product_category"
+    "go_date": "go_date"
    },
    "const_fields": {},
    "required_headers": [
@@ -65,7 +64,7 @@
     "prod_oid": "prod_oid",
     "rec_desc": "content",
     "lang_code": "lang",
-    "lst_dt_go": "go_date",
+    "go_date": "go_date",
     "order_mid": "order_mid",
     "order_oid": "order_oid",
     "rec_title": "title",
@@ -73,8 +72,8 @@
     "create_date": "occurred_at",
     "member_uuid": "member_uuid",
     "supplier_oid": "supplier_oid",
-    "traveller_type": "traveller_type",
-    "product_category": "product_category"
+    "supplier_name": "supplier_name",
+    "traveller_type": "traveller_type"
    },
    "const_fields": {
     "channel": "review"

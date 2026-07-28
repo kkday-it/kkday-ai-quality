@@ -6,7 +6,7 @@
 ## global/（業務可調·跨環境）
 - `llm_model.json` — LLM providers 目錄 + defaultModels + per-model 單價（pricing loader / 前端下拉共用）+ 根層 `embeddings[]`（embedding 模型單價，域路由特徵用——僅計價、不進聊天模型下拉）+ 根層 `areas[]`（LLM 消費功能區清單：prejudge/prompt_debug/sandbox，`llm_area_defaults` 的 key 集合）+ `modelCapabilities`（per-model 可配參數能力覆寫；未登記者回退所屬 provider 的 `supportsThinking`/`reasoningEffortOptions`/`temperatureLockedWhenThinking`/`lockedTemperatureValue` 欄位，後端 `settings.model_capabilities_for()` 讀取）
 - `sources.json` — 5 來源 code → label / natural_key（sources loader）
-- `product_vertical.json` — 商品垂直分類分組 → CATEGORY 代碼 + `group_order` 顯示順序（jsonb 不保 key 序，故顯式存；product_vertical 默認 seed）
+- `bd_tag_vertical.json` — 商品垂直分類：BD 分工代碼 → `{note, pm, vertical}`（bd_tag_vertical 默認 seed，源自 BD 分工表 Google Sheet；2026-07-27 取代舊制 product_vertical 的 CATEGORY 代碼分組）
 - `qc_db.json` — QC DB 連線預設
 - `permissions.json` — 無角色，email 直接授予 business-key 權限集合 SSOT：`no_auth_grant_all`（本地無登入時無條件全通過）+ `default`（人人可用的日常操作 key）+ `grants`（email → 額外 key 集合，`'*'` 展開為全量；key 定義見 `backend/app/core/permissions/permission_keys.py`；`LocalPermissionProvider` 讀此，`default ∪ grants[email]`）
 - `auth.config.json` — 認證/權限 provider 切換開關：`authProvider`＝登入身分驗證（local=固定身分不驗 token｜be2=中央 Auth Service token）、`provider`＝權限來源（local=permissions.json 直接授予｜be2=Auth SVC business-list），兩鍵獨立可分開切換；`whiteList`（be2 免權限路徑預留）+ `businessListTtlMs`（前端權限清單快取 TTL）+ `be2` 段接入佔位（`authSvcUrl`/`be2LoginUrl`/`apiLangUrl`/`langPlatform`，實值待 auth team 註冊回填）

@@ -1,8 +1,8 @@
-"""初判規則管理端點（RULE_CODES：product_vertical + source_mapping + prompt_* 的 live + 版本化；
+"""初判規則管理端點（RULE_CODES：bd_tag_vertical + source_mapping + prompt_* 的 live + 版本化；
 judgment 已移出＝專案靜態設定檔，不經此管理）。
 
 檔案＝默認 seed（git 版控）；DB judge_rule_versions＝live + 完整歷史。存檔前依 code 型別驗 content
-（product_vertical/source_mapping 各自結構驗、prompt_* 委派 prompt_source.validate 驗 md 三節 +
+（bd_tag_vertical/source_mapping 各自結構驗、prompt_* 委派 prompt_source.validate 驗 md 三節 +
 drift 護欄），不過回 422——DB 永不存非法規則。存檔後 _reload_judge_cache 熱重載對應 loader。
 全端點 JWT 守衛。
 
@@ -77,7 +77,7 @@ def _check_prompt_code(code: str) -> None:
 
 
 def _validate(code: str, content: dict) -> None:
-    """存檔前驗證：prompt_* 委派 prompt_source、product_vertical 用輕量結構驗、source_mapping
+    """存檔前驗證：prompt_* 委派 prompt_source、bd_tag_vertical 用輕量結構驗、source_mapping
     用自身 schema。不過拋 422。
     """
     if code.startswith("prompt_"):
@@ -95,21 +95,30 @@ def _validate(code: str, content: dict) -> None:
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
         return
-    if code == "product_vertical":
-        groups = content.get("groups")
-        if not isinstance(groups, dict):
+    if code == "bd_tag_vertical":
+        items = content.get("items")
+        if not isinstance(items, dict):
             raise HTTPException(
                 status_code=422,
-                detail="product_vertical 需含 groups: {分組名: [CATEGORY 代碼,...]}",
+                detail="bd_tag_vertical 需含 items: {bd_tag代碼: {note, pm, vertical}}",
             )
-        for name, codes in groups.items():
-            if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
-                raise HTTPException(status_code=422, detail=f"分組「{name}」的代碼須為字串清單")
-        order = content.get("group_order")  # 選填：分組顯示順序（jsonb 不保 key 序，故顯式存）
-        if order is not None and (
-            not isinstance(order, list) or not all(isinstance(g, str) for g in order)
-        ):
-            raise HTTPException(status_code=422, detail="group_order 須為分組名字串清單")
+        for bd_code, v in items.items():
+            if not isinstance(v, dict):
+                raise HTTPException(status_code=422, detail=f"代碼「{bd_code}」的值須為物件")
+            for key in ("pm", "vertical"):
+                if not isinstance(v.get(key), str) or not v[key]:
+                    raise HTTPException(
+                        status_code=422, detail=f"代碼「{bd_code}」缺少必填欄位 {key}（字串）"
+                    )
+            if "note" in v and not isinstance(v.get("note"), str):
+                raise HTTPException(status_code=422, detail=f"代碼「{bd_code}」的 note 須為字串")
+        # pms/verticals：獨立可配置選項池（選填；缺省時 loader 各自安全回退，見 bd_tag_vertical.py）
+        for pool_key in ("pms", "verticals"):
+            pool = content.get(pool_key)
+            if pool is not None and (
+                not isinstance(pool, list) or not all(isinstance(x, str) and x for x in pool)
+            ):
+                raise HTTPException(status_code=422, detail=f"{pool_key} 須為非空字串清單")
         return
     if code == "source_mapping":
         # 上傳表頭校驗 + 欄位映射：驗自身 schema（source_mapping.schema.json），非 L1-L3 歸因樹。
@@ -170,17 +179,18 @@ def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
 
 
 # 註：須定義於 `/{code}` GET 之前（雖然路徑段數不同不會衝突，仍比照 reset-default-all 慣例前置）。
-@router.get("/product-vertical/resolved")
-def get_product_vertical_resolved(user: dict = Depends(auth.get_current_user)) -> dict:
-    """取當前生效的商品垂直分類定義（{"groups": {name: [codes]}, "group_order": [name,...]}）；
-    讀 product_vertical active 版本，缺版本回空 groups。
+@router.get("/bd-tag-vertical/resolved")
+def get_bd_tag_vertical_resolved(user: dict = Depends(auth.get_current_user)) -> dict:
+    """取當前生效的商品垂直分類定義（{"verticals": [name,...], "items": {code: {note,pm,vertical}}}）；
+    讀 bd_tag_vertical active 版本，缺版本回空。
 
-    供歸因列表商品垂直分類篩選下拉：顯示分組名、送分組名，CATEGORY 代碼由後端展開。
-    group_order＝分組顯示順序（顯式排序欄；jsonb 不保 object key 序，前端以此排列選項）。
+    供歸因列表商品垂直分類篩選下拉：verticals 為去重排序後的 Vertical 名稱清單，bd_tag 代碼展開
+    由後端 _shared._vertical_codes 處理，前端只需顯示/送出 Vertical 名稱。items 供設定頁表格編輯器
+    對照顯示（bd_tag 代碼 → note/PM，避免前端再拉一次原始 rule content）。
     """
-    from app.core import product_vertical
+    from app.core import bd_tag_vertical
 
-    return {"groups": product_vertical.all_groups(), "group_order": product_vertical.group_order()}
+    return {"verticals": bd_tag_vertical.all_verticals(), "items": bd_tag_vertical.all_items()}
 
 
 # 註：須定義於 `/{code}` GET 之前，否則 "drafts" 會被當成 code 段被 get_rule 攔截。
@@ -245,7 +255,7 @@ def reset_default_all(
     user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
 ) -> dict:
     """恢復 RuleManager「全部恢復默認」涵蓋的規則（source_mapping + 7 支初判 Prompt，排除
-    product_vertical）為檔案默認，各新增一個版本覆蓋當前；範圍為全域單一動作，不依觸發頁面而變。
+    bd_tag_vertical）為檔案默認，各新增一個版本覆蓋當前；範圍為全域單一動作，不依觸發頁面而變。
 
     缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
     """

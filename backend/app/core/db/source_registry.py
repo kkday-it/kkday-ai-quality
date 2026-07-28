@@ -2,7 +2,7 @@
 
 5 反饋來源皆已拆為獨立實體表（見 tables.py）：product_reviews / conversations /
 freshdesk_tickets / app_feedback / mixpanel_tracker，各以特徵 id 為 natural_key。
-本模組登記每個來源的 table + natural_key + score_col/category_col/date_col，供 db 子模組
+本模組登記每個來源的 table + natural_key + score_col/bd_tag_col/date_col，供 db 子模組
 統一 spec 驅動查詢（source=None＝縱覽全部，走 attributions 直接聚合，非單表）。
 """
 
@@ -23,27 +23,30 @@ class SourceSpec:
     table: Table
     natural_key: str  # 自然鍵欄名（upsert 衝突目標）
     score_col: str | None = None  # 星等/評分欄名（list_problems score 篩選用）
-    category_col: str | None = None  # 商品分類欄名（product_vertical 篩選用）
+    bd_tag_col: str | None = None  # BD 分工代碼欄名（商品垂直分類篩選用，見 bd_tag_vertical）
     date_col: str = "occurred_at"  # 預設日期篩選欄（date_field='occurred_at' 對應）
 
 
 # 5 反饋來源登記（value=source code → SourceSpec）。各表對齊源 schema、PK=特徵 id；
 # canonical 顯示欄映射走 config/ai_judge/source_mapping.json 的 field_map（源欄→canonical）。
-# score_col/category_col/date_col 為「該來源實際源欄名」（供 list score 篩選 / vertical 篩選 / 日期排序）。
+# score_col/bd_tag_col/date_col 為「該來源實際源欄名」（供 list score 篩選 / vertical 篩選 / 日期排序）。
+# ⚠️ bd_tag_col 兩表欄名不同：product_reviews 的代碼欄叫 bd_tag（bd_tag_note 才是文字），
+# conversations 的代碼欄叫 bd_tag_cd（bd_tag 才是文字）——BQ 端兩份查詢的匯出命名各自演進不同步，
+# 不可假設同名，見 review-fusion 與售前售後進線兩份 SQL 的欄位對照。
 _REGISTRY: dict[str, SourceSpec] = {
     "product_reviews": SourceSpec(
         source="product_reviews",
         table=T.product_reviews,
         natural_key="rec_oid",
         score_col="rec_scores",
-        category_col="product_category",
+        bd_tag_col="bd_tag",
         date_col="create_date",
     ),
     "conversations": SourceSpec(
         source="conversations",
         table=T.conversations,
         natural_key="session_oid",
-        category_col="product_category",
+        bd_tag_col="bd_tag_cd",
         date_col="inbound_time",
     ),
     "freshdesk_tickets": SourceSpec(

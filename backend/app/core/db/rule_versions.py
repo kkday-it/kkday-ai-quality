@@ -1,7 +1,8 @@
-"""初判規則版本（RULE_CODES：product_vertical + source_mapping + prompt_*；append-only 快照）。
+"""初判規則版本（RULE_CODES：bd_tag_vertical + source_mapping + prompt_*；append-only 快照）。
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
-- product_vertical（Tour/Exp/Charter/Tix→CATEGORY 代碼），seed 放 config/global。
+- bd_tag_vertical（BD 分工代碼→PM/Vertical，源自 BD 分工表 Google Sheet），seed 放 config/global。
+  取代舊制 product_vertical（CATEGORY_xxx→Tour/Exp/Charter/Tix 分組，已於 2026-07-27 全棧退役）。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
 - prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：初判 prompt 唯一真相源＝
   prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
@@ -26,7 +27,7 @@ from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
 
 RULE_CODES = (
-    "product_vertical",
+    "bd_tag_vertical",
     "source_mapping",
     # 初判 Prompt（Prompt-as-Source 架構）：初判 prompt 唯一真相源＝prompts/*.md，
     # 經此機制 DB 版本化（線上熱編 + 歷史 + 恢復默認）。content={"_meta":..., "text": md 全文}，
@@ -42,11 +43,11 @@ RULE_CODES = (
 
 
 def _rule_file(code: str) -> Path:
-    """rule_code → 對應默認檔（product_vertical→config/global，source_mapping→config/ai_judge）。"""
+    """rule_code → 對應默認檔（bd_tag_vertical→config/global，source_mapping→config/ai_judge）。"""
     if (
-        code == "product_vertical"
+        code == "bd_tag_vertical"
     ):  # 商品垂直分類屬全域配置，默認 seed 放 config/global（非歸因判準）
-        return _GLOBAL_DIR / "product_vertical.json"
+        return _GLOBAL_DIR / "bd_tag_vertical.json"
     if (
         code == "source_mapping"
     ):  # 上傳表頭校驗 + 來源欄位映射（上傳流程 SSOT），默認 seed = source_mapping.json
@@ -169,7 +170,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     共 8 條）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）；不論觸發時當前開著哪一頁，
     範圍恆一致（使用者 2026-07-24 拍板：全域單一動作，非依頁面分流）。
 
-    **排除**：product_vertical（設定抽屜獨立管理，非 RuleManager 範圍）。
+    **排除**：bd_tag_vertical（設定抽屜獨立管理，非 RuleManager 範圍）。
     缺默認檔的 code 跳過不中斷，回報於 skipped。
 
     Returns:
@@ -177,7 +178,7 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    _EXCLUDED = {"product_vertical"}  # 設定抽屜獨立管理，非 RuleManager「全部恢復默認」範圍
+    _EXCLUDED = {"bd_tag_vertical"}  # 設定抽屜獨立管理，非 RuleManager「全部恢復默認」範圍
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

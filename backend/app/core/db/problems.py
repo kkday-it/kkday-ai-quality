@@ -86,24 +86,6 @@ def _extract_package_name(raw: dict) -> str:
     return ""
 
 
-def _parse_category_main(value) -> str | None:
-    """product_category（源欄，raw `{"main":..,"sub":[]}` JSON / list / 純代碼）→ main 代碼。"""
-    if not value:
-        return None
-    v = value
-    if isinstance(v, str):
-        s = v.strip()
-        try:
-            v = json.loads(s)
-        except (ValueError, TypeError):
-            return s or None  # 純代碼字串（如 CATEGORY_082）
-    if isinstance(v, dict):
-        return v.get("main") or None
-    if isinstance(v, list):
-        return str(v[0]) if v else None
-    return str(v) if v else None
-
-
 def _parse_free_tag(value) -> list[dict]:
     """free_tag 欄（JSON 字串）→ 標籤 dict 清單；tag_list 為內嵌 JSON 字串需二次 parse。
 
@@ -144,6 +126,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
     source_mapping.normalize_row(source, row)（源欄→canonical）產出。
     `source_id`＝該表特徵 id（spec.natural_key 欄值）；`item_id` 為傳輸/顯示相容字串 `{source}:{source_id}`。
     """
+    from app.core import bd_tag_vertical as _bd_tag_vertical
     from app.core import source_mapping as _srcmap
     from app.core import sources as _sources
 
@@ -192,15 +175,17 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "order_create_source_code": row.get("order_create_source_code"),
         "order_create_time": row.get("order_create_time"),
         "product_tz": row.get("product_tz"),
-        "vertical": row.get("vertical"),  # 商品垂直分類字面值（BQ 端預算）
+        # vertical/PM：conversations 由 BQ 端預算好的字面值；product_reviews 無此欄，落 bd_tag
+        # 代碼後查 bd_tag_vertical 版本化規則 fallback（DB 版本化，可在配置抽屜編輯）
+        "vertical": row.get("vertical") or _bd_tag_vertical.vertical_for(row.get("bd_tag") or ""),
         "bd_tag_cd": row.get("bd_tag_cd"),
         "bd_tag": row.get("bd_tag"),
-        "PM": row.get("PM"),
+        "bd_tag_note": row.get("bd_tag_note"),  # BD tag 中文說明（僅 product_reviews 有欄）
+        "PM": row.get("PM") or _bd_tag_vertical.pm_for(row.get("bd_tag") or ""),
         "cs_tag_oid": row.get("cs_tag_oid"),
         "cs_tag_name": row.get("cs_tag_name"),
         "user_message_count": row.get("user_message_count"),
         "traveller_type": canon.get("traveller_type"),
-        "product_category_main": _parse_category_main(canon.get("product_category")),
         "source_record_id": source_id,  # 評論ID（＝特徵 id）
         # 外部評論融合欄（僅 product_reviews 有；輔助訊號——傾向/歸因以原文 LLM 判定為準）
         "ext_lst_oid": row.get("review_external_lst_oid"),
@@ -327,7 +312,7 @@ def list_problems(
     stage: list[str] | None = None,
     limit: int = 100,
     offset: int = 0,
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: str = "occurred_at",
@@ -340,7 +325,6 @@ def list_problems(
     model: list[str] | None = None,
     has_external: bool | None = None,
     bucket: list[str] | None = None,
-    vertical: list[str] | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
 ) -> dict:
@@ -356,7 +340,7 @@ def list_problems(
         polarity: 傾向過濾（attributions.data.polarity）。
         stage: 初判階段多選（attributions.data.prejudge_stage；'unjudged'＝無初判，多值 OR）。
         limit/offset: 分頁。
-        product_vertical: 商品垂直分類名（單一或清單；經 product_vertical.codes_for_group 展開為 CATEGORY 代碼）。
+        vertical: 商品垂直分類名（單一或清單；經 bd_tag_vertical.codes_for_vertical 展開為 bd_tag 代碼）。
         date_from/date_to: 日期區間（'YYYY-MM-DD'，含端點）；比對 date_field 前 10 字。
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（attributions.data.confidence_tier；auto_accept/jury/needs_review）。
@@ -366,9 +350,6 @@ def list_problems(
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
         bucket: 進線分桶多選（conversations 專屬直欄；transferred/chatbot_only/human_supplier/
             human_kkday/human_other；其餘來源無此欄，忽略）。
-        vertical: 進線商品垂直分類多選（conversations 專屬直欄字面值，如 Tour/Hotel/Flight；
-            與 product_vertical 為不同概念——後者是跨來源 CATEGORY 代碼分組，此為 BQ 端預算的
-            粗顆粒業務垂直；其餘來源無此欄，忽略）。
 
     Returns:
         {"rows": [統一記錄], "total": 符合篩選總數}。
@@ -383,7 +364,7 @@ def list_problems(
         stage,
         limit,
         offset,
-        product_vertical,
+        vertical,
         date_from,
         date_to,
         date_field,
@@ -399,7 +380,6 @@ def list_problems(
         status=status,
         model=model,
         bucket=bucket,
-        vertical=vertical,
     )
 
 
@@ -410,7 +390,7 @@ def _list_problems_spec(
     stage: list[str] | None,
     limit: int,
     offset: int,
-    product_vertical: str | list[str] | None,
+    vertical: str | list[str] | None,
     date_from: str | None,
     date_to: str | None,
     date_field: str,
@@ -426,11 +406,10 @@ def _list_problems_spec(
     status: list[str] | None = None,
     model: list[str] | None = None,
     bucket: list[str] | None = None,
-    vertical: list[str] | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN attributions。
 
-    表本身即單一來源，無需 WHERE source= 過濾；product_vertical/日期區間為此分支專屬篩選。
+    表本身即單一來源，無需 WHERE source= 過濾；vertical/日期區間為此分支專屬篩選。
     """
     tbl = spec.table
 
@@ -471,9 +450,6 @@ def _list_problems_spec(
         if bucket and "bucket" in tbl.c:
             # 進線分桶多選（conversations 專屬直欄，其餘來源無此欄忽略）
             stmt = stmt.where(tbl.c["bucket"].in_(bucket))
-        if vertical and "vertical" in tbl.c:
-            # 進線商品垂直分類多選（conversations 專屬直欄字面值，非 product_vertical 分組語義）
-            stmt = stmt.where(tbl.c["vertical"].in_(vertical))
         if taxonomy:
             # 歸因分類多選：任意層級 code，l1/l2_code 任一 IN 命中＝子樹語義
             # （選 L1 涵蓋整域，含只判到 L2 的列；選 L2 精確到面向）
@@ -490,7 +466,7 @@ def _list_problems_spec(
         return apply_table_filters(
             spec,
             stmt,
-            product_vertical=product_vertical,
+            vertical=vertical,
             date_from=date_from,
             date_to=date_to,
             date_field=date_field,
@@ -503,7 +479,7 @@ def _list_problems_spec(
     # item 級排序（白名單防注入）；confidence 取該 item 各歸因最大信心（scalar 子查詢）
     _sort_map = {
         "occurred_at": tbl.c[spec.date_col],
-        "go_date": tbl.c["lst_dt_go"] if "lst_dt_go" in tbl.c else tbl.c[spec.date_col],
+        "go_date": tbl.c["go_date"] if "go_date" in tbl.c else tbl.c[spec.date_col],
         "score": tbl.c[spec.score_col] if spec.score_col else tbl.c[spec.date_col],
     }
     if sort_by == "confidence":

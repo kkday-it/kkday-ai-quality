@@ -113,8 +113,7 @@ product_reviews = Table(
     Column("order_mid", Text),  # ⚠️ 會員 id（個資）
     Column("supplier_oid", Text),
     Column("order_snap_json", Text),  # 多語商品名快照 JSON（enrich 解析 prod_name/package_name）
-    Column("lst_dt_go", Text),  # canonical go_date（出發日）
-    Column("product_category", Text),  # 商品分類（enrich 解析 main/sub）
+    Column("go_date", Text),  # canonical go_date（出發日；BQ 端已 DATE 轉型）
     Column(
         "review_external_lst_oid", Text
     ),  # 外部評論號（評論系統 rec_oid 對橋回查鍵；無對應為 NULL）
@@ -122,9 +121,17 @@ product_reviews = Table(
     Column(
         "free_tag", Text
     ),  # 外部 LLM 面向標籤 JSON 字串 [{tag_name,tag_value,tag_list}]（輔助訊號）
+    Column("order_lang", Text),
+    Column("order_price", Text),
+    Column("order_profit", Text),
+    Column("order_create_source_code", Text),
+    Column("order_create_time", Text),
+    Column("product_name", Text),
+    Column("bd_tag", Text),
+    Column("bd_tag_note", Text),
+    Column("supplier_name", Text),  # canonical supplier_name
     Index("idx_product_reviews_create_date", "create_date"),
     Index("idx_product_reviews_prod_oid", "prod_oid"),
-    Index("idx_product_reviews_product_category", "product_category"),
 )
 
 conversations = Table(
@@ -157,7 +164,6 @@ conversations = Table(
     Column(
         "PM", Text
     ),  # 大寫欄名逐字對齊 CSV 表頭（SQLAlchemy 自動加引號保留大小寫，勿手滑小寫化）
-    Column("product_category", Text),  # canonical product_category
     Column("supplier_oid", Text),  # canonical supplier_oid
     Column("supplier_name", Text),  # canonical supplier_name
     Column("cs_tag_oid", Text),
@@ -168,7 +174,6 @@ conversations = Table(
     Index("idx_conversations_prod_oid", "prod_oid"),
     Index("idx_conversations_bucket", "bucket"),
     Index("idx_conversations_vertical", "vertical"),
-    Index("idx_conversations_product_category", "product_category"),
 )
 
 freshdesk_tickets = Table(
@@ -259,18 +264,18 @@ settings = Table(
     Column("updated_at", Text),
 )
 
-# ── 初判規則版本（product_vertical/source_mapping + prompt_* 的 live + 歷史）───
+# ── 初判規則版本（bd_tag_vertical/source_mapping + prompt_* 的 live + 歷史）───
 # append-only 快照：每次存檔 insert 新版本列（不就地改），規避 JSONB write-amplification。
-# 檔案 config/ai_judge/*.json（product_vertical/source_mapping）與
+# 檔案 config/global|ai_judge/*.json（bd_tag_vertical/source_mapping）與
 # prompts/*.md（prompt_*）為默認 seed；DB 存 live + 完整歷史；一 rule_code 僅一 active。
-# 版本化 rule_code：product_vertical / source_mapping / prompt_polarity / prompt_C-1~6。
+# 版本化 rule_code：bd_tag_vertical / source_mapping / prompt_polarity / prompt_C-1~6。
 judge_rule_versions = Table(
     "judge_rule_versions",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column(
         "rule_code", Text, nullable=False
-    ),  # 'product_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
+    ),  # 'bd_tag_vertical' | 'source_mapping' | 'prompt_polarity' | 'prompt_C-1'..'prompt_C-6'
     Column("version", Integer, nullable=False),  # per rule_code 遞增
     Column("content", JSONB, nullable=False),  # 完整 rule/schema JSON
     Column("note", Text),

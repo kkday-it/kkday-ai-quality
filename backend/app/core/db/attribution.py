@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import cast as sa_cast
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.db import tables as T
 from app.core.db._shared import (
@@ -25,7 +23,7 @@ def attribution_overview(
     date_from: str | None = None,
     date_to: str | None = None,
     granularity: str = "month",
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     model: list[str] | None = None,
 ) -> dict:
     """歸因概覽聚合：一次取齊 KPI + 各維度分布 + 趨勢（避免前端全量 fetch 再算）。
@@ -43,8 +41,8 @@ def attribution_overview(
     Returns:
         {total_intake, judged, attributed, by_polarity, by_l1, by_tier, by_score, trend}。
     """
-    # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
-    spec = _vertical_scoped_spec(source, product_vertical)
+    # 縱覽（source=None）帶垂直分類篩選時改走 conversations（見 _vertical_scoped_spec）。
+    spec = _vertical_scoped_spec(source, vertical)
     jg = T.attributions
     cnt = func.count().label("n")
     tiers = _CONFIDENCE_TIERS
@@ -54,7 +52,7 @@ def attribution_overview(
     l1l = jg.c.l1_label
     _GRAN_LEN = {"year": 4, "month": 7, "day": 10}
     glen = _GRAN_LEN.get(granularity, 7)
-    _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
+    _v_codes = _vertical_codes(vertical) if (spec is not None and spec.bd_tag_col) else []
     _ALL_TABLES = (
         T.product_reviews,
         T.conversations,
@@ -95,9 +93,7 @@ def attribution_overview(
                 if date_to:
                     stmt = stmt.where(date_col < date_to + "~")
                 if _v_codes:
-                    stmt = stmt.where(
-                        sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes)
-                    )
+                    stmt = stmt.where(tbl.c[spec.bd_tag_col].in_(_v_codes))
                 return stmt
 
             total_intake = c.execute(_src(select(cnt).select_from(tbl))).scalar() or 0
@@ -274,7 +270,7 @@ def attribution_breakdown(
     l1: str,
     date_from: str | None = None,
     date_to: str | None = None,
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     model: list[str] | None = None,
 ) -> dict:
     """某 L1 歸因域下的 L2 面向分布（縱覽下鑽·懶載）。
@@ -286,13 +282,13 @@ def attribution_breakdown(
     Returns:
         {l1_code, l1_label, by_l2}；by_l2 為 [{code, label, n, neg, avg_conf, auto}]。
     """
-    # 縱覽（source=None）帶垂直分類篩選時改走 product_reviews（見 _vertical_scoped_spec）。
-    spec = _vertical_scoped_spec(source, product_vertical)
+    # 縱覽（source=None）帶垂直分類篩選時改走 conversations（見 _vertical_scoped_spec）。
+    spec = _vertical_scoped_spec(source, vertical)
     jg = T.attributions
     cnt = func.count().label("n")
     l1c, l1l = jg.c.l1_code, jg.c.l1_label
     l2c, l2l = jg.c.l2_code, jg.c.l2_label
-    _v_codes = _vertical_codes(product_vertical) if (spec is not None and spec.category_col) else []
+    _v_codes = _vertical_codes(vertical) if (spec is not None and spec.bd_tag_col) else []
 
     # spec 命中：join 該表（可套 date/vertical）；source=None：attributions 直接聚合
     if spec is not None:
@@ -306,7 +302,7 @@ def attribution_breakdown(
         if date_to:
             extra.append(date_col < date_to + "~")
         if _v_codes:
-            extra.append(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(_v_codes))
+            extra.append(tbl.c[spec.bd_tag_col].in_(_v_codes))
     else:
         frm = jg
         extra = []

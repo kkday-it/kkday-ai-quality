@@ -16,8 +16,15 @@ def test_spec_for_product_reviews_returns_correct_spec() -> None:
     assert spec.table is T.product_reviews
     assert spec.natural_key == "rec_oid"
     assert spec.score_col == "rec_scores"
-    assert spec.category_col == "product_category"
+    assert spec.bd_tag_col == "bd_tag"  # 商品垂直分類篩選改走 bd_tag 維度（2026-07-27）
     assert spec.date_col == "create_date"
+
+
+def test_spec_for_conversations_bd_tag_col_differs_from_product_reviews() -> None:
+    """conversations 的代碼欄叫 bd_tag_cd（非 bd_tag）——兩表命名不同，不可假設同名。"""
+    spec = source_registry.spec_for("conversations")
+    assert spec is not None
+    assert spec.bd_tag_col == "bd_tag_cd"
 
 
 @pytest.mark.parametrize(

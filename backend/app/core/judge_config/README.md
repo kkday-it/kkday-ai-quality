@@ -7,7 +7,7 @@
 | loader | 讀取 | 提供 |
 |---|---|---|
 | `ai_judge.py` | `app.judge.prompt_source.structure()`（Prompt-as-Source） | 分類結構索引（l2_by_code / l2_nodes_for_domains / domain_label / domain_action / domain_owner / evidence_gated_domains / cascade_tree…）；判準文字本體在 `prompts/*.md`，非本模組職責。 |
-| `product_vertical.py` | product_vertical 規則（DB active）| 商品垂直分類分組 → CATEGORY 代碼（codes_for_group）|
+| `bd_tag_vertical.py` | bd_tag_vertical 規則（DB active）| BD 分工代碼 → PM/Vertical（pm_for/vertical_for/codes_for_vertical）|
 | `source_mapping.py` | DB active 版 source_mapping + config/ai_judge fallback | 5 來源欄位映射（源欄→canonical，normalize_row）+ 上傳指紋辨識／必備表頭校驗（RuleManager 線上編輯，存檔熱重載）|
 | `sources.py` | config/global/sources.json | 來源目錄（label_for / natural_key）|
 | `pricing.py` | config/global/llm_model.json | LLM per-model 單價（cost_usd）|

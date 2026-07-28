@@ -6,8 +6,8 @@
 
 from app.core.judge_config import (
     ai_judge,
+    bd_tag_vertical,
     pricing,
-    product_vertical,
     rule_export,
     source_mapping,
     sources,
@@ -15,8 +15,8 @@ from app.core.judge_config import (
 
 __all__ = [
     "ai_judge",
+    "bd_tag_vertical",
     "pricing",
-    "product_vertical",
     "rule_export",
     "source_mapping",
     "sources",

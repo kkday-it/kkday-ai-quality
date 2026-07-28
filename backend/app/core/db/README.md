@@ -7,7 +7,7 @@
 | 模組 | 職責 |
 |---|---|
 | `tables.py` | SQLAlchemy schema + engine（`get_engine`/`set_engine`/`metadata`/`upsert`）；連線＝`config.env.database_url`。連線池由 env 調（`db_pool_size` 10 / `db_max_overflow` 20 / `db_pool_recycle` 1800 + `pool_pre_ping`；prejudge 64 執行緒共享，見 `_engine_kwargs`）。 |
-| `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/category/date 欄）。 |
+| `source_registry.py` | 5 來源 → 表 routing SSOT（`SourceSpec`：table + natural_key + score/bd_tag/date 欄）。 |
 | `_shared.py` | 共用：初判/判決顯示標籤/信心閾值（`reload_pipeline_cfg`：直讀專案靜態檔 config/ai_judge/prejudge.json＋verdict.json 合併；非 DB 版本化）、`_jg_join_cond`/`_jg_exists`（複合鍵 join）、`_vertical_codes`/`_scoped_spec`（商品垂直分類）、`fmt_datetime`；**初判 DTO SSOT**（`attribution_dto`：typed 欄 → 乾淨巢狀物件）。 |
 
 ## migration 鏈現況（2026-07-23 squash 後，改 migration 前必讀）
@@ -32,7 +32,7 @@
 - **API DTO**：`_shared.attribution_dto(row)` 組乾淨巢狀物件 `{polarity, stage, l1/l2/l3:{code,label}, confidence:{value,raw,tier}, content:{summary,evidence,action}, model, notes_count, is_primary, status}`——一條形狀貫穿 DB→API→前端（前端 `Attribution` interface 對齊）。
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳兩個 migration 檔頭 docstring。
 | `settings_store.py` | 全項目共享設定（settings 表·單例 `__global__` row）讀寫（`load_settings_row`/`save_settings_row`）。 |
-| `rule_versions.py` | 初判規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝product_vertical + source_mapping + prompt_polarity + prompt_C-1~6（僅涵蓋商品分類/上傳表頭校驗/初判 Prompt 三類，不含 judgment 靜態設定）。 |
+| `rule_versions.py` | 初判規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝bd_tag_vertical + source_mapping + prompt_polarity + prompt_C-1~6（僅涵蓋商品分類/上傳表頭校驗/初判 Prompt 三類，不含 judgment 靜態設定）。 |
 | `prompt_drafts.py` | 初判 Prompt 草稿（prompt_drafts；prompt_* 每 rule_code 一份共享草稿＝未入庫的編輯中內容）：沙盒可直送測（雙跑對比），滿意後走 `save_rule_version` 入庫並刪草稿；與 judge_rule_versions 分離（版本表維持「存檔即 active」單一語意），併發 last-write-wins。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | attributions CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量初判·單交易 diff〕+ 歸因備註）。 |

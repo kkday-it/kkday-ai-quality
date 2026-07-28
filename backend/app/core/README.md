@@ -6,7 +6,7 @@
 | 項目 | 職責 |
 |---|---|
 | `db/` | **資料存取層**（package）：`tables`（SQLAlchemy schema+engine）、`source_registry`（來源→表 SSOT）、`_shared`（共用 helper/常數），及 8 個職責模組（settings_store / rule_versions / ingest / findings / problems / prejudge_targets / attribution / export）。`__init__` barrel re-export 全函式 → `from app.core import db; db.X()`。見 `db/README.md`。 |
-| `judge_config/` | **判準 config loader**（package）：ai_judge / product_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
+| `judge_config/` | **判準 config loader**（package）：ai_judge / bd_tag_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
 | `schema.py` | Pydantic 領域模型（`TicketFinding` 初判單元 + `AdequacyResult`）；初判引擎與 db 兩側平行消費。 |
 | `job_registry.py` | **五套 in-mem job registry 共用機制層**（`JobStore`：dict+lock+快照深拷貝+終態掃描）——2026-07-23 從 export_jobs/import_jobs/judge.prejudge_batch/judge.ingest.upload_batch/judge.prompt_sandbox 五套各自手刻的同型骨架收斂而來（composition，非強制繼承）；只管「怎麼安全存取一份 dict」，暫停/取消/AIMD 自適應併發等控制流留在各自呼叫端模組不進此基底。 |
 | `export_jobs.py` | 通用導出背景 job registry（`JobStore` + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 初判規則導出共用，端點見 `api/routers/exports.py`。 |

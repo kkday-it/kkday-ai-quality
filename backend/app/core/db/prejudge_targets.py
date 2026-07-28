@@ -11,7 +11,7 @@ from app.core.db._shared import _jg_join_cond, apply_table_filters, read_pipelin
 
 def prejudge_target_ids(
     source: str | None = None,
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     stages: list[str] | None = None,
     target_polarity: list[str] | None = None,
     max_confidence: float | None = None,
@@ -44,7 +44,7 @@ def prejudge_target_ids(
 
     Args:
         source: 來源 code（None＝全部來源，回空；5 來源全拆表須指定單一來源）。
-        product_vertical: 商品垂直分類分組（僅 spec.category_col 存在的來源生效）。
+        vertical: 商品垂直分類名（僅 spec.bd_tag_col 存在的來源生效）。
         stages: 目標初判階段清單（預設 ["unjudged"]）。
         target_polarity: 已初判分支的傾向收斂（多選 IN，如 ["negative"]；None/空＝不收斂）。
         max_confidence: 已初判分支的信心上限（confidence < 此值才收；None＝不收斂）。
@@ -75,7 +75,7 @@ def prejudge_target_ids(
         stmt = apply_table_filters(
             spec,
             stmt,
-            product_vertical=product_vertical,
+            vertical=vertical,
             date_from=date_from,
             date_to=date_to,
             date_field=date_field,

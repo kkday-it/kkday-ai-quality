@@ -1,6 +1,6 @@
 """list_problems（source_registry 分支）與 insert_source_batch upsert 語義測試。
 
-需 temp_db fixture（隔離 PostgreSQL 測試庫）：驗證 score/product_vertical/日期區間/judged 篩選的
+需 temp_db fixture（隔離 PostgreSQL 測試庫）：驗證 score/vertical/日期區間/judged 篩選的
 SQL 正確性，以及同一特徵 id（rec_oid）重複匯入的 upsert 覆蓋行為（總筆數不變）。
 """
 
@@ -30,21 +30,37 @@ def _pr_row(rec_oid: str = "REC1", **overrides) -> dict:
         "order_mid": "M1",
         "supplier_oid": "S1",
         "order_snap_json": "{}",
-        "lst_dt_go": "2026-07-01",
-        "product_category": '{"main": "CATEGORY_019"}',  # 現行存 JSON（_parse_category_main 取 .main）
+        "go_date": "2026-07-01",
     }
     base.update(overrides)
     return base
 
 
-def _seed_product_vertical(monkeypatch) -> None:
-    """注入 db.get_rule_active('product_vertical') 供 product_vertical 篩選測試（版本化規則 loader）。"""
+def _conv_row(session_oid: str = "SESS1", **overrides) -> dict:
+    """建一筆 conversations 源列（現行拆表 schema：源欄名、值皆 Text）。"""
+    base = {
+        "session_oid": session_oid,
+        "inbound_time": "2026-06-01 10:00:00",
+        "conversation_full": "內容",
+        "bd_tag_cd": "0006",  # conversations 的代碼欄叫 bd_tag_cd（非 bd_tag，見 source_registry）
+    }
+    base.update(overrides)
+    return base
+
+
+def _seed_bd_tag_vertical(monkeypatch) -> None:
+    """注入 db.get_rule_active('bd_tag_vertical') 供商品垂直分類篩選測試（版本化規則 loader）。"""
     monkeypatch.setattr(
         db,
         "get_rule_active",
         lambda code: (
-            {"groups": {"Tour": ["CATEGORY_019"], "Tix": ["CATEGORY_002"]}}
-            if code == "product_vertical"
+            {
+                "items": {
+                    "0006": {"note": "郊區行程", "pm": "Kiki", "vertical": "Tour"},
+                    "0005": {"note": "票券", "pm": "Kiki", "vertical": "Tickets"},
+                }
+            }
+            if code == "bd_tag_vertical"
             else None
         ),
     )
@@ -78,6 +94,19 @@ def test_insert_source_batch_upsert_overwrites_and_preserves_count(temp_db) -> N
 def test_insert_source_batch_empty_list_returns_zero(temp_db) -> None:
     """空清單直接回 0，不觸碰 DB。"""
     assert db.insert_source_batch("product_reviews", []) == 0
+
+
+def test_list_problems_product_reviews_derives_vertical_pm_from_bd_tag(
+    temp_db, monkeypatch
+) -> None:
+    """product_reviews 無 BQ 端預算 vertical/PM，靠 bd_tag_vertical 版本化規則 fallback 補上。"""
+    _seed_bd_tag_vertical(monkeypatch)
+    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1", bd_tag="0006")])
+    result = db.list_problems(source="product_reviews")
+    row = result["rows"][0]
+    assert row["bd_tag"] == "0006"
+    assert row["vertical"] == "Tour"
+    assert row["PM"] == "Kiki"
 
 
 def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
@@ -122,17 +151,21 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
     assert r["total"] == 2
 
 
-def test_list_problems_source_registry_product_vertical_filter(temp_db, monkeypatch) -> None:
-    """source='product_reviews' + product_vertical='Tour'：依 product_vertical 分組展開代碼篩選。"""
-    _seed_product_vertical(monkeypatch)
+def test_list_problems_source_registry_vertical_filter(temp_db, monkeypatch) -> None:
+    """source='conversations' + vertical='Tour'：依 bd_tag_vertical 規則展開 bd_tag_cd 代碼篩選。
+
+    2026-07-27 商品垂直分類全面改走 bd_tag 維度（取代舊制 CATEGORY_xxx 分組）；conversations 的
+    代碼欄叫 bd_tag_cd，product_reviews 叫 bd_tag，兩表欄名不同，此測試鎖 conversations 分支。
+    """
+    _seed_bd_tag_vertical(monkeypatch)
     db.insert_source_batch(
-        "product_reviews",
+        "conversations",
         [
-            _pr_row(rec_oid="R1", product_category='{"main": "CATEGORY_019"}'),
-            _pr_row(rec_oid="R2", product_category='{"main": "CATEGORY_002"}'),
+            _conv_row(session_oid="R1", bd_tag_cd="0006"),  # Tour
+            _conv_row(session_oid="R2", bd_tag_cd="0005"),  # Tickets
         ],
     )
-    result = db.list_problems(source="product_reviews", product_vertical="Tour")
+    result = db.list_problems(source="conversations", vertical="Tour")
     assert result["total"] == 1
     assert result["rows"][0]["_group"] == "R1"
 

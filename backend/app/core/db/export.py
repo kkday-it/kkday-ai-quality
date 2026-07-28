@@ -145,10 +145,10 @@ def _grouped_header_spans(
     return spans
 
 
-# conversations 專屬 30 欄匯出（欄序＝CSV 30 欄，五分組：進線/訂單/商品/供應商/客服標籤對話）
+# conversations 專屬 29 欄匯出（欄序＝CSV 29 欄，五分組：進線/訂單/商品/供應商/客服標籤對話）
 # + 尾附 AI 判決結果（沿用 _EXPORT_XLSX_COLS 的歸因級欄定義，非平行另寫一份）。
 # ⚠️ 欄鍵＝_enrich_problem dto 實際鍵名，非全部逐字等於 CSV 表頭：session_oid→source_id、
-# inbound_time→occurred_at、product_name→prod_name、product_category→product_category_main
+# inbound_time→occurred_at、product_name→prod_name
 # （皆走既有 canonical/衍生欄，避免重複另存一份 raw 別名）、conversation_full→content。
 _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
     ("進線編號", "source_id", 16),
@@ -174,7 +174,6 @@ _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
     ("BD 標籤代碼", "bd_tag_cd", 12),
     ("BD 標籤", "bd_tag", 16),
     ("PM", "PM", 12),
-    ("商品分類", "product_category_main", 14),
     ("供應商編號", "supplier_oid", 12),
     ("供應商名稱", "supplier_name", 20),
     ("客服標籤編號", "cs_tag_oid", 12),
@@ -229,7 +228,6 @@ _CONV_COL_GROUPS: dict[str, str] = {
     "bd_tag_cd": "商品資訊",
     "bd_tag": "商品資訊",
     "PM": "商品資訊",
-    "product_category_main": "商品資訊",
     "supplier_oid": "供應商資訊",
     "supplier_name": "供應商資訊",
     "cs_tag_oid": "客服標籤對話",
@@ -406,7 +404,7 @@ def export_problems_xlsx(
     polarity: str | list[str] | None = None,
     judged: bool | None = None,
     item_ids: list[str] | None = None,
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     sentiment: list[int] | None = None,
@@ -422,7 +420,6 @@ def export_problems_xlsx(
     prod_oid: str | None = None,
     order_oid: str | None = None,
     bucket: list[str] | None = None,
-    vertical: list[str] | None = None,
     ctx: ExportCtx | None = None,
 ) -> bytes:
     """依篩選/選取導出統一問題列表為**美化 xlsx**（1:N fan-out：每條歸因一列，review 級欄合併）。
@@ -431,10 +428,10 @@ def export_problems_xlsx(
     斑馬/細邊框），與規則導出視覺一致。傾向/分層/初判階段輸出繁中 label。openpyxl 相關 lazy import。
 
     Args:
-        source/polarity/judged/product_vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
+        source/polarity/judged/vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
         stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid/
-        bucket/vertical:
-            同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分；bucket/vertical
+        bucket:
+            同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分；bucket
             僅 conversations 生效）。
         snapshot_model: 輸出結果版本——None/空＝當前初判（現行為）；指定模型＝內容替換為該
             模型的 attribution_history 最新快照（真多模型對比輸出）。篩選仍依**當前初判**圈選
@@ -463,7 +460,7 @@ def export_problems_xlsx(
         source=source,
         polarity=polarity,
         judged=judged,
-        product_vertical=product_vertical,
+        vertical=vertical,
         date_from=date_from,
         date_to=date_to,
         sentiment=sentiment,
@@ -477,7 +474,6 @@ def export_problems_xlsx(
         prod_oid=prod_oid,
         order_oid=order_oid,
         bucket=bucket,
-        vertical=vertical,
         limit=10_000_000,
     )
     rows = data["rows"]

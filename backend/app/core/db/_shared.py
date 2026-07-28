@@ -183,35 +183,36 @@ def _csv_ids(value: str) -> list[str]:
     return [p.strip() for p in str(value).split(",") if p.strip()]
 
 
-def _vertical_codes(product_vertical: str | list[str] | None) -> list[str]:
-    """商品垂直分類分組名 → CATEGORY 代碼清單（多分組 extend 合併；空/None 回空清單）。
+def _vertical_codes(vertical: str | list[str] | None) -> list[str]:
+    """商品垂直分類（BD Vertical 名稱，如 Tour/Trans）→ bd_tag 代碼清單（多值 extend 合併；空/None 回空清單）。
 
-    局部 import：product_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
-    供 list_problems / overview / breakdown / prejudge_targets 共用（比對 spec.category_col 的 IN 篩選）。
+    局部 import：bd_tag_vertical loader 讀 db.get_rule_active → 頂層 import 會造成循環依賴。
+    供 list_problems / overview / breakdown / prejudge_targets 共用（比對 spec.bd_tag_col 的 IN 篩選）。
     """
-    if not product_vertical:
+    if not vertical:
         return []
-    from app.core import product_vertical as _product_vertical
+    from app.core import bd_tag_vertical as _bd_tag_vertical
 
-    groups = [product_vertical] if isinstance(product_vertical, str) else list(product_vertical)
+    verticals = [vertical] if isinstance(vertical, str) else list(vertical)
     codes: list[str] = []
-    for g in groups:
-        codes.extend(_product_vertical.codes_for_group(g))
+    for v in verticals:
+        codes.extend(_bd_tag_vertical.codes_for_vertical(v))
     return codes
 
 
 def _vertical_scoped_spec(
-    source: str | None, product_vertical: str | list[str] | None
+    source: str | None, vertical: str | list[str] | None
 ) -> source_registry.SourceSpec | None:
     """歸因聚合（overview/breakdown）選表：source 命中拆表來源用其 spec；否則 source=None（縱覽全部）
-    但帶商品垂直分類篩選時，改走唯一具分類欄的 product_reviews。
+    但帶商品垂直分類篩選時，改走 conversations（product_reviews 與 conversations 現在都具 bd_tag_col，
+    conversations 資料量較大且欄位齊全，維持原有單一來源 fallback 慣例）。
 
-    有篩選時只統計「有分類且落在所選分類」的資料，無分類來源（進線/工單）在有篩選時排除。
+    有篩選時只統計「有 bd_tag 且落在所選 Vertical」的資料，無 bd_tag 來源（工單等）在有篩選時排除。
     無篩選則回 None，呼叫端走 attributions 直接聚合維持「全部來源」語義。
     """
     spec = source_registry.spec_for(source)
-    if spec is None and _vertical_codes(product_vertical):
-        spec = source_registry.spec_for("product_reviews")
+    if spec is None and _vertical_codes(vertical):
+        spec = source_registry.spec_for("conversations")
     return spec
 
 
@@ -219,7 +220,7 @@ def apply_table_filters(
     spec,
     stmt,
     *,
-    product_vertical: str | list[str] | None = None,
+    vertical: str | list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: str = "occurred_at",
@@ -232,21 +233,20 @@ def apply_table_filters(
 
     僅含「來源表自身欄位」的條件；初判級條件（polarity/stage/tier/歸因分類）因兩端結構不同
     （列表用 EXISTS、目標選取用 join 分支）由各呼叫端自行套。語義逐條對齊 list_problems：
-    - product_vertical：分組名經 codes_for_group 展開，product_category JSON 抽 main 比對。
+    - vertical：Vertical 名稱經 bd_tag_vertical.codes_for_vertical 展開為 bd_tag 代碼，
+      直接對 spec.bd_tag_col 做 IN 比對（bd_tag 為扁平代碼欄，非 JSON，不需再 cast 抽 key）。
     - 日期：sargable 比較走 btree 索引；上界半開 `< date_to||'~'` 含當日整天。
-      date_field='go_date' 且表有 lst_dt_go 用之，否則 spec.date_col。
+      date_field='go_date' 且表有 go_date 用之，否則 spec.date_col。
     - rec_oid/prod_oid/order_oid：表有對應欄才生效。
     - has_external：有無外部評論融合資料（僅有 review_external_lst_oid 欄的來源生效，如 product_reviews）。
     """
     from sqlalchemy import and_, or_
-    from sqlalchemy import cast as sa_cast
-    from sqlalchemy.dialects.postgresql import JSONB
 
     tbl = spec.table
-    if spec.category_col:
-        codes = _vertical_codes(product_vertical)
+    if spec.bd_tag_col:
+        codes = _vertical_codes(vertical)
         if codes:
-            stmt = stmt.where(sa_cast(tbl.c[spec.category_col], JSONB)["main"].astext.in_(codes))
+            stmt = stmt.where(tbl.c[spec.bd_tag_col].in_(codes))
     # rec_oid/prod_oid/order_oid：支援逗號分隔多值（「1,2,3」→ IN 一起查）；單值＝IN 單元素。
     if rec_oid and spec.natural_key in tbl.c:
         stmt = stmt.where(tbl.c[spec.natural_key].in_(_csv_ids(rec_oid)))
@@ -255,8 +255,8 @@ def apply_table_filters(
     if order_oid and "order_oid" in tbl.c:
         stmt = stmt.where(tbl.c.order_oid.in_(_csv_ids(order_oid)))
     date_col = (
-        tbl.c["lst_dt_go"]
-        if (date_field == "go_date" and "lst_dt_go" in tbl.c)
+        tbl.c["go_date"]
+        if (date_field == "go_date" and "go_date" in tbl.c)
         else tbl.c[spec.date_col]
     )
     if date_from:
