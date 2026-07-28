@@ -4,6 +4,28 @@
 > **無版本指針**——線上口徑固定為檔名時間戳最新的那份（`backend/app/judge/prompt_debug_versions.py` 解析），
 > 調試台「存為新版本」與人手丟檔皆走同一條路；調試台與批量跑批一律讀最新版，不提供版本切換。
 
+> ⚠️ **2026-07-28 回溯改名（唯一一次破例改動舊版檔）**：契約四鍵與層級容器名全面改為 `L1`~`L4` 時，
+> **全部 45 個歷史版本檔一併回溯替換**（5,494 處），使版本庫語彙一致。因此**本檔以下較早的條目仍以舊鍵名
+> 敘述，與檔案內容不再逐字對應**——閱讀時請按此對照：`theme`＝`L1`、`category`＝`L2`、
+> `likely_cause`＝`L3`、`modify_target`＝`L4`、`themes`＝`L1_options`、`theme_code`/`theme_label`＝
+> `L1_code`/`L1_label`、`categories`＝`L2_entries`、`likely_causes`＝`L3_options`、
+> `likely_cause_guide`＝`L3_guide`、`modify_target_options`＝`L4_options`、`modify_target_guide`＝`L4_guide`。
+> 條目**敘述保持原文未改**（那是當時的決策記錄，不竄改）；只有版本檔本身被替換。
+
+## 2026-07-28-201153 — 契約四鍵改名為層級代號（`theme`/`category`/`likely_cause`/`modify_target` → `L1`/`L2`/`L3`/`L4`）
+
+以 `185950` 為基線，**只改鍵名、不動任何判準文字與受控值**。這是契約升版：Structured Outputs 的
+屬性名、跑批 CSV 表頭、案例庫 JSONB 鍵名同批換名（後端 `prompt_debug.OUTPUT_FIELDS`/`output_schema`/
+`output_cascade`/`validate_result`、`prompt_debug_batch` 的 CSV 欄序與進度快照、alembic `d5f92c1a4b76`）。
+
+- 改名範圍＝**契約欄位名 ＋ 所有層級衍生的容器/指引名**（同批對齊，不留新舊語彙混雜）：
+  `themes`→`L1_options`、`theme_code`/`theme_label`→`L1_code`/`L1_label`、`categories`→`L2_entries`、
+  `likely_causes`→`L3_options`、`likely_cause_guide`→`L3_guide`、`modify_target_options`→`L4_options`、
+  `modify_target_guide`→`L4_guide`；config SSOT `after_sales_root_cause.json` 同步改鍵
+- **不改**：`name`（分類自身名稱）、`id`、`definition`/`include`/`exclude`/`examples` 等非層級衍生欄位
+- 機械替換以 word boundary 執行、長名優先，改名後舊鍵殘留 0 處
+- ⚠️ **待驗**：語義化欄名換成無語義代號可能影響模型判準表現，**上線前應跑一次金標對比**
+
 ## 2026-07-28-173855 — 合流兩支平行版本（`164558` 預訂狀態/機票天候規則 ＋ `173519` 聯票前置取消規則）
 
 不是新判準，是**把兩支各自失效一半的版本疊回同一份**。`164558`（遠端，13 處改動：出發前預訂成立狀態歸 [104] 履約資訊未到齊、已購機票/交通票券的天候改期退費規則、司機提前抵達時間、領取時間延後改期轉 [93]）與 `173519`（本機，3 處改動：聯票/套票須先退主票才能取消加購 → 屬取消規則揭露不清而非功能卡點）**都以 `164350` 為基線**，時間戳大的 `173519` 會勝出，`164558` 那 13 處靜默失效。

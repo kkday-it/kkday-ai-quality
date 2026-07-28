@@ -95,11 +95,11 @@ def test_format_cases_lists_only_corrected_fields_with_labels() -> None:
             {
                 "conversation": "[USER] 沒選日期就結帳了",
                 "ai_output": {
-                    "category": "取消政策本身僵化",
+                    "L2": "取消政策本身僵化",
                     "multi_issue_flag": True,
                     "sentiment": "negative",
                 },
-                "corrections": {"category": "商品規格/使用規則事前確認", "multi_issue_flag": False},
+                "corrections": {"L2": "商品規格/使用規則事前確認", "multi_issue_flag": False},
                 "comment": "取消事由被客服否定",
             }
         ]
@@ -121,9 +121,9 @@ def test_format_cases_marks_all_correct_case_as_positive_example() -> None:
             {
                 "conversation": "[USER] 電子票還沒收到",
                 "ai_output": {
-                    "theme": "[104]訂單確認問題",
-                    "category": "憑證未送達",
-                    "likely_cause": "憑證送達延遲",
+                    "L1": "[104]訂單確認問題",
+                    "L2": "憑證未送達",
+                    "L3": "憑證送達延遲",
                 },
                 "corrections": {},
                 "comment": "",

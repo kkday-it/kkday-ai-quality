@@ -31,33 +31,33 @@ _TAXONOMY_FILE = AI_JUDGE_DIR / "after_sales_root_cause.json"
 # 送 Structured Outputs 的 schema 標籤（非檔名，僅供 API 端回報用）
 _SCHEMA_NAME = "after_sales_root_cause"
 
-# 跳出分支的兩個受控值。theme 於 2026-07-28 由「OOT跳出」改為「其他」——對齊裁判表寫法，也與
-# category 落表層早已把 __OUT_OF_TAXONOMY__ 顯示成「其他」的口徑一致（原本兩邊各講各的）。
+# 跳出分支的兩個受控值（L1/L2 的跳出值）。L1 於 2026-07-28 由「OOT跳出」改為「其他」——對齊裁判表寫法，也與
+# L2 落表層早已把 __OUT_OF_TAXONOMY__ 顯示成「其他」的口徑一致（原本兩邊各講各的）。
 # 收成模組常數而非散在 schema／級聯／校驗各處：這串是模型要逐字輸出的值，漏改一處就是靜默錯配。
-_OOT_THEME = "其他"
-_OOT_CATEGORY = "__OUT_OF_TAXONOMY__"
+_OOT_L1 = "其他"
+_OOT_L2 = "__OUT_OF_TAXONOMY__"
 
 # 與裁判表首列的 AI 判定欄位同序：keywords 陣列全量填、urgency 1–5 整數、
 # no_actionable_content、全欄禁 null（不適用填 n/a）。
 OUTPUT_FIELDS = [
     {
-        "key": "theme",
+        "key": "L1",
         "label": "根因主題（AI 判定，L1）",
         "hint": "主題代碼與名稱（碼與名之間一個空格）；跳出為 其他",
     },
     {
-        "key": "category",
+        "key": "L2",
         "label": "根因分類（AI 判定，L2）",
         "hint": "受控 Category；未命中則為 OOT",
     },
     {
-        "key": "likely_cause",
+        "key": "L3",
         "label": "根因推論（AI 判定，L3）",
         "hint": "該類受控選項；含糊填 unclear；OOT 為 n/a",
     },
     {
-        "key": "modify_target",
-        "label": "修改標的（Lv4 條件式）",
+        "key": "L4",
+        "label": "修改標的（AI 判定，L4 條件式）",
         "hint": "僅 [93] 四類填；其餘為 n/a",
     },
     {
@@ -101,29 +101,29 @@ def load_taxonomy() -> dict[str, Any]:
     return json.loads(_TAXONOMY_FILE.read_text(encoding="utf-8"))
 
 
-def _category_map(taxonomy: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {str(row["name"]): row for row in taxonomy.get("categories", [])}
+def _l2_map(taxonomy: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {str(row["name"]): row for row in taxonomy.get("L2_entries", [])}
 
 
-def _theme_value(row: dict[str, Any]) -> str:
-    """主題代碼與名稱間留一個空格（`[119] 單據/發票`）——2026-07-28 起對齊裁判表寫法。
+def _l1_value(row: dict[str, Any]) -> str:
+    """L1 代碼與名稱間留一個空格（`[119] 單據/發票`）——2026-07-28 起對齊裁判表寫法。
 
-    ⚠️ 判斷「是不是 [93]」一律比對 `theme_code` 前綴、不要拿全稱去比（見 `prompt_debug_batch._csv_row`）：
+    ⚠️ 判斷「是不是 [93]」一律比對 `L1_code` 前綴、不要拿全稱去比（見 `prompt_debug_batch._csv_row`）：
     這個空格正是那裡踩過的坑。
     """
-    return f"{row['theme_code']} {row['theme_label']}"
+    return f"{row['L1_code']} {row['L1_label']}"
 
 
 def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    """受控欄的上下層級聯關係（L1 theme → L2 category → L3 likely_cause）。
+    """受控欄的上下層級聯關係（L1 → L2 → L3；契約鍵 2026-07-28 起由 theme/category/likely_cause 改名）。
 
-    schema 的 enum 是**攤平**的全域值域（`output_schema` 刻意讓 likely_cause 跨類 flat，
+    schema 的 enum 是**攤平**的全域值域（`output_schema` 刻意讓 L3 跨類 flat，
     免得 strict schema 在邊界類扭曲取樣），但人在調試台填正解時不該看到攤平清單——選了
-    `[101] 訂單取消` 卻還能挑到 [93] 的 category，等於把 `validate_result` 才擋得下來的
+    `[101] 訂單取消` 卻還能挑到 [93] 的 L2，等於把 `validate_result` 才擋得下來的
     錯誤留到存檔當下才報。這份映射就是給填正解的控件用的「已選上層 → 下層可選值」。
 
     回傳形狀刻意做成**通用結構**（下層欄位鍵 → `{parent, options_by_parent}`）而非寫死
-    `theme_to_categories` 之類的具名鍵：前端照著它長控件即可，未來新增條件式欄位不必兩邊同步改。
+    `l1_to_l2` 之類的具名鍵：前端照著它長控件即可，未來新增條件式欄位不必兩邊同步改。
 
     Args:
         taxonomy: 分類 SSOT；省略時現讀。
@@ -132,46 +132,46 @@ def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str
         `{下層欄位鍵: {"parent": 上層欄位鍵, "options_by_parent": {上層值: [下層值]}}}`。
     """
     taxonomy = taxonomy or load_taxonomy()
-    categories = taxonomy.get("categories", [])
+    l2_entries = taxonomy.get("L2_entries", [])
 
-    theme_to_categories: dict[str, list[str]] = {}
-    category_to_causes: dict[str, list[str]] = {}
-    for row in categories:
-        theme_to_categories.setdefault(_theme_value(row), []).append(str(row["name"]))
-        category_to_causes[str(row["name"])] = list(row.get("likely_causes", []))
-    # OOT 分支不在 categories 裡，但它同樣是一組合法的 L1→L2→L3 路徑（兩層都只有一個值）
-    theme_to_categories[_OOT_THEME] = [_OOT_CATEGORY]
-    category_to_causes[_OOT_CATEGORY] = ["n/a"]
+    l1_to_l2: dict[str, list[str]] = {}
+    l2_to_l3: dict[str, list[str]] = {}
+    for row in l2_entries:
+        l1_to_l2.setdefault(_l1_value(row), []).append(str(row["name"]))
+        l2_to_l3[str(row["name"])] = list(row.get("L3_options", []))
+    # OOT 分支不在 l2_entries 裡，但它同樣是一組合法的 L1→L2→L3 路徑（兩層都只有一個值）
+    l1_to_l2[_OOT_L1] = [_OOT_L2]
+    l2_to_l3[_OOT_L2] = ["n/a"]
 
     return {
-        "category": {"parent": "theme", "options_by_parent": theme_to_categories},
-        "likely_cause": {"parent": "category", "options_by_parent": category_to_causes},
+        "L2": {"parent": "L1", "options_by_parent": l1_to_l2},
+        "L3": {"parent": "L2", "options_by_parent": l2_to_l3},
     }
 
 
 def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
     """v3 契約 schema：全欄禁 null（n/a 哨兵）、keywords 陣列、urgency 1–5 整數、新增 no_actionable_content。
 
-    likely_cause 用跨類 flat enum、不按 category 鎖死——受控歸屬交給 validate_result 做成校驗訊息，
+    L3 用跨類 flat enum、不按 L2 鎖死——受控歸屬交給 validate_result 做成校驗訊息，
     避免 strict schema 在邊界類直接扭曲取樣；keywords 單項 2–6 字則由 schema 直接約束取樣。
     """
     taxonomy = taxonomy or load_taxonomy()
-    categories = taxonomy.get("categories", [])
-    category_values = [row["name"] for row in categories] + [_OOT_CATEGORY]
-    theme_values = list(dict.fromkeys(_theme_value(row) for row in categories)) + [_OOT_THEME]
-    likely_values = list(
-        dict.fromkeys(cause for row in categories for cause in row.get("likely_causes", []))
+    l2_entries = taxonomy.get("L2_entries", [])
+    l2_values = [row["name"] for row in l2_entries] + [_OOT_L2]
+    l1_values = list(dict.fromkeys(_l1_value(row) for row in l2_entries)) + [_OOT_L1]
+    l3_values = list(
+        dict.fromkeys(cause for row in l2_entries for cause in row.get("L3_options", []))
     ) + ["n/a"]
     return {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "category": {"type": "string", "enum": category_values},
-            "theme": {"type": "string", "enum": theme_values},
-            "likely_cause": {"type": "string", "enum": likely_values},
-            "modify_target": {
+            "L2": {"type": "string", "enum": l2_values},
+            "L1": {"type": "string", "enum": l1_values},
+            "L3": {"type": "string", "enum": l3_values},
+            "L4": {
                 "type": "string",
-                "enum": taxonomy["modify_target_options"] + ["n/a"],
+                "enum": taxonomy["L4_options"] + ["n/a"],
             },
             "summary": {
                 "type": "string",
@@ -202,10 +202,10 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
         "required": [
-            "category",
-            "theme",
-            "likely_cause",
-            "modify_target",
+            "L2",
+            "L1",
+            "L3",
+            "L4",
             "summary",
             "keywords",
             "sentiment",
@@ -236,8 +236,8 @@ def defaults_payload() -> dict[str, Any]:
         "output_schema": output_schema(taxonomy),
         "output_cascade": output_cascade(taxonomy),
         "taxonomy_version": taxonomy["version"],
-        "category_count": len(taxonomy["categories"]),
-        "theme_count": len(taxonomy["themes"]),
+        "L2_count": len(taxonomy["L2_entries"]),
+        "L1_count": len(taxonomy["L1_options"]),
         "analyzed_rows": stats["analyzed_rows"],
         "oot_rows": stats["oot_rows"],
         "oot_rate": stats["oot_rate"],
@@ -265,31 +265,31 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
         if not 2 <= len(word) <= 6
     )
 
-    if value["category"] == _OOT_CATEGORY:
-        if value["theme"] != _OOT_THEME:
-            issues.append(f"跳出的 theme 必須是 {_OOT_THEME}")
-        if value["likely_cause"] != "n/a":
-            issues.append("OOT 的 likely_cause 必須是 n/a")
-        if value["modify_target"] != "n/a":
-            issues.append("OOT 的 modify_target 必須是 n/a")
+    if value["L2"] == _OOT_L2:
+        if value["L1"] != _OOT_L1:
+            issues.append(f"跳出的 L1 必須是 {_OOT_L1}")
+        if value["L3"] != "n/a":
+            issues.append("OOT 的 L3 必須是 n/a")
+        if value["L4"] != "n/a":
+            issues.append("OOT 的 L4 必須是 n/a")
         if value["no_actionable_content"] and keywords:
             issues.append("no_actionable_content=true 時 keywords 必須為空陣列")
         elif not value["no_actionable_content"] and not keywords:
             issues.append("OOT 且非無實質內容時 keywords 至少 1 個")
         return issues
 
-    row = _category_map(taxonomy)[value["category"]]
-    if value["theme"] != _theme_value(row):
-        issues.append(f"theme 必須是 {_theme_value(row)}")
-    if value["likely_cause"] not in row["likely_causes"]:
-        issues.append("likely_cause 不屬於該 category 的受控選項")
-    is_modify = row["theme_code"] == "[93]"
-    if is_modify and value["modify_target"] == "n/a":
-        issues.append("[93] category 必須填 modify_target（不可為 n/a）")
-    if not is_modify and value["modify_target"] != "n/a":
-        issues.append("非 [93] category 的 modify_target 必須是 n/a")
+    row = _l2_map(taxonomy)[value["L2"]]
+    if value["L1"] != _l1_value(row):
+        issues.append(f"L1 必須是 {_l1_value(row)}")
+    if value["L3"] not in row["L3_options"]:
+        issues.append("L3 不屬於該 L2 的受控選項")
+    is_modify = row["L1_code"] == "[93]"
+    if is_modify and value["L4"] == "n/a":
+        issues.append("[93] L2 必須填 L4（不可為 n/a）")
+    if not is_modify and value["L4"] != "n/a":
+        issues.append("非 [93] L2 的 L4 必須是 n/a")
     if value["no_actionable_content"]:
-        issues.append(f"no_actionable_content=true 時 category 必須是 {_OOT_CATEGORY}")
+        issues.append(f"no_actionable_content=true 時 L2 必須是 {_OOT_L2}")
     if not keywords:
         issues.append("非 OOT 的 keywords 至少 1 個")
     return issues

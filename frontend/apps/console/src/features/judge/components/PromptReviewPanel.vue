@@ -133,7 +133,7 @@ watch(
 /**
  * 上層正解一改，已填的下層正解可能已不屬於新分支——就地清掉，逼人重選。
  *
- * 留著會存出 theme 與 category 不相配的案例（後端 `validate_result` 擋得下來，但那時
+ * 留著會存出 L1 與 L2 不相配的案例（後端 `validate_result` 擋得下來，但那時
  * 人已經離開這一題了）。清成空字串會被 `missingKeys` 擋在存檔前，比靜默存錯值好。
  */
 watch(controls, (next) => {

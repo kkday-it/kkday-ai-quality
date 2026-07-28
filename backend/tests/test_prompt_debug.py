@@ -12,10 +12,10 @@ from app.judge import prompt_debug_versions as versions
 def _base_result(**overrides):
     """一筆合法的非 OOT 判定（單一契約：全欄禁 null、keywords 陣列、urgency 1–5）。"""
     value = {
-        "category": "憑證/取票資訊未送達或不知如何使用",
-        "theme": "[104] 訂單確認問題",
-        "likely_cause": "憑證送達延遲",
-        "modify_target": "n/a",
+        "L2": "憑證/取票資訊未送達或不知如何使用",
+        "L1": "[104] 訂單確認問題",
+        "L3": "憑證送達延遲",
+        "L4": "n/a",
         "summary": "旅客出發前仍未收到電子票，要求協助確認送達時程。",
         "keywords": ["電子票", "未收到", "出發前"],
         "sentiment": "negative",
@@ -33,8 +33,8 @@ def _base_result(**overrides):
 def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
     """payload 只有一套契約：最新版 Prompt ＋ 由分類 SSOT 派生的 schema/欄位卡。"""
     payload = prompt_debug.defaults_payload()
-    assert payload["category_count"] == 25
-    assert payload["theme_count"] == 5
+    assert payload["L2_count"] == 25
+    assert payload["L1_count"] == 5
     # 版本名即檔名時間戳，且必須真的是版本庫最新版
     assert payload["prompt_version"] == versions.latest_version()
     assert payload["prompt_versions"][0] == payload["prompt_version"]
@@ -43,14 +43,14 @@ def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
     assert "{{TAXONOMY_JSON}}" not in payload["system_prompt"]
 
     schema = payload["output_schema"]
-    assert "__OUT_OF_TAXONOMY__" in schema["properties"]["category"]["enum"]
-    assert "n/a" in schema["properties"]["modify_target"]["enum"]
+    assert "__OUT_OF_TAXONOMY__" in schema["properties"]["L2"]["enum"]
+    assert "n/a" in schema["properties"]["L4"]["enum"]
     assert "$schema" not in schema
     assert [field["key"] for field in payload["output_fields"]] == [
-        "theme",
-        "category",
-        "likely_cause",
-        "modify_target",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
         "summary",
         "keywords",
         "sentiment",
@@ -76,37 +76,37 @@ def test_output_cascade_narrows_each_level_to_its_parent_branch() -> None:
     cascade = prompt_debug.output_cascade(taxonomy)
     schema = prompt_debug.output_schema(taxonomy)
 
-    assert cascade["category"]["parent"] == "theme"
-    assert cascade["likely_cause"]["parent"] == "category"
+    assert cascade["L2"]["parent"] == "L1"
+    assert cascade["L3"]["parent"] == "L2"
 
-    by_theme = cascade["category"]["options_by_parent"]
+    by_l1 = cascade["L2"]["options_by_parent"]
     # 5 個主題 + OOT 分支；攤平後恰為 schema 的 category enum（不多不少，證明沒有漏掛的類）
-    assert len(by_theme) == 6
-    assert sorted(c for opts in by_theme.values() for c in opts) == sorted(
-        schema["properties"]["category"]["enum"]
+    assert len(by_l1) == 6
+    assert sorted(c for opts in by_l1.values() for c in opts) == sorted(
+        schema["properties"]["L2"]["enum"]
     )
-    assert by_theme["其他"] == ["__OUT_OF_TAXONOMY__"]
+    assert by_l1["其他"] == ["__OUT_OF_TAXONOMY__"]
 
     # 每個 category 都掛在自己 theme 底下（抽一類驗證，避免只是形狀對但歸屬錯）
-    assert "取消政策揭露不清" in by_theme["[101] 訂單取消"]
-    assert "取消政策揭露不清" not in by_theme["[93] 訂單申請修改"]
+    assert "取消政策揭露不清" in by_l1["[101] 訂單取消"]
+    assert "取消政策揭露不清" not in by_l1["[93] 訂單申請修改"]
 
-    by_category = cascade["likely_cause"]["options_by_parent"]
-    assert by_category["__OUT_OF_TAXONOMY__"] == ["n/a"]
-    for row in taxonomy["categories"]:
-        assert by_category[row["name"]] == row["likely_causes"]
+    by_l2 = cascade["L3"]["options_by_parent"]
+    assert by_l2["__OUT_OF_TAXONOMY__"] == ["n/a"]
+    for row in taxonomy["L2_entries"]:
+        assert by_l2[row["name"]] == row["L3_options"]
 
 
 def test_defaults_payload_carries_cascade_for_review_controls() -> None:
     """人工評判的下拉靠 payload 的 output_cascade 收窄，缺了它 L2 會退回攤平的 25 類。"""
     payload = prompt_debug.defaults_payload()
-    assert payload["output_cascade"]["category"]["parent"] == "theme"
-    assert payload["output_cascade"]["likely_cause"]["parent"] == "category"
+    assert payload["output_cascade"]["L2"]["parent"] == "L1"
+    assert payload["output_cascade"]["L3"]["parent"] == "L2"
 
 
 def test_slashes_inside_controlled_causes_are_not_split() -> None:
     taxonomy = prompt_debug.load_taxonomy()
-    causes = {cause for category in taxonomy["categories"] for cause in category["likely_causes"]}
+    causes = {cause for category in taxonomy["L2_entries"] for cause in category["L3_options"]}
     assert "下單流程統編/抬頭欄位易漏填或誤填" in causes
     assert "代收轉付收據性質未於下單/商品頁說明" in causes
     assert "用戶對發票/收據/三聯式概念混淆" in causes
@@ -122,46 +122,44 @@ def test_validate_result_enforces_summary_length_from_field_definition() -> None
     assert issues and issues[0].startswith("Schema summary:")
 
 
-def test_validate_result_rejects_cross_category_cause_and_theme() -> None:
-    issues = prompt_debug.validate_result(
-        _base_result(theme="[101] 訂單取消", likely_cause="退款作業時程長")
-    )
-    assert "theme 必須是 [104] 訂單確認問題" in issues
-    assert "likely_cause 不屬於該 category 的受控選項" in issues
+def test_validate_result_rejects_cross_l2_cause_and_l1() -> None:
+    issues = prompt_debug.validate_result(_base_result(L1="[101] 訂單取消", L3="退款作業時程長"))
+    assert "L1 必須是 [104] 訂單確認問題" in issues
+    assert "L3 不屬於該 L2 的受控選項" in issues
 
 
 def test_validate_result_accepts_oot_contract() -> None:
     value = _base_result(
-        category="__OUT_OF_TAXONOMY__",
-        theme="其他",
-        likely_cause="n/a",
+        L2="__OUT_OF_TAXONOMY__",
+        L1="其他",
+        L3="n/a",
     )
     assert prompt_debug.validate_result(value) == []
 
 
 def test_validate_result_enforces_no_actionable_content_linkage() -> None:
     """no_actionable_content=true 必須連動 OOT ＋ keywords 清空。"""
-    assert "no_actionable_content=true 時 category 必須是 __OUT_OF_TAXONOMY__" in (
+    assert "no_actionable_content=true 時 L2 必須是 __OUT_OF_TAXONOMY__" in (
         prompt_debug.validate_result(_base_result(no_actionable_content=True))
     )
     value = _base_result(
-        category="__OUT_OF_TAXONOMY__",
-        theme="其他",
-        likely_cause="n/a",
+        L2="__OUT_OF_TAXONOMY__",
+        L1="其他",
+        L3="n/a",
         no_actionable_content=True,
         keywords=[],
     )
     assert prompt_debug.validate_result(value) == []
 
 
-def test_validate_result_requires_modify_target_for_93() -> None:
+def test_validate_result_requires_l4_for_93() -> None:
     value = _base_result(
-        category="修改受限（商品規則/供應商政策不允許改）",
-        theme="[93] 訂單申請修改",
-        likely_cause="商品規則不允許改",
+        L2="修改受限（商品規則/供應商政策不允許改）",
+        L1="[93] 訂單申請修改",
+        L3="商品規則不允許改",
     )
-    assert "[93] category 必須填 modify_target（不可為 n/a）" in prompt_debug.validate_result(value)
-    value["modify_target"] = "改日期/時段/班次"
+    assert "[93] L2 必須填 L4（不可為 n/a）" in prompt_debug.validate_result(value)
+    value["L4"] = "改日期/時段/班次"
     assert prompt_debug.validate_result(value) == []
 
 

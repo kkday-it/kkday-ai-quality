@@ -11,7 +11,7 @@ export interface PromptDebugDefaults {
   system_prompt: string;
   output_schema: Record<string, unknown>;
   /**
-   * 受控欄的上下層級聯（L1 theme → L2 category → L3 likely_cause）：
+   * 受控欄的上下層級聯（L1 → L2 → L3）：
    * 下層欄位鍵 → `{ parent: 上層欄位鍵, options_by_parent: 各上層值底下的可選清單 }`。
    * schema 的 enum 是攤平的全域值域，填正解時要靠這份把選單限縮到已選上層底下。
    */
@@ -25,8 +25,8 @@ export interface PromptDebugDefaults {
     hint: string;
   }>;
   taxonomy_version: string;
-  category_count: number;
-  theme_count: number;
+  L2_count: number;
+  L1_count: number;
   analyzed_rows: number;
   oot_rows: number;
   oot_rate: number;
@@ -337,8 +337,8 @@ export type PromptDebugBatchStatus =
 export interface PromptDebugBatchRecentItem {
   item_id: string;
   ok: boolean;
-  theme: string | null;
-  category: string | null;
+  L1: string | null;
+  L2: string | null;
   /** 欄位校驗未過項數（0＝契約通過）。 */
   issues: number;
   latency_ms: number | null;

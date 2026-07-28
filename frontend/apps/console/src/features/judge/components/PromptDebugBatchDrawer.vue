@@ -393,7 +393,7 @@ watch(
           </span>
           <span class="font-medium">{{ item.item_id }}</span>
           <span v-if="item.ok" class="truncate text-[#4e5969]">
-            {{ item.theme }} › {{ item.category }}
+            {{ item.L1 }} › {{ item.L2 }}
             <template v-if="item.issues">（校驗未過 {{ item.issues }} 項）</template>
           </span>
           <span v-else class="truncate text-[#f53f3f]">{{ item.error }}</span>

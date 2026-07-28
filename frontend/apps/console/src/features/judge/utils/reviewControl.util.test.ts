@@ -5,7 +5,7 @@ import { controlForField, defaultCorrection, optionsUnderParent } from './review
 const schema = {
   type: 'object',
   properties: {
-    category: { type: 'string', enum: ['C01 憑證未送達', '其他'] },
+    L2: { type: 'string', enum: ['C01 憑證未送達', '其他'] },
     sentiment: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
     urgency: { type: 'integer', minimum: 1, maximum: 5 },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
@@ -18,7 +18,7 @@ const schema = {
 
 describe('controlForField', () => {
   it('enum 欄給下拉，選項逐字照 schema（不手抄）', () => {
-    expect(controlForField(schema, 'category')).toEqual({
+    expect(controlForField(schema, 'L2')).toEqual({
       kind: 'select',
       options: ['C01 憑證未送達', '其他'],
     });
@@ -61,7 +61,7 @@ describe('controlForField', () => {
       minLength: undefined,
       maxLength: undefined,
     });
-    expect(controlForField(undefined, 'category')).toEqual({
+    expect(controlForField(undefined, 'L2')).toEqual({
       kind: 'textarea',
       minLength: undefined,
       maxLength: undefined,
@@ -94,18 +94,18 @@ describe('defaultCorrection', () => {
 });
 
 describe('optionsUnderParent', () => {
-  /** 貼近後端 output_cascade 的最小樣本：L1 theme → L2 category → L3 likely_cause。 */
+  /** 貼近後端 output_cascade 的最小樣本：L1 → L2 → L3。 */
   const cascade = {
-    category: {
-      parent: 'theme',
+    L2: {
+      parent: 'L1',
       options_by_parent: {
         '[101] 訂單取消': ['退款進度/狀態不透明', '取消政策本身僵化'],
         '[93] 訂單申請修改': ['特殊需求/加購無自助入口'],
         '其他': ['__OUT_OF_TAXONOMY__'],
       },
     },
-    likely_cause: {
-      parent: 'category',
+    L3: {
+      parent: 'L2',
       options_by_parent: {
         退款進度或狀態不透明: ['退款作業時程長', 'unclear'],
         __OUT_OF_TAXONOMY__: ['n/a'],
@@ -114,26 +114,26 @@ describe('optionsUnderParent', () => {
   };
 
   it('依已選上層值收窄到該分支底下', () => {
-    expect(optionsUnderParent(cascade, 'category', '[101] 訂單取消')).toEqual([
+    expect(optionsUnderParent(cascade, 'L2', '[101] 訂單取消')).toEqual([
       '退款進度/狀態不透明',
       '取消政策本身僵化',
     ]);
-    expect(optionsUnderParent(cascade, 'category', '[93] 訂單申請修改')).toEqual([
+    expect(optionsUnderParent(cascade, 'L2', '[93] 訂單申請修改')).toEqual([
       '特殊需求/加購無自助入口',
     ]);
   });
 
   it('OOT 兩層都只剩單一合法值', () => {
-    expect(optionsUnderParent(cascade, 'category', '其他')).toEqual(['__OUT_OF_TAXONOMY__']);
-    expect(optionsUnderParent(cascade, 'likely_cause', '__OUT_OF_TAXONOMY__')).toEqual(['n/a']);
+    expect(optionsUnderParent(cascade, 'L2', '其他')).toEqual(['__OUT_OF_TAXONOMY__']);
+    expect(optionsUnderParent(cascade, 'L3', '__OUT_OF_TAXONOMY__')).toEqual(['n/a']);
   });
 
   // 回 null（而非空陣列）讓呼叫端退回攤平值域——空陣列會把選單清空，人就卡住無法填正解
   it('無級聯規則／上層值不在表內／上層未選 → null 表示不限縮', () => {
     expect(optionsUnderParent(cascade, 'sentiment', 'positive')).toBeNull();
-    expect(optionsUnderParent(cascade, 'category', '[999]不存在的主題')).toBeNull();
-    expect(optionsUnderParent(cascade, 'category', '')).toBeNull();
-    expect(optionsUnderParent(cascade, 'category', undefined)).toBeNull();
-    expect(optionsUnderParent(undefined, 'category', '[101] 訂單取消')).toBeNull();
+    expect(optionsUnderParent(cascade, 'L2', '[999]不存在的主題')).toBeNull();
+    expect(optionsUnderParent(cascade, 'L2', '')).toBeNull();
+    expect(optionsUnderParent(cascade, 'L2', undefined)).toBeNull();
+    expect(optionsUnderParent(undefined, 'L2', '[101] 訂單取消')).toBeNull();
   });
 });

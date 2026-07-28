@@ -1,5 +1,5 @@
 // 人工評判「填正解」控件推導：從後端回的 output_schema 反推每個欄位該用什麼控件、什麼值域。
-// 刻意不在前端手抄一份欄位型別表——受控 enum（category / likely_cause / theme…）會隨分類 SSOT
+// 刻意不在前端手抄一份欄位型別表——受控 enum（L2 / L3 / L1…）會隨分類 SSOT
 // 演進，手抄必 drift；schema 是後端從 SSOT 派生的唯一真相源，照著它長控件就永遠對得上。
 
 /** 單一欄位的 JSON Schema 片段（只取推導控件會用到的鍵）。 */
@@ -35,7 +35,7 @@ function fieldSchemaOf(schema: Record<string, unknown> | undefined, key: string)
 /**
  * 推導某欄位填正解時該用的控件。
  * @param schema 後端 `PromptDebugDefaults.output_schema` 全文
- * @param key 欄位鍵（theme / category / urgency…）
+ * @param key 欄位鍵（L1 / L2 / urgency…）
  * @returns 控件種類與值域；schema 認不出型別時退回多行文字框（永遠填得進去，不會卡住評判）
  */
 export function controlForField(
@@ -75,7 +75,7 @@ export function controlForField(
 
 /** 單一下層欄位的級聯規則（後端 `output_cascade` 的一項）。 */
 export interface CascadeRule {
-  /** 上層欄位鍵（category 的父是 theme、likely_cause 的父是 category）。 */
+  /** 上層欄位鍵（L2 的父是 L1、L3 的父是 L2）。 */
   parent: string;
   /** 上層值 → 該分支底下的可選清單。 */
   options_by_parent: Record<string, string[]>;
@@ -88,7 +88,7 @@ export type OutputCascade = Record<string, CascadeRule>;
  * 取某欄在指定上層值底下的可選清單。
  *
  * 用途是把「填正解」的下拉限縮到已選上層的分支——schema enum 是攤平的全域值域，
- * 直接用會讓人挑得到 theme 與 category 不相配的組合（`validate_result` 雖然擋得下來，
+ * 直接用會讓人挑得到 L1 與 L2 不相配的組合（`validate_result` 雖然擋得下來，
  * 但那已經是存檔當下，回頭改成本高）。
  *
  * @param cascade 後端 `output_cascade`；未提供＝後端還沒回來或該版本沒有級聯資料
@@ -109,7 +109,7 @@ export function optionsUnderParent(
 /**
  * 標錯某欄時，正解輸入框的預填值。
  *
- * 以 AI 判的值為底而非留白：多數誤判只錯一個維度（如 category 對、likely_cause 錯），
+ * 以 AI 判的值為底而非留白：多數誤判只錯一個維度（如 L2 對、L3 錯），
  * 讓人改一個字比整欄重打快，也避免手滑存進空值當「正解」。
  *
  * @param control 該欄的控件（決定型別該長什麼樣）

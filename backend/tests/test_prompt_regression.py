@@ -14,23 +14,23 @@ CASE = {
     "id": 1,
     "conversation": "[USER] 沒選日期就結帳了",
     "ai_output": {
-        "category": "取消政策本身僵化",
-        "likely_cause": "規則就是不可退用戶不滿",
+        "L2": "取消政策本身僵化",
+        "L3": "規則就是不可退用戶不滿",
         "sentiment": "negative",
         "urgency": 3,
         "confidence": 0.88,
     },
     # 人說：這兩欄改完要變成這樣
-    "corrections": {"category": "商品規格/使用規則事前確認", "sentiment": "neutral"},
+    "corrections": {"L2": "商品規格/使用規則事前確認", "sentiment": "neutral"},
     # 人說：這欄本來就對，不准變
     "confirmed": ["urgency"],
 }
 
 
 def test_fixed_when_new_output_matches_the_human_correction() -> None:
-    new = {**CASE["ai_output"], "category": "商品規格/使用規則事前確認", "sentiment": "neutral"}
+    new = {**CASE["ai_output"], "L2": "商品規格/使用規則事前確認", "sentiment": "neutral"}
     out = regression.compare_case(CASE, new)
-    assert [f["field"] for f in out["fixed"]] == ["category", "sentiment"]
+    assert [f["field"] for f in out["fixed"]] == ["L2", "sentiment"]
     assert out["still_wrong"] == []
     assert [f["field"] for f in out["held"]] == ["urgency"]
     assert out["broken"] == []
@@ -42,7 +42,7 @@ def test_still_wrong_carries_expected_and_actual_for_display() -> None:
     out = regression.compare_case(CASE, new)
     assert out["still_wrong"] == [
         {
-            "field": "category",
+            "field": "L2",
             "expected": "商品規格/使用規則事前確認",
             "actual": "取消政策本身僵化",
         }
@@ -54,7 +54,7 @@ def test_broken_when_a_confirmed_field_changes() -> None:
     """人標過「對」的欄變了＝改壞——這正是回歸存在的理由。"""
     new = {
         **CASE["ai_output"],
-        "category": "商品規格/使用規則事前確認",
+        "L2": "商品規格/使用規則事前確認",
         "sentiment": "neutral",
         "urgency": 5,
     }
@@ -67,31 +67,31 @@ def test_unreviewed_fields_are_not_scored_at_all() -> None:
     """`confidence`／`likely_cause` 人沒看過：新輸出怎麼變都不該進四類任何一類。"""
     new = {
         **CASE["ai_output"],
-        "category": "商品規格/使用規則事前確認",
+        "L2": "商品規格/使用規則事前確認",
         "sentiment": "neutral",
-        "likely_cause": "完全不同的值",
+        "L3": "完全不同的值",
         "confidence": 0.11,
     }
     out = regression.compare_case(CASE, new)
     scored = {f["field"] for group in out.values() for f in group}
-    assert scored == {"category", "sentiment", "urgency"}
-    assert "likely_cause" not in scored and "confidence" not in scored
+    assert scored == {"L2", "sentiment", "urgency"}
+    assert "L3" not in scored and "confidence" not in scored
 
 
 def test_correction_wins_when_a_field_appears_in_both_lists() -> None:
     """萬一資料髒掉（同欄既在 corrections 又在 confirmed），以「要改成正解」為準，不重複計分。"""
-    case = {**CASE, "confirmed": ["urgency", "category"]}
-    new = {**CASE["ai_output"], "category": "商品規格/使用規則事前確認", "sentiment": "neutral"}
+    case = {**CASE, "confirmed": ["urgency", "L2"]}
+    new = {**CASE["ai_output"], "L2": "商品規格/使用規則事前確認", "sentiment": "neutral"}
     out = regression.compare_case(case, new)
-    assert [f["field"] for f in out["fixed"]] == ["category", "sentiment"]
+    assert [f["field"] for f in out["fixed"]] == ["L2", "sentiment"]
     assert [f["field"] for f in out["held"]] == ["urgency"]  # category 不再被當成「要守住」
 
 
 def test_case_with_nothing_reviewed_scores_nothing() -> None:
     """全未評判的案例不會影響回歸分數（也不該讓它看起來像通過）。"""
     out = regression.compare_case(
-        {"id": 2, "ai_output": {"category": "x"}, "corrections": {}, "confirmed": []},
-        {"category": "y"},
+        {"id": 2, "ai_output": {"L2": "x"}, "corrections": {}, "confirmed": []},
+        {"L2": "y"},
     )
     assert out == {"fixed": [], "still_wrong": [], "broken": [], "held": []}
 

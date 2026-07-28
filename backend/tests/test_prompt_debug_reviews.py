@@ -13,16 +13,16 @@ from app.core import db
 # permissions_cfg / as_user fixtures 定義於 conftest.py（跨測試檔共用）。
 
 _AI_OUTPUT = {
-    "category": "取消政策本身僵化",
-    "theme": "[101]訂單取消",
-    "likely_cause": "規則就是不可退用戶不滿",
+    "L2": "取消政策本身僵化",
+    "L1": "[101]訂單取消",
+    "L3": "規則就是不可退用戶不滿",
     "sentiment": "negative",
     "multi_issue_flag": True,
     "urgency": 4,
 }
 _CORRECTIONS = {
-    "category": "商品規格/使用規則事前確認",
-    "likely_cause": "方案規格描述不清",
+    "L2": "商品規格/使用規則事前確認",
+    "L3": "方案規格描述不清",
     "multi_issue_flag": False,
 }
 
@@ -48,7 +48,7 @@ def test_review_crud_roundtrip(temp_db) -> None:
     row = rows[0]
     assert row["id"] == review_id
     assert row["corrections"] == _CORRECTIONS
-    assert row["ai_output"]["category"] == "取消政策本身僵化"
+    assert row["ai_output"]["L2"] == "取消政策本身僵化"
     assert row["prompt_version"] == "2026-07-28-104331"
     assert row["reviewer"] == "justin.xu@kkday.com"
     # 列表只給預覽，不回全文欄
@@ -158,7 +158,7 @@ def test_review_api_roundtrips_confirmed_fields(temp_db, permissions_cfg, as_use
             json={
                 "conversation": "x",
                 "ai_output": _AI_OUTPUT,
-                "corrections": {"category": "改成這個"},
+                "corrections": {"L2": "改成這個"},
                 "confirmed": ["sentiment", "urgency"],
             },
         )
@@ -179,11 +179,11 @@ def test_review_api_rejects_field_marked_both_right_and_wrong(
             json={
                 "conversation": "x",
                 "ai_output": _AI_OUTPUT,
-                "corrections": {"category": "改成這個"},
-                "confirmed": ["category"],
+                "corrections": {"L2": "改成這個"},
+                "confirmed": ["L2"],
             },
         )
-        assert r.status_code == 400 and "category" in r.json()["detail"]
+        assert r.status_code == 400 and "L2" in r.json()["detail"]
         assert db.list_prompt_debug_reviews() == []
 
 

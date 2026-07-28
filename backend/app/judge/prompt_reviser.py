@@ -136,7 +136,7 @@ def format_cases(cases: list[dict[str, Any]]) -> str:
                 + "、".join(
                     f"{labels.get(k, k)}={_format_value(v)}"
                     for k, v in ai_output.items()
-                    if k in ("theme", "category", "likely_cause")
+                    if k in ("L1", "L2", "L3")
                 )
             )
         comment = str(case.get("comment") or "").strip()

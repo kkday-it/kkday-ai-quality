@@ -211,25 +211,25 @@ def _csv_cell(value: Any) -> Any:
 
 
 def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
-    """條件欄（cause/target）落表紀律：n/a 哨兵與不合法情境的值一律留空。
+    """條件欄（L3 cause / L4 target）落表紀律：n/a 哨兵與不合法情境的值一律留空。
 
     JSON（preds/raw）保留原值可稽核；表格層對齊裁判表口徑（用戶要求：表中不得出現 n/a 與 null）。
     """
-    is_oot = parsed.get("category") == "__OUT_OF_TAXONOMY__"
+    is_oot = parsed.get("L2") == "__OUT_OF_TAXONOMY__"
     allowed = {
-        "likely_cause": not is_oot,
-        # 認 theme_code 前綴、不比對全稱：全稱由 config SSOT 的 theme_code+theme_label 拼出
+        "L3": not is_oot,
+        # 認 L1_code 前綴、不比對全稱：全稱由 config SSOT 的 L1_code+L1_label 拼出
         # （現為「[93] 訂單申請修改」，2026-07-28 起碼名之間有一個空格），寫死全稱曾因多一個
-        # 空格而讓 [93] 的 modify_target 全被清空——那次的空格後來真的加進來了，這行前綴比對是唯一沒被波及的原因
-        "modify_target": str(parsed.get("theme") or "").startswith("[93]"),
+        # 空格而讓 [93] 的 L4 全被清空——那次的空格後來真的加進來了，這行前綴比對是唯一沒被波及的原因
+        "L4": str(parsed.get("L1") or "").startswith("[93]"),
     }
     row: dict[str, Any] = {columns[0]: item_id}
     for column in columns[1:]:
         value = parsed.get(column)
         # 無分類統一「其他」（20260727 拍板）：契約升版前先在落表層映射舊哨兵
-        if column == "category" and value == "__OUT_OF_TAXONOMY__":
+        if column == "L2" and value == "__OUT_OF_TAXONOMY__":
             value = "其他"
-        if column == "likely_cause" and value == "unclear":
+        if column == "L3" and value == "unclear":
             value = "其他"
         if column in allowed and (not allowed[column] or str(value).strip().lower() == "n/a"):
             value = None
@@ -348,8 +348,8 @@ def _bump(run_id: str, record: dict, cost_usd: float, total_tokens: int) -> None
             {
                 "item_id": record.get("item_id", ""),
                 "ok": ok,
-                "theme": parsed.get("theme"),
-                "category": parsed.get("category"),
+                "L1": parsed.get("L1"),
+                "L2": parsed.get("L2"),
                 "issues": len(record.get("validation_issues") or []),
                 "latency_ms": record.get("latency_ms"),
                 "error": record.get("error"),

@@ -213,7 +213,7 @@ function openLlmSettings(): void {
           </p>
         </div>
         <div v-if="defaults" class="flex flex-wrap gap-2 text-xs">
-          <a-tag>{{ defaults.category_count }} 個受控分類</a-tag>
+          <a-tag>{{ defaults.L2_count }} 個受控分類</a-tag>
           <a-tag>{{ defaults.analyzed_rows.toLocaleString() }} 筆裁判資料</a-tag>
           <a-tag color="orange">OOT {{ (defaults.oot_rate * 100).toFixed(1) }}%</a-tag>
           <a-tag color="green">平均信心 {{ defaults.mean_confidence.toFixed(3) }}</a-tag>
@@ -254,7 +254,7 @@ function openLlmSettings(): void {
           <div>
             <div class="panel-title">System Prompt</div>
             <div class="panel-sub">
-              已注入 {{ defaults?.category_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B
+              已注入 {{ defaults?.L2_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B
               調試
             </div>
           </div>

@@ -71,7 +71,7 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 
   | 欄位型別 | 控件 |
   |---|---|
-  | enum（theme / category / likely_cause / modify_target / sentiment） | `a-select`（可搜尋；選項＝schema enum） |
+  | enum（L1 / L2 / L3 / L4 / sentiment） | `a-select`（可搜尋；選項＝schema enum） |
   | boolean（三個 flag + no_actionable_content） | `a-switch` |
   | urgency（integer 1–5） | `a-radio-group type="button"` |
   | keywords（array） | `a-input-tag` |
@@ -105,7 +105,7 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 以及**改寫紀律**——明確禁止大幅重寫、禁止刪除既有判例庫與硬規則、每條補丁的 anchor 必須逐字複製自原文。
 
 > 紀律這條有血的教訓：memory `hw-root-cause-prompt-tuning` 記著 v_hw12 那次「對齊瘦身」砍掉實測校準
-> 錨點，likely_cause 直接掉 8.7 分，逐行 diff 證明 7 錯中 6 錯直接對應被砍的規則。**結構欄的分數載體
+> 錨點，L3 直接掉 8.7 分，逐行 diff 證明 7 錯中 6 錯直接對應被砍的規則。**結構欄的分數載體
 > 是校準層錨點，不是判準的字面工整**。所以本設計不給模型「整篇重寫」這個選項。
 
 ### 4.2 anchor 驗證（正確性核心）
