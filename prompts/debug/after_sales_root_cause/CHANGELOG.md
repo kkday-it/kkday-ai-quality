@@ -4,6 +4,24 @@
 > **無版本指針**——線上口徑固定為檔名時間戳最新的那份（`backend/app/judge/prompt_debug_versions.py` 解析），
 > 調試台「存為新版本」與人手丟檔皆走同一條路；調試台與批量跑批一律讀最新版，不提供版本切換。
 
+## 2026-07-28-140632 — [COMM]「連線品質不佳或與方案不符」納入漫遊/路由 IP 限制與規格三軸詢問（表側新邏輯落地）
+
+來源＝PM 更新《根因標籤架構》表 [COMM]`連線品質不佳或與方案不符` 該列（Definition／Include／Lv3 受控值／Examples 四欄同批改），本版把表側新口徑落成線上唯一口徑。
+
+> 版本檔軌跡（本次撞上調試台併發存檔，記於此以免日後看 `ls` 誤解）：`134438`＝調試台當日另存的 C06/C07 微調，本次改動以它為基線；`135450`＝本次 COMM 改動初落版；`140445`＝調試台再存一版，帶進另一支 C06/C07 改動，但其編輯器緩衝載入於 `135450` 之前，把 OOT 子型 2 的最後一句修正**覆蓋回舊寫法**（該句正是下方「攔下的過度矯正」的解法）；`140632`＝以 `140445` 為底補回那一句，只差 1 行。四支改動至此合流，`140632` 為完整版。
+
+驗證用真案（2026/6-7 母體，USIMSA 日本 unlimited eSIM，2026-06-28 供應商線）：[USER]「I got the eSIM to work and reset my phone but I'm not getting any service」→「For some apps I don't have service but others I do」→「Specifically TikTok」→ [SUP]「The product you use is a roaming product, and apps with IP restrictions may be difficult to use.」正解＝`連線品質不佳或與方案不符`＋`漫遊路由IP限制致特定服務不可用`。
+
+- 洞在哪：①**受控值缺口**——舊 Lv3 只有速度/斷網/天數三值，漫遊 IP 這型無值可填。這不只是 prompt 字面問題：`likely_cause` 的 JSON schema enum 由 `config/ai_judge/after_sales_root_cause.json` 各類 `likely_causes` 聯集生成（`prompt_debug.output_schema`），值不進 config 模型**根本吐不出來**，只補 prompt 無效。②C17/C18 分界寫的是「完全連不上 vs 連得上但慢」，沒處理「**能上網但只有特定服務不通**」這一格；用戶開頭那句「not getting any service」字面正中 C17，實測舊版 3 票 **2 票落 `已啟用但無法連線`＋`裝好無訊號`**（category 僅 1/3）。③表新增的 Examples 兩條（「無限流量都是吃到飽不降速嗎，內容裡沒看到相關說明」「提早安裝天數怎麼算」）在舊版分別落 **OOT 售前** 與 **[104] 商品規格/使用規則事前確認**——連線商品的規格詢問沒有歸屬，被鄰類分食
+- 改法（三個入口寫進 C18 `calibration`，軸線＝**連得上，但拿到的與方案預期有落差**，不要求真的故障、也不要求用戶抱怨）：①速度/流量/天數實際表現與方案不符；②**速度/流量/天數三軸的規格詢問或揭露爭議**（含客服當場答完仍算）；③漫遊/路由 IP 限制致特定服務不可用。分界一律綁**可觀測範圍**而非用戶措辭：整體沒網→C17、只有特定 app 不通→C18，並明寫「用戶開頭的『沒有服務』不作數，以他自己下一句『有些 app 可以有些不行』為準」
+- 落點（本版快照）：總綱速查 [COMM] 條目補「連不上要分整體或局部」；OOT 子型 2 的例外由一種擴為兩種（＋連線商品規格三軸→[COMM]）；判例庫 [COMM] 簇新增三條 verbatim（漫遊 IP 正例、整體沒網反面對照、天數/降速算法詢問）；C17 **首次帶 `calibration`**（限定「整體沒網」）；C18 六欄全改（definition/include/exclude/examples 依表逐字，另加 calibration 與改寫 likely_cause_guide）；C19 `calibration` 補反向邊界（本類只收**操作與時程**，算法問題轉 C18），兩邊對稱以免各自漂移
+- SSOT 同步：`config/ai_judge/after_sales_root_cause.json` C18 同批加受控值 `漫遊路由IP限制致特定服務不可用`（enum 70→71）＋六欄同步＋`product_opportunity` 補漫遊 IP 揭露；C17／C19 首次帶 `calibration`（連同 C18 共三類，`config/README.md` 校準清單由五類更新為八類）；域判官 `prompts/debug/domains/theme_comm/v2.md` 階梯分界三行同步（其 `<taxonomy>` 由 config 渲染，六欄自動跟上）
+- 受控值命名決策：表 Lv3 末位寫「其他」，本庫**一律落成 `unclear`**（25 類受控清單 25/25 皆以 unclear 收尾，`operational_rules.unclear_rule` 也明寫模型判不出必須顯式輸出 unclear；只為這一類開「其他」會讓該欄統計多一個同義桶）。「其他」僅存在於 `modify_target_options`／`oot_subtype_options` 兩份跨類清單
+- 驗證（gpt-5.4-mini，reasoning_effort=high，調試台 `/prompt-debug/stream` 實跑）：目標案**新版 5/5 正解**（category＋cause 全中，含落版後走線上路徑 2 票）；舊版同題 3 票僅 1 票對 category、cause 0/3（值當時不存在）。表 Examples 另兩型各 2/2 落到 C18（`速度慢或限速`／`天數或流量算法與預期不符`），舊版分別為 OOT 售前、[104]
+- 回歸（`exam_first100` 金標 COMM 全數 5 筆 ＋ eSIM 颱風退款 1 筆，單票）：**category 6/6、likely_cause 6/6 全守住**，含兩筆最像會被新入口吸走的 row43（「什麼時候寄憑證？想提前裝」）、row99（「可以使用到什麼時候」）——皆維持 `連線商品使用方式或設定諮詢`＋`開通時機與規則諮詢`。另跑 4 則真實母體邊界探針（完全上不了網／能否撥打電話／原生卡 ICCID 與簡訊辨識／降速規格），新版各 2/2 與應然一致
+- 過程中攔下的一次過度矯正：初版改寫 OOT 子型 2 的分界句時只列「連線商品的速度/流量/天數怎麼算歸 [COMM]」，反面被讀成「其餘連線商品規格詢問可以跳出」——真案「日本原生卡 ICCID 不是 81 開頭／什麼卡才能收簡訊」當場由 `連線商品使用方式或設定諮詢` 掉成 **OOT 售前**（舊版是對的，等於我方引入的新 miss，且與判例庫「連線商品的使用方式詢問一律 [COMM]」自相矛盾）。改法＝該處補一條硬規則明寫連線商品的使用/設定/功能/規格詢問**一律留在 [COMM]**、並把「原生卡與漫遊卡怎麼分辨」寫成留在 C19 的例子，重測 2/2 回到 C19
+- 表側待辦（PM）：①C17`連線商品已啟用但無法連線` 的 Exclude 目前只寫「連得上但速度慢/與方案不符」，未涵蓋「能上網但特定服務不可用」，建議補一句指向 C18，否則下次 taxonomy 重生會掉回舊口徑；②C19`連線商品使用方式或設定諮詢` 的 Include「開通時機與規則諮詢」與 C18 新增的「提早安裝天數怎麼算」字面高度重疊（本版靠校準層切成「操作與時程 vs 天數算法」），建議表上直接切開；③Lv3 末位「其他」與本庫 `unclear` 的對應關係如非本意請告知
+
 ## 2026-07-28-114317 — 兩枚 mention 旗標回歸《定案表》純提及口徑（砍金標擬合的例外清單）
 
 誤判案（PM 提供，SHIBUYA SKY 觀景台，英文 chatbot session）：罐頭逐條列出本商品專屬例外取消條款（含「facility 確認頂樓關閉後辦理**取消與退款**，約 7–14 個工作日」「即使頂樓關閉，46 樓迴廊仍營業」）→ [USER]「Can I cancel for free if the SHIBUYA SKY rooftop is closed?」。上版 3/3 判 `money_mention_flag=false`＋`fulfillment_mention_flag=false`；正解＝**兩枚皆 true**（category/cause 與其餘欄位不動，仍為 `商品規格/使用規則事前確認`＋`商品頁資訊不足`，見上版 2026-07-27-225310 判例）。
