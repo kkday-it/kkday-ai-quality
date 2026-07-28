@@ -3,6 +3,7 @@
 // 本檔僅保留型別與前端衍生預設，不再寫死 base_url / model 清單。
 
 import llm from '@config/global/llm_model.json';
+import type { LlmAreaDefault } from '../types';
 
 /** 下拉一個 model 選項：id + 質性描述（成本/用途 hint，內聚於各 model，不另立 modelMeta map）。 */
 export interface ModelOption {
@@ -66,8 +67,16 @@ export const ALL_THINKING_MODES: string[] = llm.thinkingModes ?? ['enabled', 'di
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
 
-/** LLM 消費功能區清單（prejudge/prompt_debug/sandbox）；資料源＝config/global/llm_model.json areas[]。 */
+/** LLM 消費功能區清單；資料源＝config/global/llm_model.json areas[]。 */
 export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'sandbox'];
+
+/** 功能區出廠預設旋鈕（該區還沒存過團隊默認時的起點，如 prompt_revise 直接起在旗艦模型）；
+ * 資料源＝config/global/llm_model.json areaDefaults，與後端 `settings.area_seed_knobs` 同一份。
+ * 未登記的區回空物件＝沿用原本的空白起點。 */
+export const LLM_AREA_SEEDS: Record<string, Partial<LlmAreaDefault>> =
+  // JSON import 的字面型別是寬 string，值域正確性由後端 `settings.area_seed_knobs` 與
+  // capabilitiesFor 的檔位過濾把關（填了該 model 不支援的檔次，UI 會顯示為不可選）。
+  (llm.areaDefaults ?? {}) as Record<string, Partial<LlmAreaDefault>>;
 
 /** 每 model 可配參數能力（thinking 控制形態 / reasoning_effort 值域 / temperature 鎖定規則）。 */
 export interface ModelCapability {

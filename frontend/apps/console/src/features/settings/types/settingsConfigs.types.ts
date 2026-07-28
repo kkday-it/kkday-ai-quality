@@ -7,8 +7,8 @@ export interface LlmConnection {
   base_url: string;
 }
 
-/** LLM 消費功能區（三個前端旋鈕配置槽）。 */
-export type LlmArea = 'prejudge' | 'prompt_debug' | 'sandbox';
+/** LLM 消費功能區（每個前端旋鈕配置槽一個）；與 config/global/llm_model.json 的 areas[] 同步。 */
+export type LlmArea = 'prejudge' | 'prompt_debug' | 'sandbox' | 'prompt_revise';
 
 /** thinking 旋鈕值域：default＝不送、用該 model API 預設。enabled/disabled/auto 僅對
  * `thinkingControl==='nativeSwitch'` 的供應商（目前僅 ByteDance/Ark）有意義，對齊其官方

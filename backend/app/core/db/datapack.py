@@ -50,6 +50,9 @@ TABLE_LOAD_ORDER: tuple[str, ...] = (
     "batches",
     "judge_rule_versions",
     "prompt_drafts",
+    # 人工評判案例庫：手工累積的判準金標，跨環境搬遷時最該帶走的資產之一（與 prompt_sandbox_runs
+    # 那種「跑一次就過期的測試歷史」不同性質，故入包）。
+    "prompt_debug_reviews",
     "attributions",
     "finding_notes",
     "llm_usage",
@@ -63,6 +66,7 @@ SENSITIVE_TABLES: frozenset[str] = frozenset({"settings"})
 # 載入後需重置序列的 autoincrement PK 表：還原顯式 id 後，序列未同步會導致後續新增 PK 衝突。
 _SEQUENCE_TABLES: tuple[tuple[str, str], ...] = (
     ("judge_rule_versions", "id"),
+    ("prompt_debug_reviews", "id"),
     ("finding_notes", "id"),
     ("llm_usage", "id"),
     ("attribution_history", "id"),

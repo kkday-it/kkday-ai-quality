@@ -1,4 +1,4 @@
-"""售後根因 Prompt 調試台：分類 SSOT、交叉欄位契約與單次配置覆蓋。"""
+"""售後根因 Prompt 調試台：分類 SSOT、單一輸出契約、Prompt 版本庫與單次配置覆蓋。"""
 
 from __future__ import annotations
 
@@ -6,63 +6,70 @@ import json
 from types import SimpleNamespace
 
 from app.judge import prompt_debug
+from app.judge import prompt_debug_versions as versions
 
 
 def _base_result(**overrides):
+    """一筆合法的非 OOT 判定（單一契約：全欄禁 null、keywords 陣列、urgency 1–5）。"""
     value = {
         "category": "憑證/取票資訊未送達或不知如何使用",
         "theme": "[104]訂單確認問題",
         "likely_cause": "憑證送達延遲",
-        "modify_target": None,
-        "oot_subtype": None,
+        "modify_target": "n/a",
+        "oot_subtype": "n/a",
         "summary": "旅客出發前仍未收到電子票，要求協助確認送達時程。",
+        "keywords": ["電子票", "未收到", "出發前"],
         "sentiment": "negative",
+        "urgency": 4,
         "money_mention_flag": False,
         "fulfillment_mention_flag": True,
-        "urgency_flag": True,
         "multi_issue_flag": False,
+        "no_actionable_content": False,
         "confidence": 0.93,
-        "tail_theme": None,
     }
     value.update(overrides)
     return value
 
 
-def test_defaults_are_derived_from_taxonomy() -> None:
-    """雙契約 payload：v2/v3 各自帶 Prompt/schema/欄位卡，enum 皆由分類 SSOT 派生。"""
+def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
+    """payload 只有一套契約：最新版 Prompt ＋ 由分類 SSOT 派生的 schema/欄位卡。"""
     payload = prompt_debug.defaults_payload()
-    assert payload["default_contract"] == "v2"
     assert payload["category_count"] == 25
     assert payload["theme_count"] == 5
-    v2 = payload["contracts"]["v2"]
-    schema = v2["output_schema"]
+    # 版本名即檔名時間戳，且必須真的是版本庫最新版
+    assert payload["prompt_version"] == versions.latest_version()
+    assert payload["prompt_versions"][0] == payload["prompt_version"]
+    assert payload["system_prompt"] == versions.latest_prompt()
+    # 靜態快照：分類庫已內嵌，不該再留模板佔位符
+    assert "{{TAXONOMY_JSON}}" not in payload["system_prompt"]
+
+    schema = payload["output_schema"]
     assert "__OUT_OF_TAXONOMY__" in schema["properties"]["category"]["enum"]
-    assert [field["key"] for field in v2["output_fields"]] == [
+    assert "n/a" in schema["properties"]["modify_target"]["enum"]
+    assert "$schema" not in schema
+    assert [field["key"] for field in payload["output_fields"]] == [
         "theme",
         "category",
         "likely_cause",
         "modify_target",
+        "oot_subtype",
         "summary",
+        "keywords",
         "sentiment",
+        "urgency",
         "money_mention_flag",
         "fulfillment_mention_flag",
-        "urgency_flag",
         "multi_issue_flag",
+        "no_actionable_content",
         "confidence",
-        "tail_theme",
     ]
-    assert "oot_subtype" not in {field["key"] for field in v2["output_fields"]}
+    # 已清退的 v2 欄位不得復活
+    assert {"tail_theme", "urgency_flag"}.isdisjoint(
+        {field["key"] for field in payload["output_fields"]}
+    )
     assert payload["sources"]["field_definitions_document"]["document_id"] == (
         "1FFFqsGPUhOd0oVG4uDbSgVfsdqdYYRuy5fLIE0tYpMA"
     )
-    assert "$schema" not in schema
-    assert "{{TAXONOMY_JSON}}" not in v2["system_prompt"]
-    # v3 新規格重點差異：全欄禁 null（n/a 哨兵）、keywords 陣列、urgency 1–5、無 tail_theme
-    v3 = payload["contracts"]["v3"]
-    v3_keys = {field["key"] for field in v3["output_fields"]}
-    assert {"keywords", "urgency", "no_actionable_content", "oot_subtype"} <= v3_keys
-    assert "tail_theme" not in v3_keys
-    assert "n/a" in v3["output_schema"]["properties"]["modify_target"]["enum"]
 
 
 def test_slashes_inside_controlled_causes_are_not_split() -> None:
@@ -95,9 +102,24 @@ def test_validate_result_accepts_oot_contract() -> None:
     value = _base_result(
         category="__OUT_OF_TAXONOMY__",
         theme="OOT跳出",
-        likely_cause=None,
+        likely_cause="n/a",
         oot_subtype="售前_商品資訊詢問",
-        tail_theme="親子適用條件詢問",
+    )
+    assert prompt_debug.validate_result(value) == []
+
+
+def test_validate_result_enforces_no_actionable_content_linkage() -> None:
+    """no_actionable_content=true 必須連動 OOT ＋ 對話殘段 ＋ keywords 清空。"""
+    assert "no_actionable_content=true 時 category 必須是 __OUT_OF_TAXONOMY__" in (
+        prompt_debug.validate_result(_base_result(no_actionable_content=True))
+    )
+    value = _base_result(
+        category="__OUT_OF_TAXONOMY__",
+        theme="OOT跳出",
+        likely_cause="n/a",
+        oot_subtype="對話殘段/無實質",
+        no_actionable_content=True,
+        keywords=[],
     )
     assert prompt_debug.validate_result(value) == []
 
@@ -108,9 +130,64 @@ def test_validate_result_requires_modify_target_for_93() -> None:
         theme="[93]訂單申請修改",
         likely_cause="商品規則不允許改",
     )
-    assert "[93] category 必須填 modify_target" in prompt_debug.validate_result(value)
+    assert "[93] category 必須填 modify_target（不可為 n/a）" in prompt_debug.validate_result(value)
     value["modify_target"] = "改日期/時段/班次"
     assert prompt_debug.validate_result(value) == []
+
+
+# ── Prompt 版本庫（時間戳一版一檔，永遠取最新）──────────────────────────────────
+
+
+def test_repo_prompt_dir_has_only_timestamp_versions() -> None:
+    """repo 內的版本目錄必須解得出最新版（防有人改回 vN.md 命名而靜默失效）。"""
+    assert versions.list_versions(), "版本庫是空的：檔名需為 YYYY-MM-DD-HHMMSS.md"
+    assert versions.latest_prompt().strip()
+
+
+def test_latest_is_newest_filename_not_mtime(monkeypatch, tmp_path) -> None:
+    """最新＝檔名時間戳最大者；先寫的舊名檔即使 mtime 較新也不該勝出。"""
+    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
+    (tmp_path / "2026-07-27-185628.md").write_text("新版", encoding="utf-8")
+    (tmp_path / "2026-01-01-090000.md").write_text("舊版", encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text("不是版本檔", encoding="utf-8")
+
+    assert versions.list_versions() == ["2026-07-27-185628", "2026-01-01-090000"]
+    assert versions.latest_prompt() == "新版"
+
+
+def test_save_creates_new_version_and_skips_identical(monkeypatch, tmp_path) -> None:
+    """存檔即成為最新版；與最新版逐字相同則不建檔。"""
+    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
+    (tmp_path / "2026-01-01-090000.md").write_text("舊版\n", encoding="utf-8")
+
+    created = versions.save("改過的 Prompt")
+    assert created["created"] is True
+    assert created["version"] > "2026-01-01-090000"
+    assert versions.latest_prompt().strip() == "改過的 Prompt"
+
+    again = versions.save("改過的 Prompt")
+    assert again == {"version": created["version"], "created": False}
+    assert len(versions.list_versions()) == 2
+
+
+def test_resolve_falls_back_to_latest_and_flags_edits(monkeypatch, tmp_path) -> None:
+    """空字串＝取最新版並標版本名；改過的內容版本名留空（只能靠 sha256 追）。"""
+    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
+    (tmp_path / "2026-01-01-090000.md").write_text("線上版\n", encoding="utf-8")
+
+    assert versions.resolve("  ") == ("線上版\n", "2026-01-01-090000")
+    assert versions.resolve("線上版") == ("線上版", "2026-01-01-090000")
+    assert versions.resolve("臨時改一句") == ("臨時改一句", "")
+
+
+def test_read_version_rejects_path_traversal(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
+    for bad in ("../../etc/passwd", "v3", "2026-07-27"):
+        try:
+            versions.read_version(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"應拒絕非法版本名：{bad!r}")
 
 
 def test_stream_frames_uses_final_chunk_usage_for_same_call(monkeypatch) -> None:

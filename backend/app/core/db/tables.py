@@ -452,6 +452,32 @@ prompt_sandbox_runs = Table(
     Index("idx_prompt_sandbox_runs_created", "created_at"),
 )
 
+# 售後根因 Prompt 調試台的人工評判案例庫（一列＝一個被人工判過對錯的 session）。
+# 用途有二：① 餵給 AI 定點改寫（見 app/judge/prompt_reviser.py）當作「這裡判錯了、正解是這個」的證據
+# ② 改完 Prompt 後整批回歸重跑，驗證有沒有修好舊案例、有沒有順手改壞別的。
+# 刻意不存當時的 Prompt 全文快照——版本檔 append-only 不改不刪，靠 prompt_version 回查即可
+# （prompt_debug_versions.read_version）；空字串＝送出前在頁面上臨時編輯過、無對應存檔版本。
+prompt_debug_reviews = Table(
+    "prompt_debug_reviews",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("conversation", Text, nullable=False),  # 當時的調試文本原文（完整 IM session）
+    Column("ai_output", JSONB, nullable=False),  # AI 判定的全部欄位（原樣，未過濾）
+    # 人標的正解 {欄名: 正解值}；**只存被標錯的欄**，全欄皆對＝ {}（正例，回歸時用來防過度矯正）
+    Column("corrections", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # 人明確標「對」的欄名清單。與 corrections 一起才構成完整的回歸判準：corrections 是「改完要變成
+    # 這樣」、confirmed 是「改完不准變」，兩者都沒出現的欄＝人沒看過，回歸時不計分（沒看過的欄若拿
+    # AI 原判當標準答案，等於把當時的錯誤當成正解，回歸分數會憑空虛高）。
+    Column("confirmed", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("comment", Text, nullable=False, server_default=""),  # 人寫的修改建議（自由文字）
+    Column("prompt_version", Text, nullable=False, server_default=""),  # 空＝當時臨時編輯過
+    Column("model", Text, nullable=False, server_default=""),
+    Column("reviewer", Text, nullable=False, server_default=""),  # 評判人（user email）
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # 列表熱路徑：依時間倒序
+    Index("idx_prompt_debug_reviews_created", "created_at"),
+)
+
 
 # ── 訂單佐證快照（qc_evidence 快取的 PG 儲存層：下單當時投影快照，一訂單一列 + TTL）──────
 # runtime 派生快取（真相源＝production snapshot，可重生）。⚠️ 刻意不入 datapack

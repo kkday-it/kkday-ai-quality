@@ -5,7 +5,7 @@
 // 各功能區本地覆寫預設不落庫，僅顯式「存為此區默認」才寫回 store/後端。
 import { computed, reactive, ref, watch } from 'vue';
 import { useSettingsConfigsStore } from '@/stores/settingsConfigs.store';
-import { defaultModelFor } from '@/features/settings/constants';
+import { defaultModelFor, LLM_AREA_SEEDS } from '@/features/settings/constants';
 import type { LlmArea, LlmAreaDefault } from '@/features/settings/types';
 
 type Knobs = Pick<LlmAreaDefault, 'model' | 'thinking' | 'reasoning_effort' | 'temperature'>;
@@ -29,7 +29,9 @@ export function useLlmAreaDefault(area: LlmArea) {
   const store = useSettingsConfigsStore();
 
   const provider = ref('openai');
-  const knobs = reactive<Knobs>({ ...BLANK_KNOBS });
+  // 起點＝該區在 config 登記的出廠預設（如 prompt_revise 直接起在旗艦模型 + high effort）；
+  // 未登記的區維持全空白，行為與此機制加入前一致。團隊默認一載回來就覆蓋（下方 watch）。
+  const knobs = reactive<Knobs>({ ...BLANK_KNOBS, ...(LLM_AREA_SEEDS[area] ?? {}) });
   /** 使用者是否已本地手動改動過（改動後不再被團隊默認的後續變動靜默覆蓋，避免蓋掉進行中的編輯）。 */
   const dirty = ref(false);
 

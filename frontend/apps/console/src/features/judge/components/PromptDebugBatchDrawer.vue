@@ -23,7 +23,6 @@ import {
   type PromptDebugBatchRunRow,
   type PromptDebugBatchSnapshot,
   type PromptDebugBatchStatus,
-  type PromptDebugContractKey,
 } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
 import { fmtDt } from '../utils';
@@ -33,10 +32,10 @@ const props = defineProps<{
   visible: boolean;
   /** 啟動時鎖進 run 的 system prompt（頁面編輯框當前內容）。 */
   systemPrompt: string;
-  /** 輸出契約（schema/校驗隨之切換）。 */
-  contract: PromptDebugContractKey;
-  /** 契約顯示名（摘要用）。 */
-  contractLabel: string;
+  /** 線上最新版 Prompt 版本名（摘要用）。 */
+  promptVersion: string;
+  /** 編輯框已偏離最新版＝本批跑的是臨時 Prompt（摘要要講清楚）。 */
+  promptEdited: boolean;
   /** 生效 model 名（摘要用；實際以 overrides 解析為準）。 */
   model: string;
   /** 本次 LLM 旋鈕覆寫（與單次調試同一份，缺省沿用功能區默認）。 */
@@ -163,7 +162,6 @@ async function onStart(): Promise<void> {
     const snap = await startPromptDebugBatch({
       file: form.file,
       systemPrompt: props.systemPrompt,
-      contract: props.contract,
       sheet: isXlsx.value ? form.sheet : '',
       idColumn: form.idColumn.trim(),
       textColumn: form.textColumn.trim(),
@@ -259,9 +257,10 @@ watch(
 
     <!-- 本批固定配置摘要：啟動當下快照鎖進 run，之後編輯頁面不影響已建 run -->
     <a-alert type="info" class="mb-4">
-      本批將鎖定啟動當下的配置：契約 <b>{{ contractLabel || contract }}</b> · 模型
-      <b>{{ model || '（功能區默認）' }}</b> · Prompt
-      <b>{{ systemPrompt.length.toLocaleString() }}</b> 字元；產物落在
+      本批將鎖定啟動當下的配置：Prompt
+      <b>{{ promptEdited ? '頁面臨時編輯版（未存檔）' : `最新版 ${promptVersion || '—'}` }}</b>
+      （<b>{{ systemPrompt.length.toLocaleString() }}</b> 字元）· 模型
+      <b>{{ model || '（功能區默認）' }}</b>；產物落在
       <code>data/prompt_debug_batch/&lt;run_id&gt;/</code>（jsonl 逐筆斷點，中斷可續跑）。
     </a-alert>
 
@@ -440,10 +439,10 @@ watch(
               </div>
             </template>
           </a-table-column>
-          <a-table-column title="契約 / 模型" :width="130">
+          <a-table-column title="Prompt 版本 / 模型" :width="180">
             <template #cell="{ record }">
-              <a-tag size="small" :color="record.contract === 'v3' ? 'purple' : 'arcoblue'">
-                {{ record.contract }}
+              <a-tag size="small" :color="record.prompt_version ? 'arcoblue' : 'orange'">
+                {{ record.prompt_version || '臨時編輯版' }}
               </a-tag>
               <div class="mt-0.5 text-[11px] text-[#86909c]">{{ record.model }}</div>
             </template>
