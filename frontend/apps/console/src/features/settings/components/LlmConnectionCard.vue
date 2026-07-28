@@ -24,14 +24,18 @@ const emit = defineEmits<{
 
 const providerMeta = computed(() => PROVIDERS.find((p) => p.id === props.provider));
 
+// 未配置（或存過空值）的連線，Base URL 直接填入該供應商官方預設端點的「實值」而非只當 placeholder：
+// 灰字 placeholder 會讓人誤以為已填，實際存進 DB 的是空字串，下游空值 fallback 會一律打到 OpenAI 端點
+// （Gemini/ByteDance 拿自家 token 打 api.openai.com 回 401）。使用者仍可自行覆寫。
+const defaultBaseUrl = computed(() => providerMeta.value?.base_url ?? '');
 const form = ref({
-  base_url: props.connection?.base_url ?? '',
+  base_url: props.connection?.base_url || defaultBaseUrl.value,
   api_token: props.tokenKnown ?? '',
 });
 watch(
   () => props.connection,
   (c) => {
-    form.value.base_url = c?.base_url ?? '';
+    form.value.base_url = c?.base_url || defaultBaseUrl.value;
   },
 );
 const tokenDirty = ref(false);

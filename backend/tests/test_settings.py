@@ -35,11 +35,15 @@ def test_effective_llm_dict_uses_area_default():
 
 
 def test_effective_llm_dict_falls_back_to_stub_when_area_empty():
-    """查無 area 默認（未設或該區無資料）→ 回退 _DEFAULT_LLM（stub，無 token）。"""
+    """查無 area 默認（未設或該區無資料）→ 回退 _DEFAULT_LLM（stub，無 token）。
+
+    base_url 即使在完全未配置時也補上 openai 官方端點（2026-07-28 起 effective_llm_dict 保證非空）；
+    stub 判定只看 token（client.is_stub → not has_key），不受此影響。
+    """
     eff = app_settings.effective_llm_dict(app_settings._blank_settings(), area="sandbox")
     assert eff["provider"] == "openai"
     assert eff["api_token"] == ""
-    assert eff["base_url"] == ""
+    assert eff["base_url"] == app_settings.default_base_url_for("openai")
 
 
 def test_effective_llm_dict_none_area_falls_back_to_default_knobs_not_other_areas():
@@ -126,6 +130,32 @@ def test_effective_llm_dict_overrides_provider_switches_connection():
     assert eff["api_token"] == "sk-gemini"
     assert eff["base_url"].startswith("https://generativelanguage")
     assert eff["model"] == "gemini-3.5-flash"
+
+
+def test_effective_llm_dict_fills_provider_default_base_url_when_connection_blank():
+    """連線沒填 base_url（或存過空字串）→ 補該 provider 官方端點，不得落回 OpenAI。
+
+    回歸自 2026-07-28：空值下游被 `or "https://api.openai.com/v1"` 吃掉，Gemini/ByteDance
+    拿自家 token 打 OpenAI 端點整批回 401，錯誤訊息卻指向 OpenAI。
+    """
+    s = {
+        "llm_connections": {"gemini": {"base_url": ""}, "bytedance": {}},
+        "llm_area_defaults": {
+            "prejudge": {"provider": "gemini", "model": "gemini-3.5-flash"},
+            "sandbox": {"provider": "bytedance", "model": "seed-2-0-lite-260228"},
+        },
+    }
+    assert app_settings.effective_llm_dict(s, area="prejudge")["base_url"].startswith(
+        "https://generativelanguage"
+    )
+    assert "bytepluses" in app_settings.effective_llm_dict(s, area="sandbox")["base_url"]
+
+
+def test_default_base_url_for_matches_provider_id_for_roundtrip():
+    """default_base_url_for 與 provider_id_for 互為反向；未知 id 回退 openai 端點。"""
+    for pid in ("openai", "gemini", "bytedance"):
+        assert app_settings.provider_id_for(app_settings.default_base_url_for(pid)) == pid
+    assert app_settings.default_base_url_for("nope") == app_settings.default_base_url_for("openai")
 
 
 # ── model_capabilities_for ─────────────────────────────────────────────────────────────────

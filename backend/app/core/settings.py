@@ -130,6 +130,22 @@ def provider_id_for(base_url: str) -> str:
     return "openai"
 
 
+def default_base_url_for(provider_id: str) -> str:
+    """回某 provider 的官方預設端點（SSOT＝llm_model.json `providers[].base_url`）。
+
+    與 `provider_id_for()` 互為反向操作，故緊鄰擺放成對閱讀。連線未填 base_url 時用它顯式補值：
+    空值不可當隱含預設——下游一旦 `or "https://api.openai.com/v1"`，Gemini/ByteDance 會拿自家 token
+    打 OpenAI 端點回 401，且錯誤訊息指向完全無關的供應商。
+
+    Args:
+        provider_id: openai/gemini/bytedance；未知 id 回退 openai 的端點（OpenAI 相容為大宗）。
+    """
+    hit = next((p for p in LLM_PROVIDERS if p.get("id") == provider_id), None)
+    if hit is None:
+        hit = next((p for p in LLM_PROVIDERS if p.get("id") == "openai"), None)
+    return str((hit or {}).get("base_url", ""))
+
+
 def _mask_secret(tok: str) -> str:
     """機密遮罩：>12 字顯示前 7 + … + 後 4；短值顯 ***；空值顯空字串。"""
     tok = tok or ""
@@ -308,7 +324,8 @@ def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | No
     僅非 None 值生效；temperature 有「顯式 null＝本次改用 API 預設」語意，只要 key 存在即覆寫（即使值
     是 None），故獨立判斷。
     連線（base_url/token）一律以「覆寫後」決定的 provider 反查 llm_connections/llm_tokens——換言之
-    overrides 也能切換本次用哪個供應商連線,不限於原 area 默認的 provider。
+    overrides 也能切換本次用哪個供應商連線,不限於原 area 默認的 provider。回傳的 base_url 保證非空
+    （連線未填時補該 provider 官方端點，見 default_base_url_for）。
     保留 client._resolve() 所讀 key（provider/base_url/model/temperature/thinking/reasoning_effort/
     api_token/provider_models），故 judge 路徑（app/judge/llm/client.py）零改動。
     """
@@ -323,7 +340,9 @@ def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | No
     conn = (s.get("llm_connections") or {}).get(provider) or {}
     return {
         "provider": provider,
-        "base_url": conn.get("base_url", _DEFAULT_LLM["base_url"]),
+        # 收斂點補值：連線沒填（或存過空字串）一律補該 provider 官方端點，讓下游永遠見不到空 base_url
+        # （既有已存空值的連線因此自動修好，不需 migration）。
+        "base_url": conn.get("base_url") or default_base_url_for(provider),
         "model": knobs.get("model") or _DEFAULT_LLM["model"],
         "temperature": knobs.get("temperature"),
         "thinking": knobs.get("thinking") or "default",

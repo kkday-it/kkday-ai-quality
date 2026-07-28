@@ -438,7 +438,8 @@ def chat_json(
     log_label = label or stage
     # 100% 對齊：直接記「實際送 API 的完整 kwargs」（去 messages，另存 prompt 全文；token 不在 kwargs，無洩漏）
     req_params = {k: v for k, v in kwargs.items() if k != "messages"}
-    req_params["base_url"] = cfg["base_url"] or "https://api.openai.com/v1"
+    # 兜底僅適用「完全未配置」（effective_llm_dict 已在收斂點補該 provider 官方端點）
+    req_params["base_url"] = cfg["base_url"] or _settings.default_base_url_for("openai")
     run_log.emit("llm_request", stage, f"LLM 請求 {cfg['model']}", req_params, label=log_label)
     run_log.emit(
         "llm_prompt", stage, "Prompt 全文", {"system": system, "user": user}, label=log_label
@@ -599,7 +600,8 @@ def ping(prompt: str = "回覆 OK", cfg: dict | None = None) -> dict:
     import time
 
     cfg = cfg or _resolve()
-    base = cfg["base_url"] or "https://api.openai.com/v1"
+    # 同上：兜底僅適用完全未配置；正常路徑（含 /api/settings/test-llm）進來時已是補值後的實端點
+    base = cfg["base_url"] or _settings.default_base_url_for("openai")
     if not cfg["token"]:
         return {
             "ok": False,

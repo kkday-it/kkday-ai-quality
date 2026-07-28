@@ -169,6 +169,12 @@ def test_llm(
     from app.core import settings as app_settings
 
     saved = app_settings.load_settings()  # 含明文 llm_tokens
+    # 表單沒填 base_url 就補該供應商官方端點：必須在 resolve_provider_token 之前補完——它用
+    # provider_id_for(base_url) 反推 provider，空值會歸 openai，正好繞過「非 OpenAI 不得 fallback
+    # env OPENAI_API_KEY」的防線，測 Gemini 卻拿 OpenAI key 打 OpenAI 端點。
+    base_url = (body.base_url or "").strip() or app_settings.default_base_url_for(
+        body.provider or ""
+    )
     # per-provider token：表單明文優先；空/遮罩 → 沿用已儲存該供應商的 llm_tokens[provider]
     form_tok = body.api_token
     if form_tok and "***" not in str(form_tok) and "…" not in str(form_tok):
@@ -179,12 +185,12 @@ def test_llm(
         token = app_settings.resolve_provider_token(
             {
                 "api_token": (saved.get("llm_tokens") or {}).get(body.provider or ""),
-                "base_url": (body.base_url or "").strip(),
+                "base_url": base_url,
             }
         )
     cfg = {
         "token": token,
-        "base_url": (body.base_url or "").strip(),
+        "base_url": base_url,
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
         "thinking": body.thinking or "default",
