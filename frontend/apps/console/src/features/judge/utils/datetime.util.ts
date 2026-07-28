@@ -17,3 +17,36 @@ export const fmtDt = (value: unknown, dateOnly = false): string => {
   if (dateOnly || s.endsWith(' 00:00:00')) return s.split(' ')[0];
   return s;
 };
+
+/**
+ * 將代表絕對時間的 ISO 字串轉為指定 IANA 時區。
+ * 無法解析時沿用 fmtDt 的字串正規化，避免列表因單筆舊資料而整體渲染失敗。
+ */
+export const fmtDtInTimeZone = (value: unknown, timeZone: string, dateOnly = false): string => {
+  if (value === null || value === undefined || value === '') return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return fmtDt(value, dateOnly);
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    ...(dateOnly
+      ? {}
+      : {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hourCycle: 'h23',
+        }),
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((item) => item.type === type)?.value ?? '';
+  const dateText = `${part('year')}-${part('month')}-${part('day')}`;
+  return dateOnly ? dateText : `${dateText} ${part('hour')}:${part('minute')}:${part('second')}`;
+};
+
+/** 後台操作時間的產品口徑：固定顯示北京時間（UTC+8），不跟隨瀏覽器所在時區。 */
+export const fmtBeijingDt = (value: unknown, dateOnly = false): string =>
+  fmtDtInTimeZone(value, 'Asia/Shanghai', dateOnly);
