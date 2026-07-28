@@ -40,6 +40,13 @@ LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
 # 特定 model id 的可配參數能力覆寫（優先於所屬 provider 級預設）；目前三供應商差異僅驗證到 provider
 # 級（見 model_capabilities_for），此表暫為空，留給未來已驗證的個別 model 差異使用。
 LLM_MODEL_CAPABILITIES: dict = _LLM_DEFAULTS.get("modelCapabilities", {})
+# 旋鈕值域（API 層校驗用，SSOT＝llm_model.json 頂層；前端 ALL_THINKING_MODES 同讀一份）。
+# "default"＝不覆寫、沿用該功能區默認，屬旋鈕的元值而非供應商參數，故刻意不列入這兩個清單。
+# ⚠️ 這兩個值域曾在 API 層被寫死成另一套字面（thinking 舊值域 on/off），與執行層 client.py 實際
+# 認得的 Ark 原生三態 enabled/disabled/auto 不一致，害 ByteDance 跑批一律 422——值域一律讀此處，
+# 不要在任何一層另抄 Literal。
+LLM_THINKING_MODES: tuple[str, ...] = tuple(_LLM_DEFAULTS.get("thinkingModes", []))
+LLM_REASONING_EFFORTS: tuple[str, ...] = tuple(_LLM_DEFAULTS.get("reasoning", []))
 # 功能區清單（LLM 消費點）：每個前端旋鈕配置槽一個，team 共用默認各一份。
 LLM_AREAS: tuple[str, ...] = tuple(
     _LLM_DEFAULTS.get("areas", ["prejudge", "prompt_debug", "sandbox"])
@@ -166,8 +173,8 @@ _DEFAULT_LLM: dict = {
         "defaultModel", "gpt-5-mini"
     ),  # 讀 llm_model.json 首 provider defaultModel（消除三重維護）
     "temperature": None,  # None＝用 API 預設（gpt-5 系列鎖定不送）
-    "thinking": "default",  # default | on | off
-    "reasoning_effort": "default",  # default | none | low | medium | high | xhigh
+    "thinking": "default",  # default | enabled | disabled | auto（見 LLM_THINKING_MODES）
+    "reasoning_effort": "default",  # default + LLM_REASONING_EFFORTS
 }
 
 # 全項目共享設定固定 key（settings 表單例 row）：所有 load/save 都用此 key。

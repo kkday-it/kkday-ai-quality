@@ -287,3 +287,36 @@ def test_sanitize_drops_orphan_tokens_for_removed_connection(temp_db):
     loaded = app_settings.load_settings()
     assert "gemini" not in loaded["llm_tokens"]
     assert loaded["llm_tokens"]["openai"] == "sk-a"
+
+
+# ── 旋鈕值域 SSOT（API 契約與 llm_model.json 同源）──────────────────────────────────────────
+def test_thinking_modes_ssot_matches_execution_layer_native_enum():
+    """thinking 值域＝Ark 原生三態，與 client._reasoning_kwargs 實際認得的字面一致。
+
+    回歸自 2026-07-28：API 層 `LlmOverridesIn.thinking` 曾寫死舊值域 Literal["default","on","off"]，
+    與執行層只認 enabled/disabled/auto 不符 → ByteDance 跑批一律 422（前端送 'enabled' 被擋在
+    進入執行層之前），且 on/off 即使放行在執行層也是死值（既不設 extra_body 也不算 disabled）。
+    """
+    assert set(app_settings.LLM_THINKING_MODES) == {"enabled", "disabled", "auto"}
+    assert "on" not in app_settings.LLM_THINKING_MODES
+    assert "off" not in app_settings.LLM_THINKING_MODES
+    # "default"＝不覆寫的元值，不該混進供應商參數值域
+    assert "default" not in app_settings.LLM_THINKING_MODES
+
+
+def test_llm_overrides_accepts_native_thinking_and_rejects_stale_values():
+    """API 契約收前端旋鈕實際送出的值；舊值域字面必須被擋下（避免無聲復活）。"""
+    import pydantic
+    import pytest
+
+    from app.api.routers.v1.prejudge import LlmOverridesIn
+
+    for mode in (*app_settings.LLM_THINKING_MODES, "default", None):
+        assert LlmOverridesIn(thinking=mode).thinking == mode
+    for stale in ("on", "off"):
+        with pytest.raises(pydantic.ValidationError):
+            LlmOverridesIn(thinking=stale)
+    for effort in (*app_settings.LLM_REASONING_EFFORTS, "default", None):
+        assert LlmOverridesIn(reasoning_effort=effort).reasoning_effort == effort
+    with pytest.raises(pydantic.ValidationError):
+        LlmOverridesIn(reasoning_effort="ultra")

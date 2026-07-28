@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core import auth, db
 from app.core import settings as app_settings
@@ -49,20 +48,51 @@ def _guard_not_stub_in_production(eff: dict) -> None:
         )
 
 
+def _one_of(value: str | None, allowed: tuple[str, ...], field: str) -> str | None:
+    """旋鈕值域校驗：None／"default" 代表不覆寫（沿用該區默認），其餘須落在 SSOT 清單內。
+
+    刻意不用 Literal 寫死字面：值域 SSOT 在 config/global/llm_model.json（前端旋鈕同讀一份），
+    寫死會在供應商參數演進時靜默漂移——本函式即為修那次漂移而生（thinking 舊值域 on/off 與執行層
+    實際認得的 Ark 三態 enabled/disabled/auto 不符，ByteDance 一律 422）。
+
+    Args:
+        value: 前端送來的旋鈕值。
+        allowed: 該旋鈕的合法值（app_settings.LLM_THINKING_MODES / LLM_REASONING_EFFORTS）。
+        field: 欄位名，僅供錯誤訊息。
+
+    Raises:
+        ValueError: 值不在 SSOT 清單內（FastAPI 轉 422）。
+    """
+    if value is None or value == "default":
+        return value
+    if value not in allowed:
+        raise ValueError(f"{field} 須為 default 或 {'/'.join(allowed)} 之一（收到 {value!r}）")
+    return value
+
+
 class LlmOverridesIn(BaseModel):
     """本次執行臨時旋鈕覆寫（不落庫；「存為此功能區默認」為前端另一顯式動作，走 /api/settings）。
 
     三功能區（prejudge/prompt_debug/sandbox）共用同一契約——provider 可切換本次用哪個供應商連線，
     其餘旋鈕覆寫該區默認。缺省欄位＝沿用功能區默認，前端 LlmConfigPicker/LlmKnobs 對齊此形狀。
+    thinking/reasoning_effort 的值域讀 llm_model.json（見 _one_of），與前端旋鈕、執行層同一份真相源。
     """
 
     provider: str | None = None
     model: str | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
-    thinking: Literal["default", "on", "off"] | None = None
-    reasoning_effort: (
-        Literal["default", "none", "minimal", "low", "medium", "high", "xhigh"] | None
-    ) = None
+    thinking: str | None = None
+    reasoning_effort: str | None = None
+
+    @field_validator("thinking")
+    @classmethod
+    def _validate_thinking(cls, v: str | None) -> str | None:
+        return _one_of(v, app_settings.LLM_THINKING_MODES, "thinking")
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def _validate_reasoning_effort(cls, v: str | None) -> str | None:
+        return _one_of(v, app_settings.LLM_REASONING_EFFORTS, "reasoning_effort")
 
 
 class PrejudgeIn(BaseModel):
