@@ -26,3 +26,15 @@
 .md-editor-code-head {
   z-index: 1 !important;
 }
+
+/**
+ * Arco 按鈕群組（a-radio-group type="button" 的 .arco-radio-group-button、
+ * a-button-group 的 .arco-btn-group）皆為 display:inline-flex 且未設 flex-wrap，
+ * 選項/按鈕數一多（如 Reasoning effort 7 檔）就橫向溢出容器而非換行；Arco 未提供對應
+ * prop 可控，全域統一補上 max-width+flex-wrap，各處按鈕群組不需各自加 :deep() 覆寫。
+ */
+.arco-radio-group-button,
+.arco-btn-group {
+  max-width: 100%;
+  flex-wrap: wrap;
+}

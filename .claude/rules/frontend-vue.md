@@ -14,6 +14,8 @@ paths:
 1. **Tailwind utility class**（`flex`、`gap-2`、`pt-5`、`text-sm`…）直接寫在模板元素上 — 預設首選
 2. **Arco 元件的 style prop**：要調 Arco 內部結構（header / body）時，用元件 prop（如 `:header-style` / `:body-style` / `:wrapper-style`），**不要** `:deep()` 改內部 class
 3. **`:deep()` + scoped CSS**：僅限 utility 與 prop 都無法觸及的情境（複雜選擇器、偽元素、第三方深層 DOM），且須註解說明為何 utility 不可行
+
+> **按鈕群組換行已全域修好**：Arco 的 `a-radio-group type="button"`（`.arco-radio-group-button`）與 `a-button-group`（`.arco-btn-group`）皆為 `display:inline-flex` 且無 `flex-wrap`，選項/按鈕一多會橫向溢出容器而非換行；已在 `src/style.css` 統一補上 `max-width:100%; flex-wrap:wrap`（Arco 無對應 prop，全域一次修正）。**新元件不需要、也不要再各自加 `:deep()` 覆寫**——那會與全域規則重複。
 4. **`style.css` 全域**：僅放 design token / reset / 跨頁共用基底，禁止塞頁面級樣式
 
 > `preflight: false`（已關 Tailwind reset，避免破壞 Arco）。新增 utility 直接用，無需額外設定。
