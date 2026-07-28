@@ -17,6 +17,7 @@
  * metrics；滿意後「採納草稿入庫」（PromptDraftAdoptDrawer：diff 確認 → saveRule 即 active →
  * 清草稿）。測試歷史另支援勾兩筆 run-vs-run 對比（同一套對比視圖）。
  */
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { PERM } from '@/api';
@@ -86,7 +87,7 @@ const selectedCodes = ref<string[]>([]);
 const llm = useLlmAreaDefault('sandbox');
 const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
 const { can } = usePermission();
-const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
+const versionSelection = ref<{ versions: Record<string, RuleVersion> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
 const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));

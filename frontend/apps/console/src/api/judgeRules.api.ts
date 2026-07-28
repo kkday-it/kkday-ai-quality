@@ -8,9 +8,16 @@ import { BASE, JSON_HEADERS, j } from './http.api';
 export type RuleCode = string;
 
 /** 某 rule 的 active 版 meta（清單用）。 */
+/**
+ * 版本識別。初判 Prompt（prompt_*）自 2026-07-28 起改存檔案版本庫，版本＝時間戳字串
+ * （`v20260724041913`，定長故字典序即時序，可直接用 `<`/`>` 比大小）；
+ * 其餘 rule（bd_tag_vertical / source_mapping）仍在 DB，版本是遞增整數。
+ */
+export type RuleVersion = string | number;
+
 export interface RuleMeta {
   rule_code: RuleCode;
-  version: number;
+  version: RuleVersion;
   author: string | null;
   note: string | null;
   created_at: string | null;
@@ -20,7 +27,7 @@ export interface RuleMeta {
 
 /** 歷史版本列。 */
 export interface RuleVersionMeta {
-  version: number;
+  version: RuleVersion;
   author: string | null;
   note: string | null;
   is_active: boolean;
@@ -30,21 +37,21 @@ export interface RuleVersionMeta {
 /** 讀單一 rule（active 或特定版）。 */
 export interface RuleContentResp {
   rule_code: RuleCode;
-  version: number | null;
+  version: RuleVersion | null;
   content: Record<string, unknown>;
 }
 
 /** 存檔 / 恢復回傳。 */
 export interface RuleSaveResult {
   rule_code: RuleCode;
-  version: number;
+  version: RuleVersion;
 }
 
 /** 列所有初判規則 active 版 meta。 */
 export const listRules = (): Promise<RuleMeta[]> => j<RuleMeta[]>(`${BASE}/judge-rules`);
 
 /** 讀某 rule active content（或指定 version）。 */
-export const getRule = (code: RuleCode, version?: number): Promise<RuleContentResp> =>
+export const getRule = (code: RuleCode, version?: RuleVersion): Promise<RuleContentResp> =>
   j<RuleContentResp>(
     `${BASE}/judge-rules/${encodeURIComponent(code)}${version ? `?version=${version}` : ''}`,
   );
@@ -54,23 +61,46 @@ export const getRuleHistory = (code: RuleCode): Promise<RuleVersionMeta[]> =>
   j<RuleVersionMeta[]>(`${BASE}/judge-rules/${encodeURIComponent(code)}/history`);
 
 /** 取特定版本完整 content（diff / 恢復預覽用）。 */
-export const getRuleVersion = (code: RuleCode, version: number): Promise<RuleContentResp> =>
+export const getRuleVersion = (code: RuleCode, version: RuleVersion): Promise<RuleContentResp> =>
   j<RuleContentResp>(`${BASE}/judge-rules/${encodeURIComponent(code)}/versions/${version}`);
 
-/** 存檔（後端先 jsonschema 驗證 → 新 active 版）。 */
-export const saveRule = (code: RuleCode, content: unknown, note = ''): Promise<RuleSaveResult> =>
+/**
+ * 存檔（後端先 jsonschema 驗證 → 新生效版）。
+ *
+ * @param expectedBaseVersion 僅 prompt_*：編輯時看到的生效版本；與後端當前不符會回 409
+ *   （ApiError.status），呼叫端應提示「已被他人更新，請重新載入」而非重試覆蓋。
+ */
+export const saveRule = (
+  code: RuleCode,
+  content: unknown,
+  note = '',
+  expectedBaseVersion?: RuleVersion | null,
+): Promise<RuleSaveResult> =>
   j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ content, note }),
+    body: JSON.stringify({ content, note, expected_base_version: expectedBaseVersion ?? null }),
   });
 
-/** 恢復歷史版本（複製為新 active 版）。 */
-export const restoreRule = (code: RuleCode, version: number): Promise<RuleSaveResult> =>
-  j<RuleSaveResult>(`${BASE}/judge-rules/${encodeURIComponent(code)}/restore/${version}`, {
-    method: 'POST',
-    headers: JSON_HEADERS,
-  });
+/**
+ * 恢復歷史版本。prompt_* 是把生效指標切回該版；其餘 rule 維持「複製為新 active 版」。
+ *
+ * @param expectedBaseVersion 同 saveRule，不符回 409。
+ */
+export const restoreRule = (
+  code: RuleCode,
+  version: RuleVersion,
+  expectedBaseVersion?: RuleVersion | null,
+): Promise<RuleSaveResult> => {
+  const qs =
+    expectedBaseVersion == null
+      ? ''
+      : `?expected_base_version=${encodeURIComponent(String(expectedBaseVersion))}`;
+  return j<RuleSaveResult>(
+    `${BASE}/judge-rules/${encodeURIComponent(code)}/restore/${encodeURIComponent(String(version))}${qs}`,
+    { method: 'POST', headers: JSON_HEADERS },
+  );
+};
 
 /** 恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。 */
 export const resetRuleDefault = (code: RuleCode): Promise<RuleSaveResult> =>
@@ -104,8 +134,8 @@ export const startRulesExport = (): Promise<{ job_id: string; filename: string }
 export interface PromptDraft {
   /** {_meta, text}（同 rule content 格式）。 */
   content: Record<string, unknown>;
-  /** 從哪個版本分叉（stale 偵測：< 現行 active 版本號時提示「active 已前進」）。 */
-  base_version: number;
+  /** 從哪個版本分叉（stale 偵測：< 現行生效版本時提示「已前進」；時間戳定長可直接比大小）。 */
+  base_version: RuleVersion;
   updated_by: string | null;
   updated_at: string | null;
 }
@@ -113,7 +143,7 @@ export interface PromptDraft {
 /** 草稿存在狀態（列表用，不含 content）。 */
 export interface PromptDraftMeta {
   rule_code: RuleCode;
-  base_version: number;
+  base_version: RuleVersion;
   updated_by: string | null;
   updated_at: string | null;
 }
@@ -134,7 +164,7 @@ export const listRuleDrafts = (): Promise<PromptDraftMeta[]> =>
 export const saveRuleDraft = (
   code: RuleCode,
   content: Record<string, unknown>,
-  baseVersion: number,
+  baseVersion: RuleVersion,
 ): Promise<{ rule_code: RuleCode; saved: boolean }> =>
   j<{ rule_code: RuleCode; saved: boolean }>(
     `${BASE}/judge-rules/${encodeURIComponent(code)}/draft`,

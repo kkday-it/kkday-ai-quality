@@ -4,7 +4,13 @@
 // 本 composable 持有自己的 local state，直接呼叫 rule 版本化 API（固定 code=bd_tag_vertical），
 // 與規則頁完全解耦。
 import { computed, ref } from 'vue';
-import { getRule, getRuleHistory, resetRuleDefault, saveRule } from '@/api/judgeRules.api';
+import {
+  getRule,
+  getRuleHistory,
+  resetRuleDefault,
+  saveRule,
+  type RuleVersion,
+} from '@/api/judgeRules.api';
 
 const CODE = 'bd_tag_vertical';
 
@@ -16,7 +22,7 @@ export function useBdTagVerticalRule() {
   const baseline = ref<Record<string, unknown> | null>(null); // 載入時 content（dirty 基準）
   const edited = ref<Record<string, unknown> | null>(null); // 編輯中 content
   const editValid = ref(true);
-  const version = ref<number | null>(null); // 當前 active 版本號（header 顯示）
+  const version = ref<RuleVersion | null>(null); // 當前生效版本（header 顯示）
   const createdAt = ref<string | null>(null); // 當前 active 版建立時間
   const loading = ref(false);
   const error = ref('');

@@ -1,6 +1,7 @@
 // 初判歸因批次任務：跑批 + SSE 進度 + 暫停/恢復/停止 + 目標選取彈窗 + 單列重新初判。
 // 自 useAttributionList 下沉；依賴（來源 / 選中模型 / 垂直分類 / 勾選列 / 重載回呼）由呼叫端注入，
 // 回傳之 ref 保留原 identity（呼叫端 spread 進 return，模板綁定不變）。
+import type { RuleVersion } from '@/api/judgeRules.api';
 import {
   computed,
   onScopeDispose,
@@ -362,7 +363,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
   /** 二次確認後執行：範圍（全部/已選內）+ 階段 + 篩選草稿統一走 scope 目標選取（與預覽同 body）。
    * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定的沿用 active，見
    *   PromptVersionPickerGroup／usePromptVersionPicker，正式初判不支援草稿只支援指定版本）。 */
-  const doRun = (promptVersions?: Record<string, number>) => {
+  const doRun = (promptVersions?: Record<string, RuleVersion>) => {
     // 抽屜不再於送出時自動關閉——確認後直接在原抽屜切換顯示執行日誌（見 logEntries/logStreaming），
     // 讓使用者可留在原地看即時 log；關閉交由使用者自己按「關閉」（不影響背景 job 繼續跑）。
     _run({ ..._scopeBody(), prompt_versions: promptVersions });
@@ -387,7 +388,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
    * 單列（見本函式與 _run 開頭 guard）。
    * @param promptVersions 版本選擇功能：指定的 {rule_code: 版本號}（未指定沿用 active）。
    */
-  const rejudgeRow = async (id: string, promptVersions?: Record<string, number>) => {
+  const rejudgeRow = async (id: string, promptVersions?: Record<string, RuleVersion>) => {
     if (rowBusy.value.size) {
       // 共用同一份進度/日誌狀態，同時只允許一個單列初判
       Message.warning('已有單列初判進行中，請稍後再試');

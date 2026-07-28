@@ -10,6 +10,7 @@
  * （內容欄標籤/對話模式/關聯資料段落/精確查詢 placeholder）依來源讀 `SOURCE_LIST_SCHEMAS`：
  * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { PERM } from '@/api';
 import {
   CollapsibleSidePanel,
@@ -179,7 +180,7 @@ const {
 // 單列重新初判完成 + 重載後，把表身捲回剛判的那一列（大列表·表身內滾動 y='100%'，重載會回頂 → 失去位置）。
 // ref 掛在 TableLayout（內建表格模式），內部 a-table 實例經其 expose 的 tableRef 取得。
 const tableRef = ref<{ tableRef?: { $el: HTMLElement } | null } | null>(null);
-const onRejudge = async (id: string, promptVersions?: Record<string, number>) => {
+const onRejudge = async (id: string, promptVersions?: Record<string, RuleVersion>) => {
   // composable 內含 SSE 等待 + 重載本頁（同頁碼/排序 → 該列索引不變）；執行日誌（logEntries/
   // logStreaming）由 usePrejudgeJob 內部直接開流，就地顯示於確認抽屜本身，不再另開獨立抽屜。
   await rejudgeRow(id, promptVersions);

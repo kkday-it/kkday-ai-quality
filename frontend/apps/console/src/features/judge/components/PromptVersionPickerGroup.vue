@@ -7,6 +7,7 @@
 import { onMounted, watch } from 'vue';
 import { IconEdit } from '@arco-design/web-vue/es/icon';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
+import type { RuleVersion } from '@/api/judgeRules.api';
 import {
   DRAFT_VERSION,
   usePromptVersionPicker,
@@ -25,7 +26,7 @@ const emit = defineEmits<{
   (e: 'update:enabledCodes', value: string[]): void;
   (e: 'update:draftCodes', value: string[]): void;
   /** 點某列編輯鈕 → 開草稿編輯抽屜；baseVersion＝無草稿時新草稿的分叉基準（當前選定版本或 active）。 */
-  (e: 'edit-draft', payload: { code: string; baseVersion: number }): void;
+  (e: 'edit-draft', payload: { code: string; baseVersion: RuleVersion }): void;
 }>();
 
 const store = useJudgeRulesStore();
@@ -54,7 +55,7 @@ function onEditDraft(code: string): void {
   const base =
     sel != null && sel !== DRAFT_VERSION
       ? sel
-      : (draftMetas.value[code]?.base_version ?? activeVersionOf(code) ?? 0);
+      : (draftMetas.value[code]?.base_version ?? activeVersionOf(code) ?? '');
   emit('edit-draft', { code, baseVersion: base });
 }
 

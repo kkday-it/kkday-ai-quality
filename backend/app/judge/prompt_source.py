@@ -3,12 +3,12 @@
 架構反轉：初判 prompt 不再由「JSON 規則樹 → 槽位渲染」派生，而是 **7 支完整 md（prompts/
 *.md：00_polarity + 01_C-1~06_C-6）＝唯一真相源**——人直接編輯、git 版控、PR 審查。
 
-三溫層：
-- **檔案**（prompts/*.md）＝git 版控默認 seed（容器 dev 掛 ./docs、prod COPY prompts）。
-- **DB**（judge_rule_versions 的 prompt_polarity + prompt_C-1~6，content={"_meta":..., "text": md 全文}）
-  ＝線上熱編 active 版 + 完整歷史（RuleManager「初判 Prompt」分組編輯）。
-- **本模組** load()：DB active 優先 → 檔案 fallback；parse 三節（System/User/Schema）；模組級 lazy cache，
-  規則寫入後 reload() 清快取（比照 ai_judge loader 慣例）。
+儲存形態（2026-07-28 起全面去 DB，見 `app.judge.prompt_versions`）：
+- **版本庫**＝`prompts/{prompt_id}/`，一版一檔 `v<時間戳>.md` ＋ `ACTIVE` 指標檔標記生效版本。
+  git 版控，PR 審查；線上跑的就是 git 上看得到的那一份（舊架構的 DB 熱編層已退役——它正是
+  README 宣稱「禁止另存平行副本」卻實際存在的那份平行副本）。
+- **本模組** load()：讀 ACTIVE 指向的版本；parse 四節（System/User/Taxonomy/Schema）；模組級
+  lazy cache，存檔後 reload() 清快取（比照 ai_judge loader 慣例）。
 
 md 格式契約（引擎按此解析）：
     # {標題}
@@ -75,6 +75,11 @@ def rule_code_for_prompt(prompt_id: str) -> str | None:
     return _PROMPT_RULE.get(prompt_id)
 
 
+def prompt_label(prompt_id: str) -> str:
+    """prompt_id → 左選單顯示名（如 "商品內容"）；未知回 prompt_id 本身。"""
+    return _PROMPT_LABEL.get(prompt_id, prompt_id)
+
+
 # ─────────────────────────── md 解析 ───────────────────────────
 def _extract_title(text: str) -> str:
     """取首個 H1（`# ...`）標題純文字；`## ...` 不算（需 `#` 後緊接空白）。"""
@@ -133,38 +138,43 @@ def parse_md(text: str) -> dict[str, Any]:
     }
 
 
-# ─────────────────────────── 載入（DB-first → 檔案 fallback）───────────────────────────
+# ─────────────────────────── 載入（檔案版本庫）───────────────────────────
 def _raw_text(prompt_id: str) -> str:
-    """取某 prompt 的 md 原文：DB active（content["text"]）優先，缺則 prompts/{id}.md。
+    """取某 prompt 的 md 原文＝版本庫 `prompts/{id}/ACTIVE` 指向的那一版。
+
+    ⚠️ 過渡期 fallback：版本庫資料夾尚未建立時退回讀舊的平鋪 `prompts/{id}.md`，讓遷移腳本
+    （`scripts/tools/migrate_prompt_db_to_files.py`）跑之前系統仍能運作。遷移完成後這段
+    fallback 即為死碼，**須連同舊平鋪檔一起清退**（見 plan 的 Phase 5）。
 
     Raises:
-        FileNotFoundError: DB 無 active 版且檔案不存在（引擎 fail-loud，不靜默走空 prompt）。
+        FileNotFoundError: 版本庫與舊平鋪檔都沒有（引擎 fail-loud，不靜默走空 prompt）。
     """
-    rule_code = _PROMPT_RULE[prompt_id]
-    from app.core import db  # lazy：避免 import-time 拉 sqlalchemy（db 不 import 本模組故無循環）
+    from app.judge import prompt_versions
 
-    content = db.get_rule_active(rule_code)
-    if content and isinstance(content.get("text"), str) and content["text"].strip():
-        return content["text"]
+    try:
+        return prompt_versions.active_text(prompt_id)
+    except prompt_versions.VersionNotFoundError:
+        pass
+
     from app.core.paths import PROMPTS_DIR
 
     path = PROMPTS_DIR / f"{prompt_id}.md"
     if not path.exists():
-        raise FileNotFoundError(f"prompt 檔不存在且 DB 無 active 版：{path}")
+        raise FileNotFoundError(f"版本庫未初始化且舊平鋪 prompt 檔不存在：{path}") from None
     return path.read_text(encoding="utf-8")
 
 
 def load(
     prompt_id: str,
-    versions: dict[str, int] | None = None,
+    versions: dict[str, str] | None = None,
     drafts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """取某 prompt 解析結果（DB active 優先→檔案 fallback）；lazy 模組級 cache。
+    """取某 prompt 解析結果（版本庫 ACTIVE 版）；lazy 模組級 cache。
 
     Args:
         prompt_id: PROMPT_IDS 之一（如 "00_polarity" / "03_C-3_supplier"）。
-        versions: {rule_code: 指定歷史版本號}（版本選擇功能）。命中時讀
-            `db.get_rule_version(rule_code, version)` 那個特定版本的內容，**不寫入 `_cache`**
+        versions: {rule_code: 指定版本名，如 "v20260724041913"}（版本選擇功能）。命中時讀
+            該特定版本檔的內容，**不寫入 `_cache`**
             （指定版本只服務本次呼叫，不可污染其他並發正式初判/沙盒 job）。
         drafts: {rule_code: md 全文}（草稿測試功能，僅沙盒路徑使用）。命中時直接解析該
             全文（不觸 DB），同樣**不寫入 `_cache`**；同 rule_code 與 versions 並存時
@@ -174,8 +184,8 @@ def load(
         {"title", "system", "user_template", "schema"}。
 
     Raises:
-        ValueError: 未知 prompt_id、md 解析失敗，或指定的 versions 版本號不存在。
-        FileNotFoundError: 無 DB 版且無檔案（僅無 versions/drafts 命中時才會走到此路徑）。
+        ValueError: 未知 prompt_id、md 解析失敗，或指定的 versions 版本名不存在。
+        FileNotFoundError: 版本庫未初始化且無舊平鋪檔（僅無 versions/drafts 命中時才走到此路徑）。
     """
     if prompt_id not in _PROMPT_RULE:
         raise ValueError(f"未知 prompt_id：{prompt_id}")
@@ -187,12 +197,12 @@ def load(
     if draft_text is not None:
         raw_text = draft_text
     elif pinned_version is not None:
-        from app.core import db  # lazy：同 `_raw_text` 避免 import-time 拉 sqlalchemy
+        from app.judge import prompt_versions
 
-        content = db.get_rule_version(rule_code, pinned_version)
-        if not content or not isinstance(content.get("text"), str) or not content["text"].strip():
-            raise ValueError(f"{rule_code} 無版本 {pinned_version}")
-        raw_text = content["text"]
+        try:
+            raw_text = prompt_versions.read_version(prompt_id, pinned_version)
+        except prompt_versions.VersionNotFoundError as exc:
+            raise ValueError(f"{rule_code} 無版本 {pinned_version}") from exc
     else:
         raw_text = _raw_text(prompt_id)
     parsed = parse_md(raw_text)

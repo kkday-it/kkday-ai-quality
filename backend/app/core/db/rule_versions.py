@@ -166,11 +166,12 @@ def reset_rule_default(code: str, author: str = "") -> dict:
 
 
 def reset_all_rule_defaults(author: str = "") -> dict:
-    """恢復 RuleManager「全部恢復默認」涵蓋的規則（source_mapping + prompt_polarity + prompt_C-1~6，
-    共 8 條）為檔案默認，各存為新 active 版（覆蓋當前、保留歷史）；不論觸發時當前開著哪一頁，
-    範圍恆一致（使用者 2026-07-24 拍板：全域單一動作，非依頁面分流）。
+    """恢復 RuleManager「全部恢復默認」涵蓋的規則為檔案默認，各存為新 active 版（覆蓋當前、
+    保留歷史）；不論觸發時當前開著哪一頁，範圍恆一致（使用者 2026-07-24 拍板：全域單一動作）。
 
-    **排除**：bd_tag_vertical（設定抽屜獨立管理，非 RuleManager 範圍）。
+    **排除**：bd_tag_vertical（設定抽屜獨立管理）；7 支初判 prompt（2026-07-28 起改存檔案版本庫，
+    檔案本身即生效版，「用磁碟檔覆蓋熱編版」這個二元對照已不存在——退回舊內容改用恢復歷史版本）。
+    實際涵蓋範圍因此只剩 source_mapping。
     缺默認檔的 code 跳過不中斷，回報於 skipped。
 
     Returns:
@@ -178,7 +179,9 @@ def reset_all_rule_defaults(author: str = "") -> dict:
     """
     done: list[dict] = []
     skipped: list[str] = []
-    _EXCLUDED = {"bd_tag_vertical"}  # 設定抽屜獨立管理，非 RuleManager「全部恢復默認」範圍
+    # bd_tag_vertical＝設定抽屜獨立管理；prompt_* 已遷出 DB（見上方 docstring）。
+    # 以前綴判定而非 import app.judge.prompt_source：db 層不該反向依賴 judge 層。
+    _EXCLUDED = {"bd_tag_vertical", *(c for c in RULE_CODES if c.startswith("prompt_"))}
     for code in RULE_CODES:
         if code in _EXCLUDED:
             continue

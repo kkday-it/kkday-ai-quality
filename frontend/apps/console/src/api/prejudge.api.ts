@@ -1,4 +1,5 @@
 // 歸因領域 API：統一問題列表 + 即時匯總 + 初判歸因批量任務（選模型 + 進度輪詢）。
+import type { RuleVersion } from './judgeRules.api';
 import { BASE, j } from './http.api';
 import type { ProblemRow } from '@/features/judge/constants';
 import type { LlmOverrides } from '@/features/settings/types';
@@ -153,7 +154,7 @@ export interface PrejudgeBody {
   /** 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。 */
   has_external?: boolean;
   /** 版本選擇功能：7 條 prompt 各自指定歷史版本（{rule_code: 版本號}；未指定沿用 active）。 */
-  prompt_versions?: Record<string, number>;
+  prompt_versions?: Record<string, RuleVersion>;
 }
 
 /** 啟動初判歸因批量任務（item_ids 顯式 / scope=all 目標選取，可 within_ids 交集勾選範圍）→ {job_id, total, model}。 */
@@ -372,7 +373,7 @@ export interface PromptSandboxStartBody extends PrejudgeBody {
   scope: 'single' | 'selection' | 'all';
   /** 版本選擇功能：{rule_code: 指定歷史版本號}（沙盒獨有欄位，與 PrejudgeBody 繼承來的
    * prompt_versions 是不同的請求鍵，兩者互不影響）。 */
-  versions?: Record<string, number>;
+  versions?: Record<string, RuleVersion>;
   /** 草稿測試功能：{rule_code: 草稿 md 全文}（送測時的內容快照；後端逐條強驗 fail-fast，
    * 同 rule_code 與 versions 並存時草稿優先）。 */
   drafts?: Record<string, string>;
@@ -428,7 +429,7 @@ export interface PromptSandboxRunSummary {
   triggered_by: string;
   created_at: string;
   /** 本次測試各 prompt 指定的版本號（{rule_code: version}；未指定沿用 active）。 */
-  versions?: Record<string, number>;
+  versions?: Record<string, RuleVersion>;
   /** 雙跑對比 run（草稿 vs 基準）標記；歷史列表分辨用（草稿全文快照 drafts 詳情才帶）。 */
   compare?: boolean;
 }

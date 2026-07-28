@@ -10,25 +10,26 @@ import { computed, ref, watch } from 'vue';
 import type { RuleVersionMeta } from '@/api/judgeRules.api';
 import { MdTextDiff } from '@/components';
 import { versionLabel } from '../utils';
+import type { RuleVersion } from '@/api/judgeRules.api';
 
 const props = defineProps<{
   /** 版本清單（新→舊；供下拉選項與初始選版）。 */
   history: RuleVersionMeta[];
   /** 依版本號取內容（{_meta, text}）；本元件取 .text 做 diff。 */
-  fetch: (version: number) => Promise<Record<string, unknown>>;
+  fetch: (version: RuleVersion) => Promise<Record<string, unknown>>;
   /** 是否啟用（頁內恆 true）。 */
   active?: boolean;
 }>();
 
-const verA = ref<number>(); // 舊（前）
-const verB = ref<number>(); // 新（後）
+const verA = ref<RuleVersion>(); // 舊（前）
+const verB = ref<RuleVersion>(); // 新（後）
 const textA = ref('');
 const textB = ref('');
 const loading = ref(false);
-const cache = new Map<number, string>();
+const cache = new Map<RuleVersion, string>();
 
 /** version → 秒級時間戳版本名（下拉標籤 / 欄頭）。 */
-const labelOf = (version?: number): string => {
+const labelOf = (version?: RuleVersion): string => {
   const h = props.history.find((x) => x.version === version);
   return versionLabel(h?.created_at, version ?? null);
 };
@@ -38,7 +39,7 @@ const options = computed(() =>
 );
 
 /** 取某版 md 全文（快取；content.text 非字串回空）。 */
-async function fetchText(version: number): Promise<string> {
+async function fetchText(version: RuleVersion): Promise<string> {
   const hit = cache.get(version);
   if (hit !== undefined) return hit;
   const c = await props.fetch(version);

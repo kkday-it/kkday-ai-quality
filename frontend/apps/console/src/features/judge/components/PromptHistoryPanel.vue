@@ -3,6 +3,7 @@
  * 初判 Prompt 歷史（頁內面板版）：版本清單（恢復鈕）+ 選兩版 md 行級對比（PromptDiffCompare）。
  * 與 RuleHistoryPanel（JSON 樹 diff）同結構，差異＝對比區改用 md 文字 diff——prompt content 非樹。
  */
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { onMounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { getRuleVersion } from '@/api/judgeRules.api';
@@ -17,14 +18,14 @@ const fmtTs = (s?: string | null): string =>
 const store = useJudgeRulesStore();
 
 /** 依版本號取內容（注入 PromptDiffCompare；綁定當前 activeCode）。 */
-const fetchVersion = async (version: number): Promise<Record<string, unknown>> =>
+const fetchVersion = async (version: RuleVersion): Promise<Record<string, unknown>> =>
   (await getRuleVersion(store.activeCode, version)).content;
 
 onMounted(async () => {
   await store.loadHistory();
 });
 
-async function restore(version: number) {
+async function restore(version: RuleVersion) {
   try {
     await store.restore(version);
     const h = store.history.find((x) => x.version === version);

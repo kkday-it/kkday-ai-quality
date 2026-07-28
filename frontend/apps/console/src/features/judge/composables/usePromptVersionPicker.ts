@@ -10,18 +10,24 @@ import {
 } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { versionLabel } from '../utils/ruleVersion.util';
+import type { RuleVersion } from '@/api/judgeRules.api';
 
 export interface PromptVersionOption {
-  value: number;
+  value: RuleVersion;
   label: string;
 }
 
-/** 下拉的「草稿」選項哨兵值（真實版本號恆 ≥1，-1 不會撞號）。 */
-export const DRAFT_VERSION = -1;
+/**
+ * 下拉的「草稿」選項哨兵值。
+ *
+ * 版本識別改為 `v` + 14 位時間戳（檔案版本庫）後，原本的 -1 數字哨兵不再與版本同型；
+ * 改用一個不可能是合法版本名的字串，型別統一為 RuleVersion，選項比對免再 typeof 分流。
+ */
+export const DRAFT_VERSION = '__DRAFT__';
 
 /** 解析後可直接展開進請求 body：僅含「非 active」的指定版本。 */
 export interface ResolvedPromptSelection {
-  versions: Record<string, number>;
+  versions: Record<string, RuleVersion>;
 }
 
 export function usePromptVersionPicker(opts: {
@@ -34,7 +40,7 @@ export function usePromptVersionPicker(opts: {
 }) {
   const store = useJudgeRulesStore();
   const historyByCode = ref<Record<string, RuleVersionMeta[]>>({});
-  const selected = ref<Record<string, number>>({});
+  const selected = ref<Record<string, RuleVersion>>({});
   /** withToggle 時各 prompt 是否納入本次測試；預設僅 polarity 開（極簡預設，免每次手動全勾）。 */
   const enabled = ref<Record<string, boolean>>({});
   /** withDrafts 時各 prompt 的草稿存在狀態（rule_code → meta；無草稿＝無鍵）。 */
@@ -49,7 +55,7 @@ export function usePromptVersionPicker(opts: {
       ),
   );
 
-  function activeVersionOf(code: string): number | undefined {
+  function activeVersionOf(code: string): RuleVersion | undefined {
     return store.metas.find((m) => m.rule_code === code)?.version;
   }
 
@@ -95,8 +101,9 @@ export function usePromptVersionPicker(opts: {
     if (meta) {
       // stale 提示：草稿分叉後 active 又前進 → 標示基準已過時（仍可測，入庫前自行斟酌）
       const active = activeVersionOf(code);
+      // 版本識別定長（v+14 位時間戳），字典序即時序，故直接比大小仍是正確的「較舊」判斷
       const stale = active != null && meta.base_version < active ? '·active 已前進' : '';
-      out.unshift({ value: DRAFT_VERSION, label: `📝 草稿（基於 v${meta.base_version}${stale}）` });
+      out.unshift({ value: DRAFT_VERSION, label: `📝 草稿（基於 ${meta.base_version}${stale}）` });
     }
     return out;
   }
@@ -112,11 +119,11 @@ export function usePromptVersionPicker(opts: {
   );
 
   const resolved = computed<ResolvedPromptSelection>(() => {
-    const versions: Record<string, number> = {};
+    const versions: Record<string, RuleVersion> = {};
     for (const code of enabledCodes.value) {
       const sel = selected.value[code];
       // 草稿哨兵不進 versions（後端草稿優先於版本；基準沿用 active）
-      if (typeof sel === 'number' && sel !== DRAFT_VERSION && sel !== activeVersionOf(code)) {
+      if (sel != null && sel !== DRAFT_VERSION && sel !== activeVersionOf(code)) {
         versions[code] = sel; // 等於 active 不必帶，維持請求精簡、沿用既有 cache 快路徑
       }
     }

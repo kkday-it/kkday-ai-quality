@@ -38,3 +38,6 @@ backend/backups/
 docker/seed/*.sql.gz
 backups/
 docs/prompts/prompts/*.zip
+
+# 初判 Prompt 草稿：個人未定案的編輯狀態，進 git 會污染 PR diff（見 app/judge/prompt_drafts_file.py）
+prompts/drafts/

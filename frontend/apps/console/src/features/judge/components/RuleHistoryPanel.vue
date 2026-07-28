@@ -3,6 +3,7 @@
  * 歷史對比恢復（頁內面板版）：版本清單（恢復鈕）+ 選兩版並排 JSON 檢視對比（含變動標紅 / 展開對齊）。
  * 由 RuleManager 於「歷史」模式渲染於編輯區；掛載即載入當前規則歷史。對比區塊委派共用 VersionDiffCompare。
  */
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { onMounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { getRuleVersion } from '@/api/judgeRules.api';
@@ -17,14 +18,14 @@ const fmtTs = (s?: string | null): string =>
 const store = useJudgeRulesStore();
 
 /** 依版本號取內容（注入 VersionDiffCompare；綁定當前 activeCode）。 */
-const fetchVersion = async (version: number): Promise<Record<string, unknown>> =>
+const fetchVersion = async (version: RuleVersion): Promise<Record<string, unknown>> =>
   (await getRuleVersion(store.activeCode, version)).content;
 
 onMounted(async () => {
   await store.loadHistory();
 });
 
-async function restore(version: number) {
+async function restore(version: RuleVersion) {
   try {
     await store.restore(version);
     const h = store.history.find((x) => x.version === version);

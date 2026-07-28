@@ -3,6 +3,7 @@
 // 不含「哪些 rule_code 納入草稿模式測試」（draftCodes/compareEnabled）——那是
 // PromptVersionPickerGroup 直接 emit 給 PromptSandboxDrawer 的送測參數，與本檔的抽屜協調職責
 // 分離，繼續留在呼叫端（比照 selectedCodes/versionSelection 的既有模式）。
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { ref, type Ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import type { SandboxRunDetail } from './usePromptSandboxJob';
@@ -32,7 +33,7 @@ export function usePromptSandboxDrafts(deps: PromptSandboxDraftsDeps) {
 
   const pickerRef = ref<PromptVersionPickerHandle>();
   /** 草稿編輯抽屜。 */
-  const draftEditor = ref<{ visible: boolean; code: string; baseVersion: number }>({
+  const draftEditor = ref<{ visible: boolean; code: string; baseVersion: RuleVersion }>({
     visible: false,
     code: '',
     baseVersion: 0,
@@ -45,7 +46,7 @@ export function usePromptSandboxDrafts(deps: PromptSandboxDraftsDeps) {
     runId: '',
   });
 
-  function openDraftEditor(payload: { code: string; baseVersion: number }): void {
+  function openDraftEditor(payload: { code: string; baseVersion: RuleVersion }): void {
     draftEditor.value = { visible: true, ...payload };
   }
   /** 草稿存檔/刪除 → 刷新 picker 草稿選項。 */

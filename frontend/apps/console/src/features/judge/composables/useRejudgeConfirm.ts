@@ -1,6 +1,7 @@
 // 「確認初判分類」抽屜的批量／單列共用確認流程——由 AttributionList.vue 下沉。
 // 抽屜本身的 template（CollapsibleSidePanel/LlmConfigPicker/LlmKnobs/PromptVersionPickerGroup 等）
 // 留在頁面，本 composable 只承接狀態計算與決策邏輯（開哪種 scope / 送出時呼叫誰 / 確認文案組字）。
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { computed, ref, type Ref } from 'vue';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
@@ -34,9 +35,9 @@ interface RejudgeConfirmDeps {
    * 單列（重新）初判執行者：由呼叫端注入（可能包含執行後 UI 副作用如捲動定位，
    * composable 本身不處理 DOM，僅負責決定「該不該呼叫它」）。
    */
-  runRejudgeRow: (id: string, promptVersions?: Record<string, number>) => void | Promise<void>;
+  runRejudgeRow: (id: string, promptVersions?: Record<string, RuleVersion>) => void | Promise<void>;
   /** 批量初判執行者（usePrejudgeJob.doRun）。 */
-  runBatch: (promptVersions?: Record<string, number>) => void | Promise<void>;
+  runBatch: (promptVersions?: Record<string, RuleVersion>) => void | Promise<void>;
   /** 開批量初判前的目標範圍準備（usePrejudgeJob.openPrejudge：算 targetCount 等並開抽屜）。 */
   openBatchTargeting: () => void;
 }
@@ -69,7 +70,7 @@ export function useRejudgeConfirm(deps: RejudgeConfirmDeps) {
   /** 初判設定/目標範圍面板是否展開。開抽屜時預設**展開**——「確認」按鈕收在面板 footer 內
    * （面板＝確認表單），預設收合會把主行為藏起來多一次點擊；確認後自動收合改看執行日誌。 */
   const confirmSettingsOpen = ref(false);
-  const confirmVersionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
+  const confirmVersionSelection = ref<{ versions: Record<string, RuleVersion> }>({ versions: {} });
 
   /** 開單列「確認初判分類」抽屜（清掉上一輪執行殘留的日誌/終態摘要）。 */
   const openRowConfirm = (record: { _group: unknown }): void => {

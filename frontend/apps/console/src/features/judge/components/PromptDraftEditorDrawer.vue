@@ -16,6 +16,7 @@ import {
   validateRuleText,
 } from '@/api/judgeRules.api';
 import { fmtDt } from '../utils';
+import type { RuleVersion } from '@/api/judgeRules.api';
 
 // md-editor-v3 較重，點開抽屜才載（比照 RuleManager 懶載 PromptEditor 慣例）
 const PromptEditor = defineAsyncComponent(() => import('./PromptEditor.vue'));
@@ -28,9 +29,9 @@ const props = defineProps<{
   /** 顯示名（情緒傾向／商品內容…）。 */
   label: string;
   /** 無既有草稿時，新草稿的分叉基準版本（以該版內容為底）。 */
-  baseVersion: number;
+  baseVersion: RuleVersion;
   /** 現行 active 版本號（stale 提示用）。 */
-  activeVersion?: number;
+  activeVersion?: RuleVersion;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', v: boolean): void;
@@ -46,7 +47,7 @@ const content = ref<Record<string, unknown>>({});
 const editedText = ref('');
 const editedValid = ref(false);
 /** 既有草稿 meta（null＝本次為新草稿）。 */
-const draftBase = ref<number | null>(null);
+const draftBase = ref<RuleVersion | null>(null);
 const draftUpdatedBy = ref('');
 const draftUpdatedAt = ref('');
 const dirty = ref(false);

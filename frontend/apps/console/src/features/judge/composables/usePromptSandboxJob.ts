@@ -3,6 +3,7 @@
 // （見 invalidate()）。activeRun/runCompare/logEntries 亦是「測試歷史」查看/對比時共用的顯示
 // 狀態（usePromptSandboxHistory 抓到資料後由呼叫端 PromptSandboxDrawer 寫回這裡的 ref，避免兩份
 // 平行狀態）。
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { ref, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
@@ -49,7 +50,7 @@ interface PromptSandboxJobDeps {
   /** 納入測試的 prompt 端點值清單（polarity/C-1..C-6；由勾選 rule_code 轉換而來）。 */
   promptArgs: MaybeRefOrGetter<string[]>;
   /** 逐支 prompt 指定版本（PromptVersionPickerGroup resolved）。 */
-  versionSelection: MaybeRefOrGetter<{ versions: Record<string, number> }>;
+  versionSelection: MaybeRefOrGetter<{ versions: Record<string, RuleVersion> }>;
   /** 納入測試且處於草稿模式的 rule_code 清單。 */
   draftCodes: MaybeRefOrGetter<string[]>;
   /** 有草稿時是否雙跑對比（關＝只跑草稿省 token 但無前後對照）。 */

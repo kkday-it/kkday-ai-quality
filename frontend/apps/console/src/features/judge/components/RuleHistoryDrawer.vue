@@ -2,6 +2,7 @@
 /** 歷史對比恢復（抽屜版·code 驅動）：版本清單（恢復鈕）+ 選兩版並排 JSON 檢視對比（含變動標紅 / 展開對齊）。
  * 對比區塊委派共用 VersionDiffCompare。由 props.code 指定規則（**不綁全域 store**·可用於任一規則），
  * 自管歷史載入與恢復；恢復後 emit `restored` 供呼叫端重載當前內容。 */
+import type { RuleVersion } from '@/api/judgeRules.api';
 import { ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
@@ -24,7 +25,7 @@ const fmtTs = (s?: string | null): string =>
   (s || '').replace('T', ' ').replace(/\..*$/, '').replace('Z', '').slice(0, 19);
 
 /** 依版本號取內容（注入 VersionDiffCompare；綁定 props.code）。 */
-const fetchVersion = async (version: number): Promise<Record<string, unknown>> =>
+const fetchVersion = async (version: RuleVersion): Promise<Record<string, unknown>> =>
   (await getRuleVersion(props.code, version)).content;
 
 async function loadHistory() {
@@ -36,7 +37,7 @@ watch(visible, async (v) => {
   if (v) await loadHistory();
 });
 
-async function restore(version: number) {
+async function restore(version: RuleVersion) {
   try {
     await restoreRule(props.code, version);
     const h = history.value.find((x) => x.version === version);

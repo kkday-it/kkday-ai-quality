@@ -11,6 +11,7 @@ import { Message } from '@arco-design/web-vue';
 import JsonEditor from '@/components/JsonEditor.vue';
 import type { RuleVersionMeta } from '@/api/judgeRules.api';
 import { diffJsonPaths, jsonPathKey, versionLabel } from '../utils';
+import type { RuleVersion } from '@/api/judgeRules.api';
 
 /** vanilla-jsoneditor 節點路徑（套件未公開匯出 JSONPath 型別，本地別名）。 */
 type JsonPath = string[];
@@ -19,17 +20,17 @@ const props = defineProps<{
   /** 版本清單（新→舊；供下拉選項與初始選版）。 */
   history: RuleVersionMeta[];
   /** 依版本號取內容（呼叫端注入規則 API；本元件負責快取）。 */
-  fetch: (version: number) => Promise<Record<string, unknown>>;
+  fetch: (version: RuleVersion) => Promise<Record<string, unknown>>;
   /** 是否啟用：頁內恆 true；彈窗綁 visible。false→true 時初始化選版並載入。 */
   active?: boolean;
 }>();
 
-const verA = ref<number>(); // 舊（前）
-const verB = ref<number>(); // 新（後）
+const verA = ref<RuleVersion>(); // 舊（前）
+const verB = ref<RuleVersion>(); // 新（後）
 const contentA = shallowRef<Record<string, unknown>>({});
 const contentB = shallowRef<Record<string, unknown>>({});
 const loading = ref(false);
-const cache = new Map<number, Record<string, unknown>>();
+const cache = new Map<RuleVersion, Record<string, unknown>>();
 
 const editorA = ref<InstanceType<typeof JsonEditor>>();
 const editorB = ref<InstanceType<typeof JsonEditor>>();
@@ -43,12 +44,12 @@ const classFn = computed(
 );
 
 /** version → 秒級時間戳版本名（供並排面板標頭）。 */
-const labelOf = (version?: number): string => {
+const labelOf = (version?: RuleVersion): string => {
   const h = props.history.find((x) => x.version === version);
   return versionLabel(h?.created_at, version ?? null);
 };
 
-async function fetchContent(version: number): Promise<Record<string, unknown>> {
+async function fetchContent(version: RuleVersion): Promise<Record<string, unknown>> {
   const hit = cache.get(version);
   if (hit) return hit;
   const c = await props.fetch(version);

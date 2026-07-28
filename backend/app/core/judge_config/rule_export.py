@@ -142,12 +142,11 @@ def _style_header_grouped(
 
 
 def build_prompts_zip_bytes(ctx: ExportCtx | None = None) -> bytes:
-    """打包 prompts 初判 prompt 目錄為 zip（bytes）：7 支 prompt md ＋ README ＋ BASELINE。
+    """打包初判 prompt 的**當前生效版**為 zip（bytes）：7 支 prompt md ＋ README ＋ BASELINE。
 
-    Prompt-as-Source 架構下初判 prompt 唯一真相源＝prompts/*.md（見 `judge.prompt_source`），本
-    導出直接打包該目錄的 .md 檔（含引擎契約 README、基線指標 BASELINE），供離線交付 / 版本留存 / 手動
-    diff。以**磁碟現行檔**為準（DB 熱編 active 版另存 judge_rule_versions；若已在 RuleManager 熱編而未
-    回寫檔，兩者可能不同步——需回寫請先「恢復默認」反向操作，或改由檔案編輯流程）。
+    每支取 `prompts/<id>/ACTIVE` 指向的版本，攤平成 `<id>.md` 置於 zip 根（供離線交付 / 版本留存 /
+    手動 diff）。2026-07-28 前這裡打包的是平鋪 `prompts/*.md`，而線上跑的是 DB 熱編版，兩者會不同步；
+    版本庫化之後「導出的」與「線上跑的」結構性一致，那條警語已不再適用。
 
     Args:
         ctx: 背景 job 進度把手（可選）；給定時每打包一檔回報進度並輪詢取消，None＝同步直呼。
@@ -159,19 +158,35 @@ def build_prompts_zip_bytes(ctx: ExportCtx | None = None) -> bytes:
         Cancelled: ctx 對應 job 被取消時由 ctx.check() 拋出。
     """
     from app.core.paths import PROMPTS_DIR
+    from app.judge import prompt_source, prompt_versions
 
-    # 只收 .md（7 支 prompt + README + BASELINE）；.DS_Store 等非 md 與既有 zip 自然排除。保序打包利穩定 diff。
-    files = sorted(PROMPTS_DIR.glob("*.md"))
-    total = len(files)
+    # 7 支 prompt 的生效版（缺 ACTIVE 者略過，不讓半套 zip 看起來像完整交付）＋ 目錄層說明文件
+    entries: list[tuple[str, str]] = []
+    for prompt_id in prompt_source.PROMPT_IDS:
+        try:
+            entries.append((f"{prompt_id}.md", prompt_versions.active_text(prompt_id)))
+        except prompt_versions.VersionNotFoundError:
+            continue
+    docs = sorted(p for p in PROMPTS_DIR.glob("*.md") if p.stem in {"README", "BASELINE"})
+    total = len(entries) + len(docs)
     if ctx is not None:
         ctx.report(0, total)
 
     buf = io.BytesIO()
+    done = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for i, path in enumerate(files, start=1):
+        for name, text in entries:  # 保序打包利穩定 diff
             if ctx is not None:
                 ctx.check()
-            zf.write(path, arcname=path.name)  # 扁平置於 zip 根，檔名對齊 prompts 佈局
+            zf.writestr(name, text)
+            done += 1
             if ctx is not None:
-                ctx.report(i, total)
+                ctx.report(done, total)
+        for path in docs:
+            if ctx is not None:
+                ctx.check()
+            zf.write(path, arcname=path.name)
+            done += 1
+            if ctx is not None:
+                ctx.report(done, total)
     return buf.getvalue()

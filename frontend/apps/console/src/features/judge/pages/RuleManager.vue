@@ -2,7 +2,7 @@
 /**
  * 初判規則管理：左選子規則、右編輯、工具列操作，全走 PostgreSQL 版本化（存檔 = 新版 + 熱重載）。
  * 選單分兩組：整體配置（source_mapping，純 JSON 編輯）＋ 初判 Prompt（Prompt-as-Source
- * 初判 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復 + 單項/整批恢復默認。
+ * 初判 prompt 唯一真相源，md 編輯 + md 歷史 diff）。歷史對比恢復；恢復默認僅適用非 prompt 規則。
  * Prompt 測試（對單列/勾選多筆跑選定 prompt 子集）於歸因列表工具列與列操作區提供，
  * 本頁不重複提供。
  * 子規則：source_mapping（純 JSON）＋初判 Prompts（prompt_polarity + prompt_C-1~6，Prompt-as-Source
@@ -147,12 +147,12 @@ function doExport() {
   return runExport(startRulesExport, exportName('初判 Prompt 包', 'zip'), '已導出 Prompt 包');
 }
 
-/** 恢復全部規則（source_mapping + 7 支初判 Prompt）為檔案默認，各新增版本覆蓋當前（彈窗二次確認，保留歷史）。 */
+/** 恢復全部規則為檔案默認（範圍已只剩 source_mapping——初判 Prompt 改存檔案版本庫後不再適用）。 */
 function doResetAll() {
   Modal.confirm({
     title: '恢復所有規則為默認',
     content:
-      '確定將全部規則（source_mapping 上傳表頭校驗 + 7 支初判 Prompt）恢復為檔案默認？各自新增一個版本覆蓋當前（保留歷史）。',
+      '確定將 source_mapping（上傳表頭校驗）恢復為檔案默認？會新增一個版本覆蓋當前（保留歷史）。初判 Prompt 不在此範圍——它已改存檔案版本庫，要退回舊內容請用「歷史」還原。',
     okText: '全部恢復',
     cancelText: '取消',
     onOk: async () => {
@@ -256,7 +256,10 @@ function doResetAll() {
             store.labelFor(store.activeCode)
           }}</span>
           <div class="flex-1" />
+          <!-- prompt_* 無「恢復默認」：檔案版本庫裡檔案本身就是生效版，
+               沒有「DB 熱編 vs 檔案默認」的二元對照可退回；要退回舊內容走「歷史」還原 -->
           <a-button
+            v-if="!isPrompt"
             size="small"
             type="outline"
             status="warning"

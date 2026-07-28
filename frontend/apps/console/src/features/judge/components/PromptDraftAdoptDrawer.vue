@@ -8,6 +8,7 @@ import { ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { deleteRuleDraft, getRule, saveRule } from '@/api/judgeRules.api';
 import { MdTextDiff } from '@/components';
+import type { RuleVersion } from '@/api/judgeRules.api';
 
 const props = defineProps<{
   /** 是否顯示。 */
@@ -24,13 +25,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:visible', v: boolean): void;
   /** 入庫成功（新版本號）→ 父層刷新版本清單/草稿狀態。 */
-  (e: 'adopted', payload: { code: string; version: number }): void;
+  (e: 'adopted', payload: { code: string; version: RuleVersion }): void;
 }>();
 
 const loading = ref(false);
 const saving = ref(false);
 const activeText = ref('');
-const activeVersion = ref<number | null>(null);
+const activeVersion = ref<RuleVersion | null>(null);
 /** 現行 active content（_meta 原樣沿用，只換 text 入庫）。 */
 let activeContent: Record<string, unknown> = {};
 const note = ref('');

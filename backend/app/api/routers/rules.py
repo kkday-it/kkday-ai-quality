@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from app.core import auth, db
 from app.core.permissions import permission_keys, require_permission
+from app.judge import prompt_rule_service as prs
 
 router = APIRouter(prefix="/api/judge-rules", tags=["judge-rules"])
 
@@ -45,18 +46,32 @@ def _reload_judge_cache() -> None:
         pass
 
 
+def _db_version(version: str) -> int:
+    """非 prompt 的 rule 版本仍是整數；路由統一收字串後在此轉換。"""
+    try:
+        return int(version)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"版本號需為整數：{version}") from None
+
+
 class SaveIn(BaseModel):
-    """存檔請求：完整 rule/schema content + 編輯備註。"""
+    """存檔請求：完整 rule/schema content + 編輯備註。
+
+    `expected_base_version` 僅 prompt_* 使用：呼叫端編輯時看到的生效版本名，與當前不符即 409。
+    這是防 lost update 的唯一依據（見 `app.judge.prompt_versions` 模組 docstring）——舊的 DB
+    路徑沒有這道檢查，是既有的潛在缺陷，改檔案版本庫時一併補上。
+    """
 
     content: dict
     note: str = ""
+    expected_base_version: str | None = None
 
 
 class DraftIn(BaseModel):
     """草稿寫入請求：完整 content（{_meta, text}）＋分叉基準版本（stale 偵測用）。"""
 
     content: dict
-    base_version: int
+    base_version: str
 
 
 class ValidateIn(BaseModel):
@@ -174,8 +189,11 @@ def _validate(code: str, content: dict) -> None:
 
 @router.get("")
 def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """列所有初判規則的 active 版 meta（rule_code/version/author/note/created_at）。"""
-    return db.list_rule_meta()
+    """列所有初判規則的當前版 meta（rule_code/version/author/note/created_at）。
+
+    兩路合併：7 支初判 prompt 走檔案版本庫，其餘 rule_code 仍在 judge_rule_versions 表。
+    """
+    return sorted(prs.list_meta() + db.list_rule_meta(), key=lambda r: r["rule_code"])
 
 
 # 註：須定義於 `/{code}` GET 之前（雖然路徑段數不同不會衝突，仍比照 reset-default-all 慣例前置）。
@@ -198,7 +216,7 @@ def get_bd_tag_vertical_resolved(user: dict = Depends(auth.get_current_user)) ->
 def list_drafts(user: dict = Depends(auth.get_current_user)) -> list[dict]:
     """列所有存在草稿的 prompt（rule_code/base_version/updated_by/updated_at，不含 content）——
     供沙盒版本選擇器一次拉取草稿存在狀態，免逐 code 輪詢。"""
-    return db.list_prompt_drafts()
+    return prs.list_drafts()
 
 
 # 註：須定義於 `/{code}` GET 之前，否則 "export" 會被當成 code 段被 get_rule 攔截。
@@ -220,13 +238,22 @@ def export_prompts_zip(user: dict = Depends(auth.get_current_user)) -> dict:
 
 @router.get("/{code}")
 def get_rule(
-    code: str, version: int | None = None, user: dict = Depends(auth.get_current_user)
+    code: str, version: str | None = None, user: dict = Depends(auth.get_current_user)
 ) -> dict:
-    """取某 rule 的 active content（或 ?version=N 取特定版）。"""
+    """取某 rule 的當前 content（或 ?version=... 取特定版）。"""
     _check_code(code)
-    content = (
-        db.get_rule_version(code, version) if version is not None else db.get_rule_active(code)
-    )
+    if prs.is_prompt_code(code):
+        content = (
+            prs.get_version_content(code, version)
+            if version is not None
+            else prs.get_active_content(code)
+        )
+    else:
+        content = (
+            db.get_rule_version(code, _db_version(version))
+            if version is not None
+            else db.get_rule_active(code)
+        )
     if content is None:
         raise HTTPException(status_code=404, detail="無此版本（或尚未 seed）")
     return {"rule_code": code, "version": version, "content": content}
@@ -236,14 +263,18 @@ def get_rule(
 def get_history(code: str, user: dict = Depends(auth.get_current_user)) -> list[dict]:
     """某 rule 全版本清單（新到舊）。"""
     _check_code(code)
-    return db.list_rule_history(code)
+    return prs.list_history(code) if prs.is_prompt_code(code) else db.list_rule_history(code)
 
 
 @router.get("/{code}/versions/{version}")
-def get_version(code: str, version: int, user: dict = Depends(auth.get_current_user)) -> dict:
+def get_version(code: str, version: str, user: dict = Depends(auth.get_current_user)) -> dict:
     """取特定版本完整 content（diff/恢復用）。"""
     _check_code(code)
-    content = db.get_rule_version(code, version)
+    content = (
+        prs.get_version_content(code, version)
+        if prs.is_prompt_code(code)
+        else db.get_rule_version(code, _db_version(version))
+    )
     if content is None:
         raise HTTPException(status_code=404, detail="無此版本")
     return {"rule_code": code, "version": version, "content": content}
@@ -270,10 +301,29 @@ def save_rule(
     body: SaveIn,
     user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
 ) -> dict:
-    """存檔（先 jsonschema 驗證 → 新版 active）。"""
+    """存檔（先 jsonschema 驗證 → 新版生效）。
+
+    prompt_* 走檔案版本庫並強制基線比對：`expected_base_version` 與當前生效版不符回 409，
+    要求使用者重新載入——**不可以**靜默覆蓋，那正是要防的 lost update。
+    """
     _check_code(code)
     _validate(code, body.content)
-    res = db.save_rule_version(code, body.content, note=body.note, author=user.get("email", ""))
+    if prs.is_prompt_code(code):
+        text = body.content.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise HTTPException(status_code=422, detail="content 需含 text（md 全文字串）")
+        try:
+            res = prs.save(
+                code,
+                text,
+                expected_base_version=body.expected_base_version,
+                note=body.note,
+                author=user.get("email", ""),
+            )
+        except prs.ConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from None
+    else:
+        res = db.save_rule_version(code, body.content, note=body.note, author=user.get("email", ""))
     _reload_judge_cache()
     return res
 
@@ -282,7 +332,7 @@ def save_rule(
 def get_draft(code: str, user: dict = Depends(auth.get_current_user)) -> dict:
     """取某 prompt 的草稿；無草稿回 draft: null（200，前端免把「尚無草稿」當錯誤處理）。"""
     _check_prompt_code(code)
-    return {"rule_code": code, "draft": db.get_prompt_draft(code)}
+    return {"rule_code": code, "draft": prs.get_draft(code)}
 
 
 @router.put("/{code}/draft")
@@ -298,12 +348,7 @@ def put_draft(
     text = body.content.get("text")
     if not isinstance(text, str) or not text.strip():
         raise HTTPException(status_code=422, detail="草稿 content 需含 text（md 全文字串）")
-    db.upsert_prompt_draft(
-        code,
-        body.content,
-        body.base_version,
-        updated_by=user.get("email", ""),
-    )
+    prs.upsert_draft(code, text, body.base_version, updated_by=user.get("email", ""))
     return {"rule_code": code, "saved": True}
 
 
@@ -314,7 +359,7 @@ def delete_draft(
 ) -> dict:
     """刪除草稿（入庫採納後清理／手動捨棄）。deleted=false 表原本就無草稿（冪等，不視為錯誤）。"""
     _check_prompt_code(code)
-    return {"rule_code": code, "deleted": db.delete_prompt_draft(code)}
+    return {"rule_code": code, "deleted": prs.delete_draft(code)}
 
 
 # 註：須定義於 `/{code}` POST 之後仍可正確匹配（雙段路徑不與單段衝突）；比照 draft 端點聚集於此。
@@ -339,14 +384,24 @@ def validate_prompt_text(
 @router.post("/{code}/restore/{version}")
 def restore_rule(
     code: str,
-    version: int,
+    version: str,
+    expected_base_version: str | None = None,
     user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
 ) -> dict:
-    """恢復某歷史版本（複製為新 active 版）。"""
+    """恢復某歷史版本。
+
+    prompt_* 是「把生效指標切回該版」（不複製新檔——切換歷史由 ACTIVE 檔的 git log 承載）；
+    其餘 rule 維持 DB 的「複製為新 active 版」語意。
+    """
     _check_code(code)
     try:
-        res = db.restore_rule_version(code, version, author=user.get("email", ""))
-    except ValueError as e:
+        if prs.is_prompt_code(code):
+            res = prs.restore(code, version, expected_base_version=expected_base_version)
+        else:
+            res = db.restore_rule_version(code, _db_version(version), author=user.get("email", ""))
+    except prs.ConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except (ValueError, prs.VersionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     _reload_judge_cache()
     return res
@@ -357,8 +412,17 @@ def reset_default(
     code: str,
     user: dict = Depends(require_permission(permission_keys.JUDGE_RULE_MANAGE)),
 ) -> dict:
-    """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。"""
+    """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。
+
+    prompt_* 不再適用：舊語意是「用磁碟檔覆蓋 DB 熱編版」，而檔案版本庫裡檔案本身就是生效版，
+    這個二元對照已不存在。要退回舊內容請用「恢復歷史版本」（restore）。
+    """
     _check_code(code)
+    if prs.is_prompt_code(code):
+        raise HTTPException(
+            status_code=422,
+            detail="初判 Prompt 沒有「恢復默認」：所有版本都在版本庫裡，請改用「恢復歷史版本」。",
+        )
     try:
         res = db.reset_rule_default(code, author=user.get("email", ""))
     except FileNotFoundError:

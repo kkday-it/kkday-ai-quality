@@ -12,6 +12,7 @@ import {
   saveRule,
   type RuleCode,
   type RuleMeta,
+  type RuleVersion,
   type RuleVersionMeta,
 } from '@/api/judgeRules.api';
 
@@ -78,10 +79,16 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     if (valid) edited.value = content as Record<string, unknown>;
   }
 
-  /** 存檔（後端驗證 + 新版）。成功後重載 list + 當前 rule。 */
+  /**
+   * 存檔（後端驗證 + 新版）。成功後重載 list + 當前 rule。
+   *
+   * 帶上目前畫面看到的版本當基線：後端比對不符會回 409（`ApiError.status`），代表有人在你
+   * 編輯期間存過新版——直接把錯誤往上拋讓 UI 提示重新載入，**不可以**改成覆蓋重試，
+   * 那正是要防的 lost update。
+   */
   async function save(note: string) {
     if (!dirty.value || !edited.value) return;
-    await saveRule(activeCode.value, edited.value, note);
+    await saveRule(activeCode.value, edited.value, note, currentMeta.value?.version ?? null);
     await Promise.all([loadList(), selectRule(activeCode.value)]);
   }
 
@@ -90,9 +97,9 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     history.value = await getRuleHistory(activeCode.value);
   }
 
-  /** 恢復某歷史版本。 */
-  async function restore(version: number) {
-    await restoreRule(activeCode.value, version);
+  /** 恢復某歷史版本（prompt_* 為切換生效指標）；同樣帶基線，衝突回 409。 */
+  async function restore(version: RuleVersion) {
+    await restoreRule(activeCode.value, version, currentMeta.value?.version ?? null);
     await Promise.all([loadList(), selectRule(activeCode.value), loadHistory()]);
   }
 
