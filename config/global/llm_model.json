@@ -15,7 +15,10 @@
     "xhigh"
   ],
   "thinkingModes": ["enabled", "disabled", "auto"],
-  "areas": ["prejudge", "prompt_debug", "sandbox"],
+  "areas": ["prejudge", "prompt_debug", "sandbox", "prompt_revise"],
+  "areaDefaults": {
+    "prompt_revise": { "model": "gpt-5.5", "reasoning_effort": "high" }
+  },
   "modelCapabilities": {
     "seed-2-0-lite-260228": {
       "temperatureAlwaysLocked": true,

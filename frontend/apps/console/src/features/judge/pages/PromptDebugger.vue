@@ -4,8 +4,8 @@ import { Message } from '@arco-design/web-vue';
 import { useRouter } from 'vue-router';
 import {
   getPromptDebugDefaults,
+  savePromptVersion,
   streamPromptDebug,
-  type PromptDebugContractKey,
   type PromptDebugDefaults,
   type PromptDebugMeta,
   type PromptDebugResult,
@@ -16,10 +16,16 @@ import { useLlmConfigTest } from '@/composables';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+// 評判區塊跟著判決結果一起出現，lazy 只會讓結果到齊的瞬間閃一下，故靜態載入
+import PromptReviewPanel from '../components/PromptReviewPanel.vue';
 
 // 跑批抽屜點開才載（重元件 lazy，非首屏必需）
 const PromptDebugBatchDrawer = defineAsyncComponent(
   () => import('../components/PromptDebugBatchDrawer.vue'),
+);
+// 案例庫／AI 改寫抽屜同理，點開才載
+const PromptReviseDrawer = defineAsyncComponent(
+  () => import('../components/PromptReviseDrawer.vue'),
 );
 
 const router = useRouter();
@@ -28,16 +34,20 @@ const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
 const { can } = usePermission();
 
 const defaults = ref<PromptDebugDefaults | null>(null);
-const contract = ref<PromptDebugContractKey>('v2');
 const systemPrompt = ref('');
 const inputText = ref('');
 const loadingDefaults = ref(false);
+const savingVersion = ref(false);
 
-/** 目前選定契約的預設 Prompt／欄位卡／說明。 */
-const activeContract = computed(() => defaults.value?.contracts[contract.value] ?? null);
-const contractList = computed(() => (defaults.value ? Object.values(defaults.value.contracts) : []));
+/** 編輯框內容已偏離線上最新版＝本次送出的是臨時 Prompt（存檔才會成為線上口徑）。 */
+const isEdited = computed(
+  () => !!defaults.value && systemPrompt.value !== defaults.value.system_prompt,
+);
 
 const batchVisible = ref(false);
+const reviseVisible = ref(false);
+/** 案例庫筆數（入口按鈕上的徽章；存新案例後 +1，開抽屜時以後端實數校正）。 */
+const reviewCount = ref(0);
 
 const streaming = ref(false);
 const rawOutput = ref('');
@@ -58,8 +68,8 @@ const canRun = computed(
 );
 const displayedResults = computed(() => {
   const parsed = result.value?.parsed;
-  if (!parsed || !activeContract.value) return [];
-  return activeContract.value.output_fields
+  if (!parsed || !defaults.value) return [];
+  return defaults.value.output_fields
     .filter((field) => Object.prototype.hasOwnProperty.call(parsed, field.key))
     .map((field) => ({ ...field, value: parsed[field.key] }));
 });
@@ -68,23 +78,30 @@ async function loadDefaults(): Promise<void> {
   loadingDefaults.value = true;
   try {
     defaults.value = await getPromptDebugDefaults();
-    contract.value = defaults.value.default_contract;
-    systemPrompt.value = defaults.value.contracts[contract.value].system_prompt;
+    systemPrompt.value = defaults.value.system_prompt;
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '載入預設 Prompt 失敗');
+    Message.error(error instanceof Error ? error.message : '載入最新版 Prompt 失敗');
   } finally {
     loadingDefaults.value = false;
   }
 }
 
-/** 切換輸出契約：編輯框仍是任一契約預設（未動過）→ 換載新契約預設；已貼入自訂 Prompt → 保留不覆蓋。 */
-function onContractChange(): void {
-  if (!defaults.value) return;
-  const knownDefaults = Object.values(defaults.value.contracts).map((c) => c.system_prompt);
-  if (!systemPrompt.value.trim() || knownDefaults.includes(systemPrompt.value)) {
-    systemPrompt.value = defaults.value.contracts[contract.value].system_prompt;
-  } else {
-    Message.info('已切換輸出契約；保留你貼入的 Prompt，若要載入該契約預設請按「恢復預設」');
+/** 存為新版本：寫出新的時間戳檔並立即成為線上最新版（調試台與跑批同步生效）。 */
+async function saveVersion(): Promise<void> {
+  if (savingVersion.value || !systemPrompt.value.trim()) return;
+  savingVersion.value = true;
+  try {
+    const saved = await savePromptVersion(systemPrompt.value);
+    await loadDefaults();
+    Message.success(
+      saved.created
+        ? `已存為新版本 ${saved.version}，現為線上最新版`
+        : `內容與最新版 ${saved.version} 相同，未建立新版本`,
+    );
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : '存為新版本失敗');
+  } finally {
+    savingVersion.value = false;
   }
 }
 
@@ -108,7 +125,7 @@ const samples = [
 ];
 
 function resetPrompt(): void {
-  if (activeContract.value) systemPrompt.value = activeContract.value.system_prompt;
+  if (defaults.value) systemPrompt.value = defaults.value.system_prompt;
 }
 
 function clearRun(): void {
@@ -130,7 +147,6 @@ async function run(): Promise<void> {
       {
         text: inputText.value,
         system_prompt: systemPrompt.value,
-        contract: contract.value,
         overrides: llm.overrides.value,
       },
       {
@@ -180,13 +196,6 @@ function openLlmSettings(): void {
   router.replace({ query: { ...router.currentRoute.value.query, settings: 'llm' } });
 }
 
-function displayValue(value: unknown): string {
-  if (value === null || value === '') return '—';
-  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-  if (Array.isArray(value)) return value.length ? value.join('、') : '[]（空）';
-  if (typeof value === 'object') return JSON.stringify(value, null, 2);
-  return String(value);
-}
 </script>
 
 <template>
@@ -249,26 +258,37 @@ function displayValue(value: unknown): string {
               調試
             </div>
           </div>
-          <a-button size="small" :disabled="loadingDefaults || streaming" @click="resetPrompt"
-            >恢復預設</a-button
-          >
+          <a-space size="mini">
+            <a-button
+              type="outline"
+              status="warning"
+              size="small"
+              :disabled="loadingDefaults || streaming || savingVersion || !isEdited"
+              @click="resetPrompt"
+              >恢復最新版</a-button
+            >
+            <a-button
+              type="primary"
+              size="small"
+              :loading="savingVersion"
+              :disabled="loadingDefaults || streaming || !isEdited"
+              @click="saveVersion"
+              >存為新版本</a-button
+            >
+          </a-space>
         </div>
         <div class="mb-3 flex flex-col gap-1">
-          <a-radio-group
-            v-model="contract"
-            type="button"
-            size="small"
-            :disabled="loadingDefaults || streaming"
-            @change="onContractChange"
-          >
-            <a-radio v-for="option in contractList" :key="option.key" :value="option.key">
-              {{ option.label }}
-            </a-radio>
-          </a-radio-group>
-          <span class="text-xs text-[#86909c]"
-            >輸出契約：{{ activeContract?.description ?? '—'
-            }}；schema 與欄位校驗隨契約切換，貼哪版 Prompt 就選哪版</span
-          >
+          <a-space size="mini">
+            <a-tag :color="isEdited ? 'orange' : 'arcoblue'" size="small">
+              {{ isEdited ? '已編輯（未存檔）' : `最新版 ${defaults?.prompt_version || '—'}` }}
+            </a-tag>
+            <span class="text-xs text-[#86909c]"
+              >版本庫共 {{ defaults?.prompt_versions.length ?? 0 }} 版</span
+            >
+          </a-space>
+          <span class="text-xs text-[#86909c]">
+            調試台與跑批一律用最新版；改完按「存為新版本」寫出新的時間戳檔，之後自動成為線上口徑
+          </span>
         </div>
         <a-textarea
           v-model="systemPrompt"
@@ -278,8 +298,8 @@ function displayValue(value: unknown): string {
           placeholder="載入 Prompt 中…"
         />
         <div class="panel-foot">
-          {{ systemPrompt.length.toLocaleString() }} 字元 · 本次送出前可自由編輯，不會覆寫正式判決
-          Prompt
+          {{ systemPrompt.length.toLocaleString() }} 字元 ·
+          編輯後直接送出只影響本次；要成為線上口徑請按「存為新版本」
         </div>
       </section>
 
@@ -312,6 +332,15 @@ function displayValue(value: unknown): string {
         <div class="mt-3 flex items-center justify-between gap-3">
           <span class="text-xs text-[#86909c]">{{ inputText.length.toLocaleString() }} 字元</span>
           <a-space>
+            <a-badge :count="reviewCount" :max-count="99" :offset="[-4, 4]">
+              <a-button
+                type="outline"
+                :disabled="streaming || !systemPrompt.trim()"
+                @click="reviseVisible = true"
+              >
+                案例庫／AI 改寫
+              </a-button>
+            </a-badge>
             <a-button
               type="outline"
               :disabled="streaming || !systemPrompt.trim()"
@@ -398,13 +427,17 @@ function displayValue(value: unknown): string {
                 • {{ issue }}
               </div>
             </a-alert>
-            <div v-if="displayedResults.length" class="result-grid">
-              <div v-for="field in displayedResults" :key="field.key" class="result-item">
-                <div class="result-key">{{ field.label }}</div>
-                <div class="result-hint">{{ field.hint }}</div>
-                <div class="result-value">{{ displayValue(field.value) }}</div>
-              </div>
-            </div>
+            <PromptReviewPanel
+              v-if="displayedResults.length && result.parsed"
+              :fields="displayedResults"
+              :schema="defaults?.output_schema"
+              :ai-output="result.parsed"
+              :conversation="inputText"
+              :prompt-version="isEdited ? '' : (defaults?.prompt_version ?? '')"
+              :model="meta?.model ?? llm.knobs.model"
+              :disabled="streaming"
+              @saved="reviewCount += 1"
+            />
           </div>
 
           <div v-if="usage" class="usage-card mt-3">
@@ -435,10 +468,8 @@ function displayValue(value: unknown): string {
             </div>
           </div>
           <div v-if="meta" class="mt-2 text-[11px] text-[#86909c]">
-            {{ meta.model }} · {{ meta.provider }} · 契約={{ meta.contract }} · reasoning={{
-              meta.reasoning_effort
-            }}
-            · temperature={{ meta.temperature ?? 'default' }}
+            {{ meta.model }} · {{ meta.provider }} · reasoning={{ meta.reasoning_effort }} ·
+            temperature={{ meta.temperature ?? 'default' }}
           </div>
         </div>
       </section>
@@ -447,10 +478,19 @@ function displayValue(value: unknown): string {
     <PromptDebugBatchDrawer
       v-model:visible="batchVisible"
       :system-prompt="systemPrompt"
-      :contract="contract"
-      :contract-label="activeContract?.label ?? contract"
+      :prompt-version="defaults?.prompt_version ?? ''"
+      :prompt-edited="isEdited"
       :model="llm.knobs.model"
       :overrides="llm.overrides.value"
+    />
+
+    <PromptReviseDrawer
+      v-model:visible="reviseVisible"
+      :system-prompt="systemPrompt"
+      :prompt-version="defaults?.prompt_version ?? ''"
+      :prompt-edited="isEdited"
+      @count="reviewCount = $event"
+      @saved-version="loadDefaults"
     />
   </div>
 </template>
@@ -517,38 +557,6 @@ function displayValue(value: unknown): string {
   padding: 12px;
   font-size: 12px;
   line-height: 1.6;
-}
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.result-item {
-  min-width: 0;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-  background: #fafafa;
-  padding: 8px 10px;
-}
-.result-key {
-  color: #4e5969;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-.result-hint {
-  margin-top: 2px;
-  color: #86909c;
-  font-size: 10px;
-  line-height: 1.4;
-}
-.result-value {
-  margin-top: 3px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: #1d2129;
-  font-size: 12px;
-  font-weight: 500;
 }
 .usage-card {
   border: 1px solid #bedaff;

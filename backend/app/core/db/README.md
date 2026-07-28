@@ -33,6 +33,7 @@
 - 遷移：`7c05d105e825`（先攤成 JSONB 分組）→ `85a7dea69f9d`（JSONB blob → typed 欄，最佳架構）。詳兩個 migration 檔頭 docstring。
 | `settings_store.py` | 全項目共享設定（settings 表·單例 `__global__` row）讀寫（`load_settings_row`/`save_settings_row`）。 |
 | `rule_versions.py` | 初判規則版本化（judge_rule_versions；active/歷史/恢復默認/seed）。`RULE_CODES`＝bd_tag_vertical + source_mapping + prompt_polarity + prompt_C-1~6（僅涵蓋商品分類/上傳表頭校驗/初判 Prompt 三類，不含 judgment 靜態設定）。 |
+| `prompt_debug_reviews.py` | 售後根因調試台的人工評判案例庫（`prompt_debug_reviews`：一列＝一個被人工判過對錯的 session，`conversation`/`ai_output`/`corrections`（只存標錯的欄）/`confirmed`（明確標對的欄名）/`comment`/`prompt_version`）。`corrections` 與 `confirmed` 成對構成回歸判準——前者「改完要變成這樣」、後者「改完不准變」，兩者都沒出現的欄＝人沒看過、回歸不計分（拿 AI 舊判當標準答案會讓分數虛高）。列表 `list_prompt_debug_reviews` 只回前 200 字預覽＋真實字數（對話動輒上萬字），全文走 `fetch_prompt_debug_reviews(ids)` 按 id 取。刻意不存 Prompt 全文快照——版本檔 append-only，靠 `prompt_version` 回查即可（空字串＝當時臨時編輯過）。下游＝AI 定點改寫與回歸重跑。 |
 | `prompt_drafts.py` | 初判 Prompt 草稿（prompt_drafts；prompt_* 每 rule_code 一份共享草稿＝未入庫的編輯中內容）：沙盒可直送測（雙跑對比），滿意後走 `save_rule_version` 入庫並刪草稿；與 judge_rule_versions 分離（版本表維持「存檔即 active」單一語意），併發 last-write-wins。 |
 | `ingest.py` | 批次（batches）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`。 |
 | `findings.py` | attributions CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕/`get_finding`/`update_finding_status`〔同值冪等·轉移記史〕/`batch_update_finding_status`〔批量初判·單交易 diff〕+ 歸因備註）。 |

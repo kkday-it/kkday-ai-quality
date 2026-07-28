@@ -3,6 +3,8 @@ export { default as AttributionDetailDrawer } from './AttributionDetailDrawer.vu
 export { default as AttributionFilterBar } from './AttributionFilterBar.vue';
 export { default as PrejudgeLogView } from './PrejudgeLogView.vue';
 export { default as PromptDebugBatchDrawer } from './PromptDebugBatchDrawer.vue';
+export { default as PromptReviewPanel } from './PromptReviewPanel.vue';
+export { default as PromptReviseDrawer } from './PromptReviseDrawer.vue';
 export { default as PromptSandboxDrawer } from './PromptSandboxDrawer.vue';
 export { default as PromptVersionPickerGroup } from './PromptVersionPickerGroup.vue';
 export { default as PrejudgeRunsDrawer } from './PrejudgeRunsDrawer.vue';

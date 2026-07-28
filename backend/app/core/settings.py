@@ -4,7 +4,8 @@
 - LLM 連線層：`llm_connections`（{ provider_id: {base_url} }，每供應商一條：openai/gemini/bytedance）
   + `llm_tokens`（{ provider_id: token }，per-provider 機密）+ `provider_models`（各供應商自訂 model 清單）。
 - LLM 旋鈕層：`llm_area_defaults`（{ area: {provider,model,thinking,reasoning_effort,temperature} }，
-  每功能區一份團隊共用默認；area ∈ LLM_AREAS = prejudge/prompt_debug/sandbox）。
+  每功能區一份團隊共用默認；area ∈ LLM_AREAS，清單見 config/global/llm_model.json 的 `areas[]`）。
+  某區還沒存過默認時的起點走 `area_seed_knobs()`（同檔 `areaDefaults`），不是全區共用 _DEFAULT_LLM。
 - QC DB：`qc_connections`（{ env_id: {host,port,user} }，每環境一條：sit/stage/production）
   + `qc_passwords`（{ env_id: password }，per-env 機密）——與 LLM 連線同構（連線+機密分離兩張 map）。
 
@@ -39,10 +40,13 @@ LLM_PROVIDERS: list = _LLM_DEFAULTS.get("providers", [])
 # 特定 model id 的可配參數能力覆寫（優先於所屬 provider 級預設）；目前三供應商差異僅驗證到 provider
 # 級（見 model_capabilities_for），此表暫為空，留給未來已驗證的個別 model 差異使用。
 LLM_MODEL_CAPABILITIES: dict = _LLM_DEFAULTS.get("modelCapabilities", {})
-# 功能區清單（LLM 消費點）：三個前端旋鈕配置槽，team 共用默認各一份。
+# 功能區清單（LLM 消費點）：每個前端旋鈕配置槽一個，team 共用默認各一份。
 LLM_AREAS: tuple[str, ...] = tuple(
     _LLM_DEFAULTS.get("areas", ["prejudge", "prompt_debug", "sandbox"])
 )
+# 功能區的出廠預設旋鈕（該區還沒存過團隊默認時的起點）：各區合適的模型檔次差很多——裁決跑批要便宜、
+# 改寫 Prompt 要聰明——所以不能全部共用一個 _DEFAULT_LLM。未列的區維持 _DEFAULT_LLM。
+LLM_AREA_DEFAULTS: dict = _LLM_DEFAULTS.get("areaDefaults", {})
 # QC DB 環境清單（連線 key）：與 qc_db.json 的 environments 對齊（通常 sit/stage/production）。
 QC_ENVS: tuple[str, ...] = tuple(
     e["id"] for e in QC_DB_DEFAULTS.get("environments", []) if e.get("id")
@@ -283,6 +287,19 @@ def load_settings() -> dict:
     return cur
 
 
+def area_seed_knobs(area: str | None) -> dict:
+    """某功能區的出廠預設旋鈕：`_DEFAULT_LLM` 疊上 `llm_model.json` 的 `areaDefaults[area]`。
+
+    用於該區還沒存過團隊默認的情況（新功能區、全新環境）。
+
+    Args:
+        area: 功能區 key；None／未登記的區直接回 `_DEFAULT_LLM` 副本。
+    """
+    knobs = dict(_DEFAULT_LLM)
+    knobs.update(LLM_AREA_DEFAULTS.get(area or "", {}))
+    return knobs
+
+
 def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | None = None) -> dict:
     """由指定功能區默認旋鈕 + 對應供應商連線組出 judge 路徑 flat dict（set_current 入參）。
 
@@ -295,7 +312,7 @@ def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | No
     保留 client._resolve() 所讀 key（provider/base_url/model/temperature/thinking/reasoning_effort/
     api_token/provider_models），故 judge 路徑（app/judge/llm/client.py）零改動。
     """
-    knobs = dict((s.get("llm_area_defaults") or {}).get(area or "") or {}) or dict(_DEFAULT_LLM)
+    knobs = dict((s.get("llm_area_defaults") or {}).get(area or "") or {}) or area_seed_knobs(area)
     if overrides:
         for key in ("provider", "model", "thinking", "reasoning_effort"):
             if overrides.get(key) is not None:

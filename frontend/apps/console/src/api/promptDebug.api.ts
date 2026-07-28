@@ -1,14 +1,13 @@
-// 售後根因 Prompt 調試台：預設資料 + POST SSE 串流 client。
-import { BASE, getToken, j, JSON_HEADERS } from './http.api';
+// 售後根因 Prompt 調試台：預設資料 + POST SSE 串流 client + 人工評判案例庫 + AI 定點改寫。
+import { BASE, getToken, j, JSON_HEADERS, postSse, type SseFrame } from './http.api';
 import type { LlmOverrides } from '@/features/settings/types';
 
-/** 輸出契約版本：v2=現行批次同款（urgency_flag 布林＋tail_theme）；v3=新規格（keywords 陣列＋urgency 1–5＋no_actionable_content＋n/a 哨兵）。 */
-export type PromptDebugContractKey = 'v2' | 'v3';
-
-export interface PromptDebugContract {
-  key: PromptDebugContractKey;
-  label: string;
-  description: string;
+export interface PromptDebugDefaults {
+  /** 目前線上口徑＝版本庫最新版檔名（YYYY-MM-DD-HHMMSS）。 */
+  prompt_version: string;
+  /** 版本庫全部版本名（新→舊）；僅供顯示，頁面不提供切換。 */
+  prompt_versions: string[];
+  /** 最新版 system prompt 全文。 */
   system_prompt: string;
   output_schema: Record<string, unknown>;
   output_fields: Array<{
@@ -16,11 +15,6 @@ export interface PromptDebugContract {
     label: string;
     hint: string;
   }>;
-}
-
-export interface PromptDebugDefaults {
-  default_contract: PromptDebugContractKey;
-  contracts: Record<PromptDebugContractKey, PromptDebugContract>;
   taxonomy_version: string;
   category_count: number;
   theme_count: number;
@@ -37,16 +31,14 @@ export interface PromptDebugDefaults {
 
 export interface PromptDebugBody {
   text: string;
+  /** 留空＝用版本庫最新版；頁面上臨時編輯過才送全文。 */
   system_prompt: string;
-  /** 輸出契約版本；貼什麼契約的 Prompt 就選什麼，schema 與校驗隨之切換。 */
-  contract: PromptDebugContractKey;
   /** 本次執行 LLM 覆寫（provider+旋鈕）；缺省沿用 prompt_debug 功能區默認。 */
   overrides?: LlmOverrides;
 }
 
 export interface PromptDebugMeta {
   job_id: string;
-  contract: PromptDebugContractKey;
   model: string;
   provider: string;
   base_url: string;
@@ -88,49 +80,238 @@ export interface PromptDebugHandlers {
 export const getPromptDebugDefaults = (): Promise<PromptDebugDefaults> =>
   j<PromptDebugDefaults>(`${BASE}/v1/prejudge/prompt-debug/defaults`);
 
-/** fetch + ReadableStream 解析 POST SSE；EventSource 不支援 POST body。 */
-export async function streamPromptDebug(
+/** 存為新版本的結果；created=false＝內容與最新版逐字相同，未建檔。 */
+export interface PromptVersionSaved {
+  version: string;
+  created: boolean;
+  versions: string[];
+}
+
+/**
+ * 把編輯後的 Prompt 存成新的時間戳版本檔，存完即成為線上最新版（單次調試與跑批同步生效）。
+ * @param systemPrompt 要存檔的 system prompt 全文
+ */
+export const savePromptVersion = (systemPrompt: string): Promise<PromptVersionSaved> =>
+  j<PromptVersionSaved>(`${BASE}/v1/prejudge/prompt-debug/prompt-versions`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ system_prompt: systemPrompt }),
+  });
+
+// ── 人工評判案例庫（/prompt-debug/reviews）───────────────────────────────────
+
+/** 案例庫列表列；對話原文只給前 200 字預覽，全文由後端改寫/回歸端點自行按 id 取。 */
+export interface PromptDebugReviewRow {
+  id: number;
+  conversation_preview: string;
+  conversation_chars: number;
+  /** AI 當時判定的全部欄位。 */
+  ai_output: Record<string, unknown>;
+  /** 人標的正解 `{欄名: 正解值}`；只含被標錯的欄，`{}`＝全欄皆對（正例）。 */
+  corrections: Record<string, unknown>;
+  /** 人明確標「對」的欄名；回歸時這些欄不准變。兩者都沒出現的欄＝沒看過，不計分。 */
+  confirmed: string[];
+  comment: string;
+  /** 當時的線上 Prompt 版本；空＝送出前臨時編輯過。 */
+  prompt_version: string;
+  model: string;
+  reviewer: string;
+  created_at: string;
+}
+
+/** 新增案例的送出內容。 */
+export interface PromptDebugReviewPayload {
+  conversation: string;
+  ai_output: Record<string, unknown>;
+  corrections: Record<string, unknown>;
+  /** 人明確標「對」的欄名（不得與 corrections 重疊，後端會擋）。 */
+  confirmed: string[];
+  comment?: string;
+  prompt_version?: string;
+  model?: string;
+}
+
+/** 案例庫列表（新→舊）。 */
+export const listPromptDebugReviews = (): Promise<{ reviews: PromptDebugReviewRow[] }> =>
+  j<{ reviews: PromptDebugReviewRow[] }>(`${BASE}/v1/prejudge/prompt-debug/reviews`);
+
+/** 存一則人工評判案例；回新案例 id。 */
+export const createPromptDebugReview = (
+  payload: PromptDebugReviewPayload,
+): Promise<{ id: number }> =>
+  j<{ id: number }>(`${BASE}/v1/prejudge/prompt-debug/reviews`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+
+/** 刪一則案例。 */
+export const deletePromptDebugReview = (id: number): Promise<{ ok: boolean }> =>
+  j<{ ok: boolean }>(`${BASE}/v1/prejudge/prompt-debug/reviews/${id}`, { method: 'DELETE' });
+
+// ── AI 定點改寫（/prompt-debug/revise[/apply]）─────────────────────────────
+
+/** anchor 命中狀態：只有 matched 能套用；另兩種仍顯示（「模型想改哪裡」本身有診斷價值）。 */
+export type PromptPatchStatus = 'matched' | 'not_found' | 'ambiguous';
+
+/** 一條定點補丁。 */
+export interface PromptPatch {
+  /** 要被取代的原文片段（模型逐字複製自現行 Prompt）。 */
+  anchor: string;
+  replacement: string;
+  reason: string;
+  /** 這樣改後可能被錯誤吸過來的案例類型。 */
+  risk: string;
+  status: PromptPatchStatus;
+  /** anchor 在全文中的出現次數（0＝沒逐字複製、>1＝片段太短撞多處）。 */
+  occurrences: number;
+}
+
+/** 改寫結果幀。 */
+export interface PromptReviseResult {
+  raw: string;
+  /** 洞在哪：這批案例暴露出哪條判準綁錯了軸。 */
+  diagnosis: string;
+  /** CHANGELOG 條目草稿（markdown）。 */
+  changelog: string;
+  patches: PromptPatch[];
+  /** 可套用（status=matched）的條數。 */
+  applicable: number;
+}
+
+/** 改寫的 meta 幀。 */
+export interface PromptReviseMeta {
+  job_id: string;
+  model: string;
+  provider: string;
+  reasoning_effort: string;
+  case_count: number;
+  prompt_chars: number;
+}
+
+export interface PromptReviseHandlers {
+  onMeta?: (payload: PromptReviseMeta) => void;
+  onDelta?: (text: string) => void;
+  onResult?: (payload: PromptReviseResult) => void;
+  onUsage?: (payload: PromptDebugUsage) => void;
+  onError?: (message: string) => void;
+  onDone?: () => void;
+}
+
+/** 依選中案例串流產出定點補丁；`systemPrompt` 留空＝用版本庫最新版。 */
+export const streamPromptRevise = (
+  body: { review_ids: number[]; system_prompt: string; overrides?: LlmOverrides },
+  handlers: PromptReviseHandlers,
+  signal?: AbortSignal,
+): Promise<void> =>
+  postSse(
+    `${BASE}/v1/prejudge/prompt-debug/revise`,
+    body,
+    ({ event, payload }) => {
+      if (payload === null) return handlers.onError?.('收到無法解析的 SSE 事件');
+      if (event === 'meta') handlers.onMeta?.(payload as unknown as PromptReviseMeta);
+      else if (event === 'delta') handlers.onDelta?.(String(payload.text ?? ''));
+      else if (event === 'result') handlers.onResult?.(payload as unknown as PromptReviseResult);
+      else if (event === 'usage') handlers.onUsage?.(payload as unknown as PromptDebugUsage);
+      else if (event === 'error') handlers.onError?.(String(payload.message ?? '未知錯誤'));
+      else if (event === 'done') handlers.onDone?.();
+    },
+    signal,
+  );
+
+/**
+ * 把勾選的補丁套進全文，回套用後的內容（不落檔；要成為線上口徑仍須「存為新版本」）。
+ * @throws {Error} 任一 anchor 對不上或撞多處（後端 400，訊息帶片段）。
+ */
+export const applyPromptPatches = (
+  systemPrompt: string,
+  patches: Array<{ anchor: string; replacement: string }>,
+): Promise<{ system_prompt: string; chars_before: number; chars_after: number }> =>
+  j(`${BASE}/v1/prejudge/prompt-debug/revise/apply`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ system_prompt: systemPrompt, patches }),
+  });
+
+// ── 回歸重跑（/prompt-debug/regression）─────────────────────────────────────
+
+/** 單一欄位的回歸判定明細；`held` 只帶 field（沒變就沒什麼好比的）。 */
+export interface RegressionFieldDelta {
+  field: string;
+  expected?: unknown;
+  actual?: unknown;
+}
+
+/** 單一案例的回歸結果。 */
+export interface RegressionCaseResult {
+  review_id: number;
+  /** 對話開頭 80 字（認出是哪一則用）。 */
+  preview: string;
+  ok: boolean;
+  error: string;
+  /** 人標錯的欄，這次判對了。 */
+  fixed: RegressionFieldDelta[];
+  /** 人標錯的欄，這次還是不對。 */
+  still_wrong: RegressionFieldDelta[];
+  /** 人標對的欄，這次被改壞了。 */
+  broken: RegressionFieldDelta[];
+  /** 人標對的欄，這次守住了。 */
+  held: RegressionFieldDelta[];
+  total_tokens: number;
+  cost_usd: number;
+}
+
+/** 回歸 job 進度快照（輪詢 GET /regression/{job_id}）。 */
+export interface PromptRegressionSnapshot {
+  job_id: string;
+  status: 'running' | 'done' | 'error';
+  total: number;
+  processed: number;
+  model: string;
+  prompt_chars: number;
+  cases: RegressionCaseResult[];
+  /** 以下四項為欄位級累計。 */
+  fixed: number;
+  still_wrong: number;
+  broken: number;
+  held: number;
+  /** 重跑失敗的案例數。 */
+  failed: number;
+  cost_usd: number;
+  total_tokens: number;
+  error: string;
+}
+
+/** 啟動回歸重跑；`systemPrompt` 留空＝用版本庫最新版。回初始快照（含 job_id）。 */
+export const startPromptRegression = (body: {
+  review_ids: number[];
+  system_prompt: string;
+  overrides?: LlmOverrides;
+}): Promise<PromptRegressionSnapshot> =>
+  j<PromptRegressionSnapshot>(`${BASE}/v1/prejudge/prompt-debug/regression`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+
+/** 回歸進度輪詢。 */
+export const getPromptRegression = (jobId: string): Promise<PromptRegressionSnapshot> =>
+  j<PromptRegressionSnapshot>(
+    `${BASE}/v1/prejudge/prompt-debug/regression/${encodeURIComponent(jobId)}`,
+  );
+
+/** SSE 串流單條裁決（串流讀取走共用 `postSse`，與 AI 改寫同一套幀解析）。 */
+export const streamPromptDebug = (
   body: PromptDebugBody,
   handlers: PromptDebugHandlers,
   signal?: AbortSignal,
-): Promise<void> {
-  const headers = new Headers(JSON_HEADERS);
-  const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(`${BASE}/v1/prejudge/prompt-debug/stream`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
+): Promise<void> =>
+  postSse(
+    `${BASE}/v1/prejudge/prompt-debug/stream`,
+    body,
+    (frame) => dispatchFrame(frame, handlers),
     signal,
-  });
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const payload = await response.json();
-      message = typeof payload?.detail === 'string' ? payload.detail : message;
-    } catch {
-      /* 沿用 HTTP status */
-    }
-    throw new Error(message);
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('瀏覽器不支援串流回應');
-
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      dispatchFrame(buffer.slice(0, boundary), handlers);
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
-  if (buffer.trim()) dispatchFrame(buffer, handlers);
-}
+  );
 
 // ── 批量跑批（/prompt-debug/batch/*）：上傳 CSV/XLSX 以當前 Prompt/契約整批裁決，斷點續跑 ──
 
@@ -159,7 +340,8 @@ export interface PromptDebugBatchRecentItem {
 export interface PromptDebugBatchSnapshot {
   status: PromptDebugBatchStatus;
   run_id: string;
-  contract: PromptDebugContractKey;
+  /** 本批用的 Prompt 版本名；空＝送出前在頁面上臨時編輯過（實際內容以 run 目錄快照為準）。 */
+  prompt_version: string;
   model: string;
   input_name: string;
   created_at: string;
@@ -193,7 +375,8 @@ export interface PromptDebugBatchRunRow {
   run_id: string;
   created_at: string;
   input_name: string;
-  contract: PromptDebugContractKey;
+  /** 本批用的 Prompt 版本名；空＝啟動前在頁面上臨時編輯過。 */
+  prompt_version: string;
   model: string;
   offset: number;
   limit: number;
@@ -212,8 +395,8 @@ export interface PromptDebugBatchRunRow {
 /** 啟動跑批參數（file 之外的欄位缺省沿用後端預設）。 */
 export interface PromptDebugBatchStartPayload {
   file: File;
+  /** 留空＝後端取版本庫最新版。 */
   systemPrompt: string;
-  contract: PromptDebugContractKey;
   /** XLSX 工作表名；空＝第一個工作表（CSV 忽略）。 */
   sheet?: string;
   idColumn?: string;
@@ -235,7 +418,6 @@ export const startPromptDebugBatch = (
   const fd = new FormData();
   fd.append('file', payload.file);
   fd.append('system_prompt', payload.systemPrompt);
-  fd.append('contract', payload.contract);
   if (payload.sheet) fd.append('sheet', payload.sheet);
   if (payload.idColumn) fd.append('id_column', payload.idColumn);
   if (payload.textColumn) fd.append('text_column', payload.textColumn);
@@ -305,26 +487,16 @@ export const downloadPromptDebugBatchFile = async (
   return res.blob();
 };
 
-function dispatchFrame(frame: string, handlers: PromptDebugHandlers): void {
-  let event = '';
-  const data: string[] = [];
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
-  }
-  if (!event) return;
-  let payload: any;
-  try {
-    payload = JSON.parse(data.join('\n') || '{}');
-  } catch {
+function dispatchFrame({ event, payload }: SseFrame, handlers: PromptDebugHandlers): void {
+  if (payload === null) {
     handlers.onError?.('收到無法解析的 SSE 事件');
     return;
   }
-  if (event === 'meta') handlers.onMeta?.(payload as PromptDebugMeta);
+  if (event === 'meta') handlers.onMeta?.(payload as unknown as PromptDebugMeta);
   else if (event === 'delta') handlers.onDelta?.(String(payload.text ?? ''));
   else if (event === 'warning') handlers.onWarning?.(String(payload.message ?? ''));
-  else if (event === 'result') handlers.onResult?.(payload as PromptDebugResult);
-  else if (event === 'usage') handlers.onUsage?.(payload as PromptDebugUsage);
+  else if (event === 'result') handlers.onResult?.(payload as unknown as PromptDebugResult);
+  else if (event === 'usage') handlers.onUsage?.(payload as unknown as PromptDebugUsage);
   else if (event === 'error') handlers.onError?.(String(payload.message ?? '未知錯誤'));
   else if (event === 'done') handlers.onDone?.();
 }

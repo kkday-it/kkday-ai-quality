@@ -1,0 +1,173 @@
+// AI 定點改寫的一次「跑 → 勾 → 套 → 存」流程狀態。抽成 composable 的理由同 usePromptReviewCases：
+// 流程有四段、每段各自有 loading/錯誤，全塞進元件會讓 template 綁一堆散狀 ref，也不好測。
+import { computed, ref, type Ref } from 'vue';
+import { Message } from '@arco-design/web-vue';
+import {
+  applyPromptPatches,
+  savePromptVersion,
+  streamPromptRevise,
+  type PromptDebugUsage,
+  type PromptPatch,
+  type PromptReviseMeta,
+  type PromptReviseResult,
+} from '@/api';
+import type { LlmOverrides } from '@/features/settings/types';
+
+/** usePromptRevise 的注入依賴。 */
+interface PromptReviseDeps {
+  /** 要被改寫的現行 Prompt 全文（頁面上編輯中的那份）。 */
+  systemPrompt: Ref<string>;
+  /** 要餵給模型的案例 id（來自案例庫勾選）。 */
+  reviewIds: Ref<number[]>;
+}
+
+/**
+ * AI 定點改寫流程。
+ * @returns 串流三態（`streaming`/`rawOutput`/`errorMessage`）、結果（`meta`/`result`/`usage`）、
+ *   補丁勾選（`selected`/`toggle`/`selectedPatches`）、動作（`run`/`abort`/`apply`/`saveVersion`/`reset`）、
+ *   以及套用後的 `revisedPrompt`（非空＝可進 diff 預覽與存版）。
+ */
+export function usePromptRevise(deps: PromptReviseDeps) {
+  const streaming = ref(false);
+  const rawOutput = ref('');
+  const meta = ref<PromptReviseMeta | null>(null);
+  const result = ref<PromptReviseResult | null>(null);
+  const usage = ref<PromptDebugUsage | null>(null);
+  const errorMessage = ref('');
+  /** 勾選的補丁索引；只有 status=matched 的能進來。 */
+  const selected = ref<number[]>([]);
+  /** 套用後的新全文；空＝還沒套用。 */
+  const revisedPrompt = ref('');
+  const applying = ref(false);
+  const savingVersion = ref(false);
+  let abortController: AbortController | null = null;
+
+  const patches = computed<PromptPatch[]>(() => result.value?.patches ?? []);
+  const selectedPatches = computed(() => selected.value.map((i) => patches.value[i]).filter(Boolean));
+  /** 對不上／撞多處的補丁數（顯示成提醒，讓人知道模型還想改哪些但套不了）。 */
+  const unusableCount = computed(() => patches.value.filter((p) => p.status !== 'matched').length);
+  const canApply = computed(() => !applying.value && selectedPatches.value.length > 0);
+
+  function reset(): void {
+    rawOutput.value = '';
+    meta.value = null;
+    result.value = null;
+    usage.value = null;
+    errorMessage.value = '';
+    selected.value = [];
+    revisedPrompt.value = '';
+  }
+
+  /** 勾／取消勾某條補丁（不可套用的一律擋掉）。 */
+  function toggle(index: number): void {
+    if (patches.value[index]?.status !== 'matched') return;
+    const at = selected.value.indexOf(index);
+    if (at >= 0) selected.value.splice(at, 1);
+    else selected.value.push(index);
+  }
+
+  async function run(overrides: LlmOverrides): Promise<void> {
+    if (streaming.value || !deps.reviewIds.value.length) return;
+    reset();
+    streaming.value = true;
+    abortController = new AbortController();
+    try {
+      await streamPromptRevise(
+        {
+          review_ids: [...deps.reviewIds.value],
+          system_prompt: deps.systemPrompt.value,
+          overrides,
+        },
+        {
+          onMeta: (value) => (meta.value = value),
+          onDelta: (text) => (rawOutput.value += text),
+          onResult: (value) => {
+            result.value = value;
+            // 預設勾選全部可套用的：多數情況人是全收，逐條取消比逐條勾快
+            selected.value = value.patches
+              .map((p, i) => (p.status === 'matched' ? i : -1))
+              .filter((i) => i >= 0);
+          },
+          onUsage: (value) => (usage.value = value),
+          onError: (message) => (errorMessage.value = message),
+        },
+        abortController.signal,
+      );
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        errorMessage.value = error instanceof Error ? error.message : String(error);
+      }
+    } finally {
+      streaming.value = false;
+      abortController = null;
+    }
+  }
+
+  function abort(): void {
+    abortController?.abort();
+  }
+
+  /** 套用勾選補丁（後端做 anchor 驗證與由後往前替換），成功後填 `revisedPrompt` 供 diff 預覽。 */
+  async function apply(): Promise<void> {
+    if (!canApply.value) return;
+    applying.value = true;
+    try {
+      const res = await applyPromptPatches(
+        deps.systemPrompt.value,
+        selectedPatches.value.map((p) => ({ anchor: p.anchor, replacement: p.replacement })),
+      );
+      revisedPrompt.value = res.system_prompt;
+      const delta = res.chars_after - res.chars_before;
+      Message.success(
+        `已套用 ${selectedPatches.value.length} 條補丁（${delta >= 0 ? '+' : ''}${delta} 字元），請在下方比對後再存版`,
+      );
+    } catch (error) {
+      Message.error(error instanceof Error ? error.message : '套用補丁失敗');
+    } finally {
+      applying.value = false;
+    }
+  }
+
+  /** 把套用後的全文存成新版本（即刻成為線上口徑）。 */
+  async function saveVersion(): Promise<boolean> {
+    if (!revisedPrompt.value.trim() || savingVersion.value) return false;
+    savingVersion.value = true;
+    try {
+      const saved = await savePromptVersion(revisedPrompt.value);
+      Message.success(
+        saved.created
+          ? `已存為新版本 ${saved.version}，現為線上最新版`
+          : `內容與最新版 ${saved.version} 相同，未建立新版本`,
+      );
+      return saved.created;
+    } catch (error) {
+      Message.error(error instanceof Error ? error.message : '存為新版本失敗');
+      return false;
+    } finally {
+      savingVersion.value = false;
+    }
+  }
+
+  return {
+    streaming,
+    rawOutput,
+    meta,
+    result,
+    usage,
+    errorMessage,
+    patches,
+    selected,
+    selectedPatches,
+    unusableCount,
+    canApply,
+    revisedPrompt,
+    applying,
+    savingVersion,
+    run,
+    abort,
+    apply,
+    saveVersion,
+    reset,
+    toggle,
+  };
+}

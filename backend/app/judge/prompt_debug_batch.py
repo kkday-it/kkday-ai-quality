@@ -4,10 +4,11 @@
 tmp/ 與 .venv-promptlab，故不是包 subprocess，而是复用調試台既有機制重寫同語義批次：
 
 - LLM 連線＝prompt_debug 功能區設定（DB 加密 token，等同腳本 `--api-key-source app`）；
-- 輸出契約/schema/校驗＝prompt_debug 的雙契約 runtime（貼什麼 Prompt 選什麼契約）；
+- 輸出契約/schema/校驗＝prompt_debug 單一契約（與調試台同源，無版本切換）；
+- Prompt＝呼叫端未給就取版本庫最新版（`prompt_debug_versions.resolve`），與調試台同一份；
 - run 目錄＝`DATA_DIR/prompt_debug_batch/<run_id>/`（dev 掛 ./data，host 直接可取產物）；
 - `raw_results.jsonl` 逐筆 flush＝斷點：resume 只補「未成功」筆、rerun 忽略斷點全部重打；
-- manifest 鎖 輸入/Prompt/schema/model——SSOT 或 Prompt 變了就拒絕續跑，防混用結果。
+- manifest 鎖 輸入/Prompt/schema/model——SSOT 變了就拒絕續跑，防混用結果。
 
 與正式初判（prejudge_batch）刻意分離：這裡不落 attributions / 不走判準 loader，只是調試工具；
 job 進度走共用 JobStore（in-mem，重啟即清），但 run 目錄在磁碟上——server 重啟後列表仍可見、
@@ -33,7 +34,7 @@ from typing import Any
 from app.core import db
 from app.core.job_registry import JobStore
 from app.core.paths import DATA_DIR
-from app.judge import prompt_debug
+from app.judge import prompt_debug, prompt_debug_versions
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
@@ -193,10 +194,9 @@ def _write_json_atomic(path: Path, value: Any) -> None:
     temp.replace(path)
 
 
-def _csv_columns(contract: str, id_column: str) -> list[str]:
+def _csv_columns(id_column: str) -> list[str]:
     """結果 CSV 欄序＝id 欄 + 契約欄位卡順序（欄位卡是契約欄序 SSOT，勿另抄一份）。"""
-    fields = prompt_debug.OUTPUT_FIELDS_V3 if contract == "v3" else prompt_debug.OUTPUT_FIELDS
-    return [id_column] + [f["key"] for f in fields]
+    return [id_column] + [f["key"] for f in prompt_debug.OUTPUT_FIELDS]
 
 
 def _csv_cell(value: Any) -> Any:
@@ -215,10 +215,12 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
 
     JSON（preds/raw）保留原值可稽核；表格層對齊裁判表口徑（用戶要求：表中不得出現 n/a 與 null）。
     """
-    is_oot = parsed.get("category") in {"__OUT_OF_TAXONOMY__", "其他"}
+    is_oot = parsed.get("category") == "__OUT_OF_TAXONOMY__"
     allowed = {
         "likely_cause": not is_oot,
-        "modify_target": parsed.get("theme") == "[93] 訂單申請修改",
+        # 認 theme_code 前綴、不比對全稱：全稱由 config SSOT 的 theme_code+theme_label 拼出
+        #（目前為「[93]訂單申請修改」無空格），寫死全稱曾因多一個空格而讓 [93] 的 modify_target 全被清空
+        "modify_target": str(parsed.get("theme") or "").startswith("[93]"),
         "oot_subtype": is_oot,
     }
     row: dict[str, Any] = {columns[0]: item_id}
@@ -308,7 +310,7 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
         # interrupted 僅出現在磁碟推導（server 重啟令 in-mem job 蒸發）
         "status": "running",
         "run_id": manifest["run_id"],
-        "contract": manifest["contract"],
+        "prompt_version": manifest.get("prompt_version", ""),
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
@@ -661,10 +663,8 @@ def _prepare_plan(
     Raises:
         ValueError: 輸入解析失敗、offset/limit 選不出資料、或 schema 已與 manifest 不相容。
     """
-    contract = manifest["contract"]
-    runtime = prompt_debug._CONTRACT_RUNTIME[contract]
     taxonomy = prompt_debug.load_taxonomy()
-    schema = runtime["schema"](taxonomy)
+    schema = prompt_debug.output_schema(taxonomy)
     if _json_hash(schema) != manifest["schema_sha256"]:
         raise ValueError("分類 SSOT 已變動，輸出 schema 與本 run 斷點不相容；請開新跑批")
     system_prompt = (run_dir / "system_prompt.md").read_text(encoding="utf-8")
@@ -699,12 +699,12 @@ def _prepare_plan(
         selected=selected,
         pending=pending,
         result_by_id=dict(resumed_records),
-        columns=_csv_columns(contract, manifest["id_column"]),
+        columns=_csv_columns(manifest["id_column"]),
         cfg=_build_cfg(effective),
         system_prompt=system_prompt,
         schema=schema,
-        schema_name=runtime["schema_name"],
-        validator=runtime["validator"],
+        schema_name=prompt_debug._SCHEMA_NAME,
+        validator=prompt_debug.validate_result,
         taxonomy=taxonomy,
         workers=max(1, min(int(workers), _WORKERS_CAP)),
     )
@@ -748,7 +748,6 @@ def create_and_start(
     offset: int,
     limit: int,
     workers: int,
-    contract: str,
     system_prompt: str,
     overrides: dict | None,
     effective: dict,
@@ -763,8 +762,8 @@ def create_and_start(
         id_column/text_column: 關鍵欄名（預設 session_oid / conversation_full）。
         offset/limit: 有效唯一行的切片（limit 0＝全部）。
         workers: 併發請求數（上限 _WORKERS_CAP）。
-        contract: 輸出契約 v2/v3（schema/校驗隨之切換）。
-        system_prompt: 本批固定使用的 system prompt（存檔為斷點依據）。
+        system_prompt: 本批固定使用的 system prompt（存檔為斷點依據）；
+            空字串＝取 Prompt 版本庫最新版，跑批與調試台永遠同一份口徑。
         overrides: 本次 LLM 旋鈕覆寫原始 dict（進 manifest，續跑時重放）。
         effective: router 解析好的 effective LLM dict（含 token 來源，不落盤）。
         triggered_by: 觸發人（user email）。
@@ -777,10 +776,7 @@ def create_and_start(
     """
     if offset < 0 or limit < 0:
         raise ValueError("offset / limit 不可小於 0（limit 0＝全部）")
-    if contract not in prompt_debug._CONTRACT_RUNTIME:
-        raise ValueError(f"未知輸出契約：{contract}")
-    if not system_prompt.strip():
-        raise ValueError("system_prompt 不可為空")
+    system_prompt, prompt_version = prompt_debug_versions.resolve(system_prompt)
 
     run_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     run_dir = _run_dir(run_id)
@@ -791,7 +787,6 @@ def create_and_start(
         input_path.write_bytes(input_bytes)
         (run_dir / "system_prompt.md").write_text(system_prompt, encoding="utf-8")
 
-        runtime = prompt_debug._CONTRACT_RUNTIME[contract]
         taxonomy = prompt_debug.load_taxonomy()
         manifest = {
             "version": 1,
@@ -804,9 +799,10 @@ def create_and_start(
             "text_column": text_column or "conversation_full",
             "offset": offset,
             "limit": limit,
-            "contract": contract,
+            # 版本名為空＝送出前在頁面上臨時編輯過，此時只有 prompt_sha256 能追出實際用了什麼
+            "prompt_version": prompt_version,
             "prompt_sha256": _sha256_text(system_prompt),
-            "schema_sha256": _json_hash(runtime["schema"](taxonomy)),
+            "schema_sha256": _json_hash(prompt_debug.output_schema(taxonomy)),
             "model": (effective.get("model") or "").strip(),
             "overrides": overrides or {},
             "workers": workers,
@@ -906,7 +902,7 @@ def _disk_summary(run_dir: Path, manifest: dict) -> dict:
     return {
         "status": "interrupted",
         "run_id": manifest["run_id"],
-        "contract": manifest["contract"],
+        "prompt_version": manifest.get("prompt_version", ""),
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
@@ -945,7 +941,7 @@ def list_runs() -> list[dict]:
                 "run_id": manifest["run_id"],
                 "created_at": manifest["created_at"],
                 "input_name": manifest["input_name"],
-                "contract": manifest["contract"],
+                "prompt_version": manifest.get("prompt_version", ""),
                 "model": manifest["model"],
                 "offset": manifest["offset"],
                 "limit": manifest["limit"],

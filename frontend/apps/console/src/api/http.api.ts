@@ -158,3 +158,81 @@ export async function j<T = unknown>(url: string, init: RequestInit = {}): Promi
 
 /** 共用 JSON POST/PATCH header。 */
 export const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+
+/** 一個已解析的 SSE 事件：`event:` 行的名稱 + `data:` 行合併後 JSON.parse 的結果。 */
+export interface SseFrame {
+  event: string;
+  /** data 行合併後的 JSON；解析失敗時為 null（呼叫端自行決定當錯誤或忽略）。 */
+  payload: Record<string, unknown> | null;
+}
+
+/**
+ * POST 一段 JSON、以 SSE 讀回應（EventSource 不支援 POST body，只能自己讀 ReadableStream）。
+ *
+ * 逐幀回呼而非回傳陣列：長跑任務（判決串流、Prompt 改寫）要邊到邊顯示。
+ *
+ * @param url 完整請求路徑（含 BASE）
+ * @param body 送出的 JSON 物件
+ * @param onFrame 每收到一個完整事件就呼叫一次
+ * @param signal 中止訊號（呼叫端按「停止」時 abort）
+ * @throws {Error} 連線階段非 2xx（訊息取後端 detail），或瀏覽器不支援串流
+ */
+export async function postSse(
+  url: string,
+  body: unknown,
+  onFrame: (frame: SseFrame) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers = new Headers(JSON_HEADERS);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const payload = await response.json();
+      if (typeof payload?.detail === 'string') message = payload.detail;
+    } catch {
+      /* 沿用 HTTP status */
+    }
+    throw new Error(message);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('瀏覽器不支援串流回應');
+
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  const flush = (chunk: string): void => {
+    const frame = parseSseFrame(chunk);
+    if (frame) onFrame(frame);
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      flush(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+  // 收尾殘餘（伺服器最後一幀後未再送空行的情況）
+  if (buffer.trim()) flush(buffer);
+}
+
+/** 解析單一 SSE 幀文字；無 `event:` 行視為雜訊回 null。 */
+function parseSseFrame(chunk: string): SseFrame | null {
+  let event = '';
+  const data: string[] = [];
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+  }
+  if (!event) return null;
+  try {
+    return { event, payload: JSON.parse(data.join('\n') || '{}') };
+  } catch {
+    return { event, payload: null };
+  }
+}
