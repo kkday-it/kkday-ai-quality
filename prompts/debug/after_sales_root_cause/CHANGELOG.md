@@ -4,6 +4,17 @@
 > **無版本指針**——線上口徑固定為檔名時間戳最新的那份（`backend/app/judge/prompt_debug_versions.py` 解析），
 > 調試台「存為新版本」與人手丟檔皆走同一條路；調試台與批量跑批一律讀最新版，不提供版本切換。
 
+## 2026-07-28-151250 — `oot_subtype` 欄位全棧退役（判準零損失、只拆欄位）
+
+以 `150818` 為基線，把 OOT 子型這個輸出欄位整條拆掉——**不是刪判準，是刪欄位**。同批清退 `config/ai_judge/after_sales_root_cause.json` 的 `oot_subtype_options`、`config/ai_judge/RootCauseLabelingFramework.json` 的 OOT `lv4_conditional` 區塊與三處架構描述、`prompt_debug.py` 的欄位卡／schema property／required／三條校驗規則、`prompt_debug_batch.py` 的落表條件欄、以及 `config/README.md` 與 `docs/PRD-PROMPT-REVIEW-REVISE.md` 的引用。
+
+- 為什麼不是整節刪掉：原「## OOT 子型判定」節裡混著 **8 條跨類 category 路由規則**（本訂單使用/兌換規則條文→[104]、連線商品三軸→[COMM]、BOT 取消引導後提出具體標的→[93]/[101]、會合方式→[104]、派單資訊未到齊→[104]、天候待確認→[104]、改期不成接續爭取→[93]/[101]、憑證未到/退款進度/卡點/故障不跳出）。這些決定的是 **category 落點**，與子型欄位無關，整節刪＝順手改壞 category 判準
+- 改法：該節改寫為「## OOT 跳出判定（不再細分子型）」＝**路由例外（8 條）＋ 跳出後的典型情形（原 5 個子型的正面描述壓平為 5 條 bullet，去掉子型標籤與逐字取值要求）**。原「子型原型」比照案例併入對應 bullet，未丟棄
+- 基線選擇（平行編輯）：本次退役原先以 `144606` 起手（產出 `150447`，已作廢刪除）。拉取遠端後發現調試台另存了 `145951`／`150818` 兩版（差額退款分類校準），時間戳 `150818` 晚於 `150447`——若照推會讓退役版被壓在後面、或反過來吞掉校準改動。改以 `150818` 重做，並同步吸收它把「僅泛問可否申請更改或取消訂單、無下文」由 [101] 改回跳出的新口徑（反映在路由例外第 3 條與「本筆訂單/憑證」條）
+- 其餘落點：欄位判定規則刪 `oot_subtype` 條；`no_actionable_content` 連動由三元收為二元（`category=__OUT_OF_TAXONOMY__` ∧ `keywords=[]`）；`<oot_subtype_options>` 區塊移除；輸出契約逐字取值列舉與 JSON 範本各去一欄；裁決流程第 3 步與自檢規則 ① 同步改寫
+- 相容性：schema 變動會讓**既有跑批 run 無法續跑**（manifest 鎖 `schema_sha256`，SSOT 變了即拒絕，屬預期行為）；歷史版本檔與其 `prompt_sha256` 追溯不受影響（append-only，舊檔未動）
+- 一併清退孤兒：`prompts/debug/domains/oot/`（v1/v2/CHANGELOG）——該目錄自 `prompt_debug.py` 的 `DOMAINS` 註冊表移除後已無任何 code 消費，且內容全繞 `oot_subtype` 展開
+
 ## 2026-07-28-140632 — [COMM]「連線品質不佳或與方案不符」納入漫遊/路由 IP 限制與規格三軸詢問（表側新邏輯落地）
 
 來源＝PM 更新《根因標籤架構》表 [COMM]`連線品質不佳或與方案不符` 該列（Definition／Include／Lv3 受控值／Examples 四欄同批改），本版把表側新口徑落成線上唯一口徑。

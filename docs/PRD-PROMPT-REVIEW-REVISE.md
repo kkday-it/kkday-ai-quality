@@ -71,7 +71,7 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 
   | 欄位型別 | 控件 |
   |---|---|
-  | enum（theme / category / likely_cause / modify_target / oot_subtype / sentiment） | `a-select`（可搜尋；選項＝schema enum） |
+  | enum（theme / category / likely_cause / modify_target / sentiment） | `a-select`（可搜尋；選項＝schema enum） |
   | boolean（三個 flag + no_actionable_content） | `a-switch` |
   | urgency（integer 1–5） | `a-radio-group type="button"` |
   | keywords（array） | `a-input-tag` |

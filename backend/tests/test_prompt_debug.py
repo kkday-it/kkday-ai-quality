@@ -16,7 +16,6 @@ def _base_result(**overrides):
         "theme": "[104]訂單確認問題",
         "likely_cause": "憑證送達延遲",
         "modify_target": "n/a",
-        "oot_subtype": "n/a",
         "summary": "旅客出發前仍未收到電子票，要求協助確認送達時程。",
         "keywords": ["電子票", "未收到", "出發前"],
         "sentiment": "negative",
@@ -52,7 +51,6 @@ def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
         "category",
         "likely_cause",
         "modify_target",
-        "oot_subtype",
         "summary",
         "keywords",
         "sentiment",
@@ -63,8 +61,8 @@ def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
         "no_actionable_content",
         "confidence",
     ]
-    # 已清退的 v2 欄位不得復活
-    assert {"tail_theme", "urgency_flag"}.isdisjoint(
+    # 已清退的欄位不得復活（tail_theme / urgency_flag＝v2 契約；oot_subtype＝2026-07-28 全棧退役）
+    assert {"tail_theme", "urgency_flag", "oot_subtype"}.isdisjoint(
         {field["key"] for field in payload["output_fields"]}
     )
     assert payload["sources"]["field_definitions_document"]["document_id"] == (
@@ -103,13 +101,12 @@ def test_validate_result_accepts_oot_contract() -> None:
         category="__OUT_OF_TAXONOMY__",
         theme="OOT跳出",
         likely_cause="n/a",
-        oot_subtype="售前_商品資訊詢問",
     )
     assert prompt_debug.validate_result(value) == []
 
 
 def test_validate_result_enforces_no_actionable_content_linkage() -> None:
-    """no_actionable_content=true 必須連動 OOT ＋ 對話殘段 ＋ keywords 清空。"""
+    """no_actionable_content=true 必須連動 OOT ＋ keywords 清空。"""
     assert "no_actionable_content=true 時 category 必須是 __OUT_OF_TAXONOMY__" in (
         prompt_debug.validate_result(_base_result(no_actionable_content=True))
     )
@@ -117,7 +114,6 @@ def test_validate_result_enforces_no_actionable_content_linkage() -> None:
         category="__OUT_OF_TAXONOMY__",
         theme="OOT跳出",
         likely_cause="n/a",
-        oot_subtype="對話殘段/無實質",
         no_actionable_content=True,
         keywords=[],
     )

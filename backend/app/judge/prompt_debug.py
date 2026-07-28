@@ -50,7 +50,6 @@ OUTPUT_FIELDS = [
         "label": "修改標的（Lv4 條件式）",
         "hint": "僅 [93] 四類填；其餘為 n/a",
     },
-    {"key": "oot_subtype", "label": "OOT 子型（Lv4 條件式）", "hint": "僅 OOT 填；非 OOT 為 n/a"},
     {
         "key": "summary",
         "label": "主訴摘要（AI 判定）",
@@ -81,7 +80,7 @@ OUTPUT_FIELDS = [
     {
         "key": "no_actionable_content",
         "label": "無實質內容（AI 判定）",
-        "hint": "TRUE ⇒ OOT＋殘段＋keywords=[]",
+        "hint": "TRUE ⇒ OOT＋keywords=[]",
     },
     {"key": "confidence", "label": "判定信心指數（AI 判定）", "hint": "0.0–1.0；模型自評"},
 ]
@@ -124,10 +123,6 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
                 "type": "string",
                 "enum": taxonomy["modify_target_options"] + ["n/a"],
             },
-            "oot_subtype": {
-                "type": "string",
-                "enum": taxonomy["oot_subtype_options"] + ["n/a"],
-            },
             "summary": {
                 "type": "string",
                 "minLength": 15,
@@ -152,7 +147,7 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "multi_issue_flag": {"type": "boolean"},
             "no_actionable_content": {
                 "type": "boolean",
-                "description": "session 內無可判讀實質問題；true 連動 OOT＋對話殘段/無實質＋keywords=[]。",
+                "description": "session 內無可判讀實質問題；true 連動 OOT＋keywords=[]。",
             },
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
@@ -161,7 +156,6 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "theme",
             "likely_cause",
             "modify_target",
-            "oot_subtype",
             "summary",
             "keywords",
             "sentiment",
@@ -227,14 +221,9 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
             issues.append("OOT 的 likely_cause 必須是 n/a")
         if value["modify_target"] != "n/a":
             issues.append("OOT 的 modify_target 必須是 n/a")
-        if value["oot_subtype"] == "n/a":
-            issues.append("OOT 必須填 oot_subtype（不可為 n/a）")
-        if value["no_actionable_content"]:
-            if value["oot_subtype"] != "對話殘段/無實質":
-                issues.append("no_actionable_content=true 時 oot_subtype 必須是 對話殘段/無實質")
-            if keywords:
-                issues.append("no_actionable_content=true 時 keywords 必須為空陣列")
-        elif not keywords:
+        if value["no_actionable_content"] and keywords:
+            issues.append("no_actionable_content=true 時 keywords 必須為空陣列")
+        elif not value["no_actionable_content"] and not keywords:
             issues.append("OOT 且非無實質內容時 keywords 至少 1 個")
         return issues
 
@@ -248,8 +237,6 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
         issues.append("[93] category 必須填 modify_target（不可為 n/a）")
     if not is_modify and value["modify_target"] != "n/a":
         issues.append("非 [93] category 的 modify_target 必須是 n/a")
-    if value["oot_subtype"] != "n/a":
-        issues.append("非 OOT 的 oot_subtype 必須是 n/a")
     if value["no_actionable_content"]:
         issues.append("no_actionable_content=true 時 category 必須是 __OUT_OF_TAXONOMY__")
     if not keywords:

@@ -211,7 +211,7 @@ def _csv_cell(value: Any) -> Any:
 
 
 def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
-    """條件欄（cause/target/subtype）落表紀律：n/a 哨兵與不合法情境的值一律留空。
+    """條件欄（cause/target）落表紀律：n/a 哨兵與不合法情境的值一律留空。
 
     JSON（preds/raw）保留原值可稽核；表格層對齊裁判表口徑（用戶要求：表中不得出現 n/a 與 null）。
     """
@@ -219,9 +219,8 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
     allowed = {
         "likely_cause": not is_oot,
         # 認 theme_code 前綴、不比對全稱：全稱由 config SSOT 的 theme_code+theme_label 拼出
-        #（目前為「[93]訂單申請修改」無空格），寫死全稱曾因多一個空格而讓 [93] 的 modify_target 全被清空
+        # （目前為「[93]訂單申請修改」無空格），寫死全稱曾因多一個空格而讓 [93] 的 modify_target 全被清空
         "modify_target": str(parsed.get("theme") or "").startswith("[93]"),
-        "oot_subtype": is_oot,
     }
     row: dict[str, Any] = {columns[0]: item_id}
     for column in columns[1:]:
@@ -231,9 +230,7 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
             value = "其他"
         if column == "likely_cause" and value == "unclear":
             value = "其他"
-        if column in allowed and (
-            not allowed[column] or str(value).strip().lower() == "n/a"
-        ):
+        if column in allowed and (not allowed[column] or str(value).strip().lower() == "n/a"):
             value = None
         row[column] = _csv_cell(value)
     return row
