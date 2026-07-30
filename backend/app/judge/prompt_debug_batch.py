@@ -5,10 +5,18 @@ tmp/ 與 .venv-promptlab，故不是包 subprocess，而是复用調試台既有
 
 - LLM 連線＝prompt_debug 功能區設定（DB 加密 token，等同腳本 `--api-key-source app`）；
 - 輸出契約/schema/校驗＝prompt_debug 單一契約（與調試台同源，無版本切換）；
-- Prompt＝呼叫端未給就取版本庫最新版（`prompt_debug_versions.resolve`），與調試台同一份；
+- Prompt＝呼叫端未給就取**當前正式版**（`prompt_debug_versions.resolve(allow_draft=True)`，
+  2026-07-30 起**草稿亦可跑**——調試台是草稿工作台，46 草稿 vs 1 正式版下「跑批只准正式版」等於
+  跑批不可用；manifest 以 `prompt_kind` 顯式標明本批是 release／draft／臨時編輯，供事後回看
+  「這批數據能不能當上線依據」）；
 - run 目錄＝`DATA_DIR/prompt_debug_batch/<run_id>/`（dev 掛 ./data，host 直接可取產物）；
 - `raw_results.jsonl` 逐筆 flush＝斷點：resume 只補「未成功」筆、rerun 忽略斷點全部重打；
-- manifest 鎖 輸入/Prompt/schema/model——SSOT 變了就拒絕續跑，防混用結果。
+- manifest 鎖 輸入/Prompt/schema/model——SSOT 變了就拒絕續跑，防混用結果
+  （`prompt_version` 記的是當前正式版名；空＝送出前臨時編輯過，實際內容以 `prompt_sha256` 為準）；
+- **多模型並行**（`create_and_start_group`）：同一份輸入×同一份 Prompt，每個 model 各自獨立起一個
+  完整的單模型 run（各自 run 目錄／manifest／`ThreadPoolExecutor`），只用 manifest 的 `group_id`
+  欄鬆散標記「同時發起」，不是新的執行單元——單模型路徑（`create_and_start`）零改動、零分支，
+  「一個 model 大量 429 不拖累另一個」與「舊 run 續跑不受影響」都是結構上必然成立。
 
 與正式初判（prejudge_batch）刻意分離：這裡不落 attributions / 不走判準 loader，只是調試工具；
 job 進度走共用 JobStore（in-mem，重啟即清），但 run 目錄在磁碟上——server 重啟後列表仍可見、
@@ -45,6 +53,9 @@ BATCH_DIR = DATA_DIR / "prompt_debug_batch"
 # 行數上限防誤上傳全量大表（正式全量請走批次管線，調試台定位是百~數千條的 Prompt 驗證）。
 _WORKERS_CAP = 32
 _MAX_ROWS = 20_000
+# 多模型並行的 model 數上限：每個 model 各自一份完整輸入檔複本 + 一個獨立 ThreadPoolExecutor，
+# 數字大時磁碟與併發成本線性疊加；6 已覆蓋「同時比較 openai/gemini/bytedance 各一顆」的常見情境。
+_MAX_MODELS_PER_GROUP = 6
 _MAX_FAILED_ITEMS = 200  # 失敗明細清單上限：系統性失敗只計數不細列，防快照撐爆
 _RECENT_ITEMS = 8  # 快照內最近完成明細條數（前端「即時回報」用，全量明細在 jsonl）
 
@@ -215,7 +226,7 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
 
     JSON（preds/raw）保留原值可稽核；表格層對齊裁判表口徑（用戶要求：表中不得出現 n/a 與 null）。
     """
-    is_oot = parsed.get("L2") == "__OUT_OF_TAXONOMY__"
+    is_oot = parsed.get("L2") == prompt_debug._OOT_L2
     allowed = {
         "L3": not is_oot,
         # 認 L1_code 前綴、不比對全稱：全稱由 config SSOT 的 L1_code+L1_label 拼出
@@ -226,9 +237,9 @@ def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
     row: dict[str, Any] = {columns[0]: item_id}
     for column in columns[1:]:
         value = parsed.get(column)
-        # 無分類統一「其他」（20260727 拍板）：契約升版前先在落表層映射舊哨兵
-        if column == "L2" and value == "__OUT_OF_TAXONOMY__":
-            value = "其他"
+        # 無分類統一「其他」（20260727 拍板）。L2 的哨兵映射已於 2026-07-30 隨契約值改名退役
+        # （模型現在直接輸出「其他」）；L3 的 `unclear` 仍是契約值，25/25 個 L2 類的 L3_options
+        # 都含它，故這層映射必須留著。
         if column == "L3" and value == "unclear":
             value = "其他"
         if column in allowed and (not allowed[column] or str(value).strip().lower() == "n/a"):
@@ -309,6 +320,7 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
         "status": "running",
         "run_id": manifest["run_id"],
         "prompt_version": manifest.get("prompt_version", ""),
+        "prompt_kind": manifest.get("prompt_kind", ""),
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
@@ -445,6 +457,10 @@ def _settle_request_shape(probe_kwargs: dict) -> dict:
 
     相容端點的參數降級（prompt_debug._request_compat）與 reasoning_effort 降級都是就地改寫
     kwargs——只在第一筆探測時走完整降級迴圈，其餘筆直接沿用收斂後形狀，免得每筆都吃一輪 400。
+
+    ⚠️ 契約範圍已不只「參數」：收斂形狀也承載 **wire API 選擇**（`responses_api.WIRE_API_KEY`），
+    即「這批要走 Chat Completions 還是 Responses」。因此降級階梯在 Responses 嘗試失敗時**必須清掉
+    該標記**，否則死標記會被發給所有 worker，整批走死路。
     """
     return {k: v for k, v in probe_kwargs.items() if k not in ("model", "messages")}
 
@@ -750,6 +766,7 @@ def create_and_start(
     overrides: dict | None,
     effective: dict,
     triggered_by: str = "",
+    group_id: str | None = None,
 ) -> dict:
     """建立 run 目錄（存輸入/Prompt/manifest）並啟動跑批；回傳初始進度快照。
 
@@ -761,10 +778,13 @@ def create_and_start(
         offset/limit: 有效唯一行的切片（limit 0＝全部）。
         workers: 併發請求數（上限 _WORKERS_CAP）。
         system_prompt: 本批固定使用的 system prompt（存檔為斷點依據）；
-            空字串＝取 Prompt 版本庫最新版，跑批與調試台永遠同一份口徑。
+            空字串＝取當前正式版（線上口徑），跑批與調試台永遠同一份口徑。
         overrides: 本次 LLM 旋鈕覆寫原始 dict（進 manifest，續跑時重放）。
         effective: router 解析好的 effective LLM dict（含 token 來源，不落盤）。
         triggered_by: 觸發人（user email）。
+        group_id: 屬於哪個多模型並行群組（`create_and_start_group` 傳入）；單模型呼叫不帶，
+            manifest 該欄位就缺席——**這是本 run 與其他 run 唯一的耦合點**，其餘一切（執行、
+            續跑、下載、取消）完全獨立，不因是否屬於群組而分支。
 
     Returns:
         初始進度快照（含 run_id）。
@@ -774,7 +794,12 @@ def create_and_start(
     """
     if offset < 0 or limit < 0:
         raise ValueError("offset / limit 不可小於 0（limit 0＝全部）")
-    system_prompt, prompt_version = prompt_debug_versions.resolve(system_prompt)
+    # 允許草稿：調試台是草稿工作台，「跑批只准正式版」在 46 草稿 vs 1 正式版的現實下等於跑批不可用。
+    # 「頁面調 A、跑批跑 B」的防線改為「兩者共用同一個口徑來源」＋ manifest 顯式記下 kind，
+    # 而不是限制跑批能讀什麼（限制只是把問題從「跑錯」變成「跑不了」）。
+    system_prompt, prompt_version, prompt_kind = prompt_debug_versions.resolve(
+        system_prompt, allow_draft=True
+    )
 
     run_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     run_dir = _run_dir(run_id)
@@ -799,12 +824,16 @@ def create_and_start(
             "limit": limit,
             # 版本名為空＝送出前在頁面上臨時編輯過，此時只有 prompt_sha256 能追出實際用了什麼
             "prompt_version": prompt_version,
+            # 本批跑的是哪一軌：release（線上口徑）/ draft（實驗中）/ ""（臨時編輯）。
+            # 事後回看「這批數據能不能當上線依據」必看此欄，故與 version 同層顯式落檔。
+            "prompt_kind": prompt_kind,
             "prompt_sha256": _sha256_text(system_prompt),
             "schema_sha256": _json_hash(prompt_debug.output_schema(taxonomy)),
             "model": (effective.get("model") or "").strip(),
             "overrides": overrides or {},
             "workers": workers,
             "triggered_by": triggered_by,
+            **({"group_id": group_id} if group_id else {}),
         }
         _write_json_atomic(run_dir / "manifest.json", manifest)
         plan = _prepare_plan(run_dir, manifest, effective, workers=workers, rerun=False)
@@ -812,6 +841,103 @@ def create_and_start(
         shutil.rmtree(run_dir, ignore_errors=True)  # 建檔失敗不留半殘目錄
         raise
     return _launch(plan, triggered_by)
+
+
+def create_and_start_group(
+    *,
+    input_name: str,
+    input_bytes: bytes,
+    sheet: str,
+    id_column: str,
+    text_column: str,
+    offset: int,
+    limit: int,
+    workers: int,
+    system_prompt: str,
+    overrides: dict | None,
+    effectives: dict[str, dict],
+    triggered_by: str = "",
+) -> dict:
+    """多模型並行跑批：同一份輸入 × 同一份 Prompt，每個 model 各自獨立起一個完整的單模型 run。
+
+    刻意不把多模型邏輯揉進 `_run_batch`／`_RunPlan`（那會讓單模型這條已穩定跑產的路徑也要跟著
+    冒風險）：每個 model 直接複用 `create_and_start()`——各自的 run 目錄、manifest、
+    `raw_results.jsonl` 斷點、**獨立的 `ThreadPoolExecutor`**（`_run_batch` 內既有設計，每 run
+    本來就各起一個，多模型只是多呼叫幾次，零新併發邏輯）。group 只是「同時發起的一批 run」的
+    輕量標記（manifest 的 `group_id` 欄，見 `create_and_start`），不是新的執行單元——這保證
+    「一個 model 大量 429 → 另一個 model 不受影響」與「舊的單模型 run 續跑不受影響」都是
+    **結構上必然成立**，不需要額外寫隔離邏輯或相容分支去保證。
+
+    每個 model 的成敗互相獨立收集：某個 model 建 run 失敗（如該供應商沒配 token）不影響其他
+    model 繼續啟動——這與「provider 反推失敗直接拒絕整個請求」的分工不同，那一層驗證
+    （`provider_id_for_model` 是否認得這個 model 名）在呼叫本函式**之前**由 router 一次做完，
+    本函式只處理「名字合法、但這一家配置不完整」這類逐 model 才會知道的失敗。
+
+    Args:
+        input_name/input_bytes/sheet/id_column/text_column/offset/limit/workers/system_prompt:
+            與 `create_and_start` 同義，所有 model 共用同一份（同輸入、同 Prompt 才有可比性）。
+        overrides: 本次 LLM 旋鈕覆寫（不含 model／provider，那兩個逐 model 覆寫，見下）。
+        effectives: `{model: 該 model 已解析好的 effective LLM dict}`——router 逐 model 呼叫
+            `effective_llm_dict(overrides={**overrides, "model": m, "provider": 已驗證的 provider})`
+            算出，本函式不重新解析。
+        triggered_by: 觸發人（user email）。
+
+    Returns:
+        `{"group_id", "created_at", "members": [{"model", "ok", "run_id"?, "provider"?,
+        "error"?, ...初始快照欄位}]}`——`ok=False` 的成員不含 run_id／快照，只有 error。
+
+    Raises:
+        ValueError: `effectives` 為空、或 model 數超過 `_MAX_MODELS_PER_GROUP`。
+    """
+    models = list(effectives)
+    if not models:
+        raise ValueError("至少需選擇一個 model")
+    if len(models) > _MAX_MODELS_PER_GROUP:
+        raise ValueError(
+            f"一次最多同時跑 {_MAX_MODELS_PER_GROUP} 個 model，實際選了 {len(models)} 個"
+        )
+
+    group_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    members: list[dict[str, Any]] = []
+    for model in models:
+        effective = effectives[model]
+        try:
+            snapshot = create_and_start(
+                input_name=input_name,
+                input_bytes=input_bytes,
+                sheet=sheet,
+                id_column=id_column,
+                text_column=text_column,
+                offset=offset,
+                limit=limit,
+                workers=workers,
+                system_prompt=system_prompt,
+                overrides={**(overrides or {}), "model": model},
+                effective=effective,
+                triggered_by=triggered_by,
+                group_id=group_id,
+            )
+            members.append(
+                {"model": model, "provider": effective.get("provider", ""), "ok": True, **snapshot}
+            )
+        except Exception as exc:  # noqa: BLE001 - 單一 model 建 run 失敗不得拖垮其餘 model
+            _log.warning("多模型跑批：model=%r 啟動失敗（group=%s）：%s", model, group_id, exc)
+            members.append(
+                {
+                    "model": model,
+                    "provider": effective.get("provider", ""),
+                    "ok": False,
+                    "error": str(exc).splitlines()[0][:500]
+                    if str(exc).strip()
+                    else type(exc).__name__,
+                }
+            )
+
+    return {
+        "group_id": group_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "members": members,
+    }
 
 
 def resume_run(
@@ -901,6 +1027,7 @@ def _disk_summary(run_dir: Path, manifest: dict) -> dict:
         "status": "interrupted",
         "run_id": manifest["run_id"],
         "prompt_version": manifest.get("prompt_version", ""),
+        "prompt_kind": manifest.get("prompt_kind", ""),
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
@@ -920,8 +1047,13 @@ def _disk_summary(run_dir: Path, manifest: dict) -> dict:
     }
 
 
-def list_runs() -> list[dict]:
-    """全部 run 摘要（新→舊）：磁碟目錄為準、in-mem 快照 overlay 即時進度。"""
+def list_runs(*, group_id: str | None = None) -> list[dict]:
+    """全部 run 摘要（新→舊）：磁碟目錄為準、in-mem 快照 overlay 即時進度。
+
+    Args:
+        group_id: 只回屬於該多模型群組的 run（見 `create_and_start_group`）；`None`＝全部
+            （既有呼叫端 `GET /batch/runs` 行為不變，此為向下相容的新增可選過濾）。
+    """
     if not BATCH_DIR.is_dir():
         return []
     rows: list[dict] = []
@@ -933,13 +1065,17 @@ def list_runs() -> list[dict]:
             manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        if group_id is not None and manifest.get("group_id") != group_id:
+            continue
         snap = _store.get(manifest["run_id"]) or _disk_summary(run_dir, manifest)
         rows.append(
             {
                 "run_id": manifest["run_id"],
+                "group_id": manifest.get("group_id", ""),
                 "created_at": manifest["created_at"],
                 "input_name": manifest["input_name"],
                 "prompt_version": manifest.get("prompt_version", ""),
+                "prompt_kind": manifest.get("prompt_kind", ""),
                 "model": manifest["model"],
                 "offset": manifest["offset"],
                 "limit": manifest["limit"],

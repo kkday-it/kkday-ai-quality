@@ -1,12 +1,17 @@
 <script setup lang="ts">
 /**
- * Prompt 調試台「跑批」抽屜：上傳 CSV/XLSX，以**當前編輯中的 Prompt／輸出契約／LLM 配置**
+ * Prompt 調試台「跑批」抽屜：上傳 CSV/XLSX，以**當前編輯中的 Prompt／輸出契約**
  * 整批結構化裁決（等同離線 lab 跑批的 app 原生版：app 連線 key、strict schema、斷點續跑）。
  *
  * - 每次啟動建獨立 run 目錄（`data/prompt_debug_batch/<run_id>/`，host 可直取產物）；
  *   Prompt/契約/模型以啟動當下快照鎖進 manifest，之後編輯不影響已建 run，續跑重放同一套。
  * - raw_results.jsonl 逐筆落盤＝斷點：中斷/失敗後「續跑」只補未成功筆，「重跑」忽略斷點全部重打。
  * - 進度走輪詢（in-mem 快照）；server 重啟後 run 變 interrupted，仍可從列表續跑。
+ *
+ * **多模型並行**（2026-07-30）：model 選擇改 multi-select，統一走群組啟動端點
+ * （`startPromptDebugBatchGroup`）——單選一個 model 時等同「群組大小為 1」，前端只維護
+ * 一套啟動路徑，不因選了幾個 model 分岔。每個 model 各自解出自己的供應商（顯示在選項旁，
+ * 讓「這個 model 會打到哪」在送出前就可見），各自獨立起一個完整單模型 run，互不影響。
  */
 import { computed, reactive, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
@@ -15,15 +20,18 @@ import { useIntervalFn } from '@vueuse/core';
 import {
   cancelPromptDebugBatchRun,
   downloadPromptDebugBatchFile,
+  getPromptDebugBatchGroup,
   getPromptDebugBatchRun,
   listPromptDebugBatchRuns,
   resumePromptDebugBatchRun,
-  startPromptDebugBatch,
+  startPromptDebugBatchGroup,
   type PromptDebugBatchFileKind,
+  type PromptDebugBatchGroupMember,
   type PromptDebugBatchRunRow,
   type PromptDebugBatchSnapshot,
   type PromptDebugBatchStatus,
 } from '@/api';
+import { PROVIDERS, providerIdForModel } from '@/features/settings/constants';
 import type { LlmOverrides } from '@/features/settings/types';
 import { fmtBeijingDt } from '../utils';
 
@@ -36,9 +44,9 @@ const props = defineProps<{
   promptVersion: string;
   /** 編輯框已偏離最新版＝本批跑的是臨時 Prompt（摘要要講清楚）。 */
   promptEdited: boolean;
-  /** 生效 model 名（摘要用；實際以 overrides 解析為準）。 */
+  /** 當前功能區默認 model；抽屜開啟時預選這一個（維持既有單模型使用習慣）。 */
   model: string;
-  /** 本次 LLM 旋鈕覆寫（與單次調試同一份，缺省沿用功能區默認）。 */
+  /** 本次 LLM 共用旋鈕（thinking/reasoning_effort/temperature）；model/provider 逐選中項覆寫。 */
   overrides?: LlmOverrides;
 }>();
 
@@ -47,6 +55,9 @@ const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 /** 輪詢間隔／連續失敗上限：非跨環境值，具名避免裸數字。 */
 const POLL_MS = 1500;
 const POLL_MAX_ERRORS = 5;
+/** 與後端 `prompt_debug_batch._MAX_MODELS_PER_GROUP` 同步（純顯示用；實際上限仍由後端把關，
+ * 這裡超額只是提前給使用者一個明確提示，不是安全邊界）。 */
+const MAX_MODELS_PER_GROUP = 6;
 
 const form = reactive({
   file: null as File | null,
@@ -58,6 +69,29 @@ const form = reactive({
   workers: 16,
 });
 
+/** 欲並行的 model 清單；開抽屜時預選功能區當前 model（見下方 watch）。 */
+const selectedModels = ref<string[]>([]);
+
+/** model 下拉選項，依供應商分組（`isGroup: true` 必帶——Arco 分組選項的硬性契約，
+ * 漏帶會整組被當成一個選項，選不到任何值，本線已在版本對比抽屜踩過一次）。 */
+const modelGroupOptions = computed(() =>
+  PROVIDERS.filter((p) => (p.defaultModels ?? []).length > 0).map((p) => ({
+    isGroup: true as const,
+    label: p.label,
+    options: (p.defaultModels ?? []).map((m) => ({ value: m.id, label: m.id })),
+  })),
+);
+
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible && selectedModels.value.length === 0 && props.model) {
+      selectedModels.value = [props.model];
+    }
+  },
+  { immediate: true },
+);
+
 const starting = ref(false);
 const runs = ref<PromptDebugBatchRunRow[]>([]);
 const loadingRuns = ref(false);
@@ -66,8 +100,50 @@ const activeSnap = ref<PromptDebugBatchSnapshot | null>(null);
 const etaText = ref('');
 let pollErrors = 0;
 
+// ── 多模型群組：啟動結果 + 群組進度輪詢（獨立於下方單 run 詳情追蹤）────────────────
+const activeGroupId = ref('');
+const groupMembers = ref<PromptDebugBatchGroupMember[]>([]);
+const groupRuns = ref<PromptDebugBatchRunRow[]>([]);
+
+const { pause: pauseGroupPoll, resume: resumeGroupPoll } = useIntervalFn(pollGroup, POLL_MS, {
+  immediate: false,
+});
+
+async function pollGroup(): Promise<void> {
+  if (!activeGroupId.value) {
+    pauseGroupPoll();
+    return;
+  }
+  try {
+    const { runs: rows } = await getPromptDebugBatchGroup(activeGroupId.value);
+    groupRuns.value = rows;
+    if (rows.every((r) => r.status !== 'running' && r.status !== 'cancelling')) {
+      pauseGroupPoll();
+      await refreshRuns();
+    }
+  } catch {
+    /* 群組輪詢失敗不彈錯——單 run 的輪詢已有獨立錯誤提示，避免同時彈兩份 */
+  }
+}
+
+/** 合併啟動結果（member：ok/error/provider）與輪詢進度（run：狀態/計數），
+ * 供群組總覽區一次渲染，避免模板內重複 `.find()`。 */
+const groupOverview = computed(() =>
+  groupMembers.value.map((member) => ({
+    member,
+    run: member.run_id ? (groupRuns.value.find((r) => r.run_id === member.run_id) ?? null) : null,
+  })),
+);
+
 const isXlsx = computed(() => /\.(xlsx|xlsm)$/i.test(form.file?.name ?? ''));
-const canStart = computed(() => !!form.file && !!props.systemPrompt.trim() && !starting.value);
+const canStart = computed(
+  () =>
+    !!form.file &&
+    !!props.systemPrompt.trim() &&
+    selectedModels.value.length > 0 &&
+    selectedModels.value.length <= MAX_MODELS_PER_GROUP &&
+    !starting.value,
+);
 
 /** 進度百分比（0–1，Arco a-progress 口徑）：斷點復用 + 本次完成 / 目標。 */
 const pct = computed(() => {
@@ -159,7 +235,13 @@ async function onStart(): Promise<void> {
   if (!canStart.value || !form.file) return;
   starting.value = true;
   try {
-    const snap = await startPromptDebugBatch({
+    // provider/model 由後端逐 model 覆寫，只挑共用旋鈕（thinking 等）透傳，不整包轉發
+    const sharedKnobs = {
+      temperature: props.overrides?.temperature,
+      thinking: props.overrides?.thinking,
+      reasoning_effort: props.overrides?.reasoning_effort,
+    };
+    const result = await startPromptDebugBatchGroup({
       file: form.file,
       systemPrompt: props.systemPrompt,
       sheet: isXlsx.value ? form.sheet : '',
@@ -168,13 +250,23 @@ async function onStart(): Promise<void> {
       offset: form.offset,
       limit: form.limit,
       workers: form.workers,
-      overrides: props.overrides,
+      models: selectedModels.value,
+      overrides: sharedKnobs,
     });
-    Message.success(
-      `跑批已啟動：${snap.run_id}（目標 ${snap.total} 條，斷點復用 ${snap.resumed}）`,
-    );
-    activeSnap.value = snap;
-    track(snap.run_id);
+    groupMembers.value = result.members;
+    activeGroupId.value = result.group_id;
+    const ok = result.members.filter((m) => m.ok);
+    const failed = result.members.filter((m) => !m.ok);
+    if (ok.length) {
+      Message.success(`跑批已啟動：${ok.length} 個 model（${ok.map((m) => m.model).join('、')}）`);
+    }
+    for (const m of failed) {
+      Message.error(`${m.model} 啟動失敗：${m.error ?? '未知錯誤'}`);
+    }
+    if (ok.length) {
+      resumeGroupPoll();
+      void pollGroup();
+    }
     await refreshRuns();
   } catch (error) {
     Message.error(error instanceof Error ? error.message : '啟動跑批失敗');
@@ -241,6 +333,7 @@ watch(
   async (visible) => {
     if (!visible) {
       pausePoll();
+      pauseGroupPoll();
       return;
     }
     await refreshRuns();
@@ -264,15 +357,35 @@ watch(
     <a-alert type="info" class="mb-4">
       本批將鎖定啟動當下的配置：Prompt
       <b>{{ promptEdited ? '頁面臨時編輯版（未存檔）' : `最新版 ${promptVersion || '—'}` }}</b>
-      （<b>{{ systemPrompt.length.toLocaleString() }}</b> 字元）· 模型
-      <b>{{ model || '（功能區默認）' }}</b
-      >；產物落在 <code>data/prompt_debug_batch/&lt;run_id&gt;/</code>（jsonl
+      （<b>{{ systemPrompt.length.toLocaleString() }}</b> 字元）；選幾個 model 就各自獨立起幾個
+      run，互不影響、各自計費；產物落在 <code>data/prompt_debug_batch/&lt;run_id&gt;/</code>（jsonl
       逐筆斷點，中斷可續跑）。
     </a-alert>
 
     <!-- 新跑批表單 -->
     <section class="mb-4 rounded-lg border border-[#e5e6eb] p-4">
       <div class="mb-3 text-sm font-semibold text-[#1d2129]">新跑批</div>
+
+      <div class="mb-3 flex flex-col gap-1">
+        <span class="text-xs text-[#4e5969]"
+          >Model（可多選；同時跑幾個各自獨立比較，最多 {{ MAX_MODELS_PER_GROUP }} 個）</span
+        >
+        <a-select
+          v-model="selectedModels"
+          multiple
+          class="w-full"
+          :options="modelGroupOptions"
+          placeholder="選擇一或多個 model"
+          :max-tag-count="6"
+        >
+          <template #label="{ data }">
+            <!-- 標籤直接標出解析出的供應商，「這個 model 會打到哪」送出前就可見（缺陷⑤的 UI 層防線） -->
+            {{ data.value
+            }}<span class="text-[#86909c]"> · {{ providerIdForModel(data.value) }}</span>
+          </template>
+        </a-select>
+      </div>
+
       <a-upload
         :auto-upload="false"
         :limit="1"
@@ -339,6 +452,50 @@ watch(
       <div class="mt-2 text-xs text-[#86909c]">
         每次啟動建立新 run；跑到一半可停止，之後在下方記錄「續跑」只補未成功筆。全量大批請先用小
         limit 試跑確認欄位與 Prompt 再放量。
+      </div>
+    </section>
+
+    <!-- 多模型群組總覽：每個 model 一列獨立進度；要看某個 model 的完整明細（recent/warnings/
+         失敗清單）點右側「詳情」切到下方單 run 追蹤區，兩者不重複做一套 UI -->
+    <section v-if="groupOverview.length" class="mb-4 rounded-lg border border-[#e5e6eb] p-4">
+      <div class="mb-2 text-sm font-semibold text-[#1d2129]">
+        本次跑批 · {{ groupOverview.length }} 個 model
+      </div>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="{ member, run } in groupOverview"
+          :key="member.model"
+          class="rounded border border-[#e5e6eb] p-2"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 text-sm">
+              <span class="font-medium">{{ member.model }}</span>
+              <span class="text-xs text-[#86909c]">{{ member.provider }}</span>
+              <a-tag v-if="!member.ok" color="red" size="small">啟動失敗</a-tag>
+              <a-tag v-else :color="statusMeta(run?.status ?? 'running').color" size="small">
+                {{ statusMeta(run?.status ?? 'running').label }}
+              </a-tag>
+            </div>
+            <a-button v-if="member.run_id" type="text" size="mini" @click="track(member.run_id)"
+              >詳情</a-button
+            >
+          </div>
+          <div v-if="!member.ok" class="mt-1 text-xs text-[#f53f3f]">{{ member.error }}</div>
+          <template v-else-if="run">
+            <a-progress
+              class="mt-1"
+              :percent="run.total ? Math.min(1, (run.resumed + run.processed) / run.total) : 0"
+              :show-text="false"
+              size="small"
+            />
+            <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-[#4e5969]">
+              <span>{{ run.processed }} / {{ run.total || '—' }}</span>
+              <span class="text-[#00b42a]">成功 {{ run.ok }}</span>
+              <span v-if="run.failed" class="text-[#f53f3f]">失敗 {{ run.failed }}</span>
+              <span>US$ {{ run.cost_usd.toFixed(4) }}</span>
+            </div>
+          </template>
+        </div>
       </div>
     </section>
 
@@ -437,7 +594,12 @@ watch(
           <a-table-column title="時間（北京）" :width="150">
             <template #cell="{ record }">
               <div class="text-xs">{{ fmtBeijingDt(record.created_at) }}</div>
-              <div class="text-[11px] text-[#86909c]">{{ record.run_id }}</div>
+              <div class="text-[11px] text-[#86909c]">
+                {{ record.run_id }}
+                <a-tag v-if="record.group_id" size="small" color="arcoblue" class="ml-1"
+                  >多模型</a-tag
+                >
+              </div>
             </template>
           </a-table-column>
           <a-table-column title="輸入 / 範圍" :width="180">
