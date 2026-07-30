@@ -1,12 +1,13 @@
-"""售後根因 Prompt 調試台：最新版 Prompt、嚴格輸出契約、LLM 串流與單次計費。
+"""售後根因 Prompt 調試台：當前正式版 Prompt、嚴格輸出契約、LLM 串流與單次計費。
 
 這條路徑只做 ad-hoc 調試，不寫 attributions / attribution_history；真實 API 用量仍會 best-effort
 寫入 llm_usage，讓「AI 消耗」看板與本次畫面口徑一致。
 
 輸出契約只有一套（2026-07-27 起；舊 v2 契約＋前端契約切換已全棧清退——實測下來雙契約只會讓
 頁面調的是 A、跑批跑的是 B）：keywords 陣列＋urgency 1–5 整數＋no_actionable_content、
-全欄禁 null（n/a 哨兵）。預設 Prompt 取版本庫最新版（見 `prompt_debug_versions`，一版一檔的
-全文快照、分類庫已內嵌含實測校準層），enum 受控值仍由分類 SSOT 派生（快照生成時已對齊）。
+全欄禁 null（n/a 哨兵）。預設 Prompt 取**當前正式版**（見 `prompt_debug_versions` 的草稿／正式版
+雙軌：草稿是實驗區、正式版才是線上口徑；全文快照、分類庫已內嵌含實測校準層），
+enum 受控值仍由分類 SSOT 派生（快照生成時已對齊）。
 """
 
 from __future__ import annotations
@@ -31,11 +32,12 @@ _TAXONOMY_FILE = AI_JUDGE_DIR / "after_sales_root_cause.json"
 # 送 Structured Outputs 的 schema 標籤（非檔名，僅供 API 端回報用）
 _SCHEMA_NAME = "after_sales_root_cause"
 
-# 跳出分支的兩個受控值（L1/L2 的跳出值）。L1 於 2026-07-28 由「OOT跳出」改為「其他」——對齊裁判表寫法，也與
-# L2 落表層早已把 __OUT_OF_TAXONOMY__ 顯示成「其他」的口徑一致（原本兩邊各講各的）。
+# 跳出分支的兩個受控值：L1、L2 皆為「其他」（兩層同值，對齊裁判表寫法與表格顯示口徑）。
+# 分成兩個常數而非共用一個：它們是不同欄位的受控值，分開命名讓校驗處讀得出在比哪一層，
+# 日後任一層改動也不必牽動另一層。
 # 收成模組常數而非散在 schema／級聯／校驗各處：這串是模型要逐字輸出的值，漏改一處就是靜默錯配。
 _OOT_L1 = "其他"
-_OOT_L2 = "__OUT_OF_TAXONOMY__"
+_OOT_L2 = "其他"
 
 # 與裁判表首列的 AI 判定欄位同序：keywords 陣列全量填、urgency 1–5 整數、
 # no_actionable_content、全欄禁 null（不適用填 n/a）。
@@ -48,7 +50,7 @@ OUTPUT_FIELDS = [
     {
         "key": "L2",
         "label": "根因分類（AI 判定，L2）",
-        "hint": "受控 Category；未命中則為 OOT",
+        "hint": "受控 L2 類別；未命中則為 其他",
     },
     {
         "key": "L3",
@@ -115,7 +117,7 @@ def _l1_value(row: dict[str, Any]) -> str:
 
 
 def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    """受控欄的上下層級聯關係（L1 → L2 → L3；契約鍵 2026-07-28 起由 theme/category/likely_cause 改名）。
+    """受控欄的上下層級聯關係（L1 → L2 → L3）。
 
     schema 的 enum 是**攤平**的全域值域（`output_schema` 刻意讓 L3 跨類 flat，
     免得 strict schema 在邊界類扭曲取樣），但人在調試台填正解時不該看到攤平清單——選了
@@ -157,8 +159,8 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     taxonomy = taxonomy or load_taxonomy()
     l2_entries = taxonomy.get("L2_entries", [])
-    l2_values = [row["name"] for row in l2_entries] + [_OOT_L2]
     l1_values = list(dict.fromkeys(_l1_value(row) for row in l2_entries)) + [_OOT_L1]
+    l2_values = [row["name"] for row in l2_entries] + [_OOT_L2]
     l3_values = list(
         dict.fromkeys(cause for row in l2_entries for cause in row.get("L3_options", []))
     ) + ["n/a"]
@@ -166,8 +168,8 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "L2": {"type": "string", "enum": l2_values},
             "L1": {"type": "string", "enum": l1_values},
+            "L2": {"type": "string", "enum": l2_values},
             "L3": {"type": "string", "enum": l3_values},
             "L4": {
                 "type": "string",
@@ -202,8 +204,8 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
         "required": [
-            "L2",
             "L1",
+            "L2",
             "L3",
             "L4",
             "summary",
@@ -220,18 +222,37 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def defaults_payload() -> dict[str, Any]:
-    """前端初始化所需的最新版 Prompt、schema、欄位卡與分類庫來源摘要。
+    """前端初始化所需的當前 Prompt（**最新草稿**）、草稿/正式版清單、schema、欄位卡與分類庫來源摘要。
 
-    `prompt_versions` 只作資訊顯示（讓人知道目錄裡累積了幾版），頁面不提供切換——
-    線上口徑固定為最新版（`prompt_version`），單次調試與批量跑批同源。
+    `system_prompt` 是**最新草稿**全文——調試台是草稿工作台，載入即接續上次的實驗。
+    正式版是實驗收斂後的出口標記，全文另走 `release_prompt`（可能為空，見下）。
+
+    ⚠️ **正式版區全空不影響本端點**：草稿中心定位下，沒有任何正式版仍要能正常編輯與測試，
+    故 `release_prompt` / `active_release` 只是留白，不拋錯。反之若連草稿都沒有才是真的無事可做。
+
+    兩份清單只帶 meta 不帶全文，單份全文按需走 `/prompt-debug/drafts/{v}` 或
+    `/prompt-debug/releases/{name}`。
     """
     taxonomy = load_taxonomy()
     stats = taxonomy["sources"]["judge_spreadsheet"]
-    versions = prompt_debug_versions.list_versions()
+    releases = prompt_debug_versions.list_releases()
+    drafts = prompt_debug_versions.draft_meta()
+
+    latest_draft = drafts[0]["version"] if drafts else ""
+    active = next((r["name"] for r in releases if r["is_active"]), "")
     return {
-        "prompt_version": versions[0] if versions else "",
-        "prompt_versions": versions,
-        "system_prompt": prompt_debug_versions.latest_prompt(),
+        "active_release": active,
+        "releases": releases,
+        "drafts": drafts,
+        "latest_draft": latest_draft,
+        # 頁面載入口徑＝最新草稿；沒有草稿才退正式版（全新環境剛升完第一版的情況）
+        "system_prompt": (
+            prompt_debug_versions.read_draft(latest_draft)
+            if latest_draft
+            else (prompt_debug_versions.read_release(active) if active else "")
+        ),
+        # 供「口徑開關」撥到正式版側時即時切換，免再打一次 API；無正式版＝空字串（開關該側 disable）
+        "release_prompt": prompt_debug_versions.read_release(active) if active else "",
         "output_fields": OUTPUT_FIELDS,
         "output_schema": output_schema(taxonomy),
         "output_cascade": output_cascade(taxonomy),
@@ -354,20 +375,46 @@ def user_prompt_for(text: str) -> str:
     )
 
 
-def _request_compat(cfg: dict[str, Any], kwargs: dict[str, Any]) -> tuple[Any, list[str]]:
+def _request_compat(
+    cfg: dict[str, Any], kwargs: dict[str, Any], *, stage: str = "prompt_debug"
+) -> tuple[Any, list[str]]:
     """發出 Chat Completions 請求（kwargs 有 stream 則回 stream，否則回完整回應）；
-    相容端點不支援參數時逐級降級並明示 warning（kwargs 就地改寫，呼叫端可沿用收斂後形狀）。"""
-    from openai import BadRequestError
+    相容端點不支援參數時逐級降級並明示 warning（kwargs 就地改寫，呼叫端可沿用收斂後形狀）。
+
+    本函式是**全專案唯一的相容降級階梯**——調試台串流、跑批首筆探測、回歸重跑、Prompt 改寫台
+    皆走這裡，不得再抄第二套（判準分岔過一次的教訓見 settings.LLM_THINKING_MODES 註解）。
+
+    Args:
+        stage: 執行日誌的分組標籤；各呼叫端傳自己的，否則所有路徑的降級紀錄都掛在調試台名下。
+    """
+    from openai import BadRequestError, NotFoundError
 
     warnings: list[str] = []
     provider = app_settings.provider_id_for(cfg.get("base_url") or "")
-    # 最多依序移除三個相容性障礙：stream_options、json_schema、response_format。
-    for _ in range(4):
+    # 這一輪是否已經試過改走 Responses API。
+    # ⚠️ **不能改用 `kwargs` 裡的 wire 標記來判斷「試過沒有」**：標記在失敗時必須被清掉（否則跑批的
+    # `_settle_request_shape` 會把死標記發給所有 worker），而 `can_use_responses_api()` 又是以
+    # 「標記不存在」為可導流的條件——兩者相加會讓階梯在「設標記 → 失敗 → 清標記 → 又符合導流條件」
+    # 之間來回彈跳，把 5 輪預算全燒在 Responses 上，**json_schema 降級與移除 response_format 兩階
+    # 永遠走不到**（2026-07-30 實測：round 2~5 全部重送 responses + json_schema，從未降級）。
+    # 故「試過沒有」改用這個不會被清掉的區域旗標記錄。
+    responses_tried = False
+    # 依序處理四個相容性障礙：stream_options → 改走 Responses API → json_schema → response_format。
+    # Responses 階排在放棄 strict 的兩階**之前**：它是唯一保住「API 端強制結構化輸出」的選項。
+    for _ in range(5):
         try:
-            return client._complete_effort_safe(cfg, kwargs, None, "prompt_debug"), warnings
-        except BadRequestError as exc:
+            return client._complete_effort_safe(cfg, kwargs, None, stage), warnings
+        except (BadRequestError, NotFoundError) as exc:
             if provider == "openai":
                 raise
+            from app.judge.llm import responses_api
+
+            if isinstance(exc, NotFoundError) and not kwargs.get(responses_api.WIRE_API_KEY):
+                raise  # 與 Responses 無關的 404 照拋，不當成相容性問題亂降級
+            # 上一輪改走 Responses 仍失敗 → 清標記退回 Chat Completions，並收回那條樂觀的 warning。
+            # 死標記若留著，跑批的 _settle_request_shape 會把它發給所有 worker → 整批走死路。
+            if kwargs.pop(responses_api.WIRE_API_KEY, None):
+                warnings[:] = [w for w in warnings if "Responses API" not in w]
             message = str(exc).lower()
             param = str(getattr(exc, "param", "") or "").lower()
             if "stream_options" in kwargs and (
@@ -376,6 +423,21 @@ def _request_compat(cfg: dict[str, Any], kwargs: dict[str, Any]) -> tuple[Any, l
                 kwargs.pop("stream_options", None)
                 warnings.append(
                     "目前相容端點不支援串流 usage 回傳；本次仍會串流內容，但可能無法顯示 token 與費用。"
+                )
+                continue
+            if (
+                not responses_tried
+                and client.structured_output_rejected(exc)
+                and client.can_use_responses_api(cfg, kwargs)
+            ):
+                # 該 model 的 strict 只在 Responses 端點上（實測 Ark seed-2-0-*-260428 即如此）。
+                # 標記由 client._complete 消費；此階失敗時上方會清標記，並由 `responses_tried`
+                # 確保不再重試同一階，讓下一輪確實落到放棄 strict 的兩階。
+                responses_tried = True
+                kwargs[responses_api.WIRE_API_KEY] = responses_api.WIRE_RESPONSES
+                warnings.append(
+                    "目前模型的 Chat Completions 不支援 strict json_schema，"
+                    "已改走 Responses API 取得 API 端強制的結構化輸出。"
                 )
                 continue
             response_format = kwargs.get("response_format") or {}

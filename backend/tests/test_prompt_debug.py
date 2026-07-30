@@ -30,20 +30,26 @@ def _base_result(**overrides):
     return value
 
 
-def test_defaults_carry_latest_prompt_and_taxonomy_derived_schema() -> None:
-    """payload 只有一套契約：最新版 Prompt ＋ 由分類 SSOT 派生的 schema/欄位卡。"""
+def test_defaults_carry_active_release_and_taxonomy_derived_schema() -> None:
+    """payload 只有一套契約：**當前正式版** Prompt ＋ 由分類 SSOT 派生的 schema/欄位卡。
+
+    刻意不斷言「清單頭＝當前口徑」——那是舊的無指針設計。口徑只認 index 的 active_release，
+    草稿清單再新也不影響它。
+    """
     payload = prompt_debug.defaults_payload()
     assert payload["L2_count"] == 25
     assert payload["L1_count"] == 5
-    # 版本名即檔名時間戳，且必須真的是版本庫最新版
-    assert payload["prompt_version"] == versions.latest_version()
-    assert payload["prompt_versions"][0] == payload["prompt_version"]
-    assert payload["system_prompt"] == versions.latest_prompt()
+    assert payload["active_release"] == versions.active_release()
+    assert payload["system_prompt"] == versions.active_prompt()
+    # 正式版清單裡恰有一個 active，且就是它
+    actives = [r["name"] for r in payload["releases"] if r["is_active"]]
+    assert actives == [payload["active_release"]]
+    assert payload["drafts"], "草稿區是空的：調試台會沒有可比對的歷史"
     # 靜態快照：分類庫已內嵌，不該再留模板佔位符
     assert "{{TAXONOMY_JSON}}" not in payload["system_prompt"]
 
     schema = payload["output_schema"]
-    assert "__OUT_OF_TAXONOMY__" in schema["properties"]["L2"]["enum"]
+    assert "其他" in schema["properties"]["L2"]["enum"]
     assert "n/a" in schema["properties"]["L4"]["enum"]
     assert "$schema" not in schema
     assert [field["key"] for field in payload["output_fields"]] == [
@@ -85,14 +91,14 @@ def test_output_cascade_narrows_each_level_to_its_parent_branch() -> None:
     assert sorted(c for opts in by_l1.values() for c in opts) == sorted(
         schema["properties"]["L2"]["enum"]
     )
-    assert by_l1["其他"] == ["__OUT_OF_TAXONOMY__"]
+    assert by_l1["其他"] == ["其他"]
 
     # 每個 category 都掛在自己 theme 底下（抽一類驗證，避免只是形狀對但歸屬錯）
     assert "取消政策揭露不清" in by_l1["[101] 訂單取消"]
     assert "取消政策揭露不清" not in by_l1["[93] 訂單申請修改"]
 
     by_l2 = cascade["L3"]["options_by_parent"]
-    assert by_l2["__OUT_OF_TAXONOMY__"] == ["n/a"]
+    assert by_l2["其他"] == ["n/a"]
     for row in taxonomy["L2_entries"]:
         assert by_l2[row["name"]] == row["L3_options"]
 
@@ -130,7 +136,7 @@ def test_validate_result_rejects_cross_l2_cause_and_l1() -> None:
 
 def test_validate_result_accepts_oot_contract() -> None:
     value = _base_result(
-        L2="__OUT_OF_TAXONOMY__",
+        L2="其他",
         L1="其他",
         L3="n/a",
     )
@@ -139,11 +145,11 @@ def test_validate_result_accepts_oot_contract() -> None:
 
 def test_validate_result_enforces_no_actionable_content_linkage() -> None:
     """no_actionable_content=true 必須連動 OOT ＋ keywords 清空。"""
-    assert "no_actionable_content=true 時 L2 必須是 __OUT_OF_TAXONOMY__" in (
+    assert "no_actionable_content=true 時 L2 必須是 其他" in (
         prompt_debug.validate_result(_base_result(no_actionable_content=True))
     )
     value = _base_result(
-        L2="__OUT_OF_TAXONOMY__",
+        L2="其他",
         L1="其他",
         L3="n/a",
         no_actionable_content=True,
@@ -163,59 +169,171 @@ def test_validate_result_requires_l4_for_93() -> None:
     assert prompt_debug.validate_result(value) == []
 
 
-# ── Prompt 版本庫（時間戳一版一檔，永遠取最新）──────────────────────────────────
+# ── Prompt 版本庫（草稿／正式版雙軌）────────────────────────────────────────────
 
 
-def test_repo_prompt_dir_has_only_timestamp_versions() -> None:
-    """repo 內的版本目錄必須解得出最新版（防有人改回 vN.md 命名而靜默失效）。"""
-    assert versions.list_versions(), "版本庫是空的：檔名需為 YYYY-MM-DD-HHMMSS.md"
-    assert versions.latest_prompt().strip()
+def _wire_dirs(monkeypatch, tmp_path):
+    """把兩區與 index 檔都導到 tmp；回 (草稿區, 正式版區)。"""
+    drafts, releases = tmp_path / "drafts", tmp_path / "versions"
+    drafts.mkdir()
+    releases.mkdir()
+    monkeypatch.setattr(versions, "DRAFTS_DIR", drafts)
+    monkeypatch.setattr(versions, "RELEASES_DIR", releases)
+    monkeypatch.setattr(versions, "INDEX_FILE", releases / "index.json")
+    return drafts, releases
 
 
-def test_latest_is_newest_filename_not_mtime(monkeypatch, tmp_path) -> None:
-    """最新＝檔名時間戳最大者；先寫的舊名檔即使 mtime 較新也不該勝出。"""
-    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
-    (tmp_path / "2026-07-27-185628.md").write_text("新版", encoding="utf-8")
-    (tmp_path / "2026-01-01-090000.md").write_text("舊版", encoding="utf-8")
-    (tmp_path / "CHANGELOG.md").write_text("不是版本檔", encoding="utf-8")
-
-    assert versions.list_versions() == ["2026-07-27-185628", "2026-01-01-090000"]
-    assert versions.latest_prompt() == "新版"
+def test_repo_dirs_wired_and_active_release_resolvable() -> None:
+    """repo 內兩區都必須解得出來（防搬目錄／改命名後靜默失效——2026-07-30 就出過一次）。"""
+    assert versions.list_drafts(), "草稿區是空的：檔名需為 YYYY-MM-DD-HHMMSS.md"
+    assert versions.active_release(), "正式版區沒有 active"
+    assert versions.active_prompt().strip()
 
 
-def test_save_creates_new_version_and_skips_identical(monkeypatch, tmp_path) -> None:
-    """存檔即成為最新版；與最新版逐字相同則不建檔。"""
-    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
-    (tmp_path / "2026-01-01-090000.md").write_text("舊版\n", encoding="utf-8")
+def test_latest_draft_is_newest_filename_not_mtime(monkeypatch, tmp_path) -> None:
+    """最新草稿＝檔名時間戳最大者；先寫的舊名檔即使 mtime 較新也不該勝出。"""
+    drafts, _ = _wire_dirs(monkeypatch, tmp_path)
+    (drafts / "2026-07-27-185628.md").write_text("新版", encoding="utf-8")
+    (drafts / "2026-01-01-090000.md").write_text("舊版", encoding="utf-8")
+    (drafts / "CHANGELOG.md").write_text("不是版本檔", encoding="utf-8")
 
-    created = versions.save("改過的 Prompt")
+    assert versions.list_drafts() == ["2026-07-27-185628", "2026-01-01-090000"]
+    assert versions.latest_draft() == "2026-07-27-185628"
+
+
+def test_save_draft_does_not_change_online_prompt(monkeypatch, tmp_path) -> None:
+    """**存草稿不動線上口徑**——這是雙軌制的核心不變式（舊設計是存檔即上線）。"""
+    drafts, releases = _wire_dirs(monkeypatch, tmp_path)
+    (drafts / "2026-01-01-090000.md").write_text("舊草稿\n", encoding="utf-8")
+    (releases / "release-v1.md").write_text("線上版\n", encoding="utf-8")
+    versions._write_index(
+        {"schema": 1, "active_release": "release-v1", "releases": {}, "drafts": {}}
+    )
+
+    created = versions.save_draft("改過的 Prompt", note="試一下", author="a@b.c")
     assert created["created"] is True
     assert created["version"] > "2026-01-01-090000"
-    assert versions.latest_prompt().strip() == "改過的 Prompt"
+    assert versions.latest_draft() == created["version"]
+    # 關鍵：線上口徑完全沒動
+    assert versions.active_release() == "release-v1"
+    assert versions.active_prompt().strip() == "線上版"
+    # meta 進了 index
+    meta = {m["version"]: m for m in versions.draft_meta()}
+    assert meta[str(created["version"])]["note"] == "試一下"
 
-    again = versions.save("改過的 Prompt")
+    again = versions.save_draft("改過的 Prompt")
     assert again == {"version": created["version"], "created": False}
-    assert len(versions.list_versions()) == 2
+    assert len(versions.list_drafts()) == 2
 
 
-def test_resolve_falls_back_to_latest_and_flags_edits(monkeypatch, tmp_path) -> None:
-    """空字串＝取最新版並標版本名；改過的內容版本名留空（只能靠 sha256 追）。"""
-    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
-    (tmp_path / "2026-01-01-090000.md").write_text("線上版\n", encoding="utf-8")
+def test_promote_switches_active_and_keeps_old_readable(monkeypatch, tmp_path) -> None:
+    """升版＝草稿變 active 正式版；舊正式版仍可讀（不刪不覆寫）。"""
+    drafts, releases = _wire_dirs(monkeypatch, tmp_path)
+    (drafts / "2026-01-02-100000.md").write_text("候選內容\n", encoding="utf-8")
+    (releases / "release-v1.md").write_text("舊線上版\n", encoding="utf-8")
+    versions._write_index(
+        {"schema": 1, "active_release": "release-v1", "releases": {}, "drafts": {}}
+    )
 
-    assert versions.resolve("  ") == ("線上版\n", "2026-01-01-090000")
-    assert versions.resolve("線上版") == ("線上版", "2026-01-01-090000")
-    assert versions.resolve("臨時改一句") == ("臨時改一句", "")
+    out = versions.promote("2026-01-02-100000", "release-v2", note="上線理由", author="a@b.c")
+    assert out["previous_active"] == "release-v1"
+    assert versions.active_release() == "release-v2"
+    assert versions.active_prompt().strip() == "候選內容"
+    assert versions.read_release("release-v1").strip() == "舊線上版"  # 舊版仍在
+
+    by_name = {r["name"]: r for r in versions.list_releases()}
+    assert by_name["release-v2"]["is_active"] is True
+    assert by_name["release-v2"]["source_draft"] == "2026-01-02-100000"
+    assert by_name["release-v2"]["note"] == "上線理由"
+    assert by_name["release-v1"]["is_active"] is False
 
 
-def test_read_version_rejects_path_traversal(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(versions, "PROMPT_DIR", tmp_path)
+def test_promote_rejects_duplicate_name_and_missing_draft(monkeypatch, tmp_path) -> None:
+    """正式版不覆寫（重名即拒）；來源草稿不存在則 FileNotFoundError。"""
+    drafts, releases = _wire_dirs(monkeypatch, tmp_path)
+    (drafts / "2026-01-02-100000.md").write_text("內容\n", encoding="utf-8")
+    (releases / "release-v1.md").write_text("已存在\n", encoding="utf-8")
+
+    try:
+        versions.promote("2026-01-02-100000", "release-v1")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("重名應被拒")
+
+    try:
+        versions.promote("2026-09-09-090909", "release-v9")
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("來源草稿不存在應拋 FileNotFoundError")
+
+
+def test_resolve_defaults_to_release_and_flags_draft_only_when_allowed(
+    monkeypatch, tmp_path
+) -> None:
+    """空字串＝當前正式版；草稿只在 allow_draft 時被認出（跑批不認）。"""
+    drafts, releases = _wire_dirs(monkeypatch, tmp_path)
+    (releases / "release-v1.md").write_text("線上版\n", encoding="utf-8")
+    (drafts / "2026-01-01-090000.md").write_text("草稿內容\n", encoding="utf-8")
+    versions._write_index(
+        {"schema": 1, "active_release": "release-v1", "releases": {}, "drafts": {}}
+    )
+
+    assert versions.resolve("  ") == ("線上版\n", "release-v1", "release")
+    assert versions.resolve("線上版") == ("線上版", "release-v1", "release")
+    # 單次調試認草稿
+    assert versions.resolve("草稿內容", allow_draft=True) == (
+        "草稿內容",
+        "2026-01-01-090000",
+        "draft",
+    )
+    # 跑批不認草稿 → 降級成臨時編輯（靠 sha256 追）
+    assert versions.resolve("草稿內容", allow_draft=False) == ("草稿內容", "", "")
+    assert versions.resolve("臨時改一句", allow_draft=True) == ("臨時改一句", "", "")
+
+
+def test_active_release_falls_back_when_index_lost(monkeypatch, tmp_path) -> None:
+    """index 遺失/失效時 fail-soft：單支就用它、多支取 mtime 最新，不因缺 meta 讓版本讀不到。"""
+    _, releases = _wire_dirs(monkeypatch, tmp_path)
+    (releases / "release-v1.md").write_text("唯一一支\n", encoding="utf-8")
+    assert versions.active_release() == "release-v1"  # 完全沒有 index.json
+
+    # index 指向不存在的名字 → 同樣走 fallback，不拋錯
+    versions._write_index(
+        {"schema": 1, "active_release": "release-gone", "releases": {}, "drafts": {}}
+    )
+    assert versions.active_release() == "release-v1"
+
+    # index 是壞 JSON → 也不該炸
+    versions.INDEX_FILE.write_text("{壞掉的 json", encoding="utf-8")
+    assert versions.active_release() == "release-v1"
+
+
+def test_index_write_is_atomic(monkeypatch, tmp_path) -> None:
+    """原子寫：寫完不留 .tmp，且內容可完整 parse（防每請求重讀撞上半寫入狀態）。"""
+    _, releases = _wire_dirs(monkeypatch, tmp_path)
+    versions._write_index({"schema": 1, "active_release": "x", "releases": {}, "drafts": {}})
+    assert list(releases.glob("*.tmp")) == []
+    assert versions._read_index()["active_release"] == "x"
+
+
+def test_read_draft_and_release_reject_path_traversal(monkeypatch, tmp_path) -> None:
+    """兩區各自守門：草稿只收時間戳、正式版只收英數與 . _ -，都不能是路徑。"""
+    _wire_dirs(monkeypatch, tmp_path)
     for bad in ("../../etc/passwd", "v3", "2026-07-27"):
         try:
-            versions.read_version(bad)
+            versions.read_draft(bad)
         except ValueError:
             continue
-        raise AssertionError(f"應拒絕非法版本名：{bad!r}")
+        raise AssertionError(f"應拒絕非法草稿名：{bad!r}")
+
+    for bad in ("../../etc/passwd", "a/b", "..", "release v1"):
+        try:
+            versions.read_release(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"應拒絕非法正式版名：{bad!r}")
 
 
 def test_stream_frames_uses_final_chunk_usage_for_same_call(monkeypatch) -> None:
@@ -270,3 +388,123 @@ def test_stream_frames_uses_final_chunk_usage_for_same_call(monkeypatch) -> None
     assert '"reasoning_tokens": 40' in usage_frame
     assert recorded and recorded[0]["total_tokens"] == 1_200
     assert recorded[0]["cost_usd"] > 0
+
+
+# ── _request_compat 相容降級階梯 ───────────────────────────────────────────────────────────
+# 這條階梯先前零測試，卻同時服務調試台串流與跑批首筆探測（收斂後的形狀還會被
+# _settle_request_shape 發給所有 worker）——降級判準寫錯的代價是整批走錯形狀。
+def _bad_request(*, param=None, message="err"):
+    """建帶 param 的 SDK BadRequestError（模擬相容端點對特定參數的 400）。"""
+    import httpx
+    from openai import BadRequestError
+
+    req = httpx.Request("POST", "https://ark.example/api/v3/chat/completions")
+    body = {"param": param} if param else {}
+    return BadRequestError(message, response=httpx.Response(400, request=req), body=body or None)
+
+
+def _ladder_client(monkeypatch, failures):
+    """讓 _complete_effort_safe 依序拋出 failures 內的例外，之後成功；回傳每次收到的 kwargs 快照。"""
+    from app.judge.llm import client
+
+    seen: list[dict] = []
+    pending = list(failures)
+
+    def _fake(cfg, kwargs, ck, stage="", label=None):
+        seen.append({k: (dict(v) if isinstance(v, dict) else v) for k, v in kwargs.items()})
+        if pending:
+            raise pending.pop(0)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(client, "_complete_effort_safe", _fake)
+    return seen
+
+
+_ARK_CFG = {"base_url": "https://ark.ap-southeast.bytepluses.com/api/v3", "model": "seed-x"}
+_SCHEMA_RF = {"type": "json_schema", "json_schema": {"name": "r", "strict": True, "schema": {}}}
+
+
+def test_request_compat_drops_stream_options_first(monkeypatch) -> None:
+    """端點不支援 stream_options → 只移除該參數，response_format 不受牽連。"""
+    seen = _ladder_client(monkeypatch, [_bad_request(param="stream_options")])
+    kwargs = {"model": "m", "messages": [], "stream": True, "stream_options": {}, **{}}
+    _, warnings = prompt_debug._request_compat(_ARK_CFG, kwargs)
+    assert "stream_options" not in kwargs and kwargs["stream"] is True
+    assert len(seen) == 2 and "串流 usage" in warnings[0]
+
+
+def test_request_compat_degrades_json_schema_to_json_object(monkeypatch) -> None:
+    """strict json_schema 被拒 → 先試 Responses API，該階也失敗才降為 JSON mode。
+
+    ⚠️ 需要**兩次**失敗才走到降級：Ark 這類 provider 有 `/responses` 端點，故階梯會先導流過去
+    （那是唯一保住「API 端強制結構化輸出」的選項），只有它也被拒才放棄 strict。
+    第一次失敗只會換 wire、不動 response_format。
+    """
+    seen = _ladder_client(
+        monkeypatch,
+        [
+            _bad_request(
+                param="response_format", message="json_schema"
+            ),  # Chat 拒 strict → 轉 Responses
+            _bad_request(
+                param="response_format", message="json_schema"
+            ),  # Responses 也拒 → 降 JSON mode
+        ],
+    )
+    kwargs = {"model": "m", "messages": [], "response_format": dict(_SCHEMA_RF)}
+    _, warnings = prompt_debug._request_compat(_ARK_CFG, kwargs)
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert len(seen) == 3
+    # Responses 那條樂觀 warning 在該階失敗時已被收回，只留降級這條
+    assert len(warnings) == 1 and "JSON mode" in warnings[0]
+
+
+def test_request_compat_removes_response_format_when_json_object_also_rejected(monkeypatch) -> None:
+    """json_object 也被拒 → 整個移除 response_format，改由 Prompt 約束（實測 Ark 新模型即此路徑）。
+
+    完整階梯＝Chat strict 被拒 → Responses 也被拒 → 降 json_object → 連 json_object 也被拒 → 移除。
+    """
+    seen = _ladder_client(
+        monkeypatch,
+        [
+            _bad_request(param="response_format", message="json_schema is not supported"),
+            _bad_request(param="response_format", message="json_schema is not supported"),
+            _bad_request(param="response_format", message="json_object is not supported"),
+        ],
+    )
+    kwargs = {"model": "m", "messages": [], "response_format": dict(_SCHEMA_RF)}
+    _, warnings = prompt_debug._request_compat(_ARK_CFG, kwargs)
+    assert "response_format" not in kwargs
+    assert len(seen) == 4 and len(warnings) == 2
+
+
+def test_request_compat_does_not_retry_responses_stage(monkeypatch) -> None:
+    """**回歸鎖**：Responses 階只試一次，不得與「清標記」互相彈跳把降級階梯餓死。
+
+    2026-07-30 實測過的 bug：失敗時 `kwargs.pop(WIRE_API_KEY)` 清掉標記，而
+    `can_use_responses_api()` 又以「標記不存在」為可導流條件 → 每輪都重新導流 Responses，
+    5 輪預算全燒在同一階，`json_schema` 從未降級。修法＝用不會被清掉的區域旗標記錄「試過了」。
+    """
+    from app.judge.llm import responses_api
+
+    seen = _ladder_client(
+        monkeypatch,
+        [_bad_request(param="response_format", message="json_schema")] * 3,
+    )
+    kwargs = {"model": "m", "messages": [], "response_format": dict(_SCHEMA_RF)}
+    prompt_debug._request_compat(_ARK_CFG, kwargs)
+    # 恰好一輪走 Responses；其餘都在 Chat Completions 上逐級放棄 strict
+    on_responses = [s for s in seen if s.get(responses_api.WIRE_API_KEY)]
+    assert len(on_responses) == 1, f"Responses 階被重試了 {len(on_responses)} 次"
+
+
+def test_request_compat_openai_never_degrades(monkeypatch) -> None:
+    """OpenAI 的 400 一律原樣拋——多為 prompt 過長/參數非法，降級只會掩蓋問題。"""
+    import pytest
+    from openai import BadRequestError
+
+    seen = _ladder_client(monkeypatch, [_bad_request(param="response_format")])
+    kwargs = {"model": "m", "messages": [], "response_format": dict(_SCHEMA_RF)}
+    with pytest.raises(BadRequestError):
+        prompt_debug._request_compat({"base_url": "https://api.openai.com/v1"}, kwargs)
+    assert len(seen) == 1 and kwargs["response_format"] == _SCHEMA_RF  # 未被改寫

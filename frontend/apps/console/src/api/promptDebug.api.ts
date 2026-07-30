@@ -2,23 +2,51 @@
 import { BASE, getToken, j, JSON_HEADERS, postSse, type SseFrame } from './http.api';
 import type { LlmOverrides } from '@/features/settings/types';
 
+/** 一份草稿的 meta（不含全文；全文走 `getPromptDraft`）。 */
+export interface PromptDraftMeta {
+  /** 草稿名＝時間戳檔名（YYYY-MM-DD-HHMMSS）。 */
+  version: string;
+  note: string;
+  author: string;
+  saved_at: string;
+}
+
+/** 一份正式版的 meta（不含全文；全文走 `getPromptRelease`）。 */
+export interface PromptReleaseMeta {
+  /** 正式版名＝人取的自訂名（如 release-v1）。 */
+  name: string;
+  /** 升版來源的草稿名。 */
+  source_draft: string;
+  note: string;
+  author: string;
+  promoted_at: string;
+  /** 是否為當前線上口徑（恰有一個為 true）。 */
+  is_active: boolean;
+}
+
 export interface PromptDebugDefaults {
-  /** 目前線上口徑＝版本庫最新版檔名（YYYY-MM-DD-HHMMSS）。 */
-  prompt_version: string;
-  /** 版本庫全部版本名（新→舊）；僅供顯示，頁面不提供切換。 */
-  prompt_versions: string[];
-  /** 最新版 system prompt 全文。 */
+  /** 當前線上口徑的正式版名；**可能為空字串**（尚未升過任何版，草稿工作流仍正常）。 */
+  active_release: string;
+  /** 正式版清單（含 meta 與 is_active 標記）。 */
+  releases: PromptReleaseMeta[];
+  /** 草稿清單（新→舊）。 */
+  drafts: PromptDraftMeta[];
+  /** 最新草稿名（`drafts[0].version`）；無草稿時為空字串。 */
+  latest_draft: string;
+  /**
+   * 頁面載入口徑的 system prompt 全文＝**最新草稿**（調試台是草稿工作台）。
+   * 無草稿時才退回正式版全文；兩者都無＝空字串。
+   */
   system_prompt: string;
+  /** 當前正式版全文，供口徑開關撥到「正式」側時即時切換；無正式版＝空字串。 */
+  release_prompt: string;
   output_schema: Record<string, unknown>;
   /**
    * 受控欄的上下層級聯（L1 → L2 → L3）：
    * 下層欄位鍵 → `{ parent: 上層欄位鍵, options_by_parent: 各上層值底下的可選清單 }`。
    * schema 的 enum 是攤平的全域值域，填正解時要靠這份把選單限縮到已選上層底下。
    */
-  output_cascade: Record<
-    string,
-    { parent: string; options_by_parent: Record<string, string[]> }
-  >;
+  output_cascade: Record<string, { parent: string; options_by_parent: Record<string, string[]> }>;
   output_fields: Array<{
     key: string;
     label: string;
@@ -93,18 +121,70 @@ export const getPromptDebugDefaults = (): Promise<PromptDebugDefaults> =>
 export interface PromptVersionSaved {
   version: string;
   created: boolean;
-  versions: string[];
+  drafts: PromptDraftMeta[];
+}
+
+/** 升版結果：新的 active 正式版名、來源草稿、升版前的 active。 */
+export interface PromptReleasePromoted {
+  name: string;
+  source_draft: string;
+  previous_active: string;
+  releases: PromptReleaseMeta[];
 }
 
 /**
- * 把編輯後的 Prompt 存成新的時間戳版本檔，存完即成為線上最新版（單次調試與跑批同步生效）。
+ * 把編輯後的 Prompt 存成新草稿。**不改變線上口徑**——要上線得再走 `promotePromptRelease`。
  * @param systemPrompt 要存檔的 system prompt 全文
+ * @param note 備註（可空）
  */
-export const savePromptVersion = (systemPrompt: string): Promise<PromptVersionSaved> =>
-  j<PromptVersionSaved>(`${BASE}/v1/prejudge/prompt-debug/prompt-versions`, {
+export const savePromptDraft = (systemPrompt: string, note = ''): Promise<PromptVersionSaved> =>
+  j<PromptVersionSaved>(`${BASE}/v1/prejudge/prompt-debug/drafts`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ system_prompt: systemPrompt }),
+    body: JSON.stringify({ system_prompt: systemPrompt, note }),
+  });
+
+/** 取單一草稿全文（版本對比用）。 */
+export const getPromptDraft = (
+  version: string,
+): Promise<{ version: string; system_prompt: string }> =>
+  j(`${BASE}/v1/prejudge/prompt-debug/drafts/${encodeURIComponent(version)}`);
+
+/** 取單一正式版全文（版本對比用）。 */
+export const getPromptRelease = (name: string): Promise<{ name: string; system_prompt: string }> =>
+  j(`${BASE}/v1/prejudge/prompt-debug/releases/${encodeURIComponent(name)}`);
+
+/**
+ * 把某個**已存檔的草稿**升為正式版，立即成為線上唯一口徑（跑批與調試台預設都改用它）。
+ * 需 `judge-rule.version.manage`。
+ * @param draft 來源草稿名（時間戳）
+ * @param name 正式版名稱（英數與 . _ -，首字元須為英數）
+ * @param note 上線理由（建議必填，供日後回顧）
+ */
+export const promotePromptRelease = (
+  draft: string,
+  name: string,
+  note = '',
+): Promise<PromptReleasePromoted> =>
+  j<PromptReleasePromoted>(`${BASE}/v1/prejudge/prompt-debug/releases`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ draft, name, note }),
+  });
+
+/**
+ * 把線上口徑切到某個**既有**正式版（回退／切換上線版本）。需 `judge-rule.version.manage`。
+ *
+ * 與 `promotePromptRelease` 的分工：升版是「草稿 → 新正式版」（複製檔案 + 新增版本紀錄），
+ * 本函式只改 active 指標。升錯版時沒有這條路就只能再升一版，版本號無謂膨脹。
+ * @param name 目標正式版名（必須已存在）
+ */
+export const activatePromptRelease = (
+  name: string,
+): Promise<{ name: string; previous_active: string; releases: PromptReleaseMeta[] }> =>
+  j(`${BASE}/v1/prejudge/prompt-debug/releases/${encodeURIComponent(name)}/activate`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
   });
 
 // ── 人工評判案例庫（/prompt-debug/reviews）───────────────────────────────────
@@ -201,6 +281,8 @@ export interface PromptReviseMeta {
 export interface PromptReviseHandlers {
   onMeta?: (payload: PromptReviseMeta) => void;
   onDelta?: (text: string) => void;
+  /** 相容端點參數降級提示（與調試台同一套文案，來自後端共用降級階梯）。 */
+  onWarning?: (message: string) => void;
   onResult?: (payload: PromptReviseResult) => void;
   onUsage?: (payload: PromptDebugUsage) => void;
   onError?: (message: string) => void;
@@ -220,6 +302,7 @@ export const streamPromptRevise = (
       if (payload === null) return handlers.onError?.('收到無法解析的 SSE 事件');
       if (event === 'meta') handlers.onMeta?.(payload as unknown as PromptReviseMeta);
       else if (event === 'delta') handlers.onDelta?.(String(payload.text ?? ''));
+      else if (event === 'warning') handlers.onWarning?.(String(payload.message ?? ''));
       else if (event === 'result') handlers.onResult?.(payload as unknown as PromptReviseResult);
       else if (event === 'usage') handlers.onUsage?.(payload as unknown as PromptDebugUsage);
       else if (event === 'error') handlers.onError?.(String(payload.message ?? '未知錯誤'));
@@ -326,12 +409,7 @@ export const streamPromptDebug = (
 
 /** 跑批 run 狀態機：running → done｜cancelling → cancelled｜error；interrupted＝server 重啟遺留（可續跑）。 */
 export type PromptDebugBatchStatus =
-  | 'running'
-  | 'cancelling'
-  | 'done'
-  | 'error'
-  | 'cancelled'
-  | 'interrupted';
+  'running' | 'cancelling' | 'done' | 'error' | 'cancelled' | 'interrupted';
 
 /** 快照內「最近完成」明細（即時回報環，全量明細在 jsonl 下載）。 */
 export interface PromptDebugBatchRecentItem {
@@ -382,6 +460,8 @@ export interface PromptDebugBatchSnapshot {
 /** runs 列表列（磁碟目錄為準、in-mem 快照 overlay 即時進度）。 */
 export interface PromptDebugBatchRunRow {
   run_id: string;
+  /** 屬於哪個多模型並行群組；空字串＝單模型 run（見 `startPromptDebugBatchGroup`）。 */
+  group_id: string;
   created_at: string;
   input_name: string;
   /** 本批用的 Prompt 版本名；空＝啟動前在頁面上臨時編輯過。 */
@@ -401,29 +481,63 @@ export interface PromptDebugBatchRunRow {
   has_csv: boolean;
 }
 
-/** 啟動跑批參數（file 之外的欄位缺省沿用後端預設）。 */
-export interface PromptDebugBatchStartPayload {
+/** run 產物下載類型：csv=結果表、jsonl=逐筆原始紀錄（斷點）、preds=成功判定彙總、input=原輸入檔。 */
+export type PromptDebugBatchFileKind = 'csv' | 'jsonl' | 'preds' | 'input';
+
+// 單模型啟動的前端封裝（`startPromptDebugBatch`）已於 2026-07-30 隨多模型並行改造退役：
+// 頁面統一改走 `startPromptDebugBatchGroup`（單選一個 model＝群組大小為 1），不再維護兩套
+// 啟動路徑。後端 `POST /batch/start` 端點本身保留（供腳本/外部呼叫），只是前端不再有呼叫端。
+
+/** 全部跑批 run 摘要（新→舊）。 */
+export const listPromptDebugBatchRuns = (): Promise<{ runs: PromptDebugBatchRunRow[] }> =>
+  j<{ runs: PromptDebugBatchRunRow[] }>(`${BASE}/v1/prejudge/prompt-debug/batch/runs`);
+
+/** 啟動多模型並行跑批的參數：與單模型共用輸入/Prompt/範圍，`models` 取代單一 `overrides.model`。 */
+export interface PromptDebugBatchGroupStartPayload {
   file: File;
-  /** 留空＝後端取版本庫最新版。 */
+  /** 留空＝後端取版本庫最新版；三軌一致（單模型／多模型／單次調試共用同一份口徑來源）。 */
   systemPrompt: string;
-  /** XLSX 工作表名；空＝第一個工作表（CSV 忽略）。 */
   sheet?: string;
   idColumn?: string;
   textColumn?: string;
   offset?: number;
-  /** 實際跑多少條；0＝全部。 */
   limit?: number;
   workers?: number;
-  overrides?: LlmOverrides;
+  /** 欲並行的 model id 清單（2–6 個；後端 `_MAX_MODELS_PER_GROUP` 上限一致）。 */
+  models: string[];
+  /** 共用旋鈕（thinking/reasoning_effort/temperature）；**不含** model/provider——那兩個由後端逐
+   * model 覆寫，帶了也會被忽略，故型別刻意排除避免誤用。 */
+  overrides?: Omit<LlmOverrides, 'model' | 'provider'>;
 }
 
-/** run 產物下載類型：csv=結果表、jsonl=逐筆原始紀錄（斷點）、preds=成功判定彙總、input=原輸入檔。 */
-export type PromptDebugBatchFileKind = 'csv' | 'jsonl' | 'preds' | 'input';
+/**
+ * 單一 model 的啟動結果：`ok=false` 時只有 `error`，不含 run_id（該 model 的 run 從未建立）。
+ * `ok=true` 時另帶該 run 的初始快照欄位（`total`/`resumed`/`pending` 等），但頁面的即時進度
+ * 一律改讀輪詢（`getPromptDebugBatchGroup`）結果，這裡只保留 model/provider/ok/run_id/error
+ * 四個欄位供渲染，其餘初始快照欄位不強制型別（送到就有，不強求）。
+ */
+export interface PromptDebugBatchGroupMember {
+  model: string;
+  provider: string;
+  ok: boolean;
+  run_id?: string;
+  error?: string;
+}
 
-/** 啟動批量跑批（multipart）；回初始進度快照（含 run_id）。 */
-export const startPromptDebugBatch = (
-  payload: PromptDebugBatchStartPayload,
-): Promise<PromptDebugBatchSnapshot> => {
+/** 多模型並行的啟動結果（`POST /batch/start-multi`）。 */
+export interface PromptDebugBatchGroupResult {
+  group_id: string;
+  created_at: string;
+  members: PromptDebugBatchGroupMember[];
+}
+
+/**
+ * 啟動多模型並行跑批：同一份輸入 × 同一份 Prompt，在每個 model 上各自獨立起一個完整的單模型
+ * run。Provider 由後端逐 model 反推並驗證（未登記的 model 名整批 400，不啟動任何 run）。
+ */
+export const startPromptDebugBatchGroup = (
+  payload: PromptDebugBatchGroupStartPayload,
+): Promise<PromptDebugBatchGroupResult> => {
   const fd = new FormData();
   fd.append('file', payload.file);
   fd.append('system_prompt', payload.systemPrompt);
@@ -433,16 +547,21 @@ export const startPromptDebugBatch = (
   fd.append('offset', String(payload.offset ?? 0));
   fd.append('limit', String(payload.limit ?? 0));
   fd.append('workers', String(payload.workers ?? 8));
+  fd.append('models', JSON.stringify(payload.models));
   if (payload.overrides) fd.append('overrides', JSON.stringify(payload.overrides));
-  return j<PromptDebugBatchSnapshot>(`${BASE}/v1/prejudge/prompt-debug/batch/start`, {
+  return j<PromptDebugBatchGroupResult>(`${BASE}/v1/prejudge/prompt-debug/batch/start-multi`, {
     method: 'POST',
     body: fd,
   });
 };
 
-/** 全部跑批 run 摘要（新→舊）。 */
-export const listPromptDebugBatchRuns = (): Promise<{ runs: PromptDebugBatchRunRow[] }> =>
-  j<{ runs: PromptDebugBatchRunRow[] }>(`${BASE}/v1/prejudge/prompt-debug/batch/runs`);
+/** 單一多模型群組內所有 member run 的摘要（輪詢用；同 `listPromptDebugBatchRuns` 形狀，已按 group 過濾）。 */
+export const getPromptDebugBatchGroup = (
+  groupId: string,
+): Promise<{ group_id: string; runs: PromptDebugBatchRunRow[] }> =>
+  j<{ group_id: string; runs: PromptDebugBatchRunRow[] }>(
+    `${BASE}/v1/prejudge/prompt-debug/batch/groups/${encodeURIComponent(groupId)}`,
+  );
 
 /** 單 run 進度輪詢。 */
 export const getPromptDebugBatchRun = (runId: string): Promise<PromptDebugBatchSnapshot> =>

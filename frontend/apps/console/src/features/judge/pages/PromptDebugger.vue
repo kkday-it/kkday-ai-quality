@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
-import { Message } from '@arco-design/web-vue';
-import { useRouter } from 'vue-router';
 import {
   getPromptDebugDefaults,
-  savePromptVersion,
+  getPromptDraft,
+  getPromptRelease,
+  PERM,
+  savePromptDraft,
   streamPromptDebug,
   type PromptDebugDefaults,
   type PromptDebugMeta,
@@ -13,8 +13,10 @@ import {
 } from '@/api';
 import { LlmConfigPicker, LlmConfigTestResult, LlmKnobs } from '@/components';
 import { useLlmConfigTest } from '@/composables';
-import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
+import { Message, Modal } from '@arco-design/web-vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
 // 評判區塊跟著判決結果一起出現，lazy 只會讓結果到齊的瞬間閃一下，故靜態載入
 import PromptReviewPanel from '../components/PromptReviewPanel.vue';
@@ -27,10 +29,17 @@ const PromptDebugBatchDrawer = defineAsyncComponent(
 const PromptReviseDrawer = defineAsyncComponent(
   () => import('../components/PromptReviseDrawer.vue'),
 );
+// 版本面板（草稿列表 + diff + 升版）同理，點開才載
+const PromptVersionDrawer = defineAsyncComponent(
+  () => import('../components/PromptVersionDrawer.vue'),
+);
 
 const router = useRouter();
 const llm = useLlmAreaDefault('prompt_debug');
-const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
+const llmTest = useLlmConfigTest(
+  () => llm.provider.value,
+  () => llm.knobs,
+);
 const { can } = usePermission();
 
 const defaults = ref<PromptDebugDefaults | null>(null);
@@ -39,13 +48,31 @@ const inputText = ref('');
 const loadingDefaults = ref(false);
 const savingVersion = ref(false);
 
-/** 編輯框內容已偏離線上最新版＝本次送出的是臨時 Prompt（存檔才會成為線上口徑）。 */
-const isEdited = computed(
-  () => !!defaults.value && systemPrompt.value !== defaults.value.system_prompt,
-);
+/**
+ * 編輯器內容當前對應的**已存版本**基準：
+ * - `text`＝那份版本的全文，用來判斷「有沒有再被編輯」（不能拿固定某軌硬比——存完草稿後編輯器
+ *   裝的是草稿內容，與 active release 本來就不同，那不叫「未存檔」）
+ * - `name`＝那份版本的名字（草稿時間戳或正式版名）
+ */
+const baseline = ref<{ text: string; name: string }>({ text: '', name: '' });
+
+/**
+ * 本頁口徑：`draft`＝最新草稿（預設）｜`release`＝當前正式版。
+ *
+ * **這是本頁唯一的口徑來源**——編輯器載入、單次測試、跑批三者全部跟它走。「頁面調 A、跑批跑 B」
+ * 的防線是「默認值一致」，不是「限制跑批能讀什麼」（後者只會讓跑批不可用）。
+ */
+const track = ref<'draft' | 'release'>('draft');
+
+/** 內容已偏離基準版本＝本次送出的是臨時 Prompt（未落任何檔）。 */
+const isEdited = computed(() => !!defaults.value && systemPrompt.value !== baseline.value.text);
+
+/** 是否有正式版可切（沒有時「正式」側 disable，但草稿工作流完全不受影響）。 */
+const hasRelease = computed(() => !!defaults.value?.active_release);
 
 const batchVisible = ref(false);
 const reviseVisible = ref(false);
+const versionVisible = ref(false);
 /** 案例庫筆數（入口按鈕上的徽章；存新案例後 +1，開抽屜時以後端實數校正）。 */
 const reviewCount = ref(0);
 
@@ -74,32 +101,173 @@ const displayedResults = computed(() => {
     .map((field) => ({ ...field, value: parsed[field.key] }));
 });
 
-async function loadDefaults(): Promise<void> {
+/** 某一軌當前的全文與版本名（供載入與口徑切換共用，避免兩處各算一次）。 */
+function trackSnapshot(next: 'draft' | 'release'): { text: string; name: string } {
+  const d = defaults.value;
+  if (!d) return { text: '', name: '' };
+  return next === 'release'
+    ? { text: d.release_prompt ?? '', name: d.active_release ?? '' }
+    : { text: d.system_prompt ?? '', name: d.latest_draft ?? '' };
+}
+
+/** 當前軌的版本下拉選項（草稿＝時間戳新→舊；正式＝版本名，active 標註）。 */
+const versionOptions = computed(() => {
+  const d = defaults.value;
+  if (!d) return [];
+  return track.value === 'release'
+    ? d.releases.map((r) => ({
+        value: r.name,
+        label: r.is_active ? `${r.name}（使用中）` : r.name,
+      }))
+    : d.drafts.map((x) => ({ value: x.version, label: x.version }));
+});
+
+const loadingVersion = ref(false);
+
+/**
+ * 切換到當前軌的指定版本：拉該版全文載進編輯器，基準一併指向它。
+ *
+ * 有未存改動時先二次確認——直接換版會靜默丟失編輯（與口徑切換同一道防線）。
+ * @param name 版本名（草稿時間戳或正式版名）。
+ */
+async function selectVersion(name: string): Promise<void> {
+  if (!name || name === baseline.value.name) return;
+  const apply = async (): Promise<void> => {
+    loadingVersion.value = true;
+    try {
+      const text =
+        track.value === 'release'
+          ? (await getPromptRelease(name)).system_prompt
+          : (await getPromptDraft(name)).system_prompt;
+      systemPrompt.value = text;
+      baseline.value = { text, name };
+    } catch (error) {
+      Message.error(error instanceof Error ? error.message : `載入版本 ${name} 失敗`);
+    } finally {
+      loadingVersion.value = false;
+    }
+  };
+  if (!isEdited.value) return void apply();
+  Modal.confirm({
+    title: '尚未存為草稿',
+    content: `切換到 ${name} 會丟棄目前未存檔的編輯內容，確定切換？`,
+    okText: '切換並丟棄',
+    cancelText: '留在此處',
+    onOk: apply,
+  });
+}
+
+/**
+ * 版本列表抽屜要求「載入編輯器」：先把口徑對齊該版所屬的軌，再走既有的換版流程
+ * （含未存編輯的二次確認）——不對齊軌別的話，頂部下拉會顯示不到剛載入的那一版。
+ * @param payload 該版所屬軌與版本名。
+ */
+async function onLoadVersionFromDrawer(payload: {
+  kind: 'draft' | 'release';
+  name: string;
+}): Promise<void> {
+  track.value = payload.kind;
+  await selectVersion(payload.name);
+}
+
+/**
+ * 載入 defaults（最新草稿全文 + 正式版全文 + 兩軌清單）。
+ * @param resetEditor 是否把編輯器內容重置為當前口徑的全文。**存完草稿後必須傳 false**——
+ *   否則會把使用者剛編輯的內容沖掉（存草稿只是落檔，不該打斷手上的編輯）。
+ */
+async function loadDefaults(resetEditor = true): Promise<void> {
   loadingDefaults.value = true;
   try {
     defaults.value = await getPromptDebugDefaults();
-    systemPrompt.value = defaults.value.system_prompt;
+    // 正式版可能不存在（草稿中心下這完全合法）→ 口徑自動落回草稿側，不讓頁面卡住
+    if (track.value === 'release' && !defaults.value.active_release) track.value = 'draft';
+    if (resetEditor) {
+      const snap = trackSnapshot(track.value);
+      systemPrompt.value = snap.text;
+      baseline.value = snap;
+    }
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '載入最新版 Prompt 失敗');
+    Message.error(error instanceof Error ? error.message : '載入 Prompt 失敗');
   } finally {
     loadingDefaults.value = false;
   }
 }
 
-/** 存為新版本：寫出新的時間戳檔並立即成為線上最新版（調試台與跑批同步生效）。 */
+/**
+ * 切換本頁口徑（草稿 ⇄ 正式）。編輯器有未存改動時先二次確認——直接切會靜默丟失編輯。
+ * @param next 目標軌。
+ */
+async function setTrack(next: 'draft' | 'release'): Promise<void> {
+  if (next === track.value) return;
+  const apply = (): void => {
+    track.value = next;
+    const snap = trackSnapshot(next);
+    systemPrompt.value = snap.text;
+    baseline.value = snap;
+  };
+  if (!isEdited.value) return apply();
+  Modal.confirm({
+    title: '尚未存為草稿',
+    content: `切換到「${next === 'draft' ? '草稿' : '正式'}」會丟棄目前未存檔的編輯內容，確定切換？`,
+    okText: '切換並丟棄',
+    cancelText: '留在此處',
+    onOk: apply,
+  });
+}
+
+/** 已被升版過的草稿名集合（`releases[].source_draft`）；這些草稿不需再升一次。 */
+const promotedDrafts = computed(
+  () => new Set((defaults.value?.releases ?? []).map((r) => r.source_draft).filter(Boolean)),
+);
+
+/**
+ * 當前選定的草稿能不能升版：必須在草稿軌、有選到版本、內容未被編輯（升版要升的是**已存檔**
+ * 那一份，不是編輯器裡的未存內容）、且尚未升版過。
+ */
+const promotableDraft = computed(() => {
+  if (track.value !== 'draft' || isEdited.value || !baseline.value.name) return '';
+  return promotedDrafts.value.has(baseline.value.name) ? '' : baseline.value.name;
+});
+
+/** 升版鈕 disable 時的原因（給 tooltip，讓「為什麼不能點」可見）。 */
+const promoteBlockedReason = computed(() => {
+  if (track.value !== 'draft') return '正式版無需再升版';
+  if (isEdited.value) return '有未存檔的編輯，請先「存為新草稿」';
+  if (!baseline.value.name) return '尚未選定草稿';
+  if (promotedDrafts.value.has(baseline.value.name)) return '此草稿已升版過';
+  return '';
+});
+
+/** 升版走版本列表抽屜的既有確認流程（名稱建議／撞名檢查／必填理由都在那裡，不另做一套）。 */
+function openPromoteForCurrent(): void {
+  versionVisible.value = true;
+  promoteTarget.value = promotableDraft.value;
+}
+
+/** 傳給版本列表抽屜：開啟時直接對這支草稿彈出升版確認（空＝不預先彈）。 */
+const promoteTarget = ref('');
+
+/**
+ * 存為新草稿：寫進草稿區供對比與後續升版。**不改變線上口徑**——要上線得在版本面板
+ * 對該草稿按「設為正式版」（升版是獨立的高權限動作）。
+ */
 async function saveVersion(): Promise<void> {
   if (savingVersion.value || !systemPrompt.value.trim()) return;
   savingVersion.value = true;
   try {
-    const saved = await savePromptVersion(systemPrompt.value);
-    await loadDefaults();
+    const saved = await savePromptDraft(systemPrompt.value);
+    // 只刷新清單，不重置編輯器：編輯器現在裝的就是這支草稿，基準跟著指向它
+    await loadDefaults(false);
+    // 存完就跟進這支新草稿：口徑留在草稿側，基準指向它（否則下一次「恢復」會跳回別的版本）
+    track.value = 'draft';
+    baseline.value = { text: systemPrompt.value, name: String(saved.version) };
     Message.success(
       saved.created
-        ? `已存為新版本 ${saved.version}，現為線上最新版`
-        : `內容與最新版 ${saved.version} 相同，未建立新版本`,
+        ? `已存為新草稿 ${saved.version}（線上正式版未變，仍是 ${defaults.value?.active_release || '—'}）`
+        : `內容與最新草稿 ${saved.version} 相同，未建立新草稿`,
     );
   } catch (error) {
-    Message.error(error instanceof Error ? error.message : '存為新版本失敗');
+    Message.error(error instanceof Error ? error.message : '存為新草稿失敗');
   } finally {
     savingVersion.value = false;
   }
@@ -124,8 +292,15 @@ const samples = [
   },
 ];
 
+/**
+ * 丟棄編輯、回到**當前選定版本**的原文。
+ *
+ * 刻意用 `baseline.text` 而非「該軌最新版」：使用者可能選的是某支舊草稿，回到最新版等於
+ * 把他選的版本也一起換掉，那不叫「恢復」。
+ */
 function resetPrompt(): void {
-  if (defaults.value) systemPrompt.value = defaults.value.system_prompt;
+  if (!defaults.value) return;
+  systemPrompt.value = baseline.value.text;
 }
 
 function clearRun(): void {
@@ -195,7 +370,6 @@ async function copyOutput(): Promise<void> {
 function openLlmSettings(): void {
   router.replace({ query: { ...router.currentRoute.value.query, settings: 'llm' } });
 }
-
 </script>
 
 <template>
@@ -254,18 +428,24 @@ function openLlmSettings(): void {
           <div>
             <div class="panel-title">System Prompt</div>
             <div class="panel-sub">
-              已注入 {{ defaults?.L2_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B
-              調試
+              已注入 {{ defaults?.L2_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B 調試
             </div>
           </div>
           <a-space size="mini">
+            <a-button
+              type="text"
+              size="small"
+              :disabled="loadingDefaults"
+              @click="versionVisible = true"
+              >版本列表</a-button
+            >
             <a-button
               type="outline"
               status="warning"
               size="small"
               :disabled="loadingDefaults || streaming || savingVersion || !isEdited"
               @click="resetPrompt"
-              >恢復最新版</a-button
+              >恢復此版本</a-button
             >
             <a-button
               type="primary"
@@ -273,21 +453,66 @@ function openLlmSettings(): void {
               :loading="savingVersion"
               :disabled="loadingDefaults || streaming || !isEdited"
               @click="saveVersion"
-              >存為新版本</a-button
+              >存為新草稿</a-button
             >
           </a-space>
         </div>
         <div class="mb-3 flex flex-col gap-1">
-          <a-space size="mini">
-            <a-tag :color="isEdited ? 'orange' : 'arcoblue'" size="small">
-              {{ isEdited ? '已編輯（未存檔）' : `最新版 ${defaults?.prompt_version || '—'}` }}
-            </a-tag>
-            <span class="text-xs text-[#86909c]"
-              >版本庫共 {{ defaults?.prompt_versions.length ?? 0 }} 版</span
-            >
-          </a-space>
-          <span class="text-xs text-[#86909c]">
-            調試台與跑批一律用最新版；改完按「存為新版本」寫出新的時間戳檔，之後自動成為線上口徑
+          <!-- 多控制項橫排且可能換行 → 依前端規則用 a-row/a-col（gutter 同時管欄距與換行行距），
+               不用裸 a-space：radio+select+button 三個變寬元件塞單一 flex 容器必然擠壓換行 -->
+          <a-row :gutter="[8, 8]" align="center" wrap>
+            <a-col flex="none">
+              <!-- 本頁唯一口徑來源：編輯器載入 / 單次測試 / 跑批三者全部跟它走 -->
+              <a-radio-group
+                :model-value="track"
+                type="button"
+                size="small"
+                :disabled="loadingDefaults || streaming || savingVersion"
+                @change="(v) => setTrack(v as 'draft' | 'release')"
+              >
+                <a-radio value="draft">草稿</a-radio>
+                <a-tooltip :content="hasRelease ? '' : '尚無正式版'" :disabled="hasRelease">
+                  <a-radio value="release" :disabled="!hasRelease">正式</a-radio>
+                </a-tooltip>
+              </a-radio-group>
+            </a-col>
+            <a-col flex="200px">
+              <!-- 選任一版即時載入其全文（不限最新版）。軌別已由左側 radio 表明，此處不重複 -->
+              <a-select
+                :model-value="baseline.name"
+                class="w-full"
+                size="small"
+                :options="versionOptions"
+                :loading="loadingVersion"
+                :disabled="loadingDefaults || streaming || savingVersion"
+                placeholder="—"
+                @change="(v) => selectVersion(v as string)"
+              />
+            </a-col>
+            <a-col flex="none">
+              <a-tooltip :content="promoteBlockedReason" :disabled="!promoteBlockedReason">
+                <a-button
+                  type="outline"
+                  size="small"
+                  :disabled="!promotableDraft || loadingDefaults || streaming || savingVersion"
+                  @click="openPromoteForCurrent"
+                  >升為正式版</a-button
+                >
+              </a-tooltip>
+            </a-col>
+            <a-col flex="none">
+              <a-tag v-if="isEdited" color="orange" size="small">已編輯（未存檔）</a-tag>
+              <a-tag v-else-if="track === 'release'" color="green" size="small">線上口徑</a-tag>
+            </a-col>
+          </a-row>
+          <span class="text-xs leading-relaxed text-[#86909c]">
+            共 {{ defaults?.drafts.length ?? 0 }} 支草稿、{{
+              defaults?.releases.length ?? 0
+            }}
+            個正式版。<br />
+            這裡是<strong class="font-medium text-[#4e5969]">草稿工作台</strong
+            >：載入即接續最新草稿，測試與跑批都跑當前口徑。<br />
+            改完按「存為新草稿」留一版；驗證滿意後到「版本列表」對該草稿按「升為正式版」才影響線上
           </span>
         </div>
         <a-textarea
@@ -299,7 +524,7 @@ function openLlmSettings(): void {
         />
         <div class="panel-foot">
           {{ systemPrompt.length.toLocaleString() }} 字元 ·
-          編輯後直接送出只影響本次；要成為線上口徑請按「存為新版本」
+          編輯後直接送出只影響本次；存草稿也不影響線上，要上線須經「設為正式版」
         </div>
       </section>
 
@@ -361,11 +586,17 @@ function openLlmSettings(): void {
           <div class="panel-head">
             <div>
               <div class="panel-title">本次 LLM 配置</div>
-              <div class="panel-sub">跟隨「Prompt 調試台」功能區默認；下方調整只影響本次，不動全域默認</div>
+              <div class="panel-sub">
+                跟隨「Prompt 調試台」功能區默認；下方調整只影響本次，不動全域默認
+              </div>
             </div>
             <a-link @click="openLlmSettings">管理連線</a-link>
           </div>
-          <a-alert v-if="!Object.keys(llm.providerHasToken.value).length" type="warning" class="mb-3">
+          <a-alert
+            v-if="!Object.keys(llm.providerHasToken.value).length"
+            type="warning"
+            class="mb-3"
+          >
             尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
           </a-alert>
           <LlmConfigPicker
@@ -374,7 +605,11 @@ function openLlmSettings(): void {
             @update:model-value="llm.setProvider"
           />
           <div class="mt-3">
-            <LlmKnobs :model-value="llm.knobs" :provider="llm.provider.value" @update:model-value="llm.setKnobs" />
+            <LlmKnobs
+              :model-value="llm.knobs"
+              :provider="llm.provider.value"
+              @update:model-value="llm.setKnobs"
+            />
           </div>
           <div class="mt-2 flex justify-end gap-2">
             <a-button
@@ -394,7 +629,11 @@ function openLlmSettings(): void {
               >存為此區默認</a-button
             >
           </div>
-          <LlmConfigTestResult :result="llmTest.testResult.value" :provider="llm.provider.value" :knobs="llm.knobs" />
+          <LlmConfigTestResult
+            :result="llmTest.testResult.value"
+            :provider="llm.provider.value"
+            :knobs="llm.knobs"
+          />
         </div>
 
         <div class="debug-panel flex min-h-[360px] flex-1 flex-col">
@@ -434,7 +673,7 @@ function openLlmSettings(): void {
               :cascade="defaults?.output_cascade"
               :ai-output="result.parsed"
               :conversation="inputText"
-              :prompt-version="isEdited ? '' : (defaults?.prompt_version ?? '')"
+              :prompt-version="isEdited ? '' : baseline.name"
               :model="meta?.model ?? llm.knobs.model"
               :disabled="streaming"
               @saved="reviewCount += 1"
@@ -479,19 +718,33 @@ function openLlmSettings(): void {
     <PromptDebugBatchDrawer
       v-model:visible="batchVisible"
       :system-prompt="systemPrompt"
-      :prompt-version="defaults?.prompt_version ?? ''"
+      :prompt-version="isEdited ? '' : baseline.name"
+      :prompt-kind="isEdited ? '' : track"
       :prompt-edited="isEdited"
       :model="llm.knobs.model"
       :overrides="llm.overrides.value"
     />
 
+    <PromptVersionDrawer
+      v-model:visible="versionVisible"
+      :drafts="defaults?.drafts ?? []"
+      :releases="defaults?.releases ?? []"
+      :active-release="defaults?.active_release ?? ''"
+      :promote-target="promoteTarget"
+      @promoted="() => loadDefaults(true)"
+      @load="onLoadVersionFromDrawer"
+      @promote-target-consumed="promoteTarget = ''"
+    />
+
     <PromptReviseDrawer
       v-model:visible="reviseVisible"
       :system-prompt="systemPrompt"
-      :prompt-version="defaults?.prompt_version ?? ''"
+      :prompt-version="defaults?.active_release ?? ''"
       :prompt-edited="isEdited"
+      :drafts="defaults?.drafts ?? []"
+      :releases="defaults?.releases ?? []"
       @count="reviewCount = $event"
-      @saved-version="loadDefaults"
+      @saved-version="() => loadDefaults(false)"
     />
   </div>
 </template>

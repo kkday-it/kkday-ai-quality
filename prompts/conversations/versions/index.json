@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "active_release": "release-v1",
+  "releases": {
+    "release-v1": {
+      "source_draft": "2026-07-28-201153",
+      "note": "跳出值統一為「其他」（L1／L2 兩層同值）＋術語全面對齊 L1~L4＋L1/L2/L3 並列順序修正",
+      "author": "system",
+      "promoted_at": "2026-07-30T05:57:00Z",
+      "sha256": "ff51ad3541bc198ad9f055128582f8ab59526e47fc8b1a1ad71778f0361d6e94"
+    }
+  },
+  "drafts": {}
+}

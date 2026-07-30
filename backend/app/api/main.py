@@ -9,18 +9,25 @@ AI 商品質檢平台 — AI 法官（內容爭議裁決，內容質量 Pod 第�
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # config 先載入：import 時即讀 backend/.env 並建 env 單例（機密集中管理）。
 from app.core import config, db  # noqa: F401
 from app.core.logging_setup import RequestContextMiddleware, configure_logging
 from app.core.shutdown import mark_running_jobs_interrupted
 
+# 只依賴 stdlib + app.core.paths，無循環 import 風險（供下方例外處理器辨識型別）。
+from app.judge.prompt_debug_versions import NoActiveReleaseError
+
 # kklog JSON stdout：於 app 模組載入時套用（uvicorn 自身 dictConfig 先跑、本配置後蓋前）。
 configure_logging()
+
+_log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -57,6 +64,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(NoActiveReleaseError)
+async def _no_active_release_handler(_request: Request, exc: NoActiveReleaseError) -> JSONResponse:
+    """正式版區全空 → 404 + 可理解訊息（取代裸 500）。
+
+    收斂在 app 層而非逐一在端點補 try/except：售後根因調試台有 5 個端點會觸達
+    `active_release()`（defaults／stream／revise／regression／batch-start），逐一補必漏——
+    `batch/start` 原本就只捕 `ValueError`，這個例外會直接漏成 500。
+
+    只認 `NoActiveReleaseError` 這個子型別、不認裸 `FileNotFoundError`：後者在本專案另有
+    語義相反的用法（`prompt_source` 的引擎 fail-loud＝伺服器設定壞了，該回 500）。
+    """
+    _log.warning("無可用正式版 Prompt：%s", exc)
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "尚無任何正式版 Prompt。請先在調試台把一份草稿「升為正式版」。"},
+    )
+
 
 db.init_db()  # 啟動即建表（冪等）
 
