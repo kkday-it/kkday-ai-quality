@@ -4,7 +4,7 @@ import { computed, ref, type Ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
   applyPromptPatches,
-  savePromptVersion,
+  savePromptDraft,
   streamPromptRevise,
   type PromptDebugUsage,
   type PromptPatch,
@@ -33,6 +33,8 @@ export function usePromptRevise(deps: PromptReviseDeps) {
   const meta = ref<PromptReviseMeta | null>(null);
   const result = ref<PromptReviseResult | null>(null);
   const usage = ref<PromptDebugUsage | null>(null);
+  /** 相容端點參數降級提示（每次串流重置；與調試台同一套文案）。 */
+  const warnings = ref<string[]>([]);
   const errorMessage = ref('');
   /** 勾選的補丁索引；只有 status=matched 的能進來。 */
   const selected = ref<number[]>([]);
@@ -43,7 +45,9 @@ export function usePromptRevise(deps: PromptReviseDeps) {
   let abortController: AbortController | null = null;
 
   const patches = computed<PromptPatch[]>(() => result.value?.patches ?? []);
-  const selectedPatches = computed(() => selected.value.map((i) => patches.value[i]).filter(Boolean));
+  const selectedPatches = computed(() =>
+    selected.value.map((i) => patches.value[i]).filter(Boolean),
+  );
   /** 對不上／撞多處的補丁數（顯示成提醒，讓人知道模型還想改哪些但套不了）。 */
   const unusableCount = computed(() => patches.value.filter((p) => p.status !== 'matched').length);
   const canApply = computed(() => !applying.value && selectedPatches.value.length > 0);
@@ -53,6 +57,7 @@ export function usePromptRevise(deps: PromptReviseDeps) {
     meta.value = null;
     result.value = null;
     usage.value = null;
+    warnings.value = [];
     errorMessage.value = '';
     selected.value = [];
     revisedPrompt.value = '';
@@ -81,6 +86,7 @@ export function usePromptRevise(deps: PromptReviseDeps) {
         {
           onMeta: (value) => (meta.value = value),
           onDelta: (text) => (rawOutput.value += text),
+          onWarning: (message) => warnings.value.push(message),
           onResult: (value) => {
             result.value = value;
             // 預設勾選全部可套用的：多數情況人是全收，逐條取消比逐條勾快
@@ -128,20 +134,20 @@ export function usePromptRevise(deps: PromptReviseDeps) {
     }
   }
 
-  /** 把套用後的全文存成新版本（即刻成為線上口徑）。 */
+  /** 把套用後的全文存成新草稿（**不改變線上口徑**）；要上線得再到「版本列表」升版。 */
   async function saveVersion(): Promise<boolean> {
     if (!revisedPrompt.value.trim() || savingVersion.value) return false;
     savingVersion.value = true;
     try {
-      const saved = await savePromptVersion(revisedPrompt.value);
+      const saved = await savePromptDraft(revisedPrompt.value, 'AI 定點改寫套用補丁');
       Message.success(
         saved.created
-          ? `已存為新版本 ${saved.version}，現為線上最新版`
-          : `內容與最新版 ${saved.version} 相同，未建立新版本`,
+          ? `已存為新草稿 ${saved.version}（線上口徑未變；要上線請到「版本列表」升為正式版）`
+          : `內容與最新草稿 ${saved.version} 相同，未建立新草稿`,
       );
       return saved.created;
     } catch (error) {
-      Message.error(error instanceof Error ? error.message : '存為新版本失敗');
+      Message.error(error instanceof Error ? error.message : '存為新草稿失敗');
       return false;
     } finally {
       savingVersion.value = false;
@@ -154,6 +160,7 @@ export function usePromptRevise(deps: PromptReviseDeps) {
     meta,
     result,
     usage,
+    warnings,
     errorMessage,
     patches,
     selected,

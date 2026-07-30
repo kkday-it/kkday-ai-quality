@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * AI 定點改寫面板（案例庫抽屜的第二分頁）：勾好的案例 → 旗艦模型產補丁 → 逐條勾選 → 套用 →
- * 左右比對 → 存為新版本。
+ * 左右比對 → 存為新草稿（不改變線上口徑，要上線再到「版本列表」升版）。
  *
  * 為什麼是補丁不是整篇重寫、為什麼 anchor 要驗唯一：見 `backend/app/judge/prompt_reviser.py`
  * 的模組說明（簡言之，這份 Prompt 有 2–3 萬字的實測校準層，整篇重寫會被順手砍掉且 diff 沒人審得動）。
@@ -121,6 +121,9 @@ async function onSaveVersion(): Promise<void> {
       </div>
     </section>
 
+    <a-alert v-for="message in revise.warnings.value" :key="message" type="warning" class="mb-2">{{
+      message
+    }}</a-alert>
     <a-alert v-if="revise.errorMessage.value" type="error">{{ revise.errorMessage.value }}</a-alert>
 
     <!-- 串流中 / 原始輸出 -->
@@ -148,7 +151,9 @@ async function onSaveVersion(): Promise<void> {
         status="normal"
         class="mt-2 animate-pulse"
       />
-      <pre v-show="rawVisible" class="raw-output mt-2">{{ revise.rawOutput.value || '等待模型回應…' }}</pre>
+      <pre v-show="rawVisible" class="raw-output mt-2">{{
+        revise.rawOutput.value || '等待模型回應…'
+      }}</pre>
     </section>
 
     <!-- 診斷 -->
@@ -233,7 +238,9 @@ async function onSaveVersion(): Promise<void> {
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <span class="text-xs font-semibold text-[#1d2129]">套用後比對</span>
-          <span class="text-[11px] text-[#86909c]">確認無誤再存版；存版即刻成為線上口徑</span>
+          <span class="text-[11px] text-[#86909c]"
+            >確認無誤再存草稿；不改變線上口徑，要上線再到「版本列表」升版</span
+          >
         </div>
         <a-space size="mini">
           <a-button
@@ -248,7 +255,7 @@ async function onSaveVersion(): Promise<void> {
             size="small"
             :loading="revise.savingVersion.value"
             @click="onSaveVersion"
-            >存為新版本</a-button
+            >存為新草稿</a-button
           >
         </a-space>
       </div>
@@ -262,7 +269,8 @@ async function onSaveVersion(): Promise<void> {
       </div>
       <a-alert type="warning" class="mt-2">
         存版只改 Prompt。判準若同時寫在 <code>config/ai_judge/after_sales_root_cause.json</code>
-        的 calibration，仍要人工同步——這裡不會自動改 SSOT。改完務必到「回歸重跑」驗一次有沒有改壞舊案例。
+        的 calibration，仍要人工同步——這裡不會自動改
+        SSOT。改完務必到「回歸重跑」驗一次有沒有改壞舊案例。
       </a-alert>
     </section>
 

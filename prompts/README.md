@@ -55,8 +55,9 @@ RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）�
 | `prompts/*.md`（7 支） | 唯一真相源，見上方引擎契約 |
 | `BASELINE.md` | 7 支 prompt 的基線指標快照（`eval_prompt_single.py` 量測）：調任一支後重跑 `--n 20` 對比，±0.05~0.10 屬 run-to-run 噪音帶 |
 | `../../scripts/tools/eval_prompt_single.py` | CLI 單支評測 harness（production 現行初判參照集，`--compare` A/B、`--repeats` 穩定度） |
-| `debug/after_sales_root_cause/*.md` | **另一條線**（與上方 7 支初判 prompt 無關）：售後根因調試台的 Prompt 版本庫，時間戳一版一檔全文快照，最新版即線上口徑；`CHANGELOG.md` 記每版的誤判案與改法。載入見 `app/judge/prompt_debug_versions.py` |
-| `debug/reviser.md` | 調試台「AI 定點改寫」助手的 system prompt（`app/judge/prompt_reviser.py` 讀取，熱掛載存檔即生效）：規定模型只出定點補丁、anchor 須逐字複製且唯一、不得刪既有判例庫與校準層。這份寫壞＝改寫的安全帶失效，改動請連帶跑 `tests/test_prompt_reviser.py` |
+| `conversations/root_cause_drafts/*.md` | **另一條線**（與上方 7 支初判 prompt 無關）：售後根因調試台的 **草稿區**，時間戳一版一檔全文快照＝實驗區，**存草稿不影響線上**；`CHANGELOG.md` 記每版的誤判案與改法 |
+| `conversations/versions/` | 同一條線的 **正式版區**：`<自訂名>.md`（如 `release-v1.md`）＋ `index.json`（`active_release` 指針 + 各版 note/author/來源草稿）。**線上唯一口徑＝active release**；草稿要上線須經「升為正式版」，升錯可用「設為使用中」回退到既有正式版（只改指標、不複製檔案）。⚠️ 2026-07-30 起**跑批兩軌都能讀**（調試台是草稿工作台，草稿:正式版比例懸殊下硬拒草稿等於跑批不可用）——防線改為「頁面軌別選擇器同時決定編輯/測試/跑批」＋manifest `prompt_kind` 顯式記錄。載入見 `app/judge/prompt_debug_versions.py`（路徑常數＝`paths.ROOT_CAUSE_DRAFTS_DIR` / `ROOT_CAUSE_RELEASES_DIR`）|
+| `conversations/reviser.md` | 調試台「AI 定點改寫」助手的 system prompt（`app/judge/prompt_reviser.py` 讀取，熱掛載存檔即生效）：規定模型只出定點補丁、anchor 須逐字複製且唯一、不得刪既有判例庫與校準層。這份寫壞＝改寫的安全帶失效，改動請連帶跑 `tests/test_prompt_reviser.py` |
 
 ## 侷限
 

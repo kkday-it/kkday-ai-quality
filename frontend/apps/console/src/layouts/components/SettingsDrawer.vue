@@ -7,6 +7,7 @@ import {
   DataImportPanel,
 } from '@/features/settings/pages';
 import { BdTagVerticalSettingsPanel } from '@/features/judge/components';
+import { StickyTabs } from '@/components';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
 
@@ -81,8 +82,11 @@ watch(
     :width="640"
     :footer="false"
     unmount-on-close
+    :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
   >
-    <a-tabs v-model:active-key="tab">
+    <!-- StickyTabs：分頁列固定，只有分頁內容捲動（原裸 a-tabs 內容過長時連分頁列一起被捲走，
+         見 .claude/rules/frontend-vue.md「Tabs 切換展示」）。透明轉發 a-tabs 原生 API，零學習成本。 -->
+    <StickyTabs v-model:active-key="tab">
       <a-tab-pane key="llm" title="🤖 LLM 連線"><LlmConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="qc" title="🗄️ QC DB 連線"><QcConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="vertical" title="🧭 商品垂直分類">
@@ -91,6 +95,6 @@ watch(
       <a-tab-pane v-if="can(PERM.dataDatapackImport)" key="import" title="💾 資料匯出入">
         <DataImportPanel />
       </a-tab-pane>
-    </a-tabs>
+    </StickyTabs>
   </a-drawer>
 </template>

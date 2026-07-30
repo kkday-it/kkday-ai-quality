@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from app.core.paths import GLOBAL_DIR  # config/global 目錄（統一定位）
+
+_log = logging.getLogger(__name__)
 
 _LLM_FILE = GLOBAL_DIR / "llm_model.json"
 
@@ -34,7 +37,10 @@ def _load() -> dict[str, dict]:
     if _table is None:
         try:
             cfg = json.loads(_LLM_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            # 缺檔/壞檔是刻意 fail-soft（不中斷初判），但空表會讓後續所有花費靜默顯示 $0
+            # 且無跡可循——曾經配置壞掉一段時間才被人工發現「怎麼全部免費」。留一筆 warning。
+            _log.warning("pricing: %s 讀取/解析失敗，價格表回退全 0（%s）", _LLM_FILE, exc)
             cfg = {}
         table: dict[str, dict] = {}
         # 從各 provider 的 defaultModels 收斂單價；只收有 input/output 兩欄者（其餘走 _default）。

@@ -64,7 +64,7 @@ def test_broken_when_a_confirmed_field_changes() -> None:
 
 
 def test_unreviewed_fields_are_not_scored_at_all() -> None:
-    """`confidence`／`likely_cause` 人沒看過：新輸出怎麼變都不該進四類任何一類。"""
+    """`confidence`／`L3` 人沒看過：新輸出怎麼變都不該進四類任何一類。"""
     new = {
         **CASE["ai_output"],
         "L2": "商品規格/使用規則事前確認",

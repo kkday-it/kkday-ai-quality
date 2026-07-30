@@ -126,7 +126,9 @@ def _judge_once(conversation: str, system_prompt: str, cfg: dict[str, Any]) -> d
         kwargs["temperature"] = float(cfg["temperature"])
     kwargs.update(client._reasoning_kwargs(cfg))
 
-    response = client._complete_effort_safe(cfg, kwargs, None, "prompt_regression")
+    # 走共用降級階梯而非直呼：相容端點（如 Ark 新模型）不支援 strict json_schema 時，
+    # 直呼會讓每個 case 硬 400 全紅；階梯會逐級降級並由下方 _loads_lenient + 校驗兜底。
+    response, _warnings = prompt_debug._request_compat(cfg, kwargs, stage="prompt_regression")
     raw = response.choices[0].message.content or ""
     parsed = client._loads_lenient(raw)
     if parsed is None:

@@ -198,7 +198,7 @@ onUnmounted(closeStream);
       @change="onFileChange"
     >
       <template #upload-button>
-        <a-button type="outline">導入資料包…</a-button>
+        <a-button type="outline">導入資料包</a-button>
       </template>
     </a-upload>
 
