@@ -167,6 +167,12 @@
       },
       "defaultModels": [
         {
+          "id": "gemini-2.5-flash",
+          "desc": "舊世代 flash · 最省 · $0.30/$2.50",
+          "input": 0.3,
+          "output": 2.5
+        },
+        {
           "id": "gemini-3.1-pro-preview",
           "desc": "旗艦 · 最強推理 · $2/$12",
           "input": 2.0,
