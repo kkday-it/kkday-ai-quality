@@ -101,14 +101,14 @@ describe('optionsUnderParent', () => {
       options_by_parent: {
         '[101] 訂單取消': ['退款進度/狀態不透明', '取消政策本身僵化'],
         '[93] 訂單申請修改': ['特殊需求/加購無自助入口'],
-        '其他': ['__OUT_OF_TAXONOMY__'],
+        '其他': ['其他'],
       },
     },
     L3: {
       parent: 'L2',
       options_by_parent: {
         退款進度或狀態不透明: ['退款作業時程長', 'unclear'],
-        __OUT_OF_TAXONOMY__: ['n/a'],
+        其他: ['n/a'],
       },
     },
   };
@@ -124,8 +124,8 @@ describe('optionsUnderParent', () => {
   });
 
   it('OOT 兩層都只剩單一合法值', () => {
-    expect(optionsUnderParent(cascade, 'L2', '其他')).toEqual(['__OUT_OF_TAXONOMY__']);
-    expect(optionsUnderParent(cascade, 'L3', '__OUT_OF_TAXONOMY__')).toEqual(['n/a']);
+    expect(optionsUnderParent(cascade, 'L2', '其他')).toEqual(['其他']);
+    expect(optionsUnderParent(cascade, 'L3', '其他')).toEqual(['n/a']);
   });
 
   // 回 null（而非空陣列）讓呼叫端退回攤平值域——空陣列會把選單清空，人就卡住無法填正解

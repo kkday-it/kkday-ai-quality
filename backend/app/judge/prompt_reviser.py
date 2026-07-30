@@ -9,7 +9,7 @@
 **恰好出現一次**。出現 0 次＝模型沒逐字複製（常見於它自作主張改了標點），出現多次＝片段太短、
 套用會改到不該改的地方——兩者都不給套用，但仍回傳給前端顯示，因為「模型想改哪裡」本身有診斷價值。
 
-改寫用的 system prompt 放 `prompts/debug/reviser.md`（Prompt-as-Source 慣例，dev 熱掛載存檔即生效）；
+改寫用的 system prompt 放 `prompts/conversations/reviser.md`（Prompt-as-Source 慣例，dev 熱掛載存檔即生效）；
 刻意不做模組級快取，理由同 `prompt_debug_versions`。
 """
 
@@ -23,11 +23,11 @@ from typing import Any, Literal
 from app.core import db
 from app.core import settings as app_settings
 from app.core.judge_config import pricing
-from app.core.paths import PROMPTS_DIR
+from app.core.paths import CONVERSATION_PROMPTS_DIR
 from app.judge import prompt_debug
 from app.judge.llm import client
 
-_REVISER_PROMPT_FILE = PROMPTS_DIR / "debug" / "reviser.md"
+_REVISER_PROMPT_FILE = CONVERSATION_PROMPTS_DIR / "reviser.md"
 
 _SCHEMA_NAME = "prompt_patch_set"
 
@@ -80,7 +80,7 @@ def reviser_system_prompt() -> str:
     """改寫助手的 system prompt 全文。
 
     Raises:
-        FileNotFoundError: `prompts/debug/reviser.md` 不存在。
+        FileNotFoundError: `prompts/conversations/reviser.md` 不存在。
     """
     return _REVISER_PROMPT_FILE.read_text(encoding="utf-8")
 
@@ -342,7 +342,11 @@ def stream_frames(
     raw_parts: list[str] = []
     usage = None
     try:
-        stream = client._complete_effort_safe(cfg, kwargs, None, "prompt_revise")
+        # 走共用降級階梯而非直呼：相容端點不支援 strict json_schema 時，直呼會直接吐 error frame；
+        # 階梯會逐級降級並把每一階明示給使用者（與調試台同一套 warning 文案）。
+        stream, warnings = prompt_debug._request_compat(cfg, kwargs, stage="prompt_revise")
+        for warning in warnings:
+            yield _sse("warning", {"message": warning})
         for chunk in stream:
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:

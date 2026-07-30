@@ -6,7 +6,7 @@
 
 ## 0. 為什麼要做
 
-`prompts/debug/after_sales_root_cause/CHANGELOG.md` 現有四條版本記錄，每條的形狀都一樣：
+`prompts/conversations/root_cause_drafts/CHANGELOG.md` 現有四條版本記錄，每條的形狀都一樣：
 
 1. PM 給一個誤判案（AI 判 X、正解是 Y）
 2. 人逐段讀 2.7 萬字 Prompt，找出是哪幾句話把模型帶偏（「洞在哪」）
@@ -130,7 +130,7 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 
 - **左**：案例清單（勾選要餵給 AI 的）＋ 本次 LLM 配置（`LlmConfigPicker` + `LlmKnobs`，area=`prompt_revise`）
 - **右**：AI 診斷 → 補丁清單（每條：原文片段 / 替換後 / 理由 / 風險 / 命中狀態 / 勾選框）
-- **套用後**：`MdTextDiff`（既有公共元件）左右對照 → 「存為新版本」（既有 `savePromptVersion`）
+- **套用後**：`MdTextDiff`（既有公共元件）左右對照 → 「存為新版本」（既有 `savePromptDraft`）
   ＋ CHANGELOG 條目草稿可一鍵複製
 
 ## 5. 回歸重跑

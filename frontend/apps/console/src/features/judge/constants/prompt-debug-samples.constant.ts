@@ -1,4 +1,4 @@
-// Prompt 調試台樣例對話：按調試域分組（key 對齊後端 prompt_debug.DOMAINS + 'full' 全量）。
+// Prompt 調試台樣例對話：按 L1 主題分組（`theme_*` + 'full' 全量）。
 // 每域含正例（應命中）與「非本域（應棄權）」反例，供單域判官驗證棄權防線；純前端 UI 測資。
 
 export interface PromptDebugSample {
