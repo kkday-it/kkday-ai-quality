@@ -3,9 +3,12 @@
 結構（settings.data JSON，A schema · 2026-07-22）：
 - LLM 連線層：`llm_connections`（{ provider_id: {base_url} }，每供應商一條：openai/gemini/bytedance）
   + `llm_tokens`（{ provider_id: token }，per-provider 機密）+ `provider_models`（各供應商自訂 model 清單）。
-- LLM 旋鈕層：`llm_area_defaults`（{ area: {provider,model,thinking,reasoning_effort,temperature} }，
-  每功能區一份團隊共用默認；area ∈ LLM_AREAS，清單見 config/global/llm_model.json 的 `areas[]`）。
-  某區還沒存過默認時的起點走 `area_seed_knobs()`（同檔 `areaDefaults`），不是全區共用 _DEFAULT_LLM。
+- LLM 旋鈕層：`llm_area_defaults`（{ area: {provider: 當前選定, knobs: {provider_id:
+  {model,thinking,reasoning_effort,temperature}}} }，**每功能區 × 每供應商各一份**團隊共用默認；
+  area ∈ LLM_AREAS，清單見 config/global/llm_model.json 的 `areas[]`）。
+  某區某家還沒存過默認時的起點走 `area_provider_seed_knobs()`，不是全區共用 _DEFAULT_LLM。
+  ⚠️ 2026-07-30 前為「一區一組旋鈕」的扁平形狀，三個供應商 tab 互相覆蓋（存 openai 就把
+  bytedance/gemini 沖掉）。既有資料由 alembic 一次性轉換，**程式碼不留任何舊形狀相容分支**。
 - QC DB：`qc_connections`（{ env_id: {host,port,user} }，每環境一條：sit/stage/production）
   + `qc_passwords`（{ env_id: password }，per-env 機密）——與 LLM 連線同構（連線+機密分離兩張 map）。
 
@@ -23,10 +26,13 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import uuid
 
 from app.core import crypto, db
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
+
+_log = logging.getLogger(__name__)
 
 # 跨語言共用的「非機密」全局預設值，按領域拆檔置於 repo 根 config/global/（前端 @config/global/* 同讀）。
 # 目錄定位統一由 app.core.paths 提供；後續新增全局配置於此目錄各建一 JSON。
@@ -82,14 +88,12 @@ def model_capabilities_for(model_id: str) -> dict:
         temperatureLockedWhenThinking「僅思考生效時才鎖」為不同機制，見 llm_model.json modelCapabilities
         的實測案例）。
     """
-    owner = next(
-        (
-            p
-            for p in LLM_PROVIDERS
-            if any(m.get("id") == model_id for m in p.get("defaultModels") or [])
-        ),
-        None,
-    ) or next((p for p in LLM_PROVIDERS if p.get("id") == "openai"), {})
+    owner = _provider_of_model(model_id)
+    if owner is None:
+        # 靜默回退 openai 能力表會讓前端旋鈕用錯的 thinking 控制形態與 temperature 鎖定規則渲染，
+        # 出錯時無跡可循——留一筆 warning。（需要「不猜」語義的呼叫端請改用 provider_id_for_model。）
+        _log.warning("model_capabilities_for: 未登記的 model=%r，回退 openai 能力表", model_id)
+        owner = next((p for p in LLM_PROVIDERS if p.get("id") == "openai"), {})
     base = {
         "supportsThinking": owner.get("supportsThinking", True),
         "thinkingControl": owner.get("thinkingControl", "effortOnly"),
@@ -153,6 +157,22 @@ def default_base_url_for(provider_id: str) -> str:
     return str((hit or {}).get("base_url", ""))
 
 
+def provider_has_responses_api(base_url: str) -> bool:
+    """該 base_url 所屬 provider 是否有 `/responses` 端點（SSOT＝llm_model.json `providers[].responsesApi`）。
+
+    這是**端點存在性**的靜態事實，不是 per-model 能力宣告（後者走錯誤驅動探測，見
+    `client._wire_api_for`）。之所以必須靜態宣告：Gemini 的 OpenAI 相容層沒有 `/responses`，
+    打過去回 **404 而非 400**——400 降級階梯攔不住 404，會變成與結構化輸出完全無關的離奇錯誤。
+    此欄同時是單一 kill switch：改回 `absent` 即整條 Responses 路徑關閉，不需動程式碼。
+
+    Args:
+        base_url: 連線端點；未知/自訂值由 `provider_id_for` 歸 openai。
+    """
+    pid = provider_id_for(base_url)
+    hit = next((p for p in LLM_PROVIDERS if p.get("id") == pid), {})
+    return hit.get("responsesApi") == "supported"
+
+
 def _mask_secret(tok: str) -> str:
     """機密遮罩：>12 字顯示前 7 + … + 後 4；短值顯 ***；空值顯空字串。"""
     tok = tok or ""
@@ -180,6 +200,38 @@ _DEFAULT_LLM: dict = {
 # 全項目共享設定固定 key（settings 表單例 row）：所有 load/save 都用此 key。
 # email 身分僅供權限授予查詢（見 permissions），與配置存取解耦。
 GLOBAL_SETTINGS_KEY = "__global__"
+
+# thinking 舊值域 → 當前值域（LLM_THINKING_MODES）的純詞彙翻譯表。
+# 2026-07-23 LlmKnobs 重寫前，全供應商共用一個假想的 on/off 兩態開關；重寫只改了前端判斷邏輯，
+# **沒有正規化已落庫的值**，於是 'on' 一直留在 llm_area_defaults 裡，被前端原樣回送 overrides，
+# 再被 API 入口 validator（_one_of vs LLM_THINKING_MODES）擋下 → 整個初判分類請求 422。
+# 翻譯不改語義：effortOnly 供應商（openai/gemini）本就不讀 thinking（見 judge/llm/client.py
+# _reasoning_kwargs），故當下行為完全不變；日後改切 nativeSwitch 供應商時亦保留使用者原意。
+_LEGACY_THINKING_MODES: dict[str, str] = {"on": "enabled", "off": "disabled"}
+
+
+def _normalize_llm_knobs(area_defaults: dict) -> dict:
+    """把各功能區默認旋鈕的舊值域正規化到當前 SSOT 值域（就地修改）。
+
+    讀寫兩端都套用，讓既有環境（他人 dev / prod 的既存 row）在下次讀取時自癒，
+    不需人工改 DB；寫入端同步套用則確保新資料一開始就是乾淨值域。
+
+    Args:
+        area_defaults: {area: {provider, knobs: {provider_id: 旋鈕}}}。
+
+    Returns:
+        同一個 dict（已就地正規化），便於串接呼叫。
+    """
+    for area_cfg in area_defaults.values():
+        if not isinstance(area_cfg, dict):
+            continue
+        for knobs in (area_cfg.get("knobs") or {}).values():
+            if not isinstance(knobs, dict):
+                continue
+            canonical = _LEGACY_THINKING_MODES.get(knobs.get("thinking") or "")
+            if canonical:
+                knobs["thinking"] = canonical
+    return area_defaults
 
 
 def _blank_settings() -> dict:
@@ -246,15 +298,17 @@ def _migrate_configs_to_areas(data: dict) -> dict:
         llm_configs[0] if llm_configs else None
     )
     if active_cfg:
+        pid = active_cfg.get("provider") or provider_id_for(active_cfg.get("base_url") or "")
         knobs = {
-            "provider": active_cfg.get("provider")
-            or provider_id_for(active_cfg.get("base_url") or ""),
             "model": active_cfg.get("model", _DEFAULT_LLM["model"]),
             "thinking": active_cfg.get("thinking", "default"),
             "reasoning_effort": active_cfg.get("reasoning_effort", "default"),
             "temperature": active_cfg.get("temperature"),
         }
-        new["llm_area_defaults"] = {area: dict(knobs) for area in LLM_AREAS}
+        # 舊 config 的 thinking 可能是 on/off 舊值域，遷移時一併翻譯（否則舊值直接被搬進新結構）
+        new["llm_area_defaults"] = _normalize_llm_knobs(
+            {area: {"provider": pid, "knobs": {pid: dict(knobs)}} for area in LLM_AREAS}
+        )
 
     # ── QC：qc_configs[] → qc_connections（per env）+ qc_passwords（per env）──
     qc_configs = data.get("qc_configs") or []
@@ -301,7 +355,18 @@ def load_settings() -> dict:
     cur = {**_blank_settings(), **data}
     cur["llm_connections"] = {k: dict(v) for k, v in (cur.get("llm_connections") or {}).items()}
     cur["llm_tokens"] = dict(cur.get("llm_tokens") or {})
-    cur["llm_area_defaults"] = {k: dict(v) for k, v in (cur.get("llm_area_defaults") or {}).items()}
+    # 深一層複本：area 值現在含巢狀 knobs（provider→旋鈕），淺複會讓正規化改到 DB 快取內的原物件
+    cur["llm_area_defaults"] = _normalize_llm_knobs(
+        {
+            area: {
+                **dict(cfg),
+                "knobs": {p: dict(k) for p, k in (dict(cfg).get("knobs") or {}).items()},
+            }
+            if isinstance(cfg, dict) and "knobs" in cfg
+            else dict(cfg)
+            for area, cfg in (cur.get("llm_area_defaults") or {}).items()
+        }
+    )
     cur["provider_models"] = dict(cur.get("provider_models") or {})
     cur["qc_connections"] = {k: dict(v) for k, v in (cur.get("qc_connections") or {}).items()}
     cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
@@ -323,6 +388,37 @@ def area_seed_knobs(area: str | None) -> dict:
     return knobs
 
 
+def default_model_for(provider_id: str) -> str:
+    """回某 provider 的預設 model（SSOT＝llm_model.json，與前端 `defaultModelFor` 同規則）。
+
+    `providers[].defaultModel` 優先，否則取 `defaultModels[0].id`；未知 provider 回空字串。
+    切換供應商時用它決定 model——沿用前一家的 model 名送到另一家一定失敗。
+    """
+    hit = next((p for p in LLM_PROVIDERS if p.get("id") == provider_id), None)
+    if not hit:
+        return ""
+    return str(hit.get("defaultModel") or (hit.get("defaultModels") or [{}])[0].get("id", ""))
+
+
+def area_provider_seed_knobs(area: str | None, provider_id: str) -> dict:
+    """某功能區 × 某供應商「還沒存過默認」時的起點旋鈕。
+
+    在 `area_seed_knobs(area)` 之上把 **model 換成該供應商自己的預設 model**：功能區 seed 的
+    model 是全域預設（openai 系），直接拿去餵 ByteDance／Gemini 必然失敗。thinking／
+    reasoning_effort／temperature 維持 `"default"`（＝不覆寫），交由執行層依該 model 的能力表決定。
+
+    Args:
+        area: 功能區 key。
+        provider_id: 供應商 id。
+    """
+    knobs = area_seed_knobs(area)
+    knobs["provider"] = provider_id
+    model = default_model_for(provider_id)
+    if model:
+        knobs["model"] = model
+    return knobs
+
+
 def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | None = None) -> dict:
     """由指定功能區默認旋鈕 + 對應供應商連線組出 judge 路徑 flat dict（set_current 入參）。
 
@@ -333,17 +429,30 @@ def effective_llm_dict(s: dict, *, area: str | None = None, overrides: dict | No
     連線（base_url/token）一律以「覆寫後」決定的 provider 反查 llm_connections/llm_tokens——換言之
     overrides 也能切換本次用哪個供應商連線,不限於原 area 默認的 provider。回傳的 base_url 保證非空
     （連線未填時補該 provider 官方端點，見 default_base_url_for）。
+    provider 走三級解析（見 `_resolve_provider`）：**顯式 overrides.provider > 由 overrides.model
+    反推 > 功能區默認**。第二級是必要的——provider 與 model 在 `LlmOverridesIn` 是各自獨立的選填
+    欄位，只換 model 而不帶 provider 時若沿用 area 默認，就會拿 A 家 token 打 B 家端點（靜默錯）。
     保留 client._resolve() 所讀 key（provider/base_url/model/temperature/thinking/reasoning_effort/
     api_token/provider_models），故 judge 路徑（app/judge/llm/client.py）零改動。
     """
-    knobs = dict((s.get("llm_area_defaults") or {}).get(area or "") or {}) or area_seed_knobs(area)
+    area_cfg = (s.get("llm_area_defaults") or {}).get(area or "") or {}
+    area_provider = area_cfg.get("provider") or area_seed_knobs(area).get("provider")
+
+    # 先定 provider、再載該家旋鈕：切換供應商就該帶出「那一家自己上次存的」設定，而不是把前一家的
+    # thinking／reasoning_effort／temperature 殘留過去（舊實作只重置 model，是跨供應商污染的來源）。
+    provider = _resolve_provider(s, {"provider": area_provider}, overrides)
+    # 該家沒存過 → 退回「該區 × 該家」的 seed（model 用該供應商自己的預設，不是全域 openai 系預設）
+    knobs = {
+        **area_provider_seed_knobs(area, provider),
+        **dict((area_cfg.get("knobs") or {}).get(provider) or {}),
+    }
+
     if overrides:
-        for key in ("provider", "model", "thinking", "reasoning_effort"):
+        for key in ("model", "thinking", "reasoning_effort"):
             if overrides.get(key) is not None:
                 knobs[key] = overrides[key]
         if "temperature" in overrides:
             knobs["temperature"] = overrides["temperature"]
-    provider = knobs.get("provider") or _DEFAULT_LLM["provider"]
     conn = (s.get("llm_connections") or {}).get(provider) or {}
     return {
         "provider": provider,
@@ -403,12 +512,23 @@ def save_settings(patch: dict) -> dict:
     if "provider_models" in patch:
         cur["provider_models"] = dict(patch.get("provider_models") or {})
 
-    # ── LLM 旋鈕層（area → knobs，team 共用默認；整包替換單一 area 或多 area）──
+    # ── LLM 旋鈕層（area → {provider, knobs:{provider_id: 旋鈕}}，team 共用默認）──
+    # **逐供應商合併，不整包替換**：整包替換正是「存了 openai 就把另外兩家沖掉」的成因。
+    # 送來的 knobs 只含哪幾家，就只更新哪幾家；未提及的供應商原封不動。
     if "llm_area_defaults" in patch:
         merged_areas = dict(cur.get("llm_area_defaults") or {})
-        for area, knobs in (patch["llm_area_defaults"] or {}).items():
-            merged_areas[area] = dict(knobs or {})
-        cur["llm_area_defaults"] = merged_areas
+        for area, incoming in (patch["llm_area_defaults"] or {}).items():
+            existing = dict(merged_areas.get(area) or {})
+            merged_knobs = {p: dict(k) for p, k in (existing.get("knobs") or {}).items()}
+            for pid, knobs in (incoming.get("knobs") or {}).items():
+                merged_knobs[pid] = dict(knobs or {})
+            merged_areas[area] = {
+                # 沒指定當前供應商時保留原選定（例如只是更新某家的旋鈕、不打算切換）
+                "provider": incoming.get("provider") or existing.get("provider") or "",
+                "knobs": merged_knobs,
+            }
+        # 寫入端同步正規化：舊前端／腳本送來的舊值域不進庫，庫內值域恆為當前 SSOT
+        cur["llm_area_defaults"] = _normalize_llm_knobs(merged_areas)
 
     # ── QC 連線層（env → host/port/user；password 另表）──
     if "qc_connections" in patch:
@@ -541,3 +661,103 @@ def resolve_provider_token(eff: dict) -> str:
     if provider_id_for(eff.get("base_url") or "") == "openai":
         return env.openai_api_key
     return ""
+
+
+def _provider_of_model(model_id: str) -> dict | None:
+    """查某 model id 所屬的 provider 條目；查無回 None（**不猜、不回退**）。
+
+    刻意回 None 而非 fallback：呼叫端對「查不到」的正確反應各不相同——渲染能力表可以退回
+    openai 預設（見 `model_capabilities_for`），但解析要打哪個端點**絕不能猜**（見
+    `provider_id_for_model`）。把「查不到」的處置權留給呼叫端，這裡只回事實。
+
+    Args:
+        model_id: LLM model id（如 gpt-5.4-mini、seed-2-0-lite-260428）。
+
+    Returns:
+        `llm_model.json` 的 providers[] 條目；查無回 None。
+    """
+    return next(
+        (
+            p
+            for p in LLM_PROVIDERS
+            if any(m.get("id") == model_id for m in p.get("defaultModels") or [])
+        ),
+        None,
+    )
+
+
+def provider_id_for_model(model_id: str) -> str:
+    """由 model id 反推所屬 provider id（openai/gemini/bytedance）；未登記者**拋錯不猜**。
+
+    為什麼不比照 `provider_id_for(base_url)` 回退 openai：那條的回退有事實基礎（未知 base_url
+    多半是 OpenAI 相容端點），而 model id 沒有這種統計性質——拿 ByteDance 的 model 名去猜
+    openai，結果是**用 A 家的 token 打 B 家的端點**，且不會報錯、只是結果錯（下游一律回 401
+    或更糟的靜默錯誤）。多模型跑批逐一解析每個 model 的端點時，這個「不猜」是正確性前提。
+
+    Args:
+        model_id: LLM model id。
+
+    Returns:
+        provider id。
+
+    Raises:
+        ValueError: 該 model 未登記於 `config/global/llm_model.json` 的 providers[].defaultModels。
+    """
+    owner = _provider_of_model(model_id)
+    if owner is None:
+        known = sorted(m.get("id", "") for p in LLM_PROVIDERS for m in p.get("defaultModels") or [])
+        raise ValueError(
+            f"未登記的 model：{model_id!r}——無法判斷所屬供應商。"
+            f"請先加進 config/global/llm_model.json 的 providers[].defaultModels（現有：{known}）"
+        )
+    return str(owner.get("id", ""))
+
+
+def _resolve_provider(s: dict, knobs: dict, overrides: dict | None) -> str:
+    """決定本次實際要用哪個供應商的連線與 token（三級：顯式 > 由 model 反推 > 功能區默認）。
+
+    **為什麼需要「由 model 反推」這一級**：`LlmOverridesIn` 的 provider 與 model 是各自獨立的
+    選填欄位，呼叫端（單次調試、回歸、多模型跑批）常只覆寫 model。舊實作只認顯式 provider，
+    於是「只換 model」時 provider 仍停在功能區默認——把 ByteDance 的 model 名配上 OpenAI 的
+    token 與端點送出去。**不會報錯，只是結果錯**，是最難察覺的一類缺陷。
+
+    反推同時查兩處 model 來源：`llm_model.json` 的 providers[].defaultModels（內建）與
+    settings 的 `provider_models`（使用者自訂清單）——只查前者會讓自訂 model 一律反推失敗。
+
+    反推不到時**保持功能區默認、不拋錯**：自訂 model 名是合法用法，這裡拋錯會打斷既有流程。
+    但補一筆 warning，讓「打錯端點」不再無跡可循。需要「絕不猜」語義的呼叫端（多模型跑批逐一
+    解析每個 model 的端點）請直接用 `provider_id_for_model()`，那支查不到就拋。
+
+    Args:
+        s: 完整 settings dict（需 `provider_models` 以支援自訂 model 反推）。
+        knobs: 已套完 overrides 的旋鈕（其 `provider` 可能來自功能區默認而非本次顯式指定）。
+        overrides: 本次臨時覆寫；`None`＝全用功能區默認。
+
+    Returns:
+        provider id。
+    """
+    area_default = knobs.get("provider") or _DEFAULT_LLM["provider"]
+    ov = overrides or {}
+
+    # ① 顯式指定最優先——保留「overrides 也能切換本次用哪個供應商連線」的既有語義。
+    if ov.get("provider"):
+        return str(ov["provider"])
+
+    # ② 只換 model 沒指定 provider → 由 model 反推，避免沿用不相干的 area 默認 provider。
+    model = ov.get("model")
+    if model:
+        owner = _provider_of_model(model)
+        if owner is not None:
+            return str(owner.get("id", "")) or area_default
+        for pid, models in (s.get("provider_models") or {}).items():
+            if model in (models or []):
+                return str(pid)
+        _log.warning(
+            "effective_llm_dict: model=%r 未登記於 llm_model.json 或 provider_models，"
+            "無法反推供應商，沿用功能區默認 provider=%r（若兩者不同家，這次會打到錯的端點）",
+            model,
+            area_default,
+        )
+
+    # ③ 都沒有 → 功能區默認。
+    return area_default

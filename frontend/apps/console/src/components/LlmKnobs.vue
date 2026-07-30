@@ -9,7 +9,7 @@ import {
   REASONING,
 } from '@/features/settings/constants';
 import { modelMeetsMin } from '@/features/settings/utils';
-import type { LlmAreaDefault, LlmReasoningEffort, LlmThinking } from '@/features/settings/types';
+import type { LlmKnobs, LlmReasoningEffort, LlmThinking } from '@/features/settings/types';
 
 /** LLM 旋鈕組（model / thinking / reasoning_effort / temperature）：canonical 共用元件，
  * 供設定面板「功能區默認」與各功能區（prejudge/prompt_debug/sandbox）本次執行覆寫共用同一組控件與
@@ -19,7 +19,7 @@ import type { LlmAreaDefault, LlmReasoningEffort, LlmThinking } from '@/features
  * thinking 開關（`thinkingControl==='nativeSwitch'`，見 capabilities.thinkingModes）——兩種供應商的
  * 控件形狀因此不同，由 `capabilities.thinkingControl` 分流渲染，取代舊版全供應商共用同一套假想
  * 「Thinking on/off + Reasoning effort」二段式控件。各家官方依據見 capabilities.docs。 */
-type Knobs = Pick<LlmAreaDefault, 'model' | 'thinking' | 'reasoning_effort' | 'temperature'>;
+type Knobs = LlmKnobs;
 
 const props = defineProps<{
   modelValue: Knobs;

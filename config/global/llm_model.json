@@ -96,6 +96,7 @@
       "label": "GPT (OpenAI)",
       "short_label": "OpenAI",
       "base_url": "https://api.openai.com/v1",
+      "responsesApi": "supported",
       "defaultModel": "gpt-5-mini",
       "defaultModels": [
         {
@@ -147,6 +148,7 @@
       "label": "Gemini (Google)",
       "short_label": "Gemini",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "responsesApi": "absent",
       "url_hint": "generativelanguage",
       "defaultModel": "gemini-3.5-flash",
       "supportsThinking": true,
@@ -163,7 +165,8 @@
         "OpenAI compatibility layer（reasoning_effort 映射規則）": "https://ai.google.dev/gemini-api/docs/openai",
         "Gemini 3 開發指南（thinking_level 值域/預設 temperature）": "https://ai.google.dev/gemini-api/docs/gemini-3",
         "Gemini thinking 總覽": "https://ai.google.dev/gemini-api/docs/thinking",
-        "Model 資源（temperature 值域定義）": "https://ai.google.dev/api/models"
+        "Model 資源（temperature 值域定義）": "https://ai.google.dev/api/models",
+        "⚠️ 相容層無 /responses（2026-07-30 實測 404）：結構化輸出只能走 Chat Completions": "https://ai.google.dev/gemini-api/docs/openai"
       },
       "defaultModels": [
         {
@@ -197,6 +200,7 @@
       "label": "ByteDance(字節)",
       "short_label": "ByteDance",
       "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "responsesApi": "supported",
       "url_hint": "bytepluses",
       "defaultModel": "seed-2-0-lite-260228",
       "supportsThinking": true,

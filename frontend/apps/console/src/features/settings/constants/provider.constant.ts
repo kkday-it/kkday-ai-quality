@@ -93,8 +93,9 @@ export interface ModelCapability {
 }
 
 /** 個別 model 覆寫（優先於所屬 provider 級預設）；資料源＝config/global/llm_model.json modelCapabilities。 */
-const MODEL_CAPABILITY_OVERRIDES: Record<string, Partial<ModelCapability>> =
-  (llm as { modelCapabilities?: Record<string, Partial<ModelCapability>> }).modelCapabilities ?? {};
+const MODEL_CAPABILITY_OVERRIDES: Record<string, Partial<ModelCapability>> = (
+  llm as { modelCapabilities?: Record<string, Partial<ModelCapability>> }
+).modelCapabilities ?? {};
 
 /**
  * 回某 model 的可配參數能力：預設取「該 model 所屬 provider」的 provider 級欄位，
@@ -133,3 +134,12 @@ export function defaultModelFor(providerId: string): string {
   return p?.defaultModel ?? p?.defaultModels?.[0]?.id ?? '';
 }
 
+/**
+ * 由 model id 反推所屬供應商 id；查無回空字串（**不猜、不回退**——與後端
+ * `settings.provider_id_for_model()` 同一份判準，供多模型跑批選擇器即時顯示「這個 model
+ * 會打到哪個供應商」，讓使用者送出前就看得到，而不是等後端拒絕才知道）。
+ * @param modelId LLM model id。
+ */
+export function providerIdForModel(modelId: string): string {
+  return PROVIDERS.find((p) => (p.defaultModels ?? []).some((m) => m.id === modelId))?.id ?? '';
+}

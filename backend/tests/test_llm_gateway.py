@@ -24,16 +24,31 @@ def _sdk_status_err(cls, status: int, *, code=None, param=None, message="err"):
     return cls(message, response=httpx.Response(status, request=_REQ), body=body or None)
 
 
-def _fake_resp(content: str = '{"a": 1}', prompt: int = 10, completion: int = 5, cached: int = 0):
-    """OpenAI/litellm 同構回應：.choices[0].message.content + .usage.*（含 prompt_tokens_details）。"""
+def _fake_resp(
+    content: str = '{"a": 1}',
+    prompt: int = 10,
+    completion: int = 5,
+    cached: int = 0,
+    reasoning: int = 0,
+):
+    """OpenAI/litellm 同構回應：.choices[0].message.content + .id + .usage.*。
+
+    這是**非串流回應形狀的唯一 SSOT mock**（本檔多數測試共用）。欄位刻意補齊到與真實回應
+    等價——`id` 被 `prompt_debug_batch._record_from_response` 讀去落 jsonl 的 request_id、
+    `completion_tokens_details` 被 `chat_json` 讀去記 reasoning_tokens；先前缺這兩個，害這兩條
+    路徑的形狀變更不會被本檔測試抓到。
+    """
     usage = SimpleNamespace(
         prompt_tokens=prompt,
         completion_tokens=completion,
         total_tokens=prompt + completion,
         prompt_tokens_details=SimpleNamespace(cached_tokens=cached),
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=reasoning),
     )
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))], usage=usage
+        id="chatcmpl-fake",
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=usage,
     )
 
 
@@ -362,3 +377,231 @@ def test_chat_json_degrades_unsupported_reasoning_effort(monkeypatch) -> None:
     monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
     assert client.chat_json("s", "u") == {"a": 1}
     assert len(calls) == 2 and calls[1]["reasoning_effort"] == "high"
+
+
+# ── cache key 形狀守門 ────────────────────────────────────────────────────────────────────
+def test_cache_key_golden_hash_guards_kwargs_shape() -> None:
+    """`_cache_key` 對固定 kwargs 的 sha256 必須恆定——這是既有 diskcache 命中率的唯一守門員。
+
+    任何人改動 kwargs 的鍵名/鍵序/組裝方式，都會讓全庫既有快取瞬間失效（真金白銀）。此測試
+    刻意寫死期望值：紅燈時要問的不是「更新這個 hash」，而是「這次形狀變更是否真的必要、
+    以及是否接受全量 miss」。
+
+    `service_tier` 刻意不入 key（僅計價/延遲差異，語義相同），故此處給 flex 也不影響結果。
+    """
+    kwargs = {
+        "model": "gpt-5-mini",
+        "messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "attribution", "strict": True, "schema": {"type": "object"}},
+        },
+        "reasoning_effort": "medium",
+        "service_tier": "flex",
+    }
+    assert (
+        client._cache_key(kwargs)
+        == "8e10c6900f56aac75cf629f406670103e8e1270f2eafd7668f83eb4fcfce0980"
+    )
+
+
+def test_cache_key_ignores_service_tier_only() -> None:
+    """service_tier 不入 key（同語義），其餘任一鍵變動都必須改變 key。"""
+    base = {"model": "m", "messages": [], "response_format": {"type": "json_object"}}
+    assert client._cache_key(base) == client._cache_key({**base, "service_tier": "flex"})
+    assert client._cache_key(base) != client._cache_key({**base, "model": "m2"})
+    assert client._cache_key(base) != client._cache_key(
+        {**base, "response_format": {"type": "json_schema"}}
+    )
+
+
+# ── 收斂形狀進程記憶（消除判決主線每筆 7 次探測性 400）────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _clear_shape_memo():
+    """記憶是 module 級狀態，測試間必須淨空，否則互相污染。"""
+    client._SHAPE_MEMO.clear()
+    yield
+    client._SHAPE_MEMO.clear()
+
+
+_ARK = "https://ark.ap-southeast.bytepluses.com/api/v3"
+
+
+def _degrading_complete(calls, reject_all=True):
+    """模擬 Ark 新模型：response_format 一律 400（reject_all）；記錄每次送出的形狀。"""
+
+    def _f(cfg, kwargs, ck, *a, **k):
+        calls.append(dict(kwargs))
+        if "response_format" in kwargs and reject_all:
+            # 逐字採用 2026-07-30 對 seed-2-0-lite-260428 的實測 400 訊息——降級判準是字串比對，
+            # mock 訊息不寫實就測不到真正的分支。
+            raise _sdk_status_err(
+                BadRequestError,
+                400,
+                param="response_format",
+                message=(
+                    "The parameter `response_format.type` specified in the request are not "
+                    "valid: `json_object` is not supported by this model."
+                ),
+            )
+        return _fake_resp()
+
+    return _f
+
+
+def test_shape_memo_stops_repeated_probing_400(monkeypatch) -> None:
+    """同 (provider, model) 第二次呼叫直接以收斂形狀送出，不再吃探測性 400。
+
+    回歸自 2026-07-30：chat_json 每次重建 kwargs、降級不記憶，判決主線每筆 7 次呼叫
+    ＝每筆 7 次無效往返，永遠不收斂。
+    """
+    calls: list[dict] = []
+    monkeypatch.setattr(client, "_complete_effort_safe", _degrading_complete(calls))
+    monkeypatch.setattr(client, "_complete", _degrading_complete(calls))
+    monkeypatch.setattr(
+        client, "_resolve", lambda: _cfg(base_url=_ARK, model="seed-2-0-lite-260428")
+    )
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(client.env, "llm_exact_cache", False)
+
+    client.chat_json("s", "u1")
+    first_round = len(calls)
+    # 首次走完整階梯：① 帶 response_format 吃 400 → ② 試 Responses 仍 400 → ③ 移除後重打
+    assert first_round == 3
+    client.chat_json("s", "u2")
+    assert len(calls) - first_round == 1  # 第二次：直接以收斂形狀送出
+    assert "response_format" not in calls[-1]
+
+
+def test_shape_memo_untouched_for_providers_that_never_degrade(monkeypatch) -> None:
+    """OpenAI/Gemini 從不降級 → 記憶恆空、kwargs 逐位元不變（既有快取命中率零損失）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        client,
+        "_complete_effort_safe",
+        lambda cfg, kw, ck, *a, **k: calls.append(dict(kw)) or _fake_resp(),
+    )
+    monkeypatch.setattr(
+        client,
+        "_resolve",
+        lambda: _cfg(base_url="https://generativelanguage.googleapis.com/v1beta/openai"),
+    )
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(client.env, "llm_exact_cache", False)
+    client.chat_json("s", "u", schema={"type": "object"})
+    client.chat_json("s", "u", schema={"type": "object"})
+    assert not client._SHAPE_MEMO
+    assert all(c["response_format"]["type"] == "json_schema" for c in calls)
+
+
+def test_cache_key_recomputed_after_degradation(monkeypatch, tmp_path) -> None:
+    """降級後結果寫在「實際送出形狀」的鍵底下——第二次同輸入應命中快取而非重打。
+
+    未修前：json_object 的產物被存在 json_schema 的鍵上，下次命中一個「標示 strict 但其實
+    非 strict」的條目，且該鍵永遠不會被降級後的請求命中（快取形同失效）。
+    """
+    _tmp_cache(monkeypatch, tmp_path)
+    calls: list[dict] = []
+    monkeypatch.setattr(client, "_complete_effort_safe", _degrading_complete(calls))
+    monkeypatch.setattr(client, "_complete", _degrading_complete(calls))
+    monkeypatch.setattr(client, "_resolve", lambda: _cfg(base_url=_ARK, model="seed-x"))
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+
+    assert client.chat_json("s", "同一則") == {"a": 1}
+    n = len(calls)
+    assert client.chat_json("s", "同一則") == {"a": 1}
+    assert len(calls) == n  # 第二次全靠快取，零 API 呼叫
+
+
+def test_responses_rung_preserves_strict_and_is_remembered(monkeypatch) -> None:
+    """Chat 拒收 strict 但 Responses 支援（實測 Ark seed-2-0-*-260428）→ 改走 Responses 保住 strict。
+
+    這是整條階梯唯一「不放棄 strict」的分支，且結果會被記住，後續呼叫直接走 Responses。
+    """
+    from app.judge.llm import responses_api
+
+    calls: list[dict] = []
+
+    def _chat_rejects_responses_ok(cfg, kwargs, ck, *a, **k):
+        calls.append(dict(kwargs))
+        if kwargs.get(responses_api.WIRE_API_KEY) == responses_api.WIRE_RESPONSES:
+            return _fake_resp()
+        if "response_format" in kwargs:
+            raise _sdk_status_err(
+                BadRequestError, 400, param="response_format", message="json_schema not supported"
+            )
+        return _fake_resp()
+
+    monkeypatch.setattr(client, "_complete_effort_safe", _chat_rejects_responses_ok)
+    monkeypatch.setattr(client, "_complete", _chat_rejects_responses_ok)
+    monkeypatch.setattr(
+        client, "_resolve", lambda: _cfg(base_url=_ARK, model="seed-2-0-lite-260428")
+    )
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(client.env, "llm_exact_cache", False)
+
+    client.chat_json("s", "u", schema={"type": "object"})
+    # strict 保住了：最後一次呼叫仍帶 json_schema，只是換了 wire API
+    assert calls[-1][responses_api.WIRE_API_KEY] == responses_api.WIRE_RESPONSES
+    assert calls[-1]["response_format"]["type"] == "json_schema"
+
+    n = len(calls)
+    client.chat_json("s", "u2", schema={"type": "object"})
+    assert len(calls) - n == 1  # 記憶生效：第二次直接走 Responses，不再探測
+    assert calls[-1][responses_api.WIRE_API_KEY] == responses_api.WIRE_RESPONSES
+
+
+def test_gemini_never_routed_to_responses(monkeypatch) -> None:
+    """鐵閘：Gemini 相容層沒有 /responses（實測 404），任何情況都不得被導過去。
+
+    404 不是 400，降級階梯攔不住——一旦誤導流，會以「與結構化輸出完全無關」的面貌炸出來。
+    """
+    from app.judge.llm import responses_api
+
+    calls: list[dict] = []
+
+    def _always_reject_rf(cfg, kwargs, ck, *a, **k):
+        calls.append(dict(kwargs))
+        if "response_format" in kwargs:
+            raise _sdk_status_err(
+                BadRequestError, 400, param="response_format", message="response_format bad"
+            )
+        return _fake_resp()
+
+    monkeypatch.setattr(client, "_complete_effort_safe", _always_reject_rf)
+    monkeypatch.setattr(client, "_complete", _always_reject_rf)
+    monkeypatch.setattr(
+        client,
+        "_resolve",
+        lambda: _cfg(base_url="https://generativelanguage.googleapis.com/v1beta/openai"),
+    )
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(client.env, "llm_exact_cache", False)
+
+    client.chat_json("s", "u")
+    assert all(responses_api.WIRE_API_KEY not in c for c in calls)  # 一次都沒被標記
+
+
+def test_dead_wire_marker_never_leaks_to_settled_shape(monkeypatch) -> None:
+    """Responses 階失敗時必須清標記——跑批會把收斂形狀發給所有 worker，死標記＝整批走死路。"""
+    from app.judge.llm import responses_api
+
+    final: dict = {}
+
+    def _reject_everything_with_rf(cfg, kwargs, ck, *a, **k):
+        final.clear()
+        final.update(kwargs)
+        if "response_format" in kwargs:
+            raise _sdk_status_err(
+                BadRequestError, 400, param="response_format", message="response_format bad"
+            )
+        return _fake_resp()
+
+    monkeypatch.setattr(client, "_complete_effort_safe", _reject_everything_with_rf)
+    monkeypatch.setattr(client, "_complete", _reject_everything_with_rf)
+    monkeypatch.setattr(client, "_resolve", lambda: _cfg(base_url=_ARK, model="seed-x"))
+    monkeypatch.setattr(client, "_record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(client.env, "llm_exact_cache", False)
+
+    client.chat_json("s", "u")
+    assert responses_api.WIRE_API_KEY not in final

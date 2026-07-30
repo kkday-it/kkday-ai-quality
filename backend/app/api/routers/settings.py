@@ -40,14 +40,25 @@ class LlmConnectionIn(BaseModel):
     base_url: str = ""
 
 
-class LlmAreaDefaultIn(BaseModel):
-    """單功能區旋鈕默認（team 共用）。"""
+class LlmKnobsIn(BaseModel):
+    """單一供應商的旋鈕（不含 provider——它是外層 knobs map 的 key）。"""
 
-    provider: str | None = None
     model: str | None = None
     temperature: float | None = None
     thinking: str | None = None
     reasoning_effort: str | None = None
+
+
+class LlmAreaDefaultIn(BaseModel):
+    """單功能區旋鈕默認（team 共用）：當前選定供應商 + 各供應商各自的旋鈕。
+
+    `knobs` 只需帶「這次要更新的供應商」，未提及者後端原封保留（見 `save_settings` 的逐供應商
+    合併）——這是「存 openai 不該沖掉 bytedance/gemini」的契約前提。
+    `provider` 省略＝只更新旋鈕、不切換當前選定。
+    """
+
+    provider: str | None = None
+    knobs: dict[str, LlmKnobsIn] | None = None
 
 
 class QcConnectionIn(BaseModel):

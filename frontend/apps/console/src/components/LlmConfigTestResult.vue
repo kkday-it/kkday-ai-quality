@@ -3,12 +3,12 @@ import { nextTick, ref, watch } from 'vue';
 import type { LlmPingResult } from '@/api';
 import Terminal from './Terminal.vue';
 import { PROVIDERS } from '@/features/settings/constants';
-import type { LlmAreaDefault } from '@/features/settings/types';
+import type { LlmKnobs } from '@/features/settings/types';
 
 /** `useLlmConfigTest` 測試結果的呈現元件：純顯示，不含請求邏輯（邏輯見該 composable）。
  * 同時展示「送出的配置參數」與「LLM 實際反饋」——只看連線通不通無法判斷 reasoning_effort /
  * temperature 等旋鈕是否真的對該 model 生效，故兩者並列輸出。 */
-type Knobs = Pick<LlmAreaDefault, 'model' | 'thinking' | 'reasoning_effort' | 'temperature'>;
+type Knobs = LlmKnobs;
 
 const props = defineProps<{
   result: LlmPingResult | null;

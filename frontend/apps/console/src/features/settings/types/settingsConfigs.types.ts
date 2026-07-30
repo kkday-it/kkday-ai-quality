@@ -18,13 +18,23 @@ export type LlmThinking = 'default' | 'enabled' | 'disabled' | 'auto';
 /** reasoning_effort 旋鈕值域（含 minimal，僅部分 model 支援，見 modelCapabilities）。 */
 export type LlmReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-/** 單一功能區的旋鈕默認（team 共用）；provider 決定連線反查對象。 */
-export interface LlmAreaDefault {
-  provider: string;
+/** 單一供應商的旋鈕（不含 provider——它是外層 knobs map 的 key）。 */
+export interface LlmKnobs {
   model: string;
   temperature: number | null; // null＝用 API 預設
   thinking: LlmThinking;
   reasoning_effort: LlmReasoningEffort;
+}
+
+/**
+ * 單一功能區的旋鈕默認（team 共用）：當前選定供應商 + **每個供應商各自的旋鈕**。
+ *
+ * 2026-07-30 前為扁平單組旋鈕，三個供應商 tab 互相覆蓋（存 openai 就把 bytedance/gemini 沖掉）。
+ * 現在切換供應商會帶出「那一家自己上次存的」設定，而非殘留前一家的 thinking/effort/temperature。
+ */
+export interface LlmAreaDefault {
+  provider: string;
+  knobs: Partial<Record<string, LlmKnobs>>;
 }
 
 /** 本次執行臨時旋鈕覆寫（不落庫）；provider 可切換本次用哪個供應商連線。 */

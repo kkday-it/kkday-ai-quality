@@ -15,6 +15,7 @@ import { getSettings, getSettingsRaw, saveSettings } from '@/api';
 import type {
   LlmArea,
   LlmAreaDefault,
+  LlmKnobs,
   LlmConnection,
   QcConnection,
   SettingsBundle,
@@ -100,8 +101,14 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
 
   // ── LLM 旋鈕（每功能區一份默認：team 共用）──
   /** 存某功能區的默認旋鈕（「存為此區默認」動作）。 */
-  async function saveLlmAreaDefault(area: LlmArea, knobs: LlmAreaDefault): Promise<void> {
-    await persist({ llm_area_defaults: { [area]: knobs } });
+  async function saveLlmAreaDefault(
+    area: LlmArea,
+    provider: string,
+    knobs: LlmKnobs,
+  ): Promise<void> {
+    // 只送「這次要更新的供應商」那一筆；後端逐供應商合併，同區其他供應商的旋鈕原封保留。
+    // 送整包會退回改造前的行為（存一家沖掉另外兩家）。
+    await persist({ llm_area_defaults: { [area]: { provider, knobs: { [provider]: knobs } } } });
   }
 
   // ── QC 連線（每環境一條：host/port/user + password）──

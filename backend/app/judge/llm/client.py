@@ -4,6 +4,11 @@
 無 api_token（settings 與 env 皆無）→ stub 模式（啟發式，零 key 走通 pipeline）；有 token → 真判。
 
 LLM 呼叫走 OpenAI SDK 直呼（`_complete`）；base_url 可覆寫以打各 OpenAI-compatible 端點。
+
+**wire API 二選一**：kwargs 的正規形狀恆為 Chat Completions，但 `_complete` 會依 kwargs 內的
+`responses_api.WIRE_API_KEY` 標記改走 `/responses`——strict 結構化輸出在不同供應商落在不同端點上
+（實測：Ark 新版模型只有 Responses 支援、Gemini 相容層根本沒有 `/responses`），故按能力路由。
+翻譯與回應/串流還原全在 `responses_api`，呼叫端與 `_cache_key`／`_settle_request_shape` 皆無感。
 """
 
 from __future__ import annotations
@@ -257,12 +262,26 @@ def _complete(cfg: dict, kwargs: dict, cache_key: str | None):
     flex tier 請求以 with_options 拉長 timeout（官方建議 15 分鐘；flex 延遲變動大，沿用標準 60s 必然
     大量誤逾時）——per-request override，不影響快取 client 的標準 timeout。
     """
+    from app.judge.llm import responses_api
+
     client = _get_client(cfg["token"], cfg["base_url"])
     if kwargs.get("service_tier") == "flex":
         client = client.with_options(timeout=float(env.llm_timeout_flex))
-    k = dict(kwargs)
+    k = {kk: vv for kk, vv in kwargs.items() if kk != responses_api.WIRE_API_KEY}
     if cache_key:
         k["prompt_cache_key"] = cache_key
+    # wire API 路由（唯一分歧點）：kwargs 的正規形狀恆為 Chat Completions，Responses 形狀只在
+    # 這裡現算現丟、絕不回存——故 _cache_key / _settle_request_shape / _degrade_reasoning_effort
+    # 三個既有契約完全不受影響，6 個非串流消費端也零改動（回應由 to_chat_shape 還原）。
+    if kwargs.get(responses_api.WIRE_API_KEY) == responses_api.WIRE_RESPONSES:
+        if k.pop("stream", False):
+            k.pop("stream_options", None)  # Responses 串流不吃此參數，usage 由 completed 事件帶
+            return responses_api.to_chat_stream(
+                client.responses.create(**responses_api.to_responses_kwargs(k), stream=True)
+            )
+        return responses_api.to_chat_shape(
+            client.responses.create(**responses_api.to_responses_kwargs(k))
+        )
     return client.chat.completions.create(**k)
 
 
@@ -290,6 +309,135 @@ def _degrade_reasoning_effort(kwargs: dict, emsg: str) -> bool:
     else:
         kwargs.pop("reasoning_effort", None)  # 已無更低檔可映射 → 拿掉參數走 API 預設
     return True
+
+
+def try_responses_rung(cfg: dict, kwargs: dict, ck: str | None, stage: str):
+    """降級階梯的 Responses 一階：改走 `/responses` 重打；不行則清標記回 None 讓後續階段接手。
+
+    排在其餘降級階之前——它是唯一「保住 strict 結構化輸出」的選項，其餘兩階都在放棄 strict。
+    失敗時**必須清掉 WIRE_API_KEY**：跑批會把收斂後的 kwargs 發給所有 worker
+    （`prompt_debug_batch._settle_request_shape`），死標記留著等於整批走死路。
+
+    Returns:
+        成功的回應物件（已由 `to_chat_shape` 還原成 Chat 形狀）；此階不適用或失敗回 None。
+    """
+    from openai import APIStatusError
+
+    from app.judge.llm import responses_api
+
+    if not can_use_responses_api(cfg, kwargs):
+        return None
+    kwargs[responses_api.WIRE_API_KEY] = responses_api.WIRE_RESPONSES
+    try:
+        resp = _complete(cfg, kwargs, ck)
+    except APIStatusError as exc:  # 400（形狀不合）/ 404（端點不存在，自訂相容端點可能發生）
+        kwargs.pop(responses_api.WIRE_API_KEY, None)
+        _log.warning(
+            "Responses API 一階不適用(stage=%s)，回原階梯繼續降級：%s",
+            stage,
+            str(exc).splitlines()[0][:160],
+        )
+        return None
+    _remember_shape(cfg, kwargs)
+    _log.info("改走 Responses API 取得 strict 結構化輸出(stage=%s model=%s)", stage, cfg["model"])
+    return resp
+
+
+def structured_output_rejected(exc: Exception) -> bool:
+    """400 是否在抱怨結構化輸出參數（涵蓋 Chat 與 Responses 兩種 API 的措辭）。
+
+    兩套降級階梯（本檔的 chat_json 400 分流、prompt_debug._request_compat）**共用此判準**，
+    避免措辭清單分岔——值域字面在本專案分岔過一次（見 settings.LLM_THINKING_MODES 註解的
+    422 教訓）。Ark 實測逐字：「The parameter `response_format.type` specified in the request
+    are not valid: `json_object` is not supported by this model.」
+    """
+    msg = str(exc).lower()
+    param = str(getattr(exc, "param", "") or "").lower()
+    return (
+        param in ("response_format", "text", "text.format")
+        or "response_format" in msg
+        or "json_schema" in msg
+        or "text.format" in msg
+    )
+
+
+def _mentions_reasoning_effort(emsg: str) -> bool:
+    """400 訊息是否點名 reasoning effort：Chat 拼 `reasoning_effort`、Responses 拼 `reasoning.effort`。
+
+    刻意不用裸 `effort` 比對（易在敘述文字中誤中，把 prompt 過長的 400 誤判成參數不支援）。
+    """
+    low = emsg.lower()
+    return "reasoning_effort" in low or "reasoning.effort" in low
+
+
+def can_use_responses_api(cfg: dict, kwargs: dict) -> bool:
+    """本次請求是否**可以**改走 Responses API（兩道硬否決，與「該不該走」分開判斷）。
+
+    ① provider 沒有 `/responses` 端點（Gemini）——回 404 而非 400，階梯攔不住。
+    ② 已經走在 Responses 上——不重複導流。
+    串流不再是否決條件（`responses_api.to_chat_stream` 已把事件流還原成 chunk 流）。
+    """
+    from app.judge.llm import responses_api
+
+    if kwargs.get(responses_api.WIRE_API_KEY) == responses_api.WIRE_RESPONSES:
+        return False
+    return _settings.provider_has_responses_api(cfg.get("base_url") or "")
+
+
+# 「該 (provider, model) 的 response_format 最終收斂成什麼形狀」的進程級記憶。
+# 由 chat_json 的 400 降級成功後寫入，下次同組合直接以收斂形狀送出，免掉重複的探測性 400。
+# 為何需要：chat_json 每次呼叫都重建 kwargs（見該函式）且降級只影響本次，而判決主線是
+# 6 域 prompt 並行 + polarity ≈ 每筆 7 次呼叫——不記憶就等於每筆吃 7 次無效往返、永遠不收斂
+# （跑批不受影響，它有首筆探測 + _settle_request_shape）。
+# 刻意不落盤：供應商日後補上支援時，重啟即重新探測，不被舊記憶鎖死。
+# 值＝收斂後的「請求形狀增量」：{"response_format": <形狀或 _SHAPE_REMOVED>, "_wire_api": <可選>}。
+_SHAPE_MEMO: dict[tuple[str, str], dict] = {}
+_SHAPE_MEMO_LOCK = threading.Lock()
+# 「該組合連 response_format 都不能送」的哨兵；與「還沒探測過」（查無此 key）區分。
+_SHAPE_REMOVED = "__removed__"
+
+
+def _shape_memo_key(cfg: dict) -> tuple[str, str]:
+    """記憶鍵＝(provider, model)——同 provider 不同 model 的支援度不同（實測 Ark 新舊版相反）。"""
+    return (_settings.provider_id_for(cfg.get("base_url") or ""), str(cfg.get("model") or ""))
+
+
+def _remember_shape(cfg: dict, kwargs: dict) -> None:
+    """記住本次收斂後的請求形狀增量（response_format 形狀 + 走哪個 wire API）。"""
+    from app.judge.llm import responses_api
+
+    shape: dict = {"response_format": kwargs.get("response_format", _SHAPE_REMOVED)}
+    if kwargs.get(responses_api.WIRE_API_KEY):
+        shape[responses_api.WIRE_API_KEY] = kwargs[responses_api.WIRE_API_KEY]
+    with _SHAPE_MEMO_LOCK:
+        _SHAPE_MEMO[_shape_memo_key(cfg)] = shape
+
+
+def _apply_shape_memo(cfg: dict, kwargs: dict) -> bool:
+    """有記憶就把 kwargs 的 response_format 直接改成收斂形狀；回傳是否有改動。
+
+    在 `_cache_key` 之前套用，使快取鍵反映「實際送出的形狀」——strict 與 prompt 約束是不同語義的
+    產物，本就該分艙；對從不降級的 provider（OpenAI/Gemini）記憶恆空，kwargs 逐位元不變、
+    既有快取全部照命中。
+    """
+    from app.judge.llm import responses_api
+
+    with _SHAPE_MEMO_LOCK:
+        shape = _SHAPE_MEMO.get(_shape_memo_key(cfg))
+    if not shape:
+        return False
+    changed = False
+    wire = shape.get(responses_api.WIRE_API_KEY)
+    if wire and kwargs.get(responses_api.WIRE_API_KEY) != wire:
+        kwargs[responses_api.WIRE_API_KEY] = wire
+        changed = True
+    remembered = shape.get("response_format")
+    if remembered == _SHAPE_REMOVED:
+        return (kwargs.pop("response_format", None) is not None) or changed
+    if remembered is not None and kwargs.get("response_format") != remembered:
+        kwargs["response_format"] = remembered
+        changed = True
+    return changed
 
 
 def _complete_effort_safe(
@@ -433,6 +581,9 @@ def chat_json(
             _flex_bump("attempts")  # P1b 量測：flex 嘗試數（回退數見 429 handler）
     # prompt_cache_key 僅 OpenAI provider 支援（base_url 反推）；由 _complete 依 gateway 放對位置。
     ck = cache_key if (cache_key and is_openai) else None
+    # 套用先前探測出的收斂形狀（在 req_params/_cache_key 之前，使日誌與快取鍵都反映實際送出的形狀）
+    if _apply_shape_memo(cfg, kwargs):
+        _log.debug("套用已記憶的 response_format 收斂形狀 stage=%s model=%s", stage, cfg["model"])
     # 執行日誌（僅小批量 job 有 bind，否則 no-op）：LLM 輸入參數 + prompt 全文突出收錄。
     # label＝同一調用分組鍵（polarity / C-1..C-6）→ 前端把 request/prompt/response 聚合成一個 tab。
     log_label = label or stage
@@ -500,7 +651,16 @@ def chat_json(
         # 400 是唯一可能「參數/schema 真不支援」的狀態碼；且降級猜測**只對非 OpenAI 相容端點**做——
         # OpenAI（含 gpt-5）的 400 一律如實拋（多為 prompt 過長/參數非法，降級無濟於事且會掩蓋問題）。
         emsg = str(e)
-        if not is_openai and "response_format" in emsg and kwargs.get("response_format"):
+        # 第 0 階：改走 Responses API（Ark 新模型的 strict 只在該端點）。不適用/失敗回 None，
+        # 由下方原有兩階接手（它們都在放棄 strict，故排在後面）。
+        resp = (
+            try_responses_rung(cfg, kwargs, ck, stage)
+            if (not is_openai and structured_output_rejected(e))
+            else None
+        )
+        if resp is not None:
+            pass  # Responses 階成功，跳過其餘降級
+        elif not is_openai and "response_format" in emsg and kwargs.get("response_format"):
             # provider 全不支援 response_format（如 ByteDance seed：json_object / json_schema 皆 400）→
             # 去除該參數重試，靠 system prompt 的 JSON 指示 + 下方 fence-tolerant 解析兜底。
             _log.warning(
@@ -510,6 +670,7 @@ def chat_json(
             )
             kwargs.pop("response_format", None)
             resp = _complete(cfg, kwargs, ck)
+            _remember_shape(cfg, kwargs)
         elif (
             not is_openai
             and schema is not None
@@ -527,8 +688,14 @@ def chat_json(
             )
             kwargs["response_format"] = {"type": "json_object"}
             resp = _complete(cfg, kwargs, ck)
+            _remember_shape(cfg, kwargs)
         else:
             raise  # OpenAI 的 400、或與 schema/response_format 無關的 400 → 如實拋，不猜測性重試
+        # 形狀已被降級改寫 → 重算快取鍵，讓結果寫回「實際送出形狀」的鍵底下。
+        # 不重算的話，json_object 的產物會被存在 json_schema 的鍵上，下次同輸入命中一個
+        # 「標示 strict 但其實非 strict」的條目（既有 bug，順修）。
+        if use_cache:
+            ekey = _cache_key(kwargs)
     # token 用量回報（供批量累計花費；失敗不影響初判）
     sink = _usage_sink.get()
     usage = getattr(resp, "usage", None)

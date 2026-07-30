@@ -6,9 +6,9 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useSettingsConfigsStore } from '@/stores/settingsConfigs.store';
 import { defaultModelFor, LLM_AREA_SEEDS } from '@/features/settings/constants';
-import type { LlmArea, LlmAreaDefault } from '@/features/settings/types';
+import type { LlmArea, LlmKnobs } from '@/features/settings/types';
 
-type Knobs = Pick<LlmAreaDefault, 'model' | 'thinking' | 'reasoning_effort' | 'temperature'>;
+type Knobs = LlmKnobs;
 
 const BLANK_KNOBS: Knobs = {
   model: '',
@@ -35,17 +35,19 @@ export function useLlmAreaDefault(area: LlmArea) {
   /** 使用者是否已本地手動改動過（改動後不再被團隊默認的後續變動靜默覆蓋，避免蓋掉進行中的編輯）。 */
   const dirty = ref(false);
 
+  /** 某供應商在本區已存的旋鈕；沒存過 → 該家的起點（model 用該供應商自己的預設，不沿用前一家的）。 */
+  const knobsForProvider = (p: string): Knobs => {
+    const saved = store.llmAreaDefaults[area]?.knobs?.[p];
+    if (saved) return { ...BLANK_KNOBS, ...saved };
+    return { ...BLANK_KNOBS, ...(LLM_AREA_SEEDS[area] ?? {}), model: defaultModelFor(p) };
+  };
+
   watch(
     () => store.llmAreaDefaults[area],
     (def) => {
       if (dirty.value || !def) return;
       provider.value = def.provider;
-      Object.assign(knobs, {
-        model: def.model,
-        thinking: def.thinking,
-        reasoning_effort: def.reasoning_effort,
-        temperature: def.temperature,
-      });
+      Object.assign(knobs, knobsForProvider(def.provider));
     },
     { immediate: true },
   );
@@ -59,12 +61,14 @@ export function useLlmAreaDefault(area: LlmArea) {
   };
 
   /** LlmConfigPicker 的 update:modelValue handler：切換本次用哪個供應商連線。
-   * 一併把 model 重置為該供應商的預設 model——不重置會殘留舊供應商的 model id
-   * （如切到 Gemini 卻仍顯示 gpt-5.4-mini），選項清單與後端也解析不到對應能力。 */
+   *
+   * **整組旋鈕一起換成該供應商自己的**，不是只換 model。舊實作只重置 model，於是
+   * thinking / reasoning_effort / temperature 會殘留前一家的值——使用者以為在配新供應商，
+   * 實際上部分旋鈕還是舊的（各家值域與鎖定規則不同，殘留值可能根本不適用）。 */
   const setProvider = (p: string): void => {
     dirty.value = true;
     provider.value = p;
-    knobs.model = defaultModelFor(p);
+    Object.assign(knobs, knobsForProvider(p));
   };
   /** LlmKnobs 的 update:modelValue handler。 */
   const setKnobs = (next: Knobs): void => {
@@ -75,9 +79,9 @@ export function useLlmAreaDefault(area: LlmArea) {
   /** 本次執行送出用的 overrides（provider + 旋鈕）；三功能區的 startXxx 呼叫皆用此組 overrides。 */
   const overrides = computed(() => ({ provider: provider.value, ...knobs }));
 
-  /** 把目前 provider + knobs 存為此區團隊共用默認。 */
+  /** 把目前 provider + 旋鈕存為此區團隊共用默認（**只寫當前供應商那一份**，不動另外兩家）。 */
   const saveAsDefault = async (): Promise<void> => {
-    await store.saveLlmAreaDefault(area, { provider: provider.value, ...knobs });
+    await store.saveLlmAreaDefault(area, provider.value, { ...knobs });
     dirty.value = false;
   };
 
