@@ -2,11 +2,7 @@
 // 前端只要每兩秒問一次進度即可，不需要為此另拉一條串流。
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import {
-  getPromptRegression,
-  startPromptRegression,
-  type PromptRegressionSnapshot,
-} from '@/api';
+import { getPromptRegression, startPromptRegression, type PromptRegressionSnapshot } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
 
 /** 進度輪詢間隔：單條重跑約數秒到數十秒，兩秒一次足夠即時又不會打爆後端。 */
@@ -23,9 +19,7 @@ export function usePromptRegression() {
   const errorMessage = ref('');
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const running = computed(
-    () => starting.value || snapshot.value?.status === 'running',
-  );
+  const running = computed(() => starting.value || snapshot.value?.status === 'running');
   /** 有任何欄位被改壞＝這次改寫不該直接上線。 */
   const hasRegression = computed(() => (snapshot.value?.broken ?? 0) > 0);
   const brokenCases = computed(
@@ -59,8 +53,7 @@ export function usePromptRegression() {
     } catch (error) {
       stopPolling();
       // 後端重啟會讓 in-mem job 消失（404）——講清楚是什麼情況，別讓人以為資料壞了
-      errorMessage.value =
-        error instanceof Error ? error.message : '回歸進度查詢失敗';
+      errorMessage.value = error instanceof Error ? error.message : '回歸進度查詢失敗';
     }
   }
 

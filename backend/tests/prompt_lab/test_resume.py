@@ -53,9 +53,7 @@ def test_gateway_passes_sampling_and_reasoning_config():
         reasoning_effort="high",
         sleep=lambda _: None,
     )
-    r = gw.structured(
-        system="s", user="u", json_schema=_SCHEMA, schema_name="t", model="m"
-    )
+    r = gw.structured(system="s", user="u", json_schema=_SCHEMA, schema_name="t", model="m")
     assert r.ok
     assert client.responses.last_kwargs["temperature"] == 1
     assert client.responses.last_kwargs["reasoning"] == {"effort": "high"}

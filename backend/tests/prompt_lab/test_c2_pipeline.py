@@ -39,12 +39,8 @@ def test_c2_candidate_accepts_own_l2_and_rejects_cross_domain():
 
 
 def test_c2_plans_and_prompt_schema(plans_dir, prompts_dir):
-    layer1 = S.Plan(
-        **json.loads((plans_dir / "c2_layer1_plan.json").read_text(encoding="utf-8"))
-    )
-    layer2 = S.Plan(
-        **json.loads((plans_dir / "c2_layer2_plan.json").read_text(encoding="utf-8"))
-    )
+    layer1 = S.Plan(**json.loads((plans_dir / "c2_layer1_plan.json").read_text(encoding="utf-8")))
+    layer2 = S.Plan(**json.loads((plans_dir / "c2_layer2_plan.json").read_text(encoding="utf-8")))
     assert (len(layer1.cells), layer1.total_target) == (54, 110)
     assert (len(layer2.cells), layer2.total_target) == (60, 150)
     positives = {code: 0 for code in S.C2_L2_CODES}
@@ -58,9 +54,7 @@ def test_c2_plans_and_prompt_schema(plans_dir, prompts_dir):
 
 
 def test_c2_generator_and_auditor_route_with_fake_model(plans_dir):
-    plan = S.Plan(
-        **json.loads((plans_dir / "c2_layer1_plan.json").read_text(encoding="utf-8"))
-    )
+    plan = S.Plan(**json.loads((plans_dir / "c2_layer1_plan.json").read_text(encoding="utf-8")))
     cell = plan.cells[0]
     gen_prompt = pp.parse_gen_prompt_file(gen.generator_prompt_path("C-2"))
 
@@ -104,9 +98,7 @@ def test_c2_generator_and_auditor_route_with_fake_model(plans_dir):
             "audit_reason": "启用后断线的证据完整。",
         }
 
-    result, error = audit.audit_one(
-        _gw(auditor_reply), audit_prompt, cases[0], "fake-auditor"
-    )
+    result, error = audit.audit_one(_gw(auditor_reply), audit_prompt, cases[0], "fake-auditor")
     assert error is None
     assert result["domain_under_test"] == "C-2"
     assert result["suggested_l2_codes"] == ["C-2-1"]
@@ -116,6 +108,4 @@ def test_c2_auditor_strict_schema_is_valid():
     from jsonschema import Draft202012Validator
 
     Draft202012Validator.check_schema(S.C2_AUDITOR_OUTPUT_SCHEMA)
-    assert set(S.C2_AUDITOR_OUTPUT_SCHEMA["properties"]) == set(
-        S.C2AuditorOutput.model_fields
-    )
+    assert set(S.C2_AUDITOR_OUTPUT_SCHEMA["properties"]) == set(S.C2AuditorOutput.model_fields)

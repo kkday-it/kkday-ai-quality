@@ -23,17 +23,10 @@
  * 它已是「抽屜內滿高滾動 + 完整分頁器」的 canonical 實作，這裡是單一主列表（47 列、要翻頁），
  * 不屬於「pagination=false 的輕量對照表」那個例外。
  */
-import {
-  activatePromptRelease,
-  PERM,
-  promotePromptRelease,
-  type PromptDraftMeta,
-  type PromptReleaseMeta,
-} from '@/api';
+import { type PromptDraftMeta, type PromptReleaseMeta } from '@/api';
 import { TableLayout } from '@/components';
-import { usePermission } from '@/composables/usePermission';
+import { usePromptRelease } from '../composables';
 import { PAGINATION_WITH_ALL } from '@/constants/table.constant';
-import { Message, Modal } from '@arco-design/web-vue';
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
 
 // 對比抽屜點開才載（內含 diff 演算法與全文，非首屏必需）
@@ -55,8 +48,16 @@ const emit = defineEmits<{
   (e: 'promoteTargetConsumed'): void;
 }>();
 
-const { can } = usePermission();
-const canManage = computed(() => can(PERM.judgeRuleManage));
+/**
+ * 升版／回退動作組（共用）：名稱建議、撞名檢查、必填理由、確認流程都在 composable 裡，
+ * 本抽屜只負責版面與「哪一列按了什麼」。同一組邏輯另外兩個消費端是調試台頁面（`promotedDrafts`）
+ * 與流水線步驟④的就地升版。
+ */
+const release = usePromptRelease({
+  releases: () => props.releases,
+  onDone: (name) => emit('promoted', name),
+});
+const { canManage, promotedDrafts, activating } = release;
 
 // ── 併表：兩軌合成單一列表 ────────────────────────────────────────────────────
 
@@ -82,11 +83,6 @@ const filter = ref<'all' | 'draft' | 'release'>('all');
  * 版本數以「數十」為常態（現 47），20 條要翻三頁才看完。
  */
 const listPagination = { ...PAGINATION_WITH_ALL, pageSize: 50 };
-
-/** 已被升版過的草稿名集合（`releases[].source_draft`）——這些草稿的升版鈕置灰，避免重複升同一份。 */
-const promotedDrafts = computed(
-  () => new Set(props.releases.map((r) => r.source_draft).filter(Boolean)),
-);
 
 const allRows = computed<VersionRow[]>(() => [
   ...props.releases.map((r) => ({
@@ -145,91 +141,22 @@ function openDiff(against?: VersionRow): void {
 
 // ── 升版（草稿 → 新正式版）────────────────────────────────────────────────────
 
-const promoteVisible = ref(false);
-const promoting = ref(false);
-const sourceDraft = ref('');
-const releaseName = ref('');
-const releaseNote = ref('');
-
-/** 下一個建議名稱：release-v{既有最大序號+1}；解析不出序號就退回「總數+1」。 */
-const suggestedName = computed(() => {
-  const nums = props.releases
-    .map((r) => /^release-v(\d+)$/.exec(r.name)?.[1])
-    .filter((x): x is string => !!x)
-    .map(Number);
-  return `release-v${(nums.length ? Math.max(...nums) : props.releases.length) + 1}`;
-});
-const nameValid = computed(() =>
-  /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(releaseName.value.trim()),
-);
-const nameTaken = computed(() => props.releases.some((r) => r.name === releaseName.value.trim()));
-const noteValid = computed(() => !!releaseNote.value.trim());
-
-/** 外層帶 promoteTarget 進來（頁面頂部按了升版）→ 開抽屜即彈確認，不必再找那一列。 */
+/**
+ * 外層帶 promoteTarget 進來（頁面頂部按了升版）→ 開抽屜即彈確認，不必再找那一列。
+ *
+ * 這段刻意**不進 composable**：它是本抽屜特有的「外部預觸發」機制，依賴 `visible` 與
+ * `promoteTarget` 兩個 prop，其他消費端沒有這個概念。
+ */
 watch(
   () => [props.visible, props.promoteTarget] as const,
   ([open, target]) => {
     if (!open || !target) return;
-    openPromote(target);
+    release.openPromote(target);
     emit('promoteTargetConsumed');
   },
   { immediate: true },
 );
 
-function openPromote(draft: string): void {
-  sourceDraft.value = draft;
-  releaseName.value = suggestedName.value;
-  releaseNote.value = '';
-  promoteVisible.value = true;
-}
-
-async function confirmPromote(): Promise<void> {
-  if (!nameValid.value || nameTaken.value || !noteValid.value) return;
-  promoting.value = true;
-  try {
-    const out = await promotePromptRelease(
-      sourceDraft.value,
-      releaseName.value.trim(),
-      releaseNote.value.trim(),
-    );
-    Message.success(`${out.name} 已成為線上口徑（前一版 ${out.previous_active || '—'}）`);
-    promoteVisible.value = false;
-    emit('promoted', out.name);
-  } catch (error) {
-    Message.error(error instanceof Error ? error.message : '升版失敗');
-  } finally {
-    promoting.value = false;
-  }
-}
-
-// ── 回退（把 active 指標切到某個既有正式版）──────────────────────────────────
-
-const activating = ref('');
-
-/**
- * 把線上口徑切到某個既有正式版。閉環的最後一塊——沒有這條路，升錯版只能再升一版。
- * @param name 目標正式版名。
- */
-function activate(name: string): void {
-  Modal.confirm({
-    title: '切換線上口徑',
-    content: `確認後 ${name} 立即成為線上唯一口徑，跑批與調試台的「正式」側都會改用它。`,
-    okText: '設為使用中',
-    cancelText: '取消',
-    onOk: async () => {
-      activating.value = name;
-      try {
-        const out = await activatePromptRelease(name);
-        Message.success(`線上口徑已切為 ${out.name}（前一版 ${out.previous_active || '—'}）`);
-        emit('promoted', out.name);
-      } catch (error) {
-        Message.error(error instanceof Error ? error.message : '切換失敗');
-      } finally {
-        activating.value = '';
-      }
-    },
-  });
-}
 </script>
 
 <template>
@@ -308,7 +235,7 @@ function activate(name: string): void {
                 type="text"
                 size="mini"
                 :disabled="!canManage"
-                @click="openPromote(record.name)"
+                @click="release.openPromote(record.name)"
                 >升為正式版</a-button
               >
               <a-button
@@ -317,7 +244,7 @@ function activate(name: string): void {
                 size="mini"
                 :disabled="!canManage"
                 :loading="activating === record.name"
-                @click="activate(record.name)"
+                @click="release.activate(record.name)"
                 >設為使用中</a-button
               >
               <span v-else class="text-xs text-[#c9cdd4]">—</span>
@@ -329,41 +256,41 @@ function activate(name: string): void {
 
     <!-- 升版確認：影響線上口徑，故用表單式 modal（不是 popconfirm） -->
     <a-modal
-      v-model:visible="promoteVisible"
+      v-model:visible="release.promoteVisible.value"
       title="升為正式版"
-      :ok-loading="promoting"
-      :ok-button-props="{ disabled: !nameValid || nameTaken || !noteValid }"
+      :ok-loading="release.promoting.value"
+      :ok-button-props="{ disabled: !release.canConfirmPromote.value }"
       ok-text="設為正式版"
       cancel-text="取消"
-      @ok="confirmPromote"
+      @ok="release.confirmPromote"
     >
-      <a-form :model="{ releaseName, releaseNote }" layout="vertical">
+      <a-form :model="{ releaseName: release.releaseName.value, releaseNote: release.releaseNote.value }" layout="vertical">
         <a-form-item label="來源草稿">
-          <span class="font-medium">{{ sourceDraft }}</span>
+          <span class="font-medium">{{ release.sourceDraft.value }}</span>
         </a-form-item>
         <a-form-item
           label="正式版名稱"
-          :validate-status="!nameValid || nameTaken ? 'error' : undefined"
+          :validate-status="!release.nameValid.value || release.nameTaken.value ? 'error' : undefined"
           :help="
-            nameTaken
+            release.nameTaken.value
               ? '此名稱已存在（正式版不覆寫，請換名）'
-              : !nameValid
+              : !release.nameValid.value
                 ? '僅允許英數與 . _ -，首字元須為英數'
                 : ''
           "
         >
-          <a-input v-model="releaseName" allow-clear />
+          <a-input v-model="release.releaseName.value" allow-clear />
         </a-form-item>
         <a-form-item
           label="上線理由（必填）"
-          :validate-status="noteValid ? undefined : 'error'"
-          :help="noteValid ? '' : '請寫明這版為何上線，供日後回查'"
+          :validate-status="release.noteValid.value ? undefined : 'error'"
+          :help="release.noteValid.value ? '' : '請寫明這版為何上線，供日後回查'"
         >
-          <a-textarea v-model="releaseNote" :auto-size="{ minRows: 2, maxRows: 4 }" />
+          <a-textarea v-model="release.releaseNote.value" :auto-size="{ minRows: 2, maxRows: 4 }" />
         </a-form-item>
       </a-form>
       <div class="text-xs text-[#86909c]">
-        確認後 <b>{{ releaseName || '—' }}</b> 立即成為線上唯一口徑（前一版
+        確認後 <b>{{ release.releaseName.value || '—' }}</b> 立即成為線上唯一口徑（前一版
         {{ activeRelease || '—' }}）。建議先在對比中確認差異，再升版。
       </div>
     </a-modal>

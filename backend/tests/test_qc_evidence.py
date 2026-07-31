@@ -301,7 +301,7 @@ def _stub_snapshot(monkeypatch, counter):
     monkeypatch.setattr(
         qc_evidence,
         "_fetch_full_snapshot",
-        lambda creds, oid: (counter.__setitem__("n", counter["n"] + 1) or _sample_snapshot(oid)),
+        lambda creds, oid: counter.__setitem__("n", counter["n"] + 1) or _sample_snapshot(oid),
     )
 
 

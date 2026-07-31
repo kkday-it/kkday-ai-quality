@@ -10,21 +10,21 @@
  * 這份 Prompt 在線上模型上的表現，拿更強的模型跑會得到偏樂觀、對不上線上的結論。
  */
 import { computed, ref, watch } from 'vue';
-import { Message } from '@arco-design/web-vue';
-import { LlmConfigPicker, LlmKnobs } from '@/components';
-import {
-  getPromptDraft,
-  getPromptRelease,
-  type PromptDraftMeta,
-  type PromptReleaseMeta,
-} from '@/api';
-import { usePromptRegression } from '../composables';
-import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+import { LlmConfigSelect } from '@/components';
+import { type PromptDraftMeta, type PromptReleaseMeta } from '@/api';
+import type { usePromptRegression } from '../composables';
+import { useLlmAreaConfig } from '@/composables';
+import type { LlmOverrides } from '@/features/settings/types';
+import { fmtPercent } from '@/utils';
+// 相對路徑（非走 barrel）：同資料夾 cross-import，經 barrel 迴繞會把整包元件拉進來並觸發 circular dep。
+import PromptVersionSelect from './PromptVersionSelect.vue';
 
 const props = defineProps<{
+  /** 回歸流程狀態（由抽屜持有並下傳；本面板只讀，跑不跑由 `run` 事件交回抽屜決定）。 */
+  regression: ReturnType<typeof usePromptRegression>;
   /** 頁面上現行的 Prompt 全文。 */
   baselinePrompt: string;
-  /** 套用補丁後的候選全文；空＝還沒在「AI 改寫」分頁套用過。 */
+  /** 套用補丁後的候選全文；空＝還沒在②套用過。 */
   candidatePrompt: string;
   /** 案例庫勾選的 id。 */
   reviewIds: number[];
@@ -32,10 +32,20 @@ const props = defineProps<{
    * 也可挑歷史任一版驗證（如「這版跟三天前那版比，回歸有沒有更好」）。 */
   drafts: PromptDraftMeta[];
   releases: PromptReleaseMeta[];
+  /** 這份結果是否已對不上當前的候選版／案例集（抽屜判定）。 */
+  stale: boolean;
 }>();
 
-const llm = useLlmAreaDefault('prompt_debug');
-const regression = usePromptRegression();
+const emit = defineEmits<{
+  /** 請抽屜執行回歸——它要先記下「驗的是哪份全文、哪組案例」才能做失效判定。 */
+  (e: 'run', targetPrompt: string, overrides: LlmOverrides): void;
+  /** 回②調整補丁（改壞時的出口）。 */
+  (e: 'backToPatches'): void;
+  /** 改用「跑批」拉真實資料複驗。 */
+  (e: 'requestBatch'): void;
+}>();
+
+const llm = useLlmAreaConfig('prompt_debug');
 
 /** 要驗哪一份：有候選（套過補丁）時預設驗候選，否則只能驗現行；「選擇版本」驗任一歷史版。 */
 const target = ref<'candidate' | 'baseline' | 'version'>('baseline');
@@ -47,41 +57,9 @@ watch(
   { immediate: true },
 );
 
-/** 版本選項，依軌分組（`isGroup: true` 必帶——與對比抽屜同一套 Arco 契約）。 */
-const versionGroupOptions = computed(() => [
-  {
-    isGroup: true as const,
-    label: '正式版',
-    options: props.releases.map((r) => ({
-      value: `release:${r.name}`,
-      label: r.is_active ? `${r.name}（使用中）` : r.name,
-    })),
-  },
-  {
-    isGroup: true as const,
-    label: '草稿',
-    options: props.drafts.map((d) => ({ value: `draft:${d.version}`, label: d.version })),
-  },
-]);
 const selectedVersionKey = ref('');
 const versionPromptText = ref('');
 const loadingVersionText = ref(false);
-
-watch(selectedVersionKey, async (key) => {
-  if (!key) return;
-  loadingVersionText.value = true;
-  try {
-    const sep = key.indexOf(':');
-    const [kind, name] = [key.slice(0, sep), key.slice(sep + 1)];
-    const res = kind === 'release' ? await getPromptRelease(name) : await getPromptDraft(name);
-    versionPromptText.value = res.system_prompt;
-  } catch (error) {
-    Message.error(error instanceof Error ? error.message : '載入版本全文失敗');
-    versionPromptText.value = '';
-  } finally {
-    loadingVersionText.value = false;
-  }
-});
 
 const targetPrompt = computed(() => {
   if (target.value === 'version') return versionPromptText.value;
@@ -91,12 +69,12 @@ const targetPrompt = computed(() => {
 });
 const canRun = computed(
   () =>
-    !regression.running.value &&
+    !props.regression.running.value &&
     props.reviewIds.length > 0 &&
-    !!llm.knobs.model &&
+    !!llm.overrides.value.model &&
     !!targetPrompt.value.trim(),
 );
-const snap = computed(() => regression.snapshot.value);
+const snap = computed(() => props.regression.snapshot.value);
 const percent = computed(() =>
   snap.value && snap.value.total ? snap.value.processed / snap.value.total : 0,
 );
@@ -131,7 +109,7 @@ function display(value: unknown): string {
           size="small"
           :loading="regression.running.value"
           :disabled="!canRun"
-          @click="regression.start(reviewIds, targetPrompt, llm.overrides.value)"
+          @click="emit('run', targetPrompt, llm.overrides.value)"
         >
           開始回歸
         </a-button>
@@ -152,34 +130,36 @@ function display(value: unknown): string {
           </a-radio>
           <a-radio value="version">選擇版本</a-radio>
         </a-radio-group>
-        <span v-if="target === 'baseline' && !candidatePrompt" class="text-[11px] text-[#86909c]">
-          先到「AI 改寫」分頁套用補丁，這裡才會出現候選版本可驗
+        <span v-if="!candidatePrompt" class="text-[11px] text-[#86909c]">
+          回②套用補丁後，這裡才會出現「套用補丁後」的候選版可驗
         </span>
-        <a-select
+        <span v-else-if="target !== 'candidate'" class="text-[11px] text-[#ff7d00]">
+          注意：驗的不是本次候選版——④的定案發布只認「驗過候選版」的結果，這輪跑完仍會鎖著
+        </span>
+        <PromptVersionSelect
           v-if="target === 'version'"
           v-model="selectedVersionKey"
-          size="small"
-          class="mt-1 w-full"
-          :options="versionGroupOptions"
-          :loading="loadingVersionText"
+          v-model:text="versionPromptText"
+          v-model:loading="loadingVersionText"
+          class="mt-1"
+          :drafts="drafts"
+          :releases="releases"
           placeholder="選擇要驗證的版本（草稿或正式版）"
         />
       </div>
 
-      <LlmConfigPicker
-        :model-value="llm.provider.value"
+      <div class="mt-3 text-xs text-[#86909c]">模型配置</div>
+      <LlmConfigSelect
+        v-model="llm.configId.value"
+        class="mt-1"
+        :configs="llm.configs.value"
         :provider-has-token="llm.providerHasToken.value"
-        @update:model-value="llm.setProvider"
       />
-      <div class="mt-3">
-        <LlmKnobs
-          :model-value="llm.knobs"
-          :provider="llm.provider.value"
-          @update:model-value="llm.setKnobs"
-        />
-      </div>
     </section>
 
+    <a-alert v-if="stale" type="warning">
+      候選版或案例勾選已變更，這份回歸結果已失效——④的定案發布已鎖回去，請重新跑一次驗證。
+    </a-alert>
     <a-alert v-if="regression.errorMessage.value" type="error">
       {{ regression.errorMessage.value }}
     </a-alert>
@@ -194,9 +174,15 @@ function display(value: unknown): string {
           US$ {{ snap.cost_usd.toFixed(6) }} · {{ snap.total_tokens.toLocaleString() }} tokens
         </span>
       </div>
-      <a-progress :percent="percent" :status="progressStatus" size="small" />
+      <a-progress :percent="percent" :status="progressStatus" size="small">
+        <template #text="{ percent: p }">{{ fmtPercent(p) }}</template>
+      </a-progress>
 
-      <div v-if="snap.status !== 'running'" class="mt-3 grid grid-cols-4 gap-2">
+      <div
+        v-if="snap.status !== 'running'"
+        class="mt-3 grid grid-cols-4 gap-2"
+        :class="{ 'opacity-40': stale }"
+      >
         <div class="score-tile score-tile--good">
           <div class="score-num">{{ snap.fixed }}</div>
           <div class="score-label">修好的欄</div>
@@ -219,20 +205,28 @@ function display(value: unknown): string {
         {{ snap.failed }} 則案例重跑失敗（未計入上方分數），詳見下方清單。
       </a-alert>
       <a-alert
-        v-else-if="snap.status === 'done' && regression.hasRegression.value"
+        v-else-if="!stale && snap.status === 'done' && regression.hasRegression.value"
         type="error"
         class="mt-2"
       >
-        有 {{ snap.broken }} 個原本判對的欄被改壞了——這版不該直接上線，回「AI
-        改寫」取消掉相關補丁再試。
+        有 {{ snap.broken }} 個原本判對的欄被改壞了——這版不該直接上線。
+        <!-- 改造前這裡只有一句「回 AI 改寫取消掉相關補丁」的純文字，照做還得自己找回去 -->
+        <template #action>
+          <a-button size="mini" status="danger" @click="emit('backToPatches')">
+            回上一步調整補丁
+          </a-button>
+        </template>
       </a-alert>
-      <a-alert v-else-if="snap.status === 'done' && snap.fixed" type="success" class="mt-2">
-        修好 {{ snap.fixed }} 欄、零改壞。仍建議在正式上線前用「跑批」拉一批真實資料複驗。
+      <a-alert v-else-if="!stale && snap.status === 'done' && snap.fixed" type="success" class="mt-2">
+        修好 {{ snap.fixed }} 欄、零改壞。仍建議在正式上線前拉一批真實資料複驗。
+        <template #action>
+          <a-button size="mini" @click="emit('requestBatch')">改用跑批複驗</a-button>
+        </template>
       </a-alert>
     </section>
 
     <!-- 逐案例明細 -->
-    <section v-if="snap?.cases.length" class="regression-card">
+    <section v-if="snap?.cases.length" class="regression-card" :class="{ 'opacity-40': stale }">
       <div class="mb-2 text-xs font-semibold text-[#1d2129]">逐案例明細</div>
       <div class="flex flex-col gap-2">
         <div

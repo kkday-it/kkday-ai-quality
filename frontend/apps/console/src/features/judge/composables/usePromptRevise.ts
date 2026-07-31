@@ -10,6 +10,7 @@ import {
   type PromptPatch,
   type PromptReviseMeta,
   type PromptReviseResult,
+  type PromptVersionSaved,
 } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
 
@@ -134,21 +135,31 @@ export function usePromptRevise(deps: PromptReviseDeps) {
     }
   }
 
-  /** 把套用後的全文存成新草稿（**不改變線上口徑**）；要上線得再到「版本列表」升版。 */
-  async function saveVersion(): Promise<boolean> {
-    if (!revisedPrompt.value.trim() || savingVersion.value) return false;
+  /**
+   * 把套用後的全文存成新草稿（**不改變線上口徑**）。
+   *
+   * @returns 存檔結果（`version`＝草稿名、`created`＝是否真的建了新檔）；失敗回 `null`。
+   *
+   * ⚠️ **必須回傳 `version`**：流水線步驟④的「升為正式版」要拿它當 `promotePromptRelease` 的
+   * 來源草稿名。這裡曾經只回 `boolean`，版本號僅存在於 toast 字串裡，等於後續路徑接不上。
+   *
+   * ⚠️ **`created === false` 不是失敗**：內容與最新草稿逐字相同時後端不建檔，但**那支既有草稿
+   * 仍然可以升版**。呼叫端不得把它當錯誤而中斷流程（舊版就是這樣把「內容沒變」的路徑整條斷掉的）。
+   */
+  async function saveVersion(): Promise<PromptVersionSaved | null> {
+    if (!revisedPrompt.value.trim() || savingVersion.value) return null;
     savingVersion.value = true;
     try {
       const saved = await savePromptDraft(revisedPrompt.value, 'AI 定點改寫套用補丁');
       Message.success(
         saved.created
-          ? `已存為新草稿 ${saved.version}（線上口徑未變；要上線請到「版本列表」升為正式版）`
-          : `內容與最新草稿 ${saved.version} 相同，未建立新草稿`,
+          ? `已存為新草稿 ${saved.version}`
+          : `內容與最新草稿 ${saved.version} 相同，直接沿用該草稿`,
       );
-      return saved.created;
+      return saved;
     } catch (error) {
       Message.error(error instanceof Error ? error.message : '存為新草稿失敗');
-      return false;
+      return null;
     } finally {
       savingVersion.value = false;
     }

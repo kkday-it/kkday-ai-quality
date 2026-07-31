@@ -1,44 +1,49 @@
 <script setup lang="ts">
 /**
- * AI 定點改寫面板（案例庫抽屜的第二分頁）：勾好的案例 → 旗艦模型產補丁 → 逐條勾選 → 套用 →
- * 左右比對 → 存為新草稿（不改變線上口徑，要上線再到「版本列表」升版）。
+ * 流水線步驟②「AI 定點改寫」：勾好的案例 → 旗艦模型產補丁 → 逐條勾選 → 套用 → 左右比對，
+ * 產出**候選 Prompt** 交給③驗證。
+ *
+ * 「存為新草稿」**不在這裡**——它是定案動作、前提是③的回歸結果，放在這裡會逼使用者「跑完回歸
+ * 再倒回上一步存檔」，正是本次改造要消滅的那條 Z 字形路徑。它現在在步驟④。
  *
  * 為什麼是補丁不是整篇重寫、為什麼 anchor 要驗唯一：見 `backend/app/judge/prompt_reviser.py`
  * 的模組說明（簡言之，這份 Prompt 有 2–3 萬字的實測校準層，整篇重寫會被順手砍掉且 diff 沒人審得動）。
  *
  * 模型走獨立的 `prompt_revise` 功能區——裁決跑批要便宜，改 Prompt 要聰明，兩者不共用旋鈕。
  */
-import { computed, ref, toRef } from 'vue';
+import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { LlmConfigPicker, LlmKnobs, MdTextDiff } from '@/components';
-import { usePromptRevise } from '../composables';
-import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+import { AsyncSection, LlmConfigSelect, MdTextDiff } from '@/components';
+import type { usePromptRevise } from '../composables';
+import { useLlmAreaConfig } from '@/composables';
 
 const props = defineProps<{
-  /** 要被改寫的現行 Prompt 全文（頁面上編輯中的那份）。 */
+  /**
+   * 改寫流程狀態（由抽屜持有並下傳）。
+   *
+   * 整包傳而不是攤成十幾個 prop：這些欄位彼此高度耦合（串流三態、補丁勾選、套用結果一起變動），
+   * 攤開只會讓簽名爆炸且每加一個欄位就要改兩處。抽屜是唯一擁有者，面板只讀不寫（動作一律呼叫
+   * 它提供的方法）。
+   */
+  revise: ReturnType<typeof usePromptRevise>;
+  /** 改寫基準的全文（diff 左側與字元數說明用；實際送出的基準在 composable 內）。 */
   systemPrompt: string;
-  /** 案例庫勾選的 id。 */
+  /** 案例庫勾選的 id（只用於顯示與 canRun 判斷）。 */
   reviewIds: number[];
 }>();
 
-const emit = defineEmits<{
-  /** 存出了新版本，父層需通知調試台重載最新版。 */
-  (e: 'savedVersion'): void;
-  /** 套用補丁產出了候選全文，父層轉給「回歸重跑」分頁當驗證標的（存版前就能先驗）。 */
-  (e: 'applied', prompt: string): void;
-}>();
-
-const llm = useLlmAreaDefault('prompt_revise');
-const revise = usePromptRevise({
-  systemPrompt: toRef(props, 'systemPrompt'),
-  reviewIds: toRef(props, 'reviewIds'),
-});
+const llm = useLlmAreaConfig('prompt_revise');
 
 /** 串流原始輸出預設收起：正常情況沒人要看 JSON，出問題時才展開追。 */
 const rawVisible = ref(false);
 
 const canRun = computed(
-  () => !revise.streaming.value && props.reviewIds.length > 0 && !!llm.knobs.model,
+  () => !props.revise.streaming.value && props.reviewIds.length > 0 && !!llm.overrides.value.model,
+);
+
+/** 串流已開始但還沒吐出任何內容的空窗——這段用骨架佔位，有 delta 之後才換成真正的輸出。 */
+const waitingFirstDelta = computed(
+  () => props.revise.streaming.value && !props.revise.rawOutput.value,
 );
 
 const STATUS_META: Record<string, { color: string; label: string; hint: string }> = {
@@ -56,20 +61,10 @@ const STATUS_META: Record<string, { color: string; label: string; hint: string }
 };
 
 async function copyChangelog(): Promise<void> {
-  const text = revise.result.value?.changelog;
+  const text = props.revise.result.value?.changelog;
   if (!text) return;
   await navigator.clipboard.writeText(text);
   Message.success('已複製 CHANGELOG 條目草稿');
-}
-
-/** 套用後把候選全文丟給父層，「回歸重跑」分頁才能在存版之前先驗一輪。 */
-async function onApply(): Promise<void> {
-  await revise.apply();
-  if (revise.revisedPrompt.value) emit('applied', revise.revisedPrompt.value);
-}
-
-async function onSaveVersion(): Promise<void> {
-  if (await revise.saveVersion()) emit('savedVersion');
 }
 </script>
 
@@ -107,18 +102,13 @@ async function onSaveVersion(): Promise<void> {
         字元的實測校準層與判例庫，整篇重寫過去實測會被順手砍掉、分數直接掉。沒被指名的段落不會被碰到。
       </p>
 
-      <LlmConfigPicker
-        :model-value="llm.provider.value"
+      <div class="text-xs text-[#86909c]">模型配置</div>
+      <LlmConfigSelect
+        v-model="llm.configId.value"
+        class="mt-1"
+        :configs="llm.configs.value"
         :provider-has-token="llm.providerHasToken.value"
-        @update:model-value="llm.setProvider"
       />
-      <div class="mt-3">
-        <LlmKnobs
-          :model-value="llm.knobs"
-          :provider="llm.provider.value"
-          @update:model-value="llm.setKnobs"
-        />
-      </div>
     </section>
 
     <a-alert v-for="message in revise.warnings.value" :key="message" type="warning" class="mb-2">{{
@@ -143,17 +133,14 @@ async function onSaveVersion(): Promise<void> {
           {{ rawVisible ? '收起原始輸出' : '看原始輸出' }}
         </a-button>
       </div>
-      <a-progress
-        v-if="revise.streaming.value"
-        :percent="0.999"
-        :show-text="false"
-        size="mini"
-        status="normal"
-        class="mt-2 animate-pulse"
-      />
-      <pre v-show="rawVisible" class="raw-output mt-2">{{
-        revise.rawOutput.value || '等待模型回應…'
-      }}</pre>
+      <!--
+        只把「已開始串流但還沒吐出任何字」那段交給 AsyncSection：它是**互斥三態**（loading 時
+        預設 slot 不渲染），一旦有 delta 就必須換成真正的輸出，否則使用者反而看不到生成內容。
+        改造前這裡是 `a-progress :percent="0.999"` + animate-pulse 假裝 indeterminate。
+      -->
+      <AsyncSection :loading="waitingFirstDelta" :skeleton-rows="2" class="mt-2">
+        <pre v-show="rawVisible" class="raw-output">{{ revise.rawOutput.value }}</pre>
+      </AsyncSection>
     </section>
 
     <!-- 診斷 -->
@@ -181,7 +168,7 @@ async function onSaveVersion(): Promise<void> {
           size="small"
           :loading="revise.applying.value"
           :disabled="!revise.canApply.value"
-          @click="onApply"
+          @click="revise.apply()"
         >
           套用勾選補丁
         </a-button>
@@ -238,26 +225,17 @@ async function onSaveVersion(): Promise<void> {
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <span class="text-xs font-semibold text-[#1d2129]">套用後比對</span>
-          <span class="text-[11px] text-[#86909c]"
-            >確認無誤再存草稿；不改變線上口徑，要上線再到「版本列表」升版</span
-          >
+          <span class="text-[11px] text-[#86909c]">
+            這就是本次的候選版；確認無誤後到下一步「回歸驗證」跑一輪，通過了才在④定案存檔
+          </span>
         </div>
-        <a-space size="mini">
-          <a-button
-            v-if="revise.result.value?.changelog"
-            type="outline"
-            size="small"
-            @click="copyChangelog"
-            >複製 CHANGELOG 草稿</a-button
-          >
-          <a-button
-            type="primary"
-            size="small"
-            :loading="revise.savingVersion.value"
-            @click="onSaveVersion"
-            >存為新草稿</a-button
-          >
-        </a-space>
+        <a-button
+          v-if="revise.result.value?.changelog"
+          type="outline"
+          size="small"
+          @click="copyChangelog"
+          >複製 CHANGELOG 草稿</a-button
+        >
       </div>
       <div class="diff-box">
         <MdTextDiff
@@ -268,9 +246,8 @@ async function onSaveVersion(): Promise<void> {
         />
       </div>
       <a-alert type="warning" class="mt-2">
-        存版只改 Prompt。判準若同時寫在 <code>config/ai_judge/after_sales_root_cause.json</code>
-        的 calibration，仍要人工同步——這裡不會自動改
-        SSOT。改完務必到「回歸重跑」驗一次有沒有改壞舊案例。
+        改寫只動 Prompt。判準若同時寫在 <code>config/ai_judge/after_sales_root_cause.json</code>
+        的 calibration，仍要人工同步——這裡不會自動改 SSOT。
       </a-alert>
     </section>
 

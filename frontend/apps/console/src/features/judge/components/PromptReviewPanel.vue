@@ -40,6 +40,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 案例存檔成功（父層可用來刷新案例數／提示開改寫抽屜）。 */
   (e: 'saved', id: number): void;
+  /** 使用者要求就地前往流水線改寫這則案例（帶 id 去預先勾選）。 */
+  (e: 'revise', id: number): void;
 }>();
 
 /** 逐欄評判結果；未出現在此表＝還沒看。 */
@@ -95,7 +97,8 @@ const controlViews = computed<Record<string, ControlView>>(() =>
       const view: ControlView = { kind: c.kind, options: [], steps: [] };
       if (c.kind === 'select') view.options = c.options;
       if (c.kind === 'radio') view.steps = c.options;
-      if (c.kind === 'tags') Object.assign(view, { maxItems: c.maxItems, itemMin: c.itemMin, itemMax: c.itemMax });
+      if (c.kind === 'tags')
+        Object.assign(view, { maxItems: c.maxItems, itemMin: c.itemMin, itemMax: c.itemMax });
       if (c.kind === 'number') Object.assign(view, { min: c.min, max: c.max });
       return [key, view];
     }),
@@ -179,6 +182,15 @@ function clearAll(): void {
   corrections.value = {};
 }
 
+/**
+ * 剛存出的案例 id；非空＝就地顯示「前往改寫」連結。
+ *
+ * 刻意**不自動彈出流水線抽屜**：常見動線是「連標數則 → 累積後一起餵給 AI」，每存一則就強制
+ * 跳走反而打斷評判。這裡只把入口擺到眼前，去不去由使用者決定——修掉「產生案例的面板在第三欄、
+ * 使用案例的入口在第二欄」的割裂。
+ */
+const savedId = ref<number | null>(null);
+
 async function save(): Promise<void> {
   if (!canSave.value || saving.value) return;
   if (missingKeys.value.length) {
@@ -201,6 +213,7 @@ async function save(): Promise<void> {
         ? `已存為案例（標錯 ${badKeys.value.length} 欄）`
         : '已存為案例（全欄皆對，可當回歸正例）',
     );
+    savedId.value = id;
     emit('saved', id);
   } catch (error) {
     Message.error(error instanceof Error ? error.message : '存為案例失敗');
@@ -332,7 +345,11 @@ function displayValue(value: unknown): string {
         placeholder="修改建議（選填）：這題應該怎麼判？Prompt 哪句話把模型帶偏了？寫得越具體，AI 改寫時越不會亂動別的段落。"
       />
       <div class="flex items-center justify-between gap-2">
-        <span class="text-[11px] leading-snug text-[#86909c]">
+        <span v-if="savedId" class="flex flex-wrap items-center gap-1 text-[11px] text-[#00b42a]">
+          已存為案例
+          <a-link class="text-[11px]" @click="emit('revise', savedId)">前往改寫這則 →</a-link>
+        </span>
+        <span v-else class="text-[11px] leading-snug text-[#86909c]">
           存下來的案例可餵給 AI 定點改寫，也會進回歸重跑清單
         </span>
         <a-button type="primary" size="small" :loading="saving" :disabled="!canSave" @click="save">

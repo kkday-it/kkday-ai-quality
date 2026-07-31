@@ -3,7 +3,6 @@ import {
   getPromptDebugDefaults,
   getPromptDraft,
   getPromptRelease,
-  PERM,
   savePromptDraft,
   streamPromptDebug,
   type PromptDebugDefaults,
@@ -11,13 +10,11 @@ import {
   type PromptDebugResult,
   type PromptDebugUsage,
 } from '@/api';
-import { LlmConfigPicker, LlmConfigTestResult, LlmKnobs } from '@/components';
-import { useLlmConfigTest } from '@/composables';
-import { usePermission } from '@/composables/usePermission';
+import { LlmConfigSelect } from '@/components';
 import { Message, Modal } from '@arco-design/web-vue';
-import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useLlmAreaConfig } from '@/composables';
 // 評判區塊跟著判決結果一起出現，lazy 只會讓結果到齊的瞬間閃一下，故靜態載入
 import PromptReviewPanel from '../components/PromptReviewPanel.vue';
 
@@ -35,12 +32,8 @@ const PromptVersionDrawer = defineAsyncComponent(
 );
 
 const router = useRouter();
-const llm = useLlmAreaDefault('prompt_debug');
-const llmTest = useLlmConfigTest(
-  () => llm.provider.value,
-  () => llm.knobs,
-);
-const { can } = usePermission();
+const route = useRoute();
+const llm = useLlmAreaConfig('prompt_debug');
 
 const defaults = ref<PromptDebugDefaults | null>(null);
 const systemPrompt = ref('');
@@ -76,6 +69,69 @@ const versionVisible = ref(false);
 /** 案例庫筆數（入口按鈕上的徽章；存新案例後 +1，開抽屜時以後端實數校正）。 */
 const reviewCount = ref(0);
 
+// ── 案例庫 × AI 改寫流水線的開合與步驟（沿用 SettingsDrawer 的 route-query 慣例）────────
+/** 抽屜要開在第幾步；也是 `?revise=` 的值。 */
+const reviseStep = ref(1);
+/** 開抽屜時要預先勾選的案例 id（剛存完案例直接跳過去時用）。 */
+const revisePreselectId = ref<number | undefined>(undefined);
+
+const syncReviseQuery = (step: number): void => {
+  void router.replace({ query: { ...route.query, revise: String(step) } });
+};
+const clearReviseQuery = (): void => {
+  if (!route.query.revise) return; // 冪等守衛：避免無謂的 replace
+  const query = { ...route.query };
+  delete query.revise;
+  void router.replace({ query });
+};
+
+/**
+ * 開流水線抽屜。
+ * @param step 想落在第幾步；抽屜內部會依當前狀態 clamp（重整後多半只能回到①）。
+ * @param preselectId 要預先勾選的案例 id。
+ */
+function openRevise(step = 1, preselectId?: number): void {
+  reviseStep.value = step;
+  revisePreselectId.value = preselectId;
+  reviseVisible.value = true;
+  syncReviseQuery(step);
+}
+
+/** 抽屜內換步 → 同步進 query，重整/分享連結時回得來。 */
+function onReviseStep(step: number): void {
+  reviseStep.value = step;
+  if (reviseVisible.value) syncReviseQuery(step);
+}
+
+watch(reviseVisible, (open) => {
+  if (!open) {
+    clearReviseQuery();
+    revisePreselectId.value = undefined;
+  }
+});
+
+// query → 狀態（`immediate` 兼作重整還原；也讓頁面內其他地方能用 query 遠端開抽屜）
+watch(
+  () => route.query.revise,
+  (value) => {
+    if (value === undefined || value === null) return;
+    reviseStep.value = Number(Array.isArray(value) ? value[0] : value) || 1;
+    reviseVisible.value = true;
+  },
+  { immediate: true },
+);
+
+/** 存完案例只更新徽章；要不要立刻去改寫由使用者按評判區塊那顆連結決定（見 `PromptReviewPanel`）。 */
+function onCaseSaved(): void {
+  reviewCount.value += 1;
+}
+
+/** ③建議改用跑批複驗：關流水線、開跑批（那裡已可直接選要跑哪一版 Prompt）。 */
+function onRequestBatch(): void {
+  reviseVisible.value = false;
+  batchVisible.value = true;
+}
+
 const streaming = ref(false);
 const rawOutput = ref('');
 const result = ref<PromptDebugResult | null>(null);
@@ -88,8 +144,8 @@ let abortController: AbortController | null = null;
 
 const canRun = computed(
   () =>
-    !!llm.provider.value &&
-    !!llm.knobs.model.trim() &&
+    !!llm.overrides.value.provider &&
+    !!llm.overrides.value.model.trim() &&
     !!systemPrompt.value.trim() &&
     !!inputText.value.trim(),
 );
@@ -155,19 +211,6 @@ async function selectVersion(name: string): Promise<void> {
     cancelText: '留在此處',
     onOk: apply,
   });
-}
-
-/**
- * 版本列表抽屜要求「載入編輯器」：先把口徑對齊該版所屬的軌，再走既有的換版流程
- * （含未存編輯的二次確認）——不對齊軌別的話，頂部下拉會顯示不到剛載入的那一版。
- * @param payload 該版所屬軌與版本名。
- */
-async function onLoadVersionFromDrawer(payload: {
-  kind: 'draft' | 'release';
-  name: string;
-}): Promise<void> {
-  track.value = payload.kind;
-  await selectVersion(payload.name);
 }
 
 /**
@@ -352,15 +395,6 @@ function abort(): void {
   abortController?.abort();
 }
 
-async function saveAsDefault(): Promise<void> {
-  try {
-    await llm.saveAsDefault();
-    Message.success('已存為本功能區默認');
-  } catch (error) {
-    Message.error('儲存失敗：' + (error instanceof Error ? error.message : error));
-  }
-}
-
 async function copyOutput(): Promise<void> {
   if (!rawOutput.value) return;
   await navigator.clipboard.writeText(rawOutput.value);
@@ -368,13 +402,14 @@ async function copyOutput(): Promise<void> {
 }
 
 function openLlmSettings(): void {
-  router.replace({ query: { ...router.currentRoute.value.query, settings: 'llm' } });
+  void router.replace({ query: { ...route.query, settings: 'llm' } });
 }
 </script>
 
 <template>
-  <div class="flex min-h-full flex-col gap-4">
-    <section class="rounded-xl border border-[#e5e6eb] bg-white px-5 py-4 shadow-sm">
+  <!-- debug-page：三欄同排時滿高不整頁捲，捲動下沉到各區塊內部（窄屏於 style 內回退整頁捲） -->
+  <div class="debug-page flex h-full min-h-full flex-col gap-4 overflow-hidden">
+    <section class="shrink-0 rounded-xl border border-[#e5e6eb] bg-white px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="mb-1 flex items-center gap-2">
@@ -423,8 +458,8 @@ function openLlmSettings(): void {
     </section>
 
     <div class="debug-grid min-h-0 flex-1">
-      <section class="debug-panel min-h-0">
-        <div class="panel-head">
+      <section class="debug-panel flex min-h-0 flex-col">
+        <div class="panel-head shrink-0">
           <div>
             <div class="panel-title">System Prompt</div>
             <div class="panel-sub">
@@ -457,7 +492,7 @@ function openLlmSettings(): void {
             >
           </a-space>
         </div>
-        <div class="mb-3 flex flex-col gap-1">
+        <div class="mb-3 flex shrink-0 flex-col gap-1">
           <!-- 多控制項橫排且可能換行 → 依前端規則用 a-row/a-col（gutter 同時管欄距與換行行距），
                不用裸 a-space：radio+select+button 三個變寬元件塞單一 flex 容器必然擠壓換行 -->
           <a-row :gutter="[8, 8]" align="center" wrap>
@@ -528,15 +563,15 @@ function openLlmSettings(): void {
         </div>
       </section>
 
-      <section class="debug-panel min-h-0">
-        <div class="panel-head">
+      <section class="debug-panel flex min-h-0 flex-col">
+        <div class="panel-head shrink-0">
           <div>
             <div class="panel-title">調試文本</div>
             <div class="panel-sub">請貼完整對話；模型會把其中的指令視為資料而非系統命令</div>
           </div>
           <a-button size="small" :disabled="streaming" @click="inputText = ''">清空</a-button>
         </div>
-        <div class="mb-3 flex flex-wrap gap-2">
+        <div class="mb-3 flex shrink-0 flex-wrap gap-2">
           <a-button
             v-for="sample in samples"
             :key="sample.label"
@@ -554,14 +589,14 @@ function openLlmSettings(): void {
           :auto-size="false"
           placeholder="例如：\n[USER] 我仍未收到電子票…\n[BOT] …\n[USER] 請幫我查詢"
         />
-        <div class="mt-3 flex items-center justify-between gap-3">
+        <div class="mt-3 flex shrink-0 items-center justify-between gap-3">
           <span class="text-xs text-[#86909c]">{{ inputText.length.toLocaleString() }} 字元</span>
           <a-space>
             <a-badge :count="reviewCount" :max-count="99" :offset="[-4, 4]">
               <a-button
                 type="outline"
                 :disabled="streaming || !systemPrompt.trim()"
-                @click="reviseVisible = true"
+                @click="openRevise()"
               >
                 案例庫／AI 改寫
               </a-button>
@@ -585,58 +620,32 @@ function openLlmSettings(): void {
         <div class="debug-panel flex-none">
           <div class="panel-head">
             <div>
-              <div class="panel-title">本次 LLM 配置</div>
+              <div class="panel-title">模型配置</div>
               <div class="panel-sub">
-                跟隨「Prompt 調試台」功能區默認；下方調整只影響本次，不動全域默認
+                選一個具名配置；內容在「設定 › LLM 設定」統一維護，一筆可同時給多個功能區用
               </div>
             </div>
-            <a-link @click="openLlmSettings">管理連線</a-link>
+            <!-- shrink-0 + nowrap：panel-head 是 flex，左側說明文字變長時會把連結擠到換行 -->
+            <a-link class="shrink-0 whitespace-nowrap" @click="openLlmSettings"
+              >管理 LLM 設定</a-link
+            >
           </div>
           <a-alert
             v-if="!Object.keys(llm.providerHasToken.value).length"
             type="warning"
             class="mb-3"
           >
-            尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
+            尚無可用 LLM 連線，請先至「設定 › LLM 設定」建立並保存 API Token。
           </a-alert>
-          <LlmConfigPicker
-            :model-value="llm.provider.value"
+          <LlmConfigSelect
+            v-model="llm.configId.value"
+            :configs="llm.configs.value"
             :provider-has-token="llm.providerHasToken.value"
-            @update:model-value="llm.setProvider"
-          />
-          <div class="mt-3">
-            <LlmKnobs
-              :model-value="llm.knobs"
-              :provider="llm.provider.value"
-              @update:model-value="llm.setKnobs"
-            />
-          </div>
-          <div class="mt-2 flex justify-end gap-2">
-            <a-button
-              v-if="can(PERM.settingsLlmConfigManage)"
-              type="primary"
-              status="warning"
-              size="small"
-              :loading="llmTest.testing.value"
-              :disabled="streaming || !llm.knobs.model"
-              @click="llmTest.onTest"
-              >測試連線</a-button
-            >
-            <a-button
-              size="small"
-              :disabled="streaming || !can(PERM.settingsLlmAreaDefaultWrite)"
-              @click="saveAsDefault"
-              >存為此區默認</a-button
-            >
-          </div>
-          <LlmConfigTestResult
-            :result="llmTest.testResult.value"
-            :provider="llm.provider.value"
-            :knobs="llm.knobs"
+            :show-manage-link="false"
           />
         </div>
 
-        <div class="debug-panel flex min-h-[360px] flex-1 flex-col">
+        <div class="output-panel debug-panel flex min-h-0 flex-1 flex-col">
           <div class="panel-head flex-none">
             <div>
               <div class="flex items-center gap-2">
@@ -650,66 +659,76 @@ function openLlmSettings(): void {
             <a-button size="small" :disabled="!rawOutput" @click="copyOutput">複製</a-button>
           </div>
 
-          <a-alert v-if="errorMessage" type="error" class="mb-3">{{ errorMessage }}</a-alert>
-          <a-alert v-for="message in warnings" :key="message" type="warning" class="mb-2">{{
-            message
-          }}</a-alert>
+          <!-- 輸出區捲動容器：串流黑框吃剩餘高度，結果／費用接在其下一起於本容器內捲動 -->
+          <div class="stream-scroll flex min-h-0 flex-1 flex-col">
+            <a-alert v-if="errorMessage" type="error" class="mb-3 shrink-0">{{
+              errorMessage
+            }}</a-alert>
+            <a-alert
+              v-for="message in warnings"
+              :key="message"
+              type="warning"
+              class="mb-2 shrink-0"
+              >{{ message }}</a-alert
+            >
 
-          <pre ref="outputRef" class="stream-output">{{
-            rawOutput || '尚未執行。開始裁決後，這裡會逐字顯示模型輸出。'
-          }}</pre>
+            <pre ref="outputRef" class="stream-output">{{
+              rawOutput || '尚未執行。開始裁決後，這裡會逐字顯示模型輸出。'
+            }}</pre>
 
-          <div v-if="result" class="mt-3">
-            <a-alert v-if="result.validation_issues.length" type="error" class="mb-3">
-              <div class="font-medium">輸出契約未通過</div>
-              <div v-for="issue in result.validation_issues" :key="issue" class="mt-1 text-xs">
-                • {{ issue }}
-              </div>
-            </a-alert>
-            <PromptReviewPanel
-              v-if="displayedResults.length && result.parsed"
-              :fields="displayedResults"
-              :schema="defaults?.output_schema"
-              :cascade="defaults?.output_cascade"
-              :ai-output="result.parsed"
-              :conversation="inputText"
-              :prompt-version="isEdited ? '' : baseline.name"
-              :model="meta?.model ?? llm.knobs.model"
-              :disabled="streaming"
-              @saved="reviewCount += 1"
-            />
-          </div>
-
-          <div v-if="usage" class="usage-card mt-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <div class="text-xs text-[#86909c]">本次估算費用</div>
-                <div class="text-xl font-semibold text-[#1d2129]">
-                  US$ {{ usage.cost_usd.toFixed(6) }}
+            <div v-if="result" class="mt-3 shrink-0">
+              <a-alert v-if="result.validation_issues.length" type="error" class="mb-3">
+                <div class="font-medium">輸出契約未通過</div>
+                <div v-for="issue in result.validation_issues" :key="issue" class="mt-1 text-xs">
+                  • {{ issue }}
                 </div>
-              </div>
-              <div class="text-right text-xs text-[#4e5969]">
+              </a-alert>
+              <PromptReviewPanel
+                v-if="displayedResults.length && result.parsed"
+                :fields="displayedResults"
+                :schema="defaults?.output_schema"
+                :cascade="defaults?.output_cascade"
+                :ai-output="result.parsed"
+                :conversation="inputText"
+                :prompt-version="isEdited ? '' : baseline.name"
+                :model="meta?.model ?? llm.overrides.value.model"
+                :disabled="streaming"
+                @saved="onCaseSaved"
+                @revise="(id: number) => openRevise(1, id)"
+              />
+            </div>
+
+            <div v-if="usage" class="usage-card mt-3 shrink-0">
+              <div class="flex items-center justify-between gap-3">
                 <div>
-                  {{ usage.total_tokens.toLocaleString() }} tokens ·
-                  {{ (usage.latency_ms / 1000).toFixed(1) }}s
+                  <div class="text-xs text-[#86909c]">本次估算費用</div>
+                  <div class="text-xl font-semibold text-[#1d2129]">
+                    US$ {{ usage.cost_usd.toFixed(6) }}
+                  </div>
                 </div>
-                <div>
-                  輸入 {{ usage.prompt_tokens.toLocaleString() }} / 輸出
-                  {{ usage.completion_tokens.toLocaleString() }}
+                <div class="text-right text-xs text-[#4e5969]">
+                  <div>
+                    {{ usage.total_tokens.toLocaleString() }} tokens ·
+                    {{ (usage.latency_ms / 1000).toFixed(1) }}s
+                  </div>
+                  <div>
+                    輸入 {{ usage.prompt_tokens.toLocaleString() }} / 輸出
+                    {{ usage.completion_tokens.toLocaleString() }}
+                  </div>
+                  <div v-if="usage.cached_tokens || usage.reasoning_tokens">
+                    快取 {{ usage.cached_tokens.toLocaleString() }} / 推理
+                    {{ usage.reasoning_tokens.toLocaleString() }}
+                  </div>
                 </div>
-                <div v-if="usage.cached_tokens || usage.reasoning_tokens">
-                  快取 {{ usage.cached_tokens.toLocaleString() }} / 推理
-                  {{ usage.reasoning_tokens.toLocaleString() }}
-                </div>
+              </div>
+              <div class="mt-2 text-[11px] text-[#86909c]">
+                依目前模型單價與 API usage 估算，最終金額以供應商帳單為準。
               </div>
             </div>
-            <div class="mt-2 text-[11px] text-[#86909c]">
-              依目前模型單價與 API usage 估算，最終金額以供應商帳單為準。
+            <div v-if="meta" class="mt-2 shrink-0 text-[11px] text-[#86909c]">
+              {{ meta.model }} · {{ meta.provider }} · reasoning={{ meta.reasoning_effort }} ·
+              temperature={{ meta.temperature ?? 'default' }}
             </div>
-          </div>
-          <div v-if="meta" class="mt-2 text-[11px] text-[#86909c]">
-            {{ meta.model }} · {{ meta.provider }} · reasoning={{ meta.reasoning_effort }} ·
-            temperature={{ meta.temperature ?? 'default' }}
           </div>
         </div>
       </section>
@@ -721,8 +740,11 @@ function openLlmSettings(): void {
       :prompt-version="isEdited ? '' : baseline.name"
       :prompt-kind="isEdited ? '' : track"
       :prompt-edited="isEdited"
-      :model="llm.knobs.model"
-      :overrides="llm.overrides.value"
+      :drafts="defaults?.drafts ?? []"
+      :releases="defaults?.releases ?? []"
+      :configs="llm.configs.value"
+      :default-config-id="llm.config.value?.id ?? ''"
+      :provider-has-token="llm.providerHasToken.value"
     />
 
     <PromptVersionDrawer
@@ -732,7 +754,6 @@ function openLlmSettings(): void {
       :active-release="defaults?.active_release ?? ''"
       :promote-target="promoteTarget"
       @promoted="() => loadDefaults(true)"
-      @load="onLoadVersionFromDrawer"
       @promote-target-consumed="promoteTarget = ''"
     />
 
@@ -740,11 +761,16 @@ function openLlmSettings(): void {
       v-model:visible="reviseVisible"
       :system-prompt="systemPrompt"
       :prompt-version="defaults?.active_release ?? ''"
+      :release-prompt="defaults?.release_prompt ?? ''"
       :prompt-edited="isEdited"
       :drafts="defaults?.drafts ?? []"
       :releases="defaults?.releases ?? []"
+      :initial-step="reviseStep"
+      :preselect-id="revisePreselectId"
       @count="reviewCount = $event"
       @saved-version="() => loadDefaults(false)"
+      @step-change="onReviseStep"
+      @request-batch="onRequestBatch"
     />
   </div>
 </template>
@@ -782,25 +808,21 @@ function openLlmSettings(): void {
   line-height: 1.5;
 }
 .panel-foot {
+  flex: none;
   margin-top: 8px;
 }
+/* 兩個編輯器吃各自面板的剩餘高度（textarea 本身即捲動容器）；min-height 0 才收得住 */
 .prompt-editor,
 .input-editor {
+  flex: 1;
   width: 100%;
+  min-height: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.55;
 }
-.prompt-editor {
-  height: calc(100vh - 300px);
-  min-height: 520px;
-}
-.input-editor {
-  height: calc(100vh - 354px);
-  min-height: 460px;
-}
 .stream-output {
+  flex: 1;
   min-height: 150px;
-  max-height: 260px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -812,13 +834,24 @@ function openLlmSettings(): void {
   font-size: 12px;
   line-height: 1.6;
 }
+.stream-scroll {
+  overflow-y: auto;
+}
 .usage-card {
   border: 1px solid #bedaff;
   border-radius: 10px;
   background: #f2f7ff;
   padding: 12px;
 }
+/*
+  ≤1380px 起三欄折成 2+1 兩列，一屏塞不下 → 整體回退為「頁面捲動」（AppShell 內容區本就 overflow-y-auto）：
+  面板恢復固定高度，各自的內部捲動容器改為隨內容展開，避免出現「一小塊能捲、下方大片留白」。
+*/
 @media (max-width: 1380px) {
+  .debug-page {
+    height: auto;
+    overflow: visible;
+  }
   .debug-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -827,7 +860,18 @@ function openLlmSettings(): void {
   }
   .prompt-editor,
   .input-editor {
+    flex: none;
     height: 560px;
+  }
+  .output-panel {
+    min-height: 360px;
+  }
+  .stream-scroll {
+    overflow: visible;
+  }
+  .stream-output {
+    flex: none;
+    height: 260px;
   }
 }
 @media (max-width: 880px) {
