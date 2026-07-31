@@ -9,19 +9,21 @@
   contextvar 的背景 thread 產生），worker 內 `ctx.run(...)` 即自動繼承，與 client.py sink 註解一致。
 - 全域 `BoundedSemaphore(prejudge_max_workers)`：單 job 內併發即等於 pool 大小不受影響；多 job
   疊加時把「同時在跑的 LLM 呼叫數」收斂到此上限（對齊 config.env.prejudge_max_workers 語義）。
+- AIMD 自適應併發（`core.concurrency.ConcurrencyGovernor`）：已提取為共用層，售後根因 Prompt 跑批
+  （`prompt_debug_batch`）走同一顆 governor 與同一組 `prejudge.adaptive_concurrency()` 參數。
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextvars import copy_context
 
 from app.core import db, pricing
 from app.core import settings as app_settings
+from app.core.concurrency import ConcurrencyGovernor, is_rate_limit
 from app.core.config import env, is_production
 from app.core.job_registry import JobStore
 from app.judge import prejudge, run_log
@@ -48,62 +50,6 @@ _sem = threading.BoundedSemaphore(env.prejudge_max_workers)
 _FETCH_CHUNK = 500
 # 失敗筆明細清單上限：大規模系統性失敗時只計數、不再細列，避免撐爆 SSE payload / 記憶體。
 _MAX_FAILED_ITEMS = 200
-
-
-class _ConcurrencyGovernor:
-    """AIMD 自適應併發：樂觀起於 ceiling，遇 429 失敗乘性收縮、清空後加性回升，收斂到 API 可持續的最大併發。
-
-    ceiling＝該 model 靜態上限（max_workers_for ∩ env 硬天花板），永不超過；只在其下自適應。信號＝item 因
-    429 失敗（SDK 內建退避 + 單域重試全耗盡仍 429＝真過載）；SDK 能吸收的暫時 429（item 仍成功）不觸發——
-    恰好在「429 開始造成失敗」時降速，零星失敗筆由 P2 重新初判補回。thread-safe（worker 併發呼叫 on_429）。
-    """
-
-    def __init__(
-        self,
-        ceiling: int,
-        *,
-        floor: int = 2,
-        backoff: float = 0.5,
-        probe_interval_s: float = 3.0,
-        cooldown_s: float = 5.0,
-    ) -> None:
-        self._ceiling = max(1, ceiling)
-        self._floor = max(1, min(floor, self._ceiling))
-        self._backoff = backoff
-        self._probe_interval = probe_interval_s
-        self._cooldown = cooldown_s
-        self._limit = self._ceiling  # 樂觀起步（config 值已是保守估計）
-        self._last_429 = 0.0
-        self._cooldown_until = 0.0
-        self._lock = threading.Lock()
-
-    def current(self) -> int:
-        """當前允許併發（供提交迴圈背壓）；順帶時間驅動加性回升——僅提交執行緒呼叫（單執行緒讀）。"""
-        with self._lock:
-            now = time.monotonic()
-            if self._limit < self._ceiling and (now - self._last_429) >= self._probe_interval:
-                self._limit = min(self._ceiling, self._limit + 1)
-                self._last_429 = now  # 重置探測時鐘：每 interval 回升一階（漸進不暴衝）
-            return self._limit
-
-    def on_429(self) -> None:
-        """worker 遇 429 失敗時呼叫：乘性收縮（cooldown 內只反應一次，避免一波 429 過度收縮）。"""
-        with self._lock:
-            now = time.monotonic()
-            self._last_429 = now
-            if now < self._cooldown_until:
-                return
-            self._limit = max(self._floor, int(self._limit * self._backoff))
-            self._cooldown_until = now + self._cooldown
-
-
-def _is_rate_limit(exc: BaseException) -> bool:
-    """例外是否為 OpenAI 429 RateLimitError（自適應併發的收縮信號）；SDK 未安裝時回 False。"""
-    try:
-        from openai import RateLimitError
-    except Exception:  # noqa: BLE001
-        return False
-    return isinstance(exc, RateLimitError)
 
 
 def _new_snapshot(total: int, model: str) -> dict:
@@ -157,7 +103,7 @@ def _work_one(
     model: str,
     source: str | None,
     triggered_by: str = "",
-    governor: _ConcurrencyGovernor | None = None,
+    governor: ConcurrencyGovernor | None = None,
     prompt_versions: dict[str, int] | None = None,
     versions_used: dict[str, int] | None = None,
 ) -> None:
@@ -246,7 +192,7 @@ def _work_one(
             run_log.emit("error", "item", f"單筆初判失敗 {source_id or item_id}：{err}")
             _log.exception("初判歸因單筆失敗 job=%s item=%s", job_id, item_id)
             _bump(job_id, ok=False, item_id=item_id, source_id=source_id, error=err)
-            if governor is not None and _is_rate_limit(e):
+            if governor is not None and is_rate_limit(e):
                 governor.on_429()  # 429 造成的失敗＝真過載 → 自適應收縮併發（下波提交降速）
             # 失敗留痕（best-effort）：有 source_id（可歸戶）才寫，供前端查因 + 隱式重撈上限
             if source_id:
@@ -387,7 +333,7 @@ def _run(
     # 時爬回 ceiling、過載時才降）；關閉則固定 max_workers。
     _ac = prejudge.adaptive_concurrency()
     governor = (
-        _ConcurrencyGovernor(
+        ConcurrencyGovernor(
             max_workers,
             floor=_ac["floor"],
             backoff=_ac["backoff"],

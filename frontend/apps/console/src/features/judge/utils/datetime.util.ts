@@ -50,3 +50,48 @@ export const fmtDtInTimeZone = (value: unknown, timeZone: string, dateOnly = fal
 /** 後台操作時間的產品口徑：固定顯示北京時間（UTC+8），不跟隨瀏覽器所在時區。 */
 export const fmtBeijingDt = (value: unknown, dateOnly = false): string =>
   fmtDtInTimeZone(value, 'Asia/Shanghai', dateOnly);
+
+/**
+ * 解析「時間點」為毫秒 epoch，同時吃 ISO 字串與 epoch 秒。
+ *
+ * 兩種格式並存是歷史包袱（初判 run 走 ISO、跑批快照的 `started_at` 曾是 epoch float），呼叫端不該
+ * 為此各寫一次判斷。以 1e11 為界：epoch **秒**在可預見的未來都遠小於它，epoch **毫秒**則遠大於它。
+ */
+const toMs = (value: string | number | null | undefined): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return value < 1e11 ? value * 1000 : value;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+};
+
+/**
+ * 秒數 → 人可讀耗時：`<1s` / `42s` / `3m20s` / `1h02m`。
+ *
+ * @param seconds 秒數；`null`/`undefined`/負值回 `—`（未知不等於 0，寧可不顯示也不要編一個數字）。
+ * @example fmtDurationSec(200) // '3m20s'
+ */
+export const fmtDurationSec = (seconds: number | null | undefined): string => {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds) || seconds < 0) return '—';
+  const sec = Math.round(seconds);
+  if (sec < 1) return '<1s';
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`;
+  return `${Math.floor(sec / 3600)}h${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`;
+};
+
+/**
+ * 由起訖時間算 run 耗時。
+ *
+ * @param start 起始時間（ISO 字串或 epoch 秒）；無值回 `—`。
+ * @param end 結束時間；`null`/`undefined`＝尚未結束，改算到「現在」（執行中的 run 也能顯示已跑多久）。
+ * @returns 人可讀的耗時字串；起訖無法解析時回 `—`。
+ * @example fmtDuration('2026-07-31T08:00:00Z', '2026-07-31T08:03:20Z') // '3m20s'
+ */
+export const fmtDuration = (
+  start: string | number | null | undefined,
+  end?: string | number | null,
+): string => {
+  const from = toMs(start);
+  if (from === null) return '—';
+  return fmtDurationSec(((toMs(end) ?? Date.now()) - from) / 1000);
+};

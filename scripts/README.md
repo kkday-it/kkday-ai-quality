@@ -12,6 +12,7 @@
 | `./stop.sh`（repo 根） | 停止所有服務（**只停止·資料一律保留**；清庫刻意不提供，須顯式 `down -v`） | `docker compose -f docker-compose.dev.yml down` |
 | `./scripts/dev/dump-seed.sh` | 產全庫 seed（容器化 pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum；免本機裝 PG client） | `docker compose exec -T db pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
 | `./scripts/ops/backup-db.sh` | 生產庫備份（容器化 pg_dump+gzip → `backups/db/`；`--keep N` 保留份數預設 7；crontab 排程範例見檔頭） | `docker compose exec -T db pg_dump --clean ... \| gzip` |
+| `./scripts/ops/migrate_batch_summary_keys.py` | **一次性**遷移跑批落盤 `summary.json` 的舊鍵名（`ok`→`ok_count`、`recent[].ok`→`succeeded`，2026-07-31 命名收斂的配套）；冪等、原子寫入，預設預覽、`--apply` 才寫。不跑的話歷史 run 在列表上全顯示「成功 0」 | `python3 scripts/ops/migrate_batch_summary_keys.py --apply` |
 | `./scripts/ops/restore-db.sh <file>` | 還原備份（**破壞性**·type-to-confirm；還原後 restart backend 自動補 migration） | `gunzip -c file \| docker compose exec -T db psql` |
 | `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原（容器化 psql，免本機裝 PG client） | `gunzip -c docker/seed/seed.sql.gz \| docker compose exec -T db psql kkdb_ai_quality` |
 | `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |

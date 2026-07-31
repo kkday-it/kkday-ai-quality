@@ -11,7 +11,7 @@ import { useIntervalFn } from '@vueuse/core';
 import { getPrejudgeRun, listPrejudgeRuns, type PrejudgeRun, type PrejudgeRunStage } from '@/api';
 import { TableLayout } from '@/components';
 import { DEFAULT_PAGE_SIZE, SOURCE_LABEL } from '../constants';
-import { fmtDt } from '../utils';
+import { fmtDt, fmtDuration } from '../utils';
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
@@ -108,15 +108,6 @@ const detailErrorOf = (id: string): string => {
 const fmtTokens = (n: number | null) => (n == null ? '—' : n.toLocaleString());
 const fmtCost = (v: number | null) => (v == null ? '—' : `$${v.toFixed(4)}`);
 
-/** run 耗時（終態＝迄-起；執行中＝至今）；<1s 顯示 <1s。 */
-const fmtDuration = (r: PrejudgeRun) => {
-  const end = r.finished_at ? new Date(r.finished_at).getTime() : Date.now();
-  const sec = Math.round((end - new Date(r.started_at).getTime()) / 1000);
-  if (sec < 1) return '<1s';
-  if (sec < 60) return `${sec}s`;
-  return `${Math.floor(sec / 60)}m${sec % 60}s`;
-};
-
 /** 發起參數快照 → 人話摘要（只列有值且對追溯有意義的鍵）。 */
 const paramsSummary = (r: PrejudgeRun) => {
   const p = r.params || {};
@@ -201,7 +192,9 @@ const paramsSummary = (r: PrejudgeRun) => {
           </template>
         </a-table-column>
         <a-table-column title="耗時" :width="80">
-          <template #cell="{ record }">{{ fmtDuration(record) }}</template>
+          <template #cell="{ record }">
+            {{ fmtDuration(record.started_at, record.finished_at) }}
+          </template>
         </a-table-column>
         <a-table-column title="觸發人" data-index="triggered_by" :width="150" ellipsis tooltip />
       </template>

@@ -13,10 +13,13 @@ tmp/ 與 .venv-promptlab，故不是包 subprocess，而是复用調試台既有
 - `raw_results.jsonl` 逐筆 flush＝斷點：resume 只補「未成功」筆、rerun 忽略斷點全部重打；
 - manifest 鎖 輸入/Prompt/schema/model——SSOT 變了就拒絕續跑，防混用結果
   （`prompt_version` 記的是當前正式版名；空＝送出前臨時編輯過，實際內容以 `prompt_sha256` 為準）；
-- **多模型並行**（`create_and_start_group`）：同一份輸入×同一份 Prompt，每個 model 各自獨立起一個
-  完整的單模型 run（各自 run 目錄／manifest／`ThreadPoolExecutor`），只用 manifest 的 `group_id`
-  欄鬆散標記「同時發起」，不是新的執行單元——單模型路徑（`create_and_start`）零改動、零分支，
-  「一個 model 大量 429 不拖累另一個」與「舊 run 續跑不受影響」都是結構上必然成立。
+- **多配置並行**（`create_and_start_group`）：同一份輸入×同一份 Prompt，每筆**具名模型配置**各自
+  獨立起一個完整的單筆 run（各自 run 目錄／manifest／`ThreadPoolExecutor`），只用 manifest 的
+  `group_id` 欄鬆散標記「同時發起」，不是新的執行單元——單筆路徑（`create_and_start`）零改動、
+  零分支，「一筆大量 429 不拖累另一筆」與「舊 run 續跑不受影響」都是結構上必然成立。
+  比較的單位是**配置**不是 model：`entries` 是 list 而非「以 model 為 key 的 map」，因為兩筆配置
+  完全可能用同一個 model 只差旋鈕（`gpt-5.4-mini · medium` vs `· high`），以 model 當 key 會讓後
+  一筆靜默覆蓋前一筆。manifest 另存 `config_name` 名字快照，供事後追溯「那批是用哪個設定跑的」。
 
 與正式初判（prejudge_batch）刻意分離：這裡不落 attributions / 不走判準 loader，只是調試工具；
 job 進度走共用 JobStore（in-mem，重啟即清），但 run 目錄在磁碟上——server 重啟後列表仍可見、
@@ -27,22 +30,25 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import logging
 import shutil
 import threading
 import time
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.core import db
+from app.core.concurrency import ConcurrencyGovernor, is_rate_limit
+from app.core.config import env
 from app.core.job_registry import JobStore
 from app.core.paths import DATA_DIR
-from app.judge import prompt_debug, prompt_debug_versions
+from app.judge import prejudge, prompt_debug, prompt_debug_versions
 from app.judge.llm import client
 
 _log = logging.getLogger(__name__)
@@ -51,11 +57,18 @@ BATCH_DIR = DATA_DIR / "prompt_debug_batch"
 
 # 併發/規模守門（調試工具 guardrail，非業務可調值）：workers 上限對齊 OpenAI 常規 org 併發水位；
 # 行數上限防誤上傳全量大表（正式全量請走批次管線，調試台定位是百~數千條的 Prompt 驗證）。
+#
+# ⚠️ 併發已於 2026-07-31 改為全自動（見 `_resolve_workers`）：ceiling 由 per-model 查表 ∩ 製程級
+# 硬天花板算出，執行期再由 AIMD governor 依 429 自動升降，前端不再有「併發 workers」輸入框。
+# 這個常數退居最終 clamp（防 config 被填成離譜值），不再是使用者輸入的上限。
 _WORKERS_CAP = 32
 _MAX_ROWS = 20_000
-# 多模型並行的 model 數上限：每個 model 各自一份完整輸入檔複本 + 一個獨立 ThreadPoolExecutor，
+# 多模型並行的**配置**數上限：每筆各自一份完整輸入檔複本 + 一個獨立 ThreadPoolExecutor，
 # 數字大時磁碟與併發成本線性疊加；6 已覆蓋「同時比較 openai/gemini/bytedance 各一顆」的常見情境。
-_MAX_MODELS_PER_GROUP = 6
+_MAX_ENTRIES_PER_GROUP = 6
+# 從 DB 撈輸入時的分塊大小：單次 IN (...) 塞數千個 bind param 會撞 Postgres 參數上限。
+# 與 `prejudge_batch._FETCH_CHUNK` 同值同理由（兩邊都是「依自然鍵批量撈來源表」）。
+_DB_FETCH_CHUNK = 500
 _MAX_FAILED_ITEMS = 200  # 失敗明細清單上限：系統性失敗只計數不細列，防快照撐爆
 _RECENT_ITEMS = 8  # 快照內最近完成明細條數（前端「即時回報」用，全量明細在 jsonl）
 
@@ -65,6 +78,15 @@ _store: JobStore = JobStore()
 # 每 run 一個協作式取消旗標（與快照同生命週期但非 JSON-safe，不進 JobStore；同 prejudge_batch 慣例）
 _cancels: dict[str, threading.Event] = {}
 _cancels_lock = threading.Lock()
+
+# 跨 run 全域併發閘：多模型群組會同時起最多 6 個 run，每個各有自己的 executor 與 governor。
+# 沒有這道閘，6 × per-model ceiling 會一起打上去（改造前是 6 × 使用者填的 16 ＝ 96 條併發同時撞
+# API，且撞了也不會降）。刻意**不與初判共用** `prejudge_batch._sem`：兩條線的批次常同時在跑，
+# 共用一顆信號量會讓其中一條把另一條餓死，而它們面對的是各自獨立的使用情境。
+_sem = threading.BoundedSemaphore(env.prejudge_max_workers)
+# 續跑專用鎖：`resume_run` 的「檢查是否在跑 → 啟動」必須是原子的（見該函式說明）。
+# 刻意與 `_cancels_lock` 分開——後者只保護 cancel event 表，混用會把兩個無關的臨界區綁在一起。
+_resume_lock = threading.Lock()
 
 
 # ── 輸入解析（CSV/XLSX → 有效唯一行）─────────────────────────────────────────────
@@ -258,7 +280,7 @@ def _rebuild_results_csv(
         writer.writeheader()
         for input_row in selected:
             record = result_by_id.get(input_row.item_id)
-            if record and not record.get("error") and isinstance(record.get("parsed"), dict):
+            if record and _is_success(record):
                 writer.writerow(_csv_row(input_row.item_id, record["parsed"], columns))
     temp.replace(path)
 
@@ -281,7 +303,7 @@ def _load_completed(raw_file: Path, id_column: str) -> dict[str, dict]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"斷點檔第 {line_no} 行不是合法 JSON：{raw_file.name}") from exc
             item_id = _clean_cell(record.get(id_column))
-            if item_id and isinstance(record.get("parsed"), dict) and not record.get("error"):
+            if item_id and _is_success(record):
                 completed[item_id] = record
     return completed
 
@@ -303,6 +325,7 @@ def _jsonl_spend(raw_file: Path) -> tuple[float, int]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
+                _log.warning("斷點檔有壞行，該筆花費未計入：%s", raw_file.name)
                 continue
             cost += float(record.get("cost_usd") or 0.0)
             tokens += int(record.get("input_tokens") or 0) + int(record.get("output_tokens") or 0)
@@ -328,12 +351,17 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
         "resumed": resumed,  # 斷點復用的成功筆
         "pending": pending,  # 本次實際要請求的筆數
         "processed": 0,  # 本次已完成請求數（成功+失敗）
-        "ok": resumed,  # 累計成功（含復用）
+        "ok_count": resumed,  # 累計成功**筆數**（含斷點復用）——刻意不叫 ok，見 _is_success 檔頭說明
         "failed": 0,
         "invalid": 0,  # 成功但欄位校驗未過（詳情在 jsonl.validation_issues）
         "total_tokens": 0,
         "cost_usd": 0.0,
-        "started_at": time.time(),
+        # ⚠️ ISO 8601 UTC，與 `created_at` / `finished_at` 同型。這裡曾是 `time.time()` 的 epoch
+        # float，同一份 payload 混用兩種時間格式，消費端每次都得先判型別才敢算耗時。
+        "started_at": datetime.now(UTC).isoformat(),
+        # 本次 session 之前已累積的執行秒數（續跑時由 sessions.json 帶入）——「這批總共花了多久」
+        # 要的是各段執行時間相加，不是首次啟動到最後完成的牆鐘（中間可能擱置了一整晚）。
+        "elapsed_before_sec": 0.0,
         "warnings": [],  # 相容端點降級等一次性警告
         "recent": [],  # 最近完成明細環（前端即時回報）
         "failed_items": [],
@@ -342,14 +370,113 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
     }
 
 
+# ── 執行段落（sessions）：跑批耗時的真相源 ────────────────────────────────────────
+#
+# 一個 run 可能被停止後續跑數次，每次 `_launch` 都重建快照、`_finalize` 都整份覆寫 summary.json，
+# 所以「上一段跑了多久」在原設計裡是拿不回來的。這裡把每段執行的起訖 append 進 sessions.json，
+# 讓「累計執行時間」可還原——而不是拿 `created_at → finished_at` 的牆鐘充數（那會把「中斷後隔天
+# 才續跑」算成跑了 18 小時）。
+
+
+def _sessions_file(run_dir: Path) -> Path:
+    return run_dir / "sessions.json"
+
+
+def _read_sessions(run_dir: Path) -> list[dict]:
+    """讀已記錄的執行段落；檔案不存在或損毀一律回空清單（耗時是輔助資訊，不該讓 run 讀不出來）。"""
+    path = _sessions_file(run_dir)
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        _log.warning("sessions.json 讀取失敗，耗時累計將從本段重新起算 run=%s", run_dir.name)
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _parse_moment(value: Any) -> datetime | None:
+    """時間點 → datetime，同時吃 ISO 字串與 epoch 秒。
+
+    epoch 分支是為了**改造前**落盤的 run：`started_at` 當時是 `time.time()` 的 float。那些 run 的
+    summary.json 就在磁碟上，不因為格式換了就該讓耗時欄整排顯示「—」。
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, int | float):
+        return datetime.fromtimestamp(float(value), UTC)
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _session_seconds(session: dict) -> float:
+    """單一段落的執行秒數；尚未收尾（finished_at 為空）回 0——不猜一個不存在的結束時間。"""
+    start_dt = _parse_moment(session.get("started_at"))
+    end_dt = _parse_moment(session.get("finished_at"))
+    if start_dt is None or end_dt is None:
+        return 0.0
+    return max(0.0, (end_dt - start_dt).total_seconds())
+
+
+def _open_session(run_dir: Path, started_at: str) -> float:
+    """開新執行段落（append 一筆未收尾的紀錄）。
+
+    Returns:
+        本段開始**之前**已累積的執行秒數（供快照的 `elapsed_before_sec`）。
+    """
+    sessions = _read_sessions(run_dir)
+    before = sum(_session_seconds(s) for s in sessions)
+    sessions.append(
+        {"started_at": started_at, "finished_at": "", "status": "running", "processed": 0}
+    )
+    try:
+        _write_json_atomic(_sessions_file(run_dir), sessions)
+    except OSError:  # best-effort：耗時記錄失敗不該擋住整批執行
+        _log.warning("sessions.json 寫入失敗 run=%s", run_dir.name)
+    return round(before, 3)
+
+
+def _close_session(run_dir: Path, *, finished_at: str, status: str, processed: int) -> None:
+    """收尾最後一筆執行段落（找不到未收尾的紀錄就不動——重複收尾不該覆寫既有段落）。"""
+    sessions = _read_sessions(run_dir)
+    for session in reversed(sessions):
+        if not session.get("finished_at"):
+            session.update(finished_at=finished_at, status=status, processed=processed)
+            break
+    else:
+        return
+    try:
+        _write_json_atomic(_sessions_file(run_dir), sessions)
+    except OSError:
+        _log.warning("sessions.json 收尾寫入失敗 run=%s", run_dir.name)
+
+
+def _elapsed_fields(snapshot: dict, run_dir: Path) -> dict:
+    """由快照算出「本次執行」與「累計執行」秒數（供列表與詳情共用，兩處不各算一次）。
+
+    執行中的 run 以「現在」為結束點——使用者要看的是「已經跑了多久」，不是等收尾才有數字。
+    """
+    start_dt = _parse_moment(snapshot.get("started_at"))
+    if start_dt is None:
+        # 磁碟推導的中斷 run 沒有本段起點；累計仍可由 sessions.json 還原（若有）
+        total = sum(_session_seconds(s) for s in _read_sessions(run_dir))
+        return {"elapsed_sec": None, "elapsed_total_sec": round(total, 3) or None}
+    end_dt = _parse_moment(snapshot.get("finished_at")) or datetime.now(UTC)
+    current = max(0.0, (end_dt - start_dt).total_seconds())
+    before = float(snapshot.get("elapsed_before_sec") or 0.0)
+    return {"elapsed_sec": round(current, 3), "elapsed_total_sec": round(before + current, 3)}
+
+
 def _bump(run_id: str, record: dict, cost_usd: float, total_tokens: int) -> None:
     """單筆完成後累加進度（僅 collector 執行緒呼叫；mutate 保證與讀取端互斥）。"""
 
     def _apply(snap: dict) -> None:
         snap["processed"] += 1
-        ok = bool(record.get("parsed")) and not record.get("error")
-        snap["ok" if ok else "failed"] += 1
-        if ok and record.get("validation_issues"):
+        succeeded = _is_success(record)
+        snap["ok_count" if succeeded else "failed"] += 1
+        if succeeded and record.get("validation_issues"):
             snap["invalid"] += 1
         snap["total_tokens"] += total_tokens
         snap["cost_usd"] = round(snap["cost_usd"] + cost_usd, 6)
@@ -359,7 +486,7 @@ def _bump(run_id: str, record: dict, cost_usd: float, total_tokens: int) -> None
             0,
             {
                 "item_id": record.get("item_id", ""),
-                "ok": ok,
+                "succeeded": succeeded,
                 "L1": parsed.get("L1"),
                 "L2": parsed.get("L2"),
                 "issues": len(record.get("validation_issues") or []),
@@ -368,10 +495,15 @@ def _bump(run_id: str, record: dict, cost_usd: float, total_tokens: int) -> None
             },
         )
         del recent[_RECENT_ITEMS:]
-        if not ok:
+        if not succeeded:
             if len(snap["failed_items"]) < _MAX_FAILED_ITEMS:
+                # error 在 `_record_from_response` / `_error_record` 已保證非空（空 JSON 物件也會
+                # 帶明確文案），這裡的 `or` 只是最後防線——曾經它是「未知錯誤」的來源之一。
                 snap["failed_items"].append(
-                    {"item_id": record.get("item_id", ""), "error": record.get("error") or ""}
+                    {
+                        "item_id": record.get("item_id", ""),
+                        "error": record.get("error") or "未記錄失敗原因（請看 raw_results.jsonl）",
+                    }
                 )
             else:
                 snap["failed_items_truncated"] = True
@@ -470,6 +602,17 @@ def _record_from_response(plan: _RunPlan, row: InputRow, resp: Any, latency_ms: 
     choices = getattr(resp, "choices", None) or []
     raw = (getattr(getattr(choices[0], "message", None), "content", None) or "") if choices else ""
     parsed = client._loads_lenient(raw)
+    # ⚠️ `_loads_lenient` 對字面 `{}` 會回傳空 dict 而非 None——它是合法 JSON，但必然過不了欄位
+    # 校驗。在**源頭**就判成失敗，下游六處判準才可能一致（過去即時進度算失敗、最終 CSV／續跑
+    # 判定算成功，同一筆資料四種說法，且失敗明細的 error 是空字串 →「未知錯誤」）。
+    empty_object = isinstance(parsed, dict) and not parsed
+    bad_output_error = (
+        "AI 輸出不是合法 JSON object"
+        if parsed is None
+        else "AI 輸出是空的 JSON 物件（{}），沒有任何欄位"
+        if empty_object
+        else None
+    )
     issues = (
         plan.validator(parsed, plan.taxonomy)
         if parsed is not None
@@ -485,8 +628,8 @@ def _record_from_response(plan: _RunPlan, row: InputRow, resp: Any, latency_ms: 
         "raw_output": raw or None,
         "model": plan.cfg["model"],
         "request_id": getattr(resp, "id", None),
-        "status": "ok" if parsed is not None else "bad_output",
-        "error": None if parsed is not None else "AI 輸出不是合法 JSON object",
+        "status": "ok" if bad_output_error is None else "bad_output",
+        "error": bad_output_error,
         "validation_issues": issues,
         "input_tokens": usage["prompt_tokens"],
         "output_tokens": usage["completion_tokens"],
@@ -550,7 +693,7 @@ def _collect_one(
     raw_fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     raw_fh.flush()
     plan.result_by_id[row.item_id] = record
-    if record.get("parsed") and not record.get("error"):
+    if _is_success(record):
         csv_writer.writerow(_csv_row(row.item_id, record["parsed"], plan.columns))
         csv_fh.flush()
         plan.usage_rows.append(_usage_row(plan, row, record))
@@ -573,9 +716,7 @@ def _finalize(plan: _RunPlan, status: str) -> None:
         preds = {
             row.item_id: plan.result_by_id[row.item_id]["parsed"]
             for row in plan.selected
-            if row.item_id in plan.result_by_id
-            and isinstance(plan.result_by_id[row.item_id].get("parsed"), dict)
-            and not plan.result_by_id[row.item_id].get("error")
+            if row.item_id in plan.result_by_id and _is_success(plan.result_by_id[row.item_id])
         }
         _write_json_atomic(plan.run_dir / "preds.json", preds)
     except Exception:  # noqa: BLE001 - 產物重建失敗不影響 jsonl 斷點本體
@@ -584,9 +725,19 @@ def _finalize(plan: _RunPlan, status: str) -> None:
         db.insert_llm_usage_rows(plan.usage_rows)
     except Exception:  # noqa: BLE001 - 計費紀錄 best-effort
         _log.debug("llm_usage flush 失敗 run=%s", plan.run_id)
-    _store.set_fields(plan.run_id, status=status)
+    # ⚠️ finished_at 必須跟 status 一起進 store：`_store.get()` 回的是 deepcopy，
+    # 先取快照再往副本上補欄位的話，磁碟有這個欄位、記憶體永遠沒有（直到 24h 後被 sweep）。
+    finished_at = datetime.now(UTC).isoformat()
+    _store.set_fields(plan.run_id, status=status, finished_at=finished_at)
     summary = _public(_store.get(plan.run_id) or {})
-    summary["finished_at"] = datetime.now(UTC).isoformat()
+    _close_session(
+        plan.run_dir,
+        finished_at=finished_at,
+        status=status,
+        processed=int(summary.get("processed") or 0),
+    )
+    # 收尾後才算得出本段最終耗時；一併寫進 summary，事後讀磁碟不必再推導
+    summary.update(_elapsed_fields(summary, plan.run_dir))
     try:
         _write_json_atomic(plan.run_dir / "summary.json", summary)
     except Exception:  # noqa: BLE001
@@ -595,14 +746,49 @@ def _finalize(plan: _RunPlan, status: str) -> None:
         _cancels.pop(plan.run_id, None)
 
 
+def _resolve_workers(model: str, override: int | None = None) -> int:
+    """本 run 的併發 ceiling。
+
+    預設全自動：per-model 查表（`prejudge.max_workers_by_model`，與初判同一份 config）∩ 製程級硬
+    天花板 ∩ 本模組的 `_WORKERS_CAP`。之所以不讓使用者填，是因為**沒有任何供應商公布「併發數」
+    這個維度**——OpenAI / Gemini / 火山方舟都只公布 RPM / TPM 且綁帳號 tier，填進去的數字必然是猜的；
+    真正的水位由 `ConcurrencyGovernor` 在執行期依 429 自己探（見 `_run_batch`）。
+
+    Args:
+        model: 生效模型機器值。
+        override: 顯式指定的併發（腳本直呼或舊 run manifest 的殘值）；`None`/0＝自動。
+
+    Returns:
+        併發 ceiling（正整數）。
+    """
+    ceiling = min(prejudge.max_workers_for(model), env.prejudge_max_workers)
+    if override:
+        ceiling = int(override)
+    return max(1, min(ceiling, _WORKERS_CAP))
+
+
 def _run_batch(plan: _RunPlan) -> None:
-    """背景執行整批：首筆探測（參數降級收斂 + fail-fast）→ ThreadPool 併發 → 逐筆落盤 → 收尾。"""
+    """背景執行整批：首筆探測（參數降級收斂 + fail-fast）→ 背壓併發 → 逐筆落盤 → 收尾。"""
     cancel = _cancels.get(plan.run_id) or threading.Event()
     raw_file = plan.run_dir / "raw_results.jsonl"
     csv_file = plan.run_dir / "results.csv"
     try:
         # 先把「斷點復用」筆寫進 CSV（本次新完成的走 append），保證中斷時 CSV 也含復用部分
         _rebuild_results_csv(csv_file, plan.selected, plan.result_by_id, plan.columns)
+
+        # AIMD 自適應併發：`plan.workers` 作 ceiling，governor 在其下依 429 失敗自動收縮／回升。
+        # 與初判共用同一顆 governor 與同一組 `prejudge.json adaptive_concurrency` 旋鈕。
+        _ac = prejudge.adaptive_concurrency()
+        governor = (
+            ConcurrencyGovernor(
+                plan.workers,
+                floor=_ac["floor"],
+                backoff=_ac["backoff"],
+                probe_interval_s=_ac["probe_interval_s"],
+            )
+            if _ac["enabled"]
+            else None
+        )
 
         def call_one(row: InputRow, extra: dict[str, Any]) -> dict:
             started = time.monotonic()
@@ -611,13 +797,20 @@ def _run_batch(plan: _RunPlan) -> None:
                 "messages": _messages(plan, row),
                 **{k: (dict(v) if isinstance(v, dict) else v) for k, v in extra.items()},
             }
-            try:
-                resp = client._complete_effort_safe(plan.cfg, kwargs, None, "prompt_debug_batch")
-                return _record_from_response(
-                    plan, row, resp, int((time.monotonic() - started) * 1000)
-                )
-            except Exception as exc:  # noqa: BLE001 - 單筆失敗隔離，不炸整批
-                return _error_record(plan, row, exc, int((time.monotonic() - started) * 1000))
+            with _sem:  # 跨 run 全域閘：多模型群組同時在跑時收斂實際併發（見 `_sem` 說明）
+                try:
+                    resp = client._complete_effort_safe(
+                        plan.cfg, kwargs, None, "prompt_debug_batch"
+                    )
+                    return _record_from_response(
+                        plan, row, resp, int((time.monotonic() - started) * 1000)
+                    )
+                except Exception as exc:  # noqa: BLE001 - 單筆失敗隔離，不炸整批
+                    # ⚠️ 429 必須在這裡回報：下面 `_error_record` 會把例外壓成一個字串欄位，
+                    # 型別就此消失，收集端再也分不出「這筆是撞限流掛的」還是「模型回了壞 JSON」。
+                    if governor is not None and is_rate_limit(exc):
+                        governor.on_429()
+                    return _error_record(plan, row, exc, int((time.monotonic() - started) * 1000))
 
         with (
             raw_file.open("a", encoding="utf-8") as raw_fh,
@@ -644,19 +837,38 @@ def _run_batch(plan: _RunPlan) -> None:
 
             if pending and not cancel.is_set():
                 extra = settled_extra if settled_extra is not None else {}
+                # 逐筆提交 + 背壓：in-flight 維持在 governor 當前允許併發之內。
+                #
+                # 改造前是把 pending 全部一次 `submit` 進 executor 再 `as_completed` 收——那樣
+                # governor 沒有作用點（future 早就全部排進 queue，事後調低 limit 攔不住任何東西），
+                # 也讓取消只能靠「逐一 cancel 已排隊的 future」。現在未提交的筆根本還沒進 queue。
                 with ThreadPoolExecutor(max_workers=plan.workers) as pool:
-                    future_to_row: dict[Future, InputRow] = {
-                        pool.submit(call_one, row, extra): row for row in pending
-                    }
-                    for future in as_completed(future_to_row):
-                        row = future_to_row[future]
-                        if future.cancelled():
-                            continue
-                        record = future.result()  # call_one 已把例外轉 error record，不會拋
-                        _collect_one(plan, row, record, raw_fh, csv_fh, csv_writer)
+                    in_flight: dict[Future, InputRow] = {}
+
+                    def harvest(block_until: int) -> None:
+                        """收割已完成的 future 直到 in-flight 降到 `block_until`（逐筆落盤）。
+
+                        落盤只在這條提交執行緒上做——`raw_fh` / `csv_fh` 非 thread-safe，這個
+                        「只有主迴圈寫檔」的不變式在改成背壓後必須維持。
+                        """
+                        while len(in_flight) > block_until:
+                            done, _ = wait(list(in_flight), return_when=FIRST_COMPLETED)
+                            for future in done:
+                                row = in_flight.pop(future)
+                                if future.cancelled():
+                                    continue
+                                # call_one 已把例外轉 error record，不會拋
+                                record = future.result()
+                                _collect_one(plan, row, record, raw_fh, csv_fh, csv_writer)
+
+                    for row in pending:
                         if cancel.is_set():
-                            for f in future_to_row:
-                                f.cancel()  # 未起跑的取消；已在飛的 drain 完落盤
+                            break
+                        limit = governor.current() if governor else plan.workers
+                        harvest(max(0, limit - 1))  # 騰出一個名額給本筆
+                        in_flight[pool.submit(call_one, row, extra)] = row
+                    # 停止或跑完都要 drain：已在飛的請求無法搶佔式中斷，收完才有完整斷點
+                    harvest(0)
 
         _finalize(plan, "cancelled" if cancel.is_set() else "done")
     except Exception as exc:  # noqa: BLE001 - 整批級失敗（IO/首筆探測/初始化）→ 標 error 供前端停輪詢
@@ -670,7 +882,7 @@ def _run_batch(plan: _RunPlan) -> None:
 
 
 def _prepare_plan(
-    run_dir: Path, manifest: dict, effective: dict, *, workers: int, rerun: bool
+    run_dir: Path, manifest: dict, effective: dict, *, workers: int | None, rerun: bool
 ) -> _RunPlan:
     """由 run 目錄 + manifest 組出執行素材（create / resume 共用）。
 
@@ -720,7 +932,7 @@ def _prepare_plan(
         schema_name=prompt_debug._SCHEMA_NAME,
         validator=prompt_debug.validate_result,
         taxonomy=taxonomy,
-        workers=max(1, min(int(workers), _WORKERS_CAP)),
+        workers=_resolve_workers(manifest["model"], workers),
     )
 
 
@@ -743,6 +955,8 @@ def _launch(plan: _RunPlan, triggered_by: str) -> dict:
         plan.run_dir / "raw_results.jsonl"
     )
     snapshot["triggered_by"] = triggered_by
+    # 開新執行段落並帶回「本段之前已累積多久」，讓續跑的耗時能累加而非從零重算
+    snapshot["elapsed_before_sec"] = _open_session(plan.run_dir, snapshot["started_at"])
     _store.put(plan.run_id, snapshot)
     with _cancels_lock:
         _cancels[plan.run_id] = threading.Event()
@@ -761,12 +975,13 @@ def create_and_start(
     text_column: str,
     offset: int,
     limit: int,
-    workers: int,
+    workers: int | None,
     system_prompt: str,
     overrides: dict | None,
     effective: dict,
     triggered_by: str = "",
     group_id: str | None = None,
+    config_name: str = "",
 ) -> dict:
     """建立 run 目錄（存輸入/Prompt/manifest）並啟動跑批；回傳初始進度快照。
 
@@ -775,8 +990,11 @@ def create_and_start(
         input_bytes: 上傳檔內容。
         sheet: XLSX 工作表名（空＝第一個；CSV 忽略）。
         id_column/text_column: 關鍵欄名（預設 session_oid / conversation_full）。
+            ⚠️ `id_column` 會被當**動態 dict key** 用（CSV 欄頭與 jsonl 紀錄），撞到輸出契約欄名
+            會靜默吃掉 item id，故以 `_assert_id_column_free` 在入口擋下。
         offset/limit: 有效唯一行的切片（limit 0＝全部）。
-        workers: 併發請求數（上限 _WORKERS_CAP）。
+        workers: 併發 ceiling 的顯式覆寫；`None`/0＝自動（依 model 查表，見 `_resolve_workers`）。
+            執行期仍由 AIMD governor 在此之下自動升降，這個值只是天花板。
         system_prompt: 本批固定使用的 system prompt（存檔為斷點依據）；
             空字串＝取當前正式版（線上口徑），跑批與調試台永遠同一份口徑。
         overrides: 本次 LLM 旋鈕覆寫原始 dict（進 manifest，續跑時重放）。
@@ -785,6 +1003,8 @@ def create_and_start(
         group_id: 屬於哪個多模型並行群組（`create_and_start_group` 傳入）；單模型呼叫不帶，
             manifest 該欄位就缺席——**這是本 run 與其他 run 唯一的耦合點**，其餘一切（執行、
             續跑、下載、取消）完全獨立，不因是否屬於群組而分支。
+        config_name: 本批用的具名模型配置**名字快照**（非 id——配置被改名或刪除後，歷史 run
+            仍要讀得懂「當時用的是什麼設定」）。空＝呼叫端沒帶（腳本直呼），只剩 model/overrides 可追。
 
     Returns:
         初始進度快照（含 run_id）。
@@ -801,6 +1021,7 @@ def create_and_start(
         system_prompt, allow_draft=True
     )
 
+    _assert_id_column_free(id_column)
     run_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     run_dir = _run_dir(run_id)
     input_name = Path(input_name or "input.csv").name
@@ -812,7 +1033,6 @@ def create_and_start(
 
         taxonomy = prompt_debug.load_taxonomy()
         manifest = {
-            "version": 1,
             "run_id": run_id,
             "created_at": datetime.now(UTC).isoformat(),
             "input_name": input_name,
@@ -831,9 +1051,15 @@ def create_and_start(
             "schema_sha256": _json_hash(prompt_debug.output_schema(taxonomy)),
             "model": (effective.get("model") or "").strip(),
             "overrides": overrides or {},
-            "workers": workers,
+            # 記**解析後**的併發 ceiling（不是呼叫端傳進來的原始值）：全自動之後這欄是稽核用的
+            # 事實紀錄「這批當時最多開幾條」，執行期 governor 只會在它之下再往下調。
+            "workers": _resolve_workers((effective.get("model") or "").strip(), workers),
             "triggered_by": triggered_by,
             **({"group_id": group_id} if group_id else {}),
+            # 這批用的是哪個具名模型配置。刻意存**名字快照**而非 config id：配置日後被改名或刪除，
+            # 歷史 run 仍讀得懂「當時用的是什麼設定」——稽核紀錄要的正是「當時叫什麼」，
+            # 不是一個會斷掉的外鍵。空＝呼叫端沒帶（腳本直呼），此時只有 model/overrides 可追。
+            **({"config_name": config_name} if config_name else {}),
         }
         _write_json_atomic(run_dir / "manifest.json", manifest)
         plan = _prepare_plan(run_dir, manifest, effective, workers=workers, rerun=False)
@@ -852,55 +1078,68 @@ def create_and_start_group(
     text_column: str,
     offset: int,
     limit: int,
-    workers: int,
+    workers: int | None,
     system_prompt: str,
-    overrides: dict | None,
-    effectives: dict[str, dict],
+    entries: list[dict],
     triggered_by: str = "",
 ) -> dict:
-    """多模型並行跑批：同一份輸入 × 同一份 Prompt，每個 model 各自獨立起一個完整的單模型 run。
+    """多模型並行跑批：同一份輸入 × 同一份 Prompt，每個**模型配置**各自獨立起一個完整的單模型 run。
 
     刻意不把多模型邏輯揉進 `_run_batch`／`_RunPlan`（那會讓單模型這條已穩定跑產的路徑也要跟著
-    冒風險）：每個 model 直接複用 `create_and_start()`——各自的 run 目錄、manifest、
+    冒風險）：每筆配置直接複用 `create_and_start()`——各自的 run 目錄、manifest、
     `raw_results.jsonl` 斷點、**獨立的 `ThreadPoolExecutor`**（`_run_batch` 內既有設計，每 run
     本來就各起一個，多模型只是多呼叫幾次，零新併發邏輯）。group 只是「同時發起的一批 run」的
     輕量標記（manifest 的 `group_id` 欄，見 `create_and_start`），不是新的執行單元——這保證
-    「一個 model 大量 429 → 另一個 model 不受影響」與「舊的單模型 run 續跑不受影響」都是
-    **結構上必然成立**，不需要額外寫隔離邏輯或相容分支去保證。
+    「一筆大量 429 → 另一筆不受影響」與「舊的單模型 run 續跑不受影響」都是**結構上必然成立**，
+    不需要額外寫隔離邏輯或相容分支去保證。
 
-    每個 model 的成敗互相獨立收集：某個 model 建 run 失敗（如該供應商沒配 token）不影響其他
-    model 繼續啟動——這與「provider 反推失敗直接拒絕整個請求」的分工不同，那一層驗證
-    （`provider_id_for_model` 是否認得這個 model 名）在呼叫本函式**之前**由 router 一次做完，
-    本函式只處理「名字合法、但這一家配置不完整」這類逐 model 才會知道的失敗。
+    **比較單位是「配置」不是「model」**：`entries` 是 list 而非「以 model 名為 key 的 dict」——
+    兩筆配置完全可能用同一個 model 只差旋鈕（`gpt-5.4-mini · medium` vs `· high` 正是具名配置
+    最典型的用途），以 model 當 key 會讓後一筆靜默覆蓋前一筆，使用者選了 2 筆只跑 1 筆還不知道。
+    每筆自帶完整旋鈕，故也不再有「所有 model 共用一組 overrides」的限制。
+
+    每筆的成敗互相獨立收集：某筆建 run 失敗（如該供應商沒配 token）不影響其他筆繼續啟動——
+    形狀與值域驗證（provider 是否登記、model 是否為空、配置名是否重複）在呼叫本函式**之前**由
+    router 一次做完，本函式只處理「參數合法、但這一家配置不完整」這類逐筆才會知道的失敗。
 
     Args:
         input_name/input_bytes/sheet/id_column/text_column/offset/limit/workers/system_prompt:
-            與 `create_and_start` 同義，所有 model 共用同一份（同輸入、同 Prompt 才有可比性）。
-        overrides: 本次 LLM 旋鈕覆寫（不含 model／provider，那兩個逐 model 覆寫，見下）。
-        effectives: `{model: 該 model 已解析好的 effective LLM dict}`——router 逐 model 呼叫
-            `effective_llm_dict(overrides={**overrides, "model": m, "provider": 已驗證的 provider})`
-            算出，本函式不重新解析。
+            與 `create_and_start` 同義，所有配置共用同一份（同輸入、同 Prompt 才有可比性）。
+        entries: `[{config_name, overrides, effective}]`——`overrides` 是該配置的 flat 旋鈕
+            （含 provider/model，不含 token，寫進 manifest 供事後追溯）；`effective` 是 router
+            以該 `overrides` 呼叫 `effective_llm_dict()` 解出的執行參數（含 token），本函式不重解析。
         triggered_by: 觸發人（user email）。
 
     Returns:
-        `{"group_id", "created_at", "members": [{"model", "ok", "run_id"?, "provider"?,
-        "error"?, ...初始快照欄位}]}`——`ok=False` 的成員不含 run_id／快照，只有 error。
+        `{"group_id", "created_at", "members": [{"config_name", "model", "provider",
+        "started", "run_id"?, "status"?, "error"?}]}`——`started=False` 的成員只有 error。
+        ⚠️ 成員**刻意不帶初始快照**：進度請走 `GET /batch/groups/{group_id}` 輪詢。
+        （曾經整包展開快照，結果快照自帶的 `ok_count` 把布林旗標吃掉，見該處註解。）
 
     Raises:
-        ValueError: `effectives` 為空、或 model 數超過 `_MAX_MODELS_PER_GROUP`。
+        ValueError: `entries` 為空、筆數超過 `_MAX_ENTRIES_PER_GROUP`、或 `id_column` 撞保留欄名。
     """
-    models = list(effectives)
-    if not models:
-        raise ValueError("至少需選擇一個 model")
-    if len(models) > _MAX_MODELS_PER_GROUP:
+    _assert_id_column_free(id_column)
+    if not entries:
+        raise ValueError("至少需選擇一個模型配置")
+    if len(entries) > _MAX_ENTRIES_PER_GROUP:
         raise ValueError(
-            f"一次最多同時跑 {_MAX_MODELS_PER_GROUP} 個 model，實際選了 {len(models)} 個"
+            f"一次最多同時跑 {_MAX_ENTRIES_PER_GROUP} 個模型配置，實際選了 {len(entries)} 個"
         )
 
     group_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
     members: list[dict[str, Any]] = []
-    for model in models:
-        effective = effectives[model]
+    for entry in entries:
+        config_name = str(entry.get("config_name") or "")
+        effective = entry.get("effective") or {}
+        overrides = entry.get("overrides") or {}
+        # 事實紀錄取 effective（實際會拿去打 API 的值），不取 overrides——兩者理應一致，
+        # 但真正決定行為的是前者，成員清單要反映的是「實際跑了什麼」。
+        ident = {
+            "config_name": config_name,
+            "model": effective.get("model", ""),
+            "provider": effective.get("provider", ""),
+        }
         try:
             snapshot = create_and_start(
                 input_name=input_name,
@@ -912,21 +1151,30 @@ def create_and_start_group(
                 limit=limit,
                 workers=workers,
                 system_prompt=system_prompt,
-                overrides={**(overrides or {}), "model": model},
+                overrides=overrides,
                 effective=effective,
                 triggered_by=triggered_by,
                 group_id=group_id,
+                config_name=config_name,
             )
-            members.append(
-                {"model": model, "provider": effective.get("provider", ""), "ok": True, **snapshot}
-            )
-        except Exception as exc:  # noqa: BLE001 - 單一 model 建 run 失敗不得拖垮其餘 model
-            _log.warning("多模型跑批：model=%r 啟動失敗（group=%s）：%s", model, group_id, exc)
+            # ⚠️ **只挑需要的欄位，絕不整包展開 snapshot**：snapshot 自帶 `ok_count`（累計成功
+            # 筆數），舊寫法 `{**ident, "ok": True, **snapshot}` 讓那個整數把布林旗標吃掉，
+            # 於是每個成功啟動的成員都回 falsy，前端整批誤判成「啟動失敗」，連群組進度輪詢
+            # 都被擋在 `if (ok.length)` 之後從未啟動過。
             members.append(
                 {
-                    "model": model,
-                    "provider": effective.get("provider", ""),
-                    "ok": False,
+                    **ident,
+                    "started": True,
+                    "run_id": snapshot["run_id"],
+                    "status": snapshot["status"],
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - 單一配置建 run 失敗不得拖垮其餘配置
+            _log.warning("多模型跑批：配置 %r 啟動失敗（group=%s）：%s", config_name, group_id, exc)
+            members.append(
+                {
+                    **ident,
+                    "started": False,
                     "error": str(exc).splitlines()[0][:500]
                     if str(exc).strip()
                     else type(exc).__name__,
@@ -956,22 +1204,29 @@ def resume_run(
         ValueError: run 不存在、仍在執行中、或與 manifest 鎖不相容（router 轉 4xx）。
     """
     manifest = read_manifest(run_id)
-    live = _store.get(run_id)
-    if live and live["status"] in ("running", "cancelling"):
-        raise ValueError("本 run 仍在執行中，不可重複啟動")
-    model = (effective.get("model") or "").strip()
-    if model != manifest["model"]:
-        raise ValueError(
-            f"model 已由 {manifest['model']} 變為 {model}，與本 run 斷點不相容；請開新跑批"
+    # ⚠️ 「檢查狀態 → 啟動」必須在同一把鎖內：`JobStore.put` 是無條件覆寫、沒有 CAS。
+    # 兩個併發的續跑請求（雙擊／兩個分頁／重試）可以同時通過檢查，結果是兩條執行緒共用同一個
+    # run_dir——重複打 API 重複計費、後啟動的那條覆寫 `_cancels[run_id]` 讓前一條**永遠取消不掉**、
+    # 兩邊各自 `_finalize` 後寫的蓋掉先寫的，results.csv 會真的掉資料。
+    with _resume_lock:
+        live = _store.get(run_id)
+        if live and live["status"] in ("running", "cancelling"):
+            raise ValueError("本 run 仍在執行中，不可重複啟動")
+        model = (effective.get("model") or "").strip()
+        if model != manifest["model"]:
+            raise ValueError(
+                f"model 已由 {manifest['model']} 變為 {model}，與本 run 斷點不相容；請開新跑批"
+            )
+        plan = _prepare_plan(
+            _run_dir(run_id),
+            manifest,
+            effective,
+            # 不再沿用 manifest 的舊 workers：併發已全自動，model 又被 manifest 鎖住，
+            # 自動解出來的 ceiling 與當初同值；舊 run（手填 16 之類）續跑順勢改吃自動值。
+            workers=workers,
+            rerun=rerun,
         )
-    plan = _prepare_plan(
-        _run_dir(run_id),
-        manifest,
-        effective,
-        workers=workers or manifest.get("workers") or 8,
-        rerun=rerun,
-    )
-    return _launch(plan, triggered_by)
+        return _launch(plan, triggered_by)
 
 
 def read_manifest(run_id: str) -> dict:
@@ -990,7 +1245,10 @@ def get_run(run_id: str) -> dict | None:
     """單 run 進度：執行中回 in-mem 快照；否則回磁碟 summary（server 重啟後為 interrupted 推導）。"""
     live = _store.get(run_id)
     if live:
-        return _public(live)
+        snap = _public(live)
+        # 執行中的 run 每次讀取都重算耗時（以「現在」為結束點），前端輪詢即看到時間往前走
+        snap.update(_elapsed_fields(snap, _run_dir(run_id)))
+        return snap
     try:
         manifest = read_manifest(run_id)
     except ValueError:
@@ -1003,25 +1261,39 @@ def _disk_summary(run_dir: Path, manifest: dict) -> dict:
     summary_file = run_dir / "summary.json"
     if summary_file.is_file():
         try:
-            return json.loads(summary_file.read_text(encoding="utf-8"))
+            summary = json.loads(summary_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            pass
-    ok = failed = 0
+            _log.warning("summary.json 損毀，改由 jsonl 推導 run=%s", manifest.get("run_id"))
+        else:
+            # 改造前收尾的 run 沒有耗時欄位；就地由 started_at/finished_at 補算，不回寫舊檔
+            summary.setdefault("elapsed_before_sec", 0.0)
+            if summary.get("elapsed_total_sec") is None:
+                summary.update(_elapsed_fields(summary, run_dir))
+            return summary
+    # ⚠️ 依 id 去重（同 `_load_completed` 的「同 id 取最後一筆」語義）：重跑不會截斷 jsonl，
+    # 不去重的話重跑過的 run 在重啟後 processed 會超過輸入總筆數。
+    id_column = manifest.get("id_column") or "item_id"
+    latest: dict[str, dict] = {}
     try:
         with (run_dir / "raw_results.jsonl").open("r", encoding="utf-8") as fh:
-            for line in fh:
+            for line_no, line in enumerate(fh, 1):
                 if not line.strip():
                     continue
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
+                    _log.warning(
+                        "斷點檔第 %d 行不是合法 JSON，已略過 run=%s", line_no, run_dir.name
+                    )
                     continue
-                if isinstance(record.get("parsed"), dict) and not record.get("error"):
-                    ok += 1
-                else:
-                    failed += 1
+                item_id = _clean_cell(record.get(id_column)) or _clean_cell(record.get("item_id"))
+                latest[item_id or f"__line_{line_no}"] = record
+    except FileNotFoundError:
+        pass  # 尚未寫過任何一筆，正常情況
     except OSError:
-        pass
+        _log.exception("讀取斷點檔失敗 run=%s", run_dir.name)
+    ok = sum(1 for r in latest.values() if _is_success(r))
+    failed = len(latest) - ok
     cost_usd, total_tokens = _jsonl_spend(run_dir / "raw_results.jsonl")
     return {
         "status": "interrupted",
@@ -1031,15 +1303,26 @@ def _disk_summary(run_dir: Path, manifest: dict) -> dict:
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
-        "total": 0,  # 中斷推導無選中總數（重啟後 in-mem 已失）；續跑會重算
+        # ⚠️ 中斷推導拿不到「本次選中總數」（重啟後 in-mem 已失），刻意用 None 而非 0：
+        # 0 會被前端當成真實總數算出「目標 0 / 成功 42」這種自相矛盾的畫面。None＝未知，
+        # 前端據此顯示「—」。續跑時會重算真值。
+        "total": None,
         "resumed": 0,
         "pending": 0,
-        "processed": ok + failed,
-        "ok": ok,
+        "processed": len(latest),
+        "ok_count": ok,
         "failed": failed,
         "invalid": 0,
         "total_tokens": total_tokens,
         "cost_usd": cost_usd,
+        # 鍵集刻意與 `_new_snapshot` + `_launch` 對齊——`get_run()` 回哪一種取決於 in-mem 快照
+        # 還在不在，形狀不一致會讓消費端隨機少欄位。
+        "started_at": None,
+        "finished_at": "",
+        "elapsed_before_sec": 0.0,
+        # 本段起點已隨 in-mem 快照蒸發，但已收尾的歷史段落仍在 sessions.json 裡
+        **_elapsed_fields({}, run_dir),
+        "triggered_by": manifest.get("triggered_by", ""),
         "warnings": [],
         "recent": [],
         "failed_items": [],
@@ -1077,17 +1360,26 @@ def list_runs(*, group_id: str | None = None) -> list[dict]:
                 "prompt_version": manifest.get("prompt_version", ""),
                 "prompt_kind": manifest.get("prompt_kind", ""),
                 "model": manifest["model"],
+                # 名字快照（見 create_and_start）；舊 run 與腳本直呼的 run 沒有這欄，回空字串——
+                # 前端據此決定顯示配置名還是退回顯示 model 名。
+                "config_name": manifest.get("config_name", ""),
                 "offset": manifest["offset"],
                 "limit": manifest["limit"],
                 "workers": manifest.get("workers"),
-                "status": snap["status"],
-                "total": snap["total"],
+                # 一律 .get 帶預設：任何一份壞掉／舊版的 summary.json 只該讓那一列失真，
+                # 不該讓整個清單 500（bracket 取值曾經就是這個風險）。
+                "status": snap.get("status", "interrupted"),
+                "total": snap.get("total"),
                 "resumed": snap.get("resumed", 0),
-                "processed": snap["processed"],
-                "ok": snap["ok"],
-                "failed": snap["failed"],
+                "processed": snap.get("processed", 0),
+                "ok_count": snap.get("ok_count", 0),
+                "failed": snap.get("failed", 0),
                 "invalid": snap.get("invalid", 0),
                 "cost_usd": snap.get("cost_usd", 0.0),
+                # 耗時：`elapsed_sec`＝本次執行段落、`elapsed_total_sec`＝含歷次續跑的累計。
+                # 兩者皆可能為 None（改造前的舊 run 或 in-mem 已失的中斷 run）＝未知，非 0。
+                **_elapsed_fields(snap, run_dir),
+                "session_count": len(_read_sessions(run_dir)),
                 "has_csv": (run_dir / "results.csv").is_file(),
             }
         )
@@ -1148,3 +1440,146 @@ def mark_running_interrupted() -> list[str]:
     return _store.mark_interrupted(
         running_statuses=("running", "cancelling"), new_status="interrupted"
     )
+
+
+def _is_success(record: dict) -> bool:
+    """單筆紀錄是否算成功——**全模組唯一判準**，任何地方都不得再自寫一套。
+
+    這條函式的存在是為了修一類實際發生過的缺陷：同一個「成功」概念曾有兩套判準散在六處
+    （`bool(parsed)` vs `isinstance(parsed, dict)`），差別只在 `parsed == {}`。後果是同一筆資料
+    四種說法——即時進度算失敗（且失敗明細的 error 是空字串，UI 顯示「未知錯誤」）、最終 CSV 與
+    preds.json 算成功、續跑判定它已完成所以**永遠不會重試**、server 重啟後又翻回成功。
+
+    判準本身刻意同時要求「是 dict」「非空」「無 error」：
+    - 非空這條讓**既有**斷點檔裡的舊 `{}` 紀錄（寫入時還沒有源頭正規化）也一致判為失敗，
+      不必為歷史資料開相容分支；
+    - 新資料在 `_record_from_response` 就已把空物件標成 `bad_output` 並帶明確 error，
+      所以三個條件對新資料是互相印證而非疊床架屋。
+
+    Args:
+        record: `raw_results.jsonl` 的單筆紀錄。
+
+    Returns:
+        True＝該筆可交付（欄位校驗未過仍算成功，校驗訊息在 `validation_issues`，不擋交付）。
+    """
+    parsed = record.get("parsed")
+    return isinstance(parsed, dict) and bool(parsed) and not record.get("error")
+
+
+def _assert_id_column_free(id_column: str) -> None:
+    """擋下會與輸出契約撞名的 `id_column`（寫入邊界校驗，不做事後補救）。
+
+    `id_column` 是使用者上傳時自填的欄名，而它被當**動態 dict key** 用在兩個地方：
+    `_csv_columns()` 的 CSV 欄頭、以及 `_record_from_response()` / `_error_record()` 的 jsonl 紀錄。
+    Python 的 dict 字面量是「後者覆蓋前者」，所以只要它撞到後面任何一個固定欄名（`summary`、
+    `L1`、`model`、`status`… 全都是很可能的真實欄名），`id_column: row.item_id` 就會被靜默吃掉
+    ——那一列的 item id 直接消失，續跑時 `_load_completed` 的 `record.get(id_column)` 也一起失效。
+
+    `item_id` 不在禁列：紀錄組裝處已針對它做了條件展開（`if id_column != "item_id"`），是安全的。
+
+    Args:
+        id_column: 使用者指定的 ID 欄名（空值由呼叫端補預設，這裡不管）。
+
+    Raises:
+        ValueError: 撞到輸出欄位或紀錄固定欄名（路由層轉 400）。
+    """
+    name = (id_column or "").strip()
+    if not name:
+        return
+    output_keys = {str(f["key"]) for f in prompt_debug.OUTPUT_FIELDS}
+    record_keys = {
+        "source_row",
+        "parsed",
+        "raw_output",
+        "model",
+        "request_id",
+        "status",
+        "error",
+        "validation_issues",
+        "input_tokens",
+        "output_tokens",
+        "cached_tokens",
+        "reasoning_tokens",
+        "latency_ms",
+        "cost_usd",
+        "completed_at",
+    }
+    if name in output_keys | record_keys:
+        raise ValueError(
+            f"ID 欄名「{name}」與跑批輸出欄位同名，會覆蓋掉該欄內容；請改用其他欄名"
+            f"（保留字：{'、'.join(sorted(output_keys | record_keys))}）"
+        )
+
+
+def build_db_input_csv(source: str, ids: list[str]) -> tuple[str, str, bytes, dict]:
+    """依「反饋來源 + 自然鍵清單」從 DB 撈對話，組成與上傳檔同形狀的 CSV 快照。
+
+    為什麼是**快照成 CSV**而不是「跑的時候現查 DB」：run 的核心保證是「續跑重放的是同一批資料」
+    （manifest 鎖 `input_sha256`）。來源表會被匯入流程 upsert 覆蓋業務欄，現查 DB 的話，隔天續跑
+    讀到的可能已經是改過的文字，斷點比對就失去意義。落成快照後，`_prepare_plan` 那條「從 run 目錄
+    重新解析輸入檔」的既有路徑一行都不用改——DB 模式與上傳模式從第二步開始完全同構。
+
+    Args:
+        source: 反饋來源 id（`config/global/sources.json` 的 value，如 `conversations`）。
+        ids: 該來源的自然鍵清單（如 session_oid）；重複值會保序去重。
+
+    Returns:
+        `(id_column, text_column, csv_bytes, stats)`——欄名由來源註冊表決定，呼叫端原樣轉給
+        `create_and_start_group`；`stats` 供前端回報「要了幾筆、撈到幾筆、幾筆查無」。
+
+    Raises:
+        ValueError: 來源不存在、ids 為空、或撈出的有效筆數為 0（早退比讓使用者等一個空批好）。
+    """
+    from app.core.db import source_registry
+    from app.core.judge_config import source_mapping
+
+    spec = source_registry.spec_for(source)
+    if spec is None:
+        raise ValueError(f"未知的反饋來源：{source}")
+
+    # 保序去重：使用者貼上的清單常有重複，順序保留讓 CSV 與貼上的內容對得起來
+    wanted = list(dict.fromkeys(i for i in (str(x).strip() for x in ids) if i))
+    if not wanted:
+        raise ValueError("沒有可用的 ID：請貼上至少一個（每行一個）")
+    if len(wanted) > _MAX_ROWS:
+        raise ValueError(f"目標 {len(wanted)} 筆超過跑批上限 {_MAX_ROWS}；請分批")
+
+    # 分塊查：單次 IN (...) 塞數千個 bind param 會撞 Postgres 的參數上限，
+    # 沿用初判批次同一個分塊大小（prejudge_batch._FETCH_CHUNK）。
+    by_id: dict[str, dict] = {}
+    for start in range(0, len(wanted), _DB_FETCH_CHUNK):
+        chunk = wanted[start : start + _DB_FETCH_CHUNK]
+        for row in db.get_items_by_ids(chunk, source):
+            key = _clean_cell(row.get(spec.natural_key))
+            if key:
+                by_id[key] = row
+
+    id_column = spec.natural_key
+    text_column = "content"  # canonical 欄名（`normalize_row` 的產出），跨來源一致
+    _assert_id_column_free(id_column)
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=[id_column, text_column], extrasaction="ignore")
+    writer.writeheader()
+    stats = {"requested": len(wanted), "found": 0, "missing": 0, "empty_conversations": 0}
+    for item_id in wanted:
+        row = by_id.get(item_id)
+        if row is None:
+            stats["missing"] += 1  # DB 查無此列（id 打錯／該來源沒有這筆）
+            continue
+        stats["found"] += 1
+        # 走 canonical 正規化取對話文字：各來源的內容源欄不同（conversation_full / rec_desc /
+        # description …），映射表是 SSOT，這裡不自己再寫一份欄名對照。
+        content = _clean_cell(source_mapping.normalize_row(source, row).get("content"))
+        if not content:
+            stats["empty_conversations"] += 1
+            continue
+        writer.writerow({id_column: item_id, text_column: content})
+
+    stats["valid_rows"] = stats["found"] - stats["empty_conversations"]
+    if not stats["valid_rows"]:
+        raise ValueError(
+            f"這批 ID 撈不到任何可跑的對話（要求 {stats['requested']} 筆、"
+            f"查無 {stats['missing']} 筆、內容為空 {stats['empty_conversations']} 筆）"
+        )
+    return id_column, text_column, buffer.getvalue().encode("utf-8"), stats

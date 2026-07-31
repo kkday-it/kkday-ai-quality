@@ -10,6 +10,7 @@
  * tab 併入，原「帳號」抽屜內容）。
  */
 import { ref, computed, onUnmounted } from 'vue';
+import { fmtPercent } from '@/utils';
 import { Message } from '@arco-design/web-vue';
 import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { useExportJob } from '@/features/judge/composables';
@@ -170,9 +171,7 @@ onUnmounted(closeStream);
           <template #icon><icon-download /></template>
           導出資料包
         </a-button>
-        <span class="text-sm text-[var(--color-text-3)]"
-          >下載當前全庫快照 zip，供分發 / 備份</span
-        >
+        <span class="text-sm text-[var(--color-text-3)]">下載當前全庫快照 zip，供分發 / 備份</span>
       </div>
       <ExportProgressBar
         v-if="exporting"
@@ -263,7 +262,7 @@ onUnmounted(closeStream);
                   : 'normal'
             "
           >
-            <template #text="{ percent }">{{ (percent * 100).toFixed(2) }}%</template>
+            <template #text="{ percent }">{{ fmtPercent(percent) }}</template>
           </a-progress>
           <span class="text-sm text-[var(--color-text-3)]">
             {{ snapshot.done_tables }}/{{ snapshot.total_tables }} 表

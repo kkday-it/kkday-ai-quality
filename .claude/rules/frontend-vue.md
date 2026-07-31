@@ -178,6 +178,55 @@ import { StickyTabs } from '@/components';
 - **值域/三態語義同源**：`AsyncSection` 的 loading/error/empty 對應 composable 回傳的三態（如 `useOrderEvidence` 的 `loading`/`error`/`result`）——composable 也一律回這組三態，不各自發明狀態欄位。
 - **選型判準**：能算百分比 → 進度條（ExportProgressBar/a-progress）；算不出百分比的單請求 → AsyncSection（骨架+不確定條）；表格 → TableLayout；按鈕 → :loading。拿不準時預設 AsyncSection。
 
+## 窄容器內的表格：多欄收斂成「描述區塊」（強制）
+
+抽屜／彈窗等**寬度受限**的容器內，表格**禁止靠 `:scroll="{ x: NNN }"` 硬撐出橫向捲動**來塞下
+一堆窄欄。一律把語義同群的欄位收斂成**一個描述區塊欄**，用「左小標籤 ＋ 右內容」的緊湊列堆疊：
+
+```vue
+<a-table-column title="本批" :width="300">
+  <template #cell="{ record }">
+    <div class="flex flex-col gap-1 py-0.5">
+      <div class="text-xs font-medium">{{ 主要值 }}</div>
+      <div class="flex gap-1.5 text-[11px] leading-[1.6]">
+        <span class="shrink-0 text-[#86909c]">標籤</span>
+        <span class="min-w-0 truncate text-[#4e5969]">{{ 值 }}</span>
+      </div>
+    </div>
+  </template>
+</a-table-column>
+```
+
+- **判準**：抽屜內表格欄數 >4，或最小寬度超過容器寬度 → 收斂。頁面級寬表不受此限。
+- **語義分群**：同一群 = 值的來源與變動時機一致（例：跑批記錄的「本批」＝輸入／範圍／Prompt 版本，
+  同群組必然相同；「執行」＝模型／結果／狀態／耗時，逐 run 不同）。
+- **合併儲存格（`span-method`）配套**：收斂後合併的欄要跟著減少。三個窄欄各自合併時，
+  鄰欄若有 N 列會拉出一大塊空白（實例：2026-07-31 跑批記錄多模型群組列）。
+- **長值一律 `min-w-0 truncate` + `:title`**：`truncate` 在 flex 子元素上必須配 `min-w-0` 才生效，
+  漏了就會把父容器撐爆——那正是橫向捲動的來源之一。
+- Canonical 用例：`RecordContextPanel.vue` 的 `compact` 版型（歸因列表「關聯資料」欄）、
+  `PromptDebugBatchDrawer.vue` 的跑批記錄表。
+
+## 進度條百分比（全站統一 · 強制）
+
+**任何 `a-progress` 顯示文字一律走 `fmtPercent()`（`@/utils`），格式固定 `xx.xx%`（兩位小數）。**
+
+```vue
+<a-progress :percent="pct">
+  <template #text="{ percent }">{{ fmtPercent(percent) }}</template>
+</a-progress>
+```
+
+- **為什麼不能用 Arco 預設**：`a-progress` 不帶 `#text` 時會把浮點原樣印出來——實際踩過
+  `98.63013698630137%`（2026-07-31 跑批進度條），一長串數字在窄容器裡還會把版面撐爆換行。
+- **禁止各處手抄 `(percent * 100).toFixed(2)`**：同一個顯示口徑手抄必 drift（改造前
+  `DataImportPanel` / `DataUpload` 抄了兩份，其餘四處根本沒抄 → 同一個 app 兩種格式）。
+  一律 import `@/utils` 的 `fmtPercent`。
+- **`:show-text="false"` 的純視覺條**（如列表內的細條）不需要，本規則只管有顯示文字的。
+- **未知不等於 0%**：`fmtPercent` 對 `null`/`undefined`/非有限數回 `—`。分母未知時
+  （如 server 重啟後由磁碟推導的 run，`total` 為 `null`）**不要畫一條 0% 的假進度條**，
+  改顯示說明文字——0% 會讓使用者以為「跑了但一筆都沒成功」。
+
 ## 同語義控件跨頁一致（canonical 對齊 · 強制）
 
 同一語義的設定/表單控件，**全站只准一種元件形態**；已有 canonical 實作的語義，新頁面必須對齊其元件選型與交互語義（含禁用/鎖定條件與值域 SSOT），禁止另選元件重做一套：
@@ -189,7 +238,7 @@ import { StickyTabs } from '@/components';
 | 大集合單選（模型清單、連線清單） | `a-select`（`:options` 或 a-option） | 自刻下拉 |
 | 數值微調（temperature 類） | `a-switch`（啟用自訂）＋ `a-slider`＋當前值顯示；有鎖定條件時 switch disabled + 鎖定說明文字 | 裸 input number、無啟用開關的常駐 slider |
 
-- **Canonical 用例＝LLM 旋鈕**（`@/components/LlmKnobs.vue`，A schema 2026-07-22 起為唯一實作，各功能區與設定面板皆呼叫此元件，禁止另寫第二套）：Thinking＝`a-switch on/off`、Reasoning effort＝radio-group 分段、Temperature＝switch＋slider＋`tempLocked`。值域與鎖定規則不再寫死（不是 `provider === 'openai'` 判斷），改由 `features/settings/constants` 的 `capabilitiesFor(model, provider)` 依所屬供應商（`config/global/llm_model.json` `providers[].supportsThinking`/`reasoningEffortOptions`/`temperatureLockedWhenThinking`/`lockedTemperatureValue`，個別 model 可被 `modelCapabilities` 覆寫）動態決定，與後端 `settings.model_capabilities_for()` 同一份資料源。連線選擇（供應商）配對元件＝`@/components/LlmConfigPicker.vue`。任何頁面出現同語義旋鈕（初判分類/Prompt 調試台/Prompt 沙盒）一律直接複用 `LlmKnobs`/`LlmConfigPicker`（透過 `useLlmAreaDefault(area)` composable 取得 v-model 綁定），不得自帶第二套值域或另選元件（2026-07-22 Prompt 調試台曾用 select 下拉重做被退回對齊，即本條由來）。
+- **Canonical 用例＝LLM 旋鈕**（`@/components/LlmKnobs.vue`，A schema 2026-07-22 起為唯一實作，各功能區與設定面板皆呼叫此元件，禁止另寫第二套）：Thinking＝`a-switch on/off`、Reasoning effort＝radio-group 分段、Temperature＝switch＋slider＋`tempLocked`。值域與鎖定規則不再寫死（不是 `provider === 'openai'` 判斷），改由 `features/settings/constants` 的 `capabilitiesFor(model, provider)` 依所屬供應商（`config/global/llm_model.json` `providers[].supportsThinking`/`reasoningEffortOptions`/`temperatureLockedWhenThinking`/`lockedTemperatureValue`，個別 model 可被 `modelCapabilities` 覆寫）動態決定，與後端 `settings.model_capabilities_for()` 同一份資料源。⚠️ **2026-07-31 起 `LlmKnobs` 只出現在一個地方**：設定 › LLM 設定 的模型配置編輯器（`features/settings/components/LlmModelConfigList.vue`）。旋鈕已收斂成**全域具名模型配置**，各功能區（初判分類/Prompt 調試台/Prompt 沙盒/AI 定點改寫）頁面上只留一個 `@/components/LlmConfigSelect.vue` 下拉選配置，**不得**再內嵌整組旋鈕；v-model 綁定一律走 `useLlmAreaConfig(area)`（回傳 `configId`/`configs`/`config`/`overrides`，其中 `overrides` 形狀與改造前一字不差，故後端契約零改動）。配對的供應商 radio 元件 `LlmConfigPicker.vue` 已**整檔退役**（唯一職責是選供應商，配置自帶 provider 後無此需求）。「哪個功能區用哪一筆配置」＝ DB `settings.llm_area_configs`，與配置**內容**同為**團隊共用單一份**（2026-07-31 拍板；曾短暫改存 localStorage 求個人隔離，但瀏覽器儲存跨不了人與裝置，同事拿不到你調好的安排，故收回 DB）。**下拉沒有儲存按鈕——選了就落庫**（`useLlmAreaConfig` 的 `configId` setter，樂觀更新＋失敗回滾＋Message 提示）；也因為每個使用點都自動同步，設定面板**不得**再開一個集中綁定區塊（那是同一件事的第二個入口）。**「測試連線」亦收斂到設定面板**：`useLlmConfigTest` 唯一消費端＝`LlmModelConfigList.vue` 的配置編輯區（綠色 `primary status="success"`，測當前展開那筆的**草稿值**，未存也能先驗），功能區頁面**不得**再各擺一顆——旋鈕已不在那裡，該在編配置的地方驗證。⚠️ 與連線卡（`LlmConnectionCard`）的「測試連線」是**兩層不同的測試**，勿合併：連線卡測「base_url + token 通不通」，配置列測「這組 model + 旋鈕跑不跑得動」。任何頁面出現同語義需求一律複用上述元件，不得自帶第二套值域或另選元件（2026-07-22 Prompt 調試台曾用 select 下拉重做旋鈕被退回對齊，即本條由來——注意那是「重做旋鈕」被退回，不是「用 select 選配置」）。
 - **值域/選項 SSOT 同源**：對齊 canonical 時連值域一起復用（import 同一 constants），禁止在新頁面手抄枚舉陣列——手抄必 drift。
 - **第 2 次出現即評估抽共用元件**（呼應上方佈局拆分準則）：同一組控件組合出現在第 2 個頁面時，優先抽成共用元件（props 注入差異）而非各自複製模板。
 

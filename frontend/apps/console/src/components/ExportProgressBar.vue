@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fmtPercent } from '@/utils';
 /**
  * 導出實時進度條（純展示；問題列表 / 初判規則 / 圖表 PDF 三處共用）。
  *
@@ -49,7 +50,9 @@ const stopDisabled = computed(() => props.status === 'cancelling' || props.statu
 <template>
   <div class="rounded-md border border-[#f0f0f0] bg-white px-4 py-3">
     <div class="flex items-center gap-3">
-      <a-progress class="flex-1" :percent="pct / 100" :status="barStatus" />
+      <a-progress class="flex-1" :percent="pct / 100" :status="barStatus">
+        <template #text="{ percent }">{{ fmtPercent(percent) }}</template>
+      </a-progress>
       <a-popconfirm
         content="確定停止導出？已產生部分不保留，可稍後重新導出。"
         @ok="$emit('cancel')"

@@ -7,6 +7,7 @@
  * 免手選 tab；一次可傳整本 xlsx（多分頁）。
  */
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { fmtPercent } from '@/utils';
 import { Message } from '@arco-design/web-vue';
 import {
   validateInbound,
@@ -302,7 +303,7 @@ const itemCols = [
             :percent="sh.total ? sh.processed / sh.total : 0"
             :status="sh.status === 'error' ? 'danger' : sh.status === 'done' ? 'success' : 'normal'"
           >
-            <template #text="{ percent }">{{ (percent * 100).toFixed(2) }}%</template>
+            <template #text="{ percent }">{{ fmtPercent(percent) }}</template>
           </a-progress>
           <div v-if="sh.errors?.length" class="mt-1 text-xs text-orange-600">
             {{ sh.errors.slice(0, 3).join('；') }}

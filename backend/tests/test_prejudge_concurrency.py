@@ -73,11 +73,11 @@ def test_domain_retry_reads_config(monkeypatch) -> None:
 # ── P5：AIMD 自適應併發 governor ──
 def test_governor_aimd_backoff_and_probe(monkeypatch) -> None:
     """樂觀起於 ceiling；429 乘性收縮（cooldown 內只一次）；清空 probe_interval 加性回升；floor 夾住。"""
-    from app.judge import prejudge_batch as pb
+    from app.core.concurrency import ConcurrencyGovernor
 
     clock = [1000.0]
     monkeypatch.setattr("time.monotonic", lambda: clock[0])
-    g = pb._ConcurrencyGovernor(64, floor=2, backoff=0.5, probe_interval_s=3.0, cooldown_s=5.0)
+    g = ConcurrencyGovernor(64, floor=2, backoff=0.5, probe_interval_s=3.0, cooldown_s=5.0)
     assert g.current() == 64  # 樂觀起步＝ceiling
 
     g.on_429()
@@ -93,7 +93,7 @@ def test_governor_aimd_backoff_and_probe(monkeypatch) -> None:
     clock[0] = 1012
     assert g.current() == 18
 
-    g2 = pb._ConcurrencyGovernor(3, floor=2, backoff=0.5, cooldown_s=0.0)
+    g2 = ConcurrencyGovernor(3, floor=2, backoff=0.5, cooldown_s=0.0)
     g2.on_429()
     assert g2.current() == 2  # int(3*0.5)=1 → floor 夾到 2；ceiling 也夾（不超過 3）
 

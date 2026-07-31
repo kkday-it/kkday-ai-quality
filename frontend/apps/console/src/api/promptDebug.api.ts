@@ -414,7 +414,8 @@ export type PromptDebugBatchStatus =
 /** 快照內「最近完成」明細（即時回報環，全量明細在 jsonl 下載）。 */
 export interface PromptDebugBatchRecentItem {
   item_id: string;
-  ok: boolean;
+  /** 這一筆是否成功（與快照的 `ok_count` 計數刻意不同名——同名不同義是這個模組出過的事故）。 */
+  succeeded: boolean;
   L1: string | null;
   L2: string | null;
   /** 欄位校驗未過項數（0＝契約通過）。 */
@@ -429,26 +430,40 @@ export interface PromptDebugBatchSnapshot {
   run_id: string;
   /** 本批用的 Prompt 版本名；空＝送出前在頁面上臨時編輯過（實際內容以 run 目錄快照為準）。 */
   prompt_version: string;
+  /** 版本口徑軌跡（release / draft / 臨時編輯）——稽核「那批到底用哪份 Prompt 跑的」靠它。 */
+  prompt_kind: string;
   model: string;
   input_name: string;
   created_at: string;
-  /** 本次選中目標（offset/limit 後）。 */
-  total: number;
+  /** 本次選中目標（offset/limit 後）。**`null`＝未知**：server 重啟後由磁碟推導的 run
+   * 拿不到當時的選中總數，此時不得拿來算進度百分比（過去後端回 0，前端就顯示「目標 0 / 成功 42」）。 */
+  total: number | null;
   /** 斷點復用的成功筆。 */
   resumed: number;
   /** 本次實際要請求的筆數。 */
   pending: number;
   /** 本次已完成請求數（成功+失敗）。 */
   processed: number;
-  /** 累計成功（含復用）。 */
-  ok: number;
+  /** 累計成功**筆數**（含斷點復用）。 */
+  ok_count: number;
   failed: number;
   /** 成功但欄位校驗未過（詳情在 jsonl.validation_issues）。 */
   invalid: number;
   total_tokens: number;
   cost_usd: number;
-  /** 本次啟動 epoch 秒（前端算速度/ETA）。 */
-  started_at?: number;
+  /** 本次啟動時間（ISO 8601 UTC）；`null`＝磁碟推導的 run（重啟後 in-mem 已失）。
+   * ⚠️ 2026-07-31 前這裡是 epoch 秒（float），與同物件的 `created_at`/`finished_at` 型別不一致；
+   * 已統一為 ISO，前端不必再為「這個時間欄是哪種格式」分支。 */
+  started_at: string | null;
+  /** 本次收尾時間（ISO 8601 UTC）；空字串＝尚未收尾。 */
+  finished_at: string;
+  /** 本次執行段落已跑的秒數（執行中＝算到現在）；`null`＝未知（改造前的舊 run／中斷推導）。 */
+  elapsed_sec: number | null;
+  /** 含歷次續跑的**累計**執行秒數。刻意不是 `created_at → finished_at` 的牆鐘——
+   * 中斷後隔天才續跑的話，牆鐘會把擱置的那一整晚也算成「跑批花的時間」。 */
+  elapsed_total_sec: number | null;
+  /** 觸發人 email（`_launch` 額外塞進快照的欄位）。 */
+  triggered_by: string;
   warnings: string[];
   recent: PromptDebugBatchRecentItem[];
   failed_items: Array<{ item_id: string; error: string }>;
@@ -466,18 +481,33 @@ export interface PromptDebugBatchRunRow {
   input_name: string;
   /** 本批用的 Prompt 版本名；空＝啟動前在頁面上臨時編輯過。 */
   prompt_version: string;
+  /** 版本口徑軌跡（release / draft / 臨時編輯）。 */
+  prompt_kind: string;
   model: string;
+  /** 本批用的模型配置名（**啟動當下的名字快照**，非 id——配置日後改名/刪除，歷史 run 仍讀得懂）。
+   * 空＝改造前的舊 run 或腳本直呼，此時只有 model 可追。 */
+  config_name: string;
   offset: number;
   limit: number;
+  /** 本批解析後的併發 ceiling（稽核用事實紀錄）；執行期 AIMD governor 只在其下調整。
+   * `null`＝改造前的舊 run 沒記這欄。 */
   workers: number | null;
   status: PromptDebugBatchStatus;
-  total: number;
+  /** `null`＝未知（磁碟推導的中斷 run）；顯示時要區分於 0。 */
+  total: number | null;
   resumed: number;
   processed: number;
-  ok: number;
+  /** 累計成功**筆數**。 */
+  ok_count: number;
   failed: number;
   invalid: number;
   cost_usd: number;
+  /** 本次執行段落秒數；`null`＝未知（改造前的舊 run／中斷推導）。 */
+  elapsed_sec: number | null;
+  /** 含歷次續跑的累計執行秒數（列表顯示這個）。 */
+  elapsed_total_sec: number | null;
+  /** 執行過幾段（1＝一次跑完，>1＝中途停過再續跑）。 */
+  session_count: number;
   has_csv: boolean;
 }
 
@@ -492,34 +522,64 @@ export type PromptDebugBatchFileKind = 'csv' | 'jsonl' | 'preds' | 'input';
 export const listPromptDebugBatchRuns = (): Promise<{ runs: PromptDebugBatchRunRow[] }> =>
   j<{ runs: PromptDebugBatchRunRow[] }>(`${BASE}/v1/prejudge/prompt-debug/batch/runs`);
 
-/** 啟動多模型並行跑批的參數：與單模型共用輸入/Prompt/範圍，`models` 取代單一 `overrides.model`。 */
+/** 一筆送去跑批的模型配置（具名配置攤平後的旋鈕；後端據此逐筆各起一個獨立 run）。 */
+export interface PromptDebugBatchConfigEntry {
+  /** 配置名（全域唯一）；後端寫進 manifest 供事後追溯「那批是用哪個設定跑的」。 */
+  config_name: string;
+  provider: string;
+  model: string;
+  thinking?: string;
+  reasoning_effort?: string;
+  temperature?: number | null;
+}
+
+/** 啟動多配置並行跑批的參數：與單筆共用輸入/Prompt/範圍，`configs` 逐筆自帶完整旋鈕。 */
 export interface PromptDebugBatchGroupStartPayload {
-  file: File;
+  /** 上傳的輸入檔；`null`＝改走 DB 取數（需帶 `source` + `itemIds`）。 */
+  file: File | null;
   /** 留空＝後端取版本庫最新版；三軌一致（單模型／多模型／單次調試共用同一份口徑來源）。 */
   systemPrompt: string;
+  /** 反饋來源 id（DB 取數模式必填，見 `SOURCES` 常數）；`file` 有值時忽略。 */
+  source?: string;
+  /** DB 取數模式的自然鍵清單，換行分隔（如 session_oid）。 */
+  itemIds?: string;
   sheet?: string;
   idColumn?: string;
   textColumn?: string;
   offset?: number;
   limit?: number;
+  /** 併發 ceiling 覆寫；省略＝自動（依 model 查表 + 執行期 AIMD 自適應）。
+   * 前端已不再送——沒有任何供應商公布「併發數」這個維度，填進去的數字必然是猜的。 */
   workers?: number;
-  /** 欲並行的 model id 清單（2–6 個；後端 `_MAX_MODELS_PER_GROUP` 上限一致）。 */
-  models: string[];
-  /** 共用旋鈕（thinking/reasoning_effort/temperature）；**不含** model/provider——那兩個由後端逐
-   * model 覆寫，帶了也會被忽略，故型別刻意排除避免誤用。 */
-  overrides?: Omit<LlmOverrides, 'model' | 'provider'>;
+  /**
+   * 欲並行的模型配置（1–6 筆；後端 `_MAX_ENTRIES_PER_GROUP` 上限一致）。
+   *
+   * **是陣列不是「以 model 為 key 的 map」**：兩筆配置完全可能用同一個 model 只差旋鈕
+   * （`gpt-5.4-mini · medium` vs `· high` 正是具名配置最典型的用途），以 model 當 key 會讓後一筆
+   * 靜默覆蓋前一筆。也因為每筆自帶完整旋鈕，不再有「全體共用一組 overrides」的限制。
+   */
+  configs: PromptDebugBatchConfigEntry[];
 }
 
 /**
- * 單一 model 的啟動結果：`ok=false` 時只有 `error`，不含 run_id（該 model 的 run 從未建立）。
- * `ok=true` 時另帶該 run 的初始快照欄位（`total`/`resumed`/`pending` 等），但頁面的即時進度
- * 一律改讀輪詢（`getPromptDebugBatchGroup`）結果，這裡只保留 model/provider/ok/run_id/error
- * 四個欄位供渲染，其餘初始快照欄位不強制型別（送到就有，不強求）。
+ * 單一配置的啟動結果：`started=false` 時只有 `error`，不含 run_id（該筆的 run 從未建立）。
+ *
+ * ⚠️ 欄位叫 `started` 而不是 `ok`，而且成員**刻意不帶初始快照**——這兩件事是同一個事故的產物：
+ * 後端曾寫 `{**ident, "ok": True, **snapshot}`，快照自帶的 `ok`（累計成功筆數，新 run 恆為 0）
+ * 把布林旗標吃掉，於是每個**成功**啟動的配置都被判成失敗、跳紅色 toast，連群組進度輪詢都被
+ * 擋在 `if (ok.length)` 後面從未執行。即時進度一律走輪詢（`getPromptDebugBatchGroup`）。
+ *
+ * `model`/`provider` 是「實際跑了什麼」的事實紀錄，與 `config_name`（用哪個設定跑的）語義不同，
+ * 刻意不合併——同一個 model 可能來自兩筆不同配置。
  */
 export interface PromptDebugBatchGroupMember {
+  config_name: string;
   model: string;
   provider: string;
-  ok: boolean;
+  /** 這一筆有沒有成功**啟動**（不是有沒有跑成功——後者看輪詢回來的 run status）。 */
+  started: boolean;
+  /** 啟動當下的 run 狀態；`started=false` 時不存在。 */
+  status?: PromptDebugBatchStatus;
   run_id?: string;
   error?: string;
 }
@@ -529,26 +589,43 @@ export interface PromptDebugBatchGroupResult {
   group_id: string;
   created_at: string;
   members: PromptDebugBatchGroupMember[];
+  /** DB 取數模式才有：要了幾筆、撈到幾筆、幾筆查無、幾筆內容為空。
+   * 必須回報給使用者——貼了 1000 個 id 只跑了 940 筆，不講清楚就只會看到「總數對不上」。 */
+  db_stats?: {
+    requested: number;
+    found: number;
+    missing: number;
+    empty_conversations: number;
+    valid_rows: number;
+  };
 }
 
 /**
- * 啟動多模型並行跑批：同一份輸入 × 同一份 Prompt，在每個 model 上各自獨立起一個完整的單模型
- * run。Provider 由後端逐 model 反推並驗證（未登記的 model 名整批 400，不啟動任何 run）。
+ * 啟動多配置並行跑批：同一份輸入 × 同一份 Prompt，在每筆模型配置上各自獨立起一個完整的 run。
+ *
+ * Provider 是配置的顯式屬性、不用從 model 名猜——附帶鬆綁：自訂／未登記於 llm_model.json 的
+ * model 名，第一次能合法用在多模型跑批。缺 token 這類問題仍由後端在啟動前逐筆攔下。
  */
 export const startPromptDebugBatchGroup = (
   payload: PromptDebugBatchGroupStartPayload,
 ): Promise<PromptDebugBatchGroupResult> => {
   const fd = new FormData();
-  fd.append('file', payload.file);
+  // 兩種輸入二選一：有檔案＝上傳模式；否則走 DB 取數（後端撈完會落成 CSV 快照，之後路徑同構）
+  if (payload.file) {
+    fd.append('file', payload.file);
+  } else {
+    fd.append('source', payload.source ?? '');
+    fd.append('item_ids', payload.itemIds ?? '');
+  }
   fd.append('system_prompt', payload.systemPrompt);
   if (payload.sheet) fd.append('sheet', payload.sheet);
   if (payload.idColumn) fd.append('id_column', payload.idColumn);
   if (payload.textColumn) fd.append('text_column', payload.textColumn);
   fd.append('offset', String(payload.offset ?? 0));
   fd.append('limit', String(payload.limit ?? 0));
-  fd.append('workers', String(payload.workers ?? 8));
-  fd.append('models', JSON.stringify(payload.models));
-  if (payload.overrides) fd.append('overrides', JSON.stringify(payload.overrides));
+  // 0＝交給後端自動解析（見 `workers` 欄註解）
+  fd.append('workers', String(payload.workers ?? 0));
+  fd.append('configs', JSON.stringify(payload.configs));
   return j<PromptDebugBatchGroupResult>(`${BASE}/v1/prejudge/prompt-debug/batch/start-multi`, {
     method: 'POST',
     body: fd,

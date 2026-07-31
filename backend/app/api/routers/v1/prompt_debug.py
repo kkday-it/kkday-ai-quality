@@ -439,7 +439,7 @@ def prompt_debug_regression_status(
 
 
 class PromptDebugBatchResumeIn(BaseModel):
-    """續跑/重跑請求：workers 缺省沿用 manifest；rerun=true 忽略斷點全部重打。"""
+    """續跑/重跑請求：workers 缺省＝自動解析；rerun=true 忽略斷點全部重打。"""
 
     workers: int | None = Field(default=None, ge=1)
     rerun: bool = False
@@ -469,14 +469,21 @@ async def prompt_debug_batch_start(
     text_column: str = Form("conversation_full"),
     offset: int = Form(0, ge=0),
     limit: int = Form(0, ge=0, description="實際跑多少條；0＝全部"),
-    workers: int = Form(8, ge=1),
+    workers: int = Form(
+        0,
+        ge=0,
+        description="併發 ceiling 覆寫；0＝自動（依 model 查表 + AIMD 自適應）。前端不再送此欄。",
+    ),
     overrides: str = Form("", description="LlmOverridesIn 形狀的 JSON 字串；空＝沿用功能區默認"),
+    config_name: str = Form(
+        "", description="本次用的具名模型配置名（存進 manifest 供事後追溯）；空＝腳本直呼"
+    ),
     user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> dict:
     """啟動批量跑批：存輸入檔 + 當前 Prompt 進 run 目錄，背景整批裁決；回初始進度快照（含 run_id）。
 
-    單 model 入口，維持獨立於 `/batch/start-multi`——多模型只是多呼叫幾次
-    `prompt_debug_batch.create_and_start`，這條路徑本身零改動、零分支。
+    單一配置入口，維持獨立於 `/batch/start-multi`——多配置只是多呼叫幾次
+    `prompt_debug_batch.create_and_start`，這條路徑本身零分支。
     """
     from app.judge import prompt_debug_batch
 
@@ -501,104 +508,172 @@ async def prompt_debug_batch_start(
             overrides=overrides_dict,
             effective=effective,
             triggered_by=user.get("email", ""),
+            config_name=config_name.strip(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _parse_models_form(models: str) -> list[str]:
-    """multipart 無巢狀結構，model 清單以 JSON 陣列字串傳遞；驗形＋去重＋去空白。
+def _parse_config_entries_form(configs: str) -> list[dict]:
+    """multipart 無巢狀結構，多模型跑批的配置清單以 JSON 陣列字串傳遞。
+
+    每筆＝前端把使用者選中的具名模型配置攤平後的結果：
+    `{config_name, provider, model, thinking?, reasoning_effort?, temperature?}`。
+
+    **為什麼是 list 而不是「以 model 名為 key 的 dict」**：兩筆配置完全可能用同一個 model 只差
+    旋鈕（`gpt-5.4-mini · medium` vs `gpt-5.4-mini · high` 正是具名配置最典型的用途），
+    以 model 當 key 會讓後一筆靜默覆蓋前一筆——使用者選了 2 筆、只跑了 1 筆，而且不會知道。
+    改以配置名去重：名稱在配置庫是全域唯一的（見 `settings._validate_model_configs`），天然是安全的
+    識別鍵，且對使用者有意義（結果分欄直接標配置名）。
+
+    Returns:
+        `[{config_name, overrides}]`——`overrides` 是該配置的 flat 旋鈕（含 provider/model，
+        不含 token），可直接餵 `effective_llm_dict` 與寫進 manifest。順序保留使用者的選取序。
 
     Raises:
-        HTTPException: 400，不是合法 JSON 陣列、為空、或元素不是字串。
+        HTTPException: 400，不是合法 JSON 物件陣列、為空、缺 config_name/provider/model、
+            provider 未登記、或配置名重複。
     """
+    from app.core import settings as app_settings
+
     try:
-        parsed = json.loads(models)
+        parsed = json.loads(configs)
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"models 參數不是合法 JSON：{exc}") from exc
-    if not isinstance(parsed, list) or not all(isinstance(m, str) for m in parsed):
-        raise HTTPException(status_code=400, detail="models 須為字串陣列")
-    # dict.fromkeys 去重且保留原順序（使用者選取的優先序，供前端結果分欄照原序顯示）
-    out = list(dict.fromkeys(m.strip() for m in parsed if m.strip()))
+        raise HTTPException(status_code=400, detail=f"configs 參數不是合法 JSON：{exc}") from exc
+    if not isinstance(parsed, list) or not all(isinstance(c, dict) for c in parsed):
+        raise HTTPException(status_code=400, detail="configs 須為物件陣列")
+
+    known_providers = {str(p.get("id")) for p in app_settings.LLM_PROVIDERS if p.get("id")}
+    out: list[dict] = []
+    seen_names: set[str] = set()
+    for cfg in parsed:
+        name = str(cfg.get("config_name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="每筆配置都需要 config_name")
+        if name.casefold() in seen_names:
+            raise HTTPException(status_code=400, detail=f"配置名重複：{name}")
+        seen_names.add(name.casefold())
+
+        provider = str(cfg.get("provider") or "").strip()
+        if provider not in known_providers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"配置「{name}」的供應商 {provider!r} 未登記（可用：{sorted(known_providers)}）",
+            )
+        model = str(cfg.get("model") or "").strip()
+        if not model:
+            raise HTTPException(status_code=400, detail=f"配置「{name}」未指定 model")
+
+        out.append(
+            {
+                "config_name": name,
+                "overrides": {
+                    "provider": provider,
+                    "model": model,
+                    "thinking": cfg.get("thinking") or "default",
+                    "reasoning_effort": cfg.get("reasoning_effort") or "default",
+                    # temperature 有「顯式 null＝用 API 預設」語意，key 一律帶上（見 effective_llm_dict）
+                    "temperature": cfg.get("temperature"),
+                },
+            }
+        )
     if not out:
-        raise HTTPException(status_code=400, detail="至少需選擇一個 model")
+        raise HTTPException(status_code=400, detail="至少需選擇一個模型配置")
     return out
 
 
 @router.post("/prompt-debug/batch/start-multi")
 async def prompt_debug_batch_start_multi(
-    file: UploadFile = File(..., description="輸入 .csv/.xlsx/.xlsm（含 id 與對話欄）"),
+    file: UploadFile | None = File(
+        None, description="輸入 .csv/.xlsx/.xlsm（含 id 與對話欄）；改用 DB 取數時留空"
+    ),
+    source: str = Form(
+        "", description="反饋來源 id（DB 取數模式必填，如 conversations）；上傳檔案時忽略"
+    ),
+    item_ids: str = Form(
+        "", description="DB 取數模式的自然鍵清單（換行／逗號分隔，如 session_oid）"
+    ),
     system_prompt: str = Form("", description="空＝取當前正式版"),
     sheet: str = Form("", description="XLSX 工作表名；空＝第一個工作表"),
     id_column: str = Form("session_oid"),
     text_column: str = Form("conversation_full"),
     offset: int = Form(0, ge=0),
     limit: int = Form(0, ge=0, description="實際跑多少條；0＝全部"),
-    workers: int = Form(8, ge=1),
-    models: str = Form(
-        ..., description='JSON 字串陣列，如 ["gpt-5.4-mini","seed-2-0-lite-260428"]'
+    workers: int = Form(
+        0,
+        ge=0,
+        description="併發 ceiling 覆寫；0＝自動（依 model 查表 + AIMD 自適應）。前端不再送此欄。",
     ),
-    overrides: str = Form(
-        "",
-        description="LlmOverridesIn 形狀的 JSON 字串（不含 model/provider，那兩個逐 model 覆寫）；空＝沿用功能區默認",
+    configs: str = Form(
+        ...,
+        description=(
+            "JSON 物件陣列，每筆＝一個具名模型配置攤平後的旋鈕："
+            '[{"config_name":"跑批·省錢","provider":"openai","model":"gpt-5.4-mini",'
+            '"thinking":"default","reasoning_effort":"medium","temperature":null}]'
+        ),
     ),
     user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> dict:
-    """多模型並行跑批：同一份輸入 × 同一份 Prompt，逐一在每個 model 上各起一個獨立 run。
+    """多模型並行跑批：同一份輸入 × 同一份 Prompt，逐一在每個**模型配置**上各起一個獨立 run。
 
-    Provider 解析分兩階段（見 `app.core.settings.provider_id_for_model` / `_resolve_provider`
-    的分工註解）：
-    ① 本端點先用 `provider_id_for_model()`（**不猜、未登記直接拋錯**）逐一驗證 `models`
-       裡每個名字都能反推出供應商——任一名字打錯／未登記，整個請求 400，**不啟動任何 run**
-       （不要讓「其中 3 個 model 名合法、第 4 個打錯字」變成先燒了 3 個 model 的預算才發現）。
-    ② 驗證通過後才逐 model 呼叫 `effective_llm_dict`（顯式帶入①已驗證的 provider），
-       解出各自的 token/base_url——這裡不再走「由 model 反推」那條軟路徑，直接用硬驗證結果。
+    比較的單位是「配置」不是「model」——每筆自帶完整 provider + 旋鈕，因此可以並排比
+    `seed-lite · high` vs `gpt-mini · medium` 這種連 effort 都不同的組合，也可以比同一個 model
+    的兩種 effort。（舊契約是「多個 model 共用一組旋鈕」，這兩件事都做不到。）
 
-    驗證通過後，各 model 的實際啟動（`create_and_start_group`）彼此獨立：某 model 因供應商
-    未配 token 這類**執行期**問題啟動失敗，不影響其餘 model 已經開始跑。
+    **不需要 `provider_id_for_model()` 那道硬驗證**：provider 是配置的顯式屬性，不用從 model 名猜。
+    附帶鬆綁——自訂／未登記於 `llm_model.json` 的 model 名，第一次能合法用在多模型跑批
+    （單模型路徑本來就可以）。缺 token 這類問題仍由 `_effective_or_400` 在啟動前逐筆攔下。
+
+    各配置的實際啟動（`create_and_start_group`）彼此獨立：某筆因供應商未配 token 這類**執行期**
+    問題啟動失敗，不影響其餘配置已經開始跑。
     """
-    from app.core import settings as app_settings
     from app.judge import prompt_debug_batch
 
-    model_list = _parse_models_form(models)
-    overrides_dict = _parse_overrides_form(overrides)
+    # 逐筆解 effective（缺 token 在這裡就被攔下，不會先燒了前幾筆的預算才發現）
+    entries = [
+        {**e, "effective": _effective_or_400(e["overrides"])}
+        for e in _parse_config_entries_form(configs)
+    ]
 
-    # 階段①：先驗證全部 model 名都能反推供應商，任一失敗整批 400、不建任何 run
-    providers: dict[str, str] = {}
-    for m in model_list:
+    db_stats: dict | None = None
+    if file is not None and file.filename:
+        input_name = file.filename
+        input_bytes = await file.read()
+        if len(input_bytes) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="輸入檔超過 64MB 上限")
+        if not input_bytes:
+            raise HTTPException(status_code=400, detail="輸入檔是空的")
+        resolved_id_col = id_column.strip() or "session_oid"
+        resolved_text_col = text_column.strip() or "conversation_full"
+    else:
+        # DB 取數：撈完當場落成 CSV 快照，之後的路徑與上傳完全同構（見 build_db_input_csv 說明）
+        ids = [chunk for raw in item_ids.splitlines() for chunk in raw.replace(",", " ").split()]
         try:
-            providers[m] = app_settings.provider_id_for_model(m)
+            resolved_id_col, resolved_text_col, input_bytes, db_stats = (
+                prompt_debug_batch.build_db_input_csv(source.strip(), ids)
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        input_name = f"{source.strip()}-{db_stats['valid_rows']}筆.csv"
 
-    # 階段②：逐 model 用已驗證的 provider 解 effective（缺 token 在這裡就會被 _effective_or_400 攔下）
-    effectives: dict[str, dict] = {
-        m: _effective_or_400({**(overrides_dict or {}), "model": m, "provider": providers[m]})
-        for m in model_list
-    }
-
-    input_bytes = await file.read()
-    if len(input_bytes) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="輸入檔超過 64MB 上限")
-    if not input_bytes:
-        raise HTTPException(status_code=400, detail="輸入檔是空的")
     try:
-        return prompt_debug_batch.create_and_start_group(
-            input_name=file.filename or "input.csv",
+        result = prompt_debug_batch.create_and_start_group(
+            input_name=input_name,
             input_bytes=input_bytes,
             sheet=sheet,
-            id_column=id_column.strip() or "session_oid",
-            text_column=text_column.strip() or "conversation_full",
+            id_column=resolved_id_col,
+            text_column=resolved_text_col,
             offset=offset,
             limit=limit,
             workers=workers,
             system_prompt=system_prompt,
-            overrides=overrides_dict,
-            effectives=effectives,
+            entries=entries,
             triggered_by=user.get("email", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 取數統計回給前端：「要了 N 筆、查無 M 筆」必須講清楚，否則使用者只會看到總數對不上
+    return {**result, "db_stats": db_stats} if db_stats else result
 
 
 @router.get("/prompt-debug/batch/runs")
