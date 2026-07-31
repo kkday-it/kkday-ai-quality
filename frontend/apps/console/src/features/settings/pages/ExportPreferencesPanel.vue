@@ -49,7 +49,8 @@ const onSave = async () => {
         <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
       </div>
       <div class="mt-1 text-xs leading-relaxed text-[#86909c]">
-        導出完成通知的「打開 Google Drive 上傳」將開啟此資料夾（全項目共用一份）；留空＝使用系統預設資料夾。
+        導出完成通知的「打開 Google Drive
+        上傳」將開啟此資料夾（全項目共用一份）；留空＝使用系統預設資料夾。
       </div>
     </div>
   </StateGuard>

@@ -19,9 +19,11 @@ FINDING_REVIEW_UPDATE = "finding.review.update"  # 歸因人工判決（確認 /
 PROBLEM_LIST_EXPORT = "problem.list.export"  # 導出問題列表 xlsx
 PREJUDGE_RUN = "prejudge.run"  # 啟動/暫停/恢復/停止批量初判歸因（消耗 LLM 額度）
 
-# ── 設定管理（LLM 連線/旋鈕 + QC DB 連線；敏感項只在 grants，日常操作入 default）──
+# ── 設定管理（LLM 連線 + QC DB 連線；敏感項只在 grants）──
+# 模型配置庫（llm_model_configs）刻意**不設 key**：它只決定「用哪個 model、思考多深」，不涉及
+# 新端點或機密外洩面（要打哪裡、拿什麼 token 打，仍由受 SETTINGS_LLM_CONFIG_MANAGE 保護的
+# llm_connections/llm_tokens 決定），屬登入即可用的日常操作。
 SETTINGS_LLM_CONFIG_MANAGE = "settings.llm-config.manage"  # 改 LLM 連線（供應商 base_url/token）
-SETTINGS_LLM_AREA_DEFAULT_WRITE = "settings.llm-area-default.write"  # 存功能區默認旋鈕（日常操作）
 SETTINGS_QC_CONFIG_MANAGE = "settings.qc-config.manage"  # 改 QC DB 連線
 SETTINGS_SECRET_READ = "settings.secret.read"  # 看明文機密（/api/settings/raw）
 
@@ -36,7 +38,6 @@ ALL_KEYS: frozenset[str] = frozenset(
         PROBLEM_LIST_EXPORT,
         PREJUDGE_RUN,
         SETTINGS_LLM_CONFIG_MANAGE,
-        SETTINGS_LLM_AREA_DEFAULT_WRITE,
         SETTINGS_QC_CONFIG_MANAGE,
         SETTINGS_SECRET_READ,
     }

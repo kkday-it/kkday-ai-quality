@@ -118,8 +118,9 @@ const cell = (v: unknown): string => {
         v-if="record.order_lang || record.order_create_source_code || record.order_create_time"
         class="text-xs text-[var(--color-text-2)]"
       >
-        語系: {{ cell(record.order_lang) }} · 建立來源: {{ cell(record.order_create_source_code) }} ·
-        建立時間: {{ fmtDt(String(record.order_create_time ?? '')) || '—' }}
+        語系: {{ cell(record.order_lang) }} · 建立來源:
+        {{ cell(record.order_create_source_code) }} · 建立時間:
+        {{ fmtDt(String(record.order_create_time ?? '')) || '—' }}
       </div>
     </a-descriptions-item>
     <a-descriptions-item v-if="hasSection('product')" label="商品">
@@ -157,7 +158,8 @@ const cell = (v: unknown): string => {
         v-if="record.bd_tag || record.bd_tag_cd || record.bd_tag_note"
         class="text-xs text-[var(--color-text-2)]"
       >
-        BD TAG: {{ cell(record.bd_tag) }}（{{ cell(record.bd_tag_cd) }}） {{ cell(record.bd_tag_note) }}
+        BD TAG: {{ cell(record.bd_tag) }}（{{ cell(record.bd_tag_cd) }}）
+        {{ cell(record.bd_tag_note) }}
       </div>
       <div v-if="record.PM" class="text-xs text-[var(--color-text-2)]">PM: {{ record.PM }}</div>
     </a-descriptions-item>
@@ -274,8 +276,8 @@ const cell = (v: unknown): string => {
             }}</template
           >
           <template v-if="record.cs_tag_name">
-            <template v-if="record.msg_handler_bucket"> · </template
-            >客服標籤: {{ record.cs_tag_name }}</template
+            <template v-if="record.msg_handler_bucket"> · </template>客服標籤:
+            {{ record.cs_tag_name }}</template
           >
           <template v-if="record.user_message_count">
             <template v-if="record.msg_handler_bucket || record.cs_tag_name"> · </template>訊息數:

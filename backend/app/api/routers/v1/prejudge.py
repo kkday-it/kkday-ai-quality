@@ -74,7 +74,7 @@ class LlmOverridesIn(BaseModel):
     """本次執行臨時旋鈕覆寫（不落庫；「存為此功能區默認」為前端另一顯式動作，走 /api/settings）。
 
     三功能區（prejudge/prompt_debug/sandbox）共用同一契約——provider 可切換本次用哪個供應商連線，
-    其餘旋鈕覆寫該區默認。缺省欄位＝沿用功能區默認，前端 LlmConfigPicker/LlmKnobs 對齊此形狀。
+    其餘旋鈕覆寫該區默認。缺省欄位＝沿用功能區默認；前端由選中的具名模型配置攤平成此形狀送出。
     thinking/reasoning_effort 的值域讀 llm_model.json（見 _one_of），與前端旋鈕、執行層同一份真相源。
     """
 

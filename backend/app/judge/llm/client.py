@@ -301,7 +301,9 @@ def _degrade_reasoning_effort(kwargs: dict, emsg: str) -> bool:
     三家 provider 的該類 400 訊息皆含字面 "reasoning_effort"（OpenAI "Unsupported value: 'reasoning_effort'…"、
     Gemini "Invalid reasoning_effort: …"、ByteDance "Invalid reasoning_effort: …"），以此為觸發依據。
     """
-    if "reasoning_effort" not in emsg or "reasoning_effort" not in kwargs:
+    # 用 `_mentions_reasoning_effort` 而非裸字面比對：Responses API 的錯誤訊息拼作 `reasoning.effort`，
+    # 只比對 `reasoning_effort` 會讓該路徑的降級完全失效（走 Responses 的 Ark 新模型正是這條）。
+    if not _mentions_reasoning_effort(emsg) or "reasoning_effort" not in kwargs:
         return False
     mapped = _EFFORT_DEGRADE.get(str(kwargs["reasoning_effort"]))
     if mapped:
@@ -487,7 +489,10 @@ def _reasoning_kwargs(cfg: dict) -> dict:
     """
     eff = cfg.get("reasoning_effort")
     eff = eff if (eff and eff != "default") else None
-    provider = _settings.provider_id_for(cfg.get("base_url") or "")
+    # 判別軸＝**配置自帶的 provider**，由 base_url 反推只是缺省後備。兩者必須同軸，否則
+    # `settings.spec_key()` 的惰性折疊會與這裡的實際行為分歧——把真的會送出去的旋鈕折掉，
+    # 配置名就會與實跑值不符（自訂 gateway / 未登記 model 名下尤其明顯）。
+    provider = cfg.get("provider") or _settings.provider_id_for(cfg.get("base_url") or "")
     if provider == "bytedance":
         thinking = cfg.get("thinking")
         out: dict = {}
@@ -514,6 +519,8 @@ def _resolve() -> dict:
     return {
         "token": token,
         "base_url": base_url,
+        # 供應商判別軸：配置自帶的 provider（見 `_reasoning_kwargs`）。base_url 只是後備。
+        "provider": cfg.get("provider"),
         "model": model,
         "temperature": cfg.get("temperature"),
         "thinking": cfg.get("thinking", "default"),
@@ -571,7 +578,11 @@ def chat_json(
     if cfg["temperature"] is not None:
         kwargs["temperature"] = float(cfg["temperature"])
     kwargs.update(_reasoning_kwargs(cfg))  # thinking + reasoning_effort per-provider 組參數
-    is_openai = _settings.provider_id_for(cfg["base_url"]) == "openai"
+    # 判別軸與 `_reasoning_kwargs` 同源：配置自帶的 provider 優先，base_url 反推只是後備。
+    # 兩處不同軸時，自訂 gateway 會出現「這裡判 openai、那裡判 bytedance」的分裂行為。
+    is_openai = (
+        cfg.get("provider") or _settings.provider_id_for(cfg.get("base_url") or "")
+    ) == "openai"
     # serving tier：僅 OpenAI 支援 service_tier；"flex"＝-50% 計價換變動延遲（批次初判由
     # prejudge_batch 注入 eff，interactive 呼叫不帶）。非 OpenAI provider 不送（避免 400）。
     tier = cfg.get("service_tier")
@@ -751,7 +762,16 @@ def chat_json(
         return {}
     if use_cache and parsed:  # 寫入恆開（顯式重新初判的新結果也回填供後續批次重用）；空 dict 不快取
         try:
-            _get_exact_cache().set(ekey, parsed, expire=env.llm_cache_ttl_days * 86400)
+            # 重算而非沿用呼叫前的 ekey：`_complete_effort_safe` 的降級會**就地改寫 kwargs**
+            # （none→minimal、xhigh→high，甚至整個拿掉），沿用舊鍵會把「降級後的產物」存在
+            # 「降級前形狀」的鍵底下，下次同輸入命中一個名實不符的條目。
+            # 讀取端（上方 ekey）刻意維持呼叫前的形狀——那才是「這次打算送什麼」；降級形狀由
+            # `_remember_shape` 記住，下一輪起讀寫鍵自然收斂到同一個。
+            _get_exact_cache().set(
+                _cache_key(kwargs) if use_cache else ekey,
+                parsed,
+                expire=env.llm_cache_ttl_days * 86400,
+            )
         except Exception:  # noqa: BLE001  快取寫入失敗不阻斷初判
             _log.debug("LLM exact-cache 寫入失敗 stage=%s", stage)
     return parsed

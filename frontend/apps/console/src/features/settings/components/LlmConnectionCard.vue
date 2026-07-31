@@ -49,7 +49,9 @@ watch(
 );
 const saving = ref(false);
 const testing = ref(false);
-const hasTokenDisplay = computed(() => props.hasToken || (tokenDirty.value && !!form.value.api_token));
+const hasTokenDisplay = computed(
+  () => props.hasToken || (tokenDirty.value && !!form.value.api_token),
+);
 
 const formRef = ref<FormInstance>();
 
@@ -147,7 +149,9 @@ watch(testResult, async (r) => {
       </a-form-item>
 
       <a-space v-if="canManage" align="center" :size="8">
-        <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
+        <a-button type="primary" status="success" :loading="testing" @click="onTest"
+          >測試連線</a-button
+        >
         <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
         <span class="text-xs text-[#86909c]">此供應商唯一一條連線；token 只存後端，不入 git</span>
       </a-space>

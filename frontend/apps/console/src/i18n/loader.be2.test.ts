@@ -28,7 +28,9 @@ describe('i18n loader be2 分支', () => {
 
   it('uiLangList 成功 → 回攤平 {key: 譯文} map 直餵 vue-i18n', async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe('https://lang.test/api-lang/api/v1/uiLangList?lang[]=zh-TW&platform=ai-quality');
+      expect(url).toBe(
+        'https://lang.test/api-lang/api/v1/uiLangList?lang[]=zh-TW&platform=ai-quality',
+      );
       return { ok: true, json: async () => ({ data: { 'zh-TW': { 'common.ok': '確定' } } }) };
     });
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
@@ -39,7 +41,11 @@ describe('i18n loader be2 分支', () => {
   it('uiLangList HTTP 失敗 → 降級靜態 glob（不阻斷啟動）', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch,
+      vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      })) as unknown as typeof fetch,
     );
 
     const messages = (await loadLocaleMessages('zh-TW')) as Record<string, Record<string, unknown>>;
@@ -61,7 +67,11 @@ describe('i18n loader be2 分支', () => {
     // 巢狀（靜態降級路徑）：ns.page.key 逐層串出完整 key
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch,
+      vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      })) as unknown as typeof fetch,
     );
     const nested = (await loadLocaleMessages('zh-TW')) as Record<string, Record<string, unknown>>;
     expect((nested.common.app as Record<string, string>).name).toBe('(common.app.name) ⚖️ AI 質檢');

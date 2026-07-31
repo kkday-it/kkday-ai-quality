@@ -288,7 +288,31 @@ def _coerce_row(table: Table, row: dict) -> dict:
         if isinstance(col.type, DateTime) and isinstance(val, str) and val:
             val = datetime.fromisoformat(val)
         out[col.name] = val
+    if table.name == "settings":
+        out = _repair_settings_payload(out)
     return out
+
+
+def _repair_settings_payload(row: dict) -> dict:
+    """匯入 settings 列時把 `llm_model_configs` 修成當前合法形狀。
+
+    這條是配置庫的**第二寫入 ingress**：匯入走 DB 直寫、完全繞過 `settings._validate_model_configs`
+    的寫入邊界校驗。舊資料包裡的清單可能含重複規格、或缺了功能區預設起點——而前端每次儲存都送
+    **整份**清單，於是匯入後任何一筆配置的任何編輯／刪除都會被校驗擋成 400，訊息還指向使用者
+    根本沒碰過的那筆，整個配置庫就此鎖死（見 `.claude/rules/datapack-consistency.md`）。
+
+    修復不拋錯：匯入不該因為舊資料不合時宜而整批失敗。
+    """
+    from app.core import settings as app_settings  # 函式內 import：避免 db 層在頂層依賴 settings
+
+    data = row.get("data")
+    if not isinstance(data, dict) or "llm_model_configs" not in data:
+        return row
+    patched = dict(data)
+    patched["llm_model_configs"] = app_settings.repair_model_configs(
+        data.get("llm_model_configs") or []
+    )
+    return {**row, "data": patched}
 
 
 def _reset_sequence(conn: Any, table_name: str, col: str) -> None:

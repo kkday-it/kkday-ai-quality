@@ -1,13 +1,14 @@
 // 「確認初判分類」抽屜的批量／單列共用確認流程——由 AttributionList.vue 下沉。
-// 抽屜本身的 template（CollapsibleSidePanel/LlmConfigPicker/LlmKnobs/PromptVersionPickerGroup 等）
+// 抽屜本身的 template（CollapsibleSidePanel/LlmConfigSelect/PromptVersionPickerGroup 等）
 // 留在頁面，本 composable 只承接狀態計算與決策邏輯（開哪種 scope / 送出時呼叫誰 / 確認文案組字）。
 import { computed, ref, type Ref } from 'vue';
 import { composeLlmLabel } from '@/features/settings/utils';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import type { LogEntry } from '../components/PrejudgeLogView.types';
 
-/** 跟隨 useLlmAreaDefault('prejudge') 的旋鈕形狀（僅取確認文案組字所需欄位）。 */
-interface LlmKnobsLike {
+/** 跟隨 `useLlmAreaConfig('prejudge').overrides` 的形狀（僅取確認文案組字所需欄位）。 */
+interface LlmOverridesLike {
+  provider: string;
   model: string;
   thinking: string;
   reasoning_effort: string;
@@ -18,7 +19,7 @@ interface PrejudgeLastRunLike {
   model: string;
 }
 
-/** useRejudgeConfirm 的注入依賴（皆來自 useAttributionList 展開的 usePrejudgeJob / useLlmAreaDefault）。 */
+/** useRejudgeConfirm 的注入依賴（皆來自 useAttributionList 展開的 usePrejudgeJob / useLlmAreaConfig）。 */
 interface RejudgeConfirmDeps {
   /** 確認抽屜開關（批量／單列共用同一顆，來自 usePrejudgeJob.confirmOpen）。 */
   confirmOpen: Ref<boolean>;
@@ -26,10 +27,13 @@ interface RejudgeConfirmDeps {
   logEntries: Ref<LogEntry[]>;
   logError: Ref<string>;
   lastRun: Ref<PrejudgeLastRunLike | null>;
-  /** 目前 prejudge 功能區的 LLM provider（跟隨 useLlmAreaDefault('prejudge')）。 */
-  llmProvider: Ref<string>;
-  /** 目前 prejudge 功能區的旋鈕（reactive，非 ref）。 */
-  llmKnobs: LlmKnobsLike;
+  /**
+   * 目前 prejudge 功能區選中配置攤平出來的旋鈕（`useLlmAreaConfig('prejudge').overrides`）。
+   *
+   * 是 **computed ref**，取值一律 `.value`——改造前這裡是 provider（ref）+ knobs（reactive 物件）
+   * 兩個依賴，物件型的那個可直接 `.model` 取值；收斂成單一 computed 後不能再那樣寫，否則拿到 undefined。
+   */
+  llmOverrides: Ref<LlmOverridesLike>;
   /**
    * 單列（重新）初判執行者：由呼叫端注入（可能包含執行後 UI 副作用如捲動定位，
    * composable 本身不處理 DOM，僅負責決定「該不該呼叫它」）。
@@ -55,8 +59,7 @@ export function useRejudgeConfirm(deps: RejudgeConfirmDeps) {
     logEntries,
     logError,
     lastRun,
-    llmProvider,
-    llmKnobs,
+    llmOverrides,
     runRejudgeRow,
     runBatch,
     openBatchTargeting,
@@ -105,12 +108,12 @@ export function useRejudgeConfirm(deps: RejudgeConfirmDeps) {
   //    取代原本收合面板時的大片空白；label 復用 judgeRules store 與 composeLlmLabel，勿另建對照。 ──
   const judgeRulesStore = useJudgeRulesStore();
   const confirmModelLabel = computed(() =>
-    llmKnobs.model
+    llmOverrides.value.model
       ? composeLlmLabel({
-          provider: llmProvider.value,
-          model: llmKnobs.model,
-          thinking: llmKnobs.thinking,
-          reasoning_effort: llmKnobs.reasoning_effort,
+          provider: llmOverrides.value.provider,
+          model: llmOverrides.value.model,
+          thinking: llmOverrides.value.thinking,
+          reasoning_effort: llmOverrides.value.reasoning_effort,
         })
       : '系統預設模型',
   );
@@ -123,12 +126,12 @@ export function useRejudgeConfirm(deps: RejudgeConfirmDeps) {
 
   /** 本次初判將使用的模型 label（跟隨 prejudge 功能區默認，抽屜可臨時覆寫）；無配置回空。 */
   const currentLlmLabel = computed(() =>
-    llmKnobs.model
+    llmOverrides.value.model
       ? composeLlmLabel({
-          provider: llmProvider.value,
-          model: llmKnobs.model,
-          thinking: llmKnobs.thinking,
-          reasoning_effort: llmKnobs.reasoning_effort,
+          provider: llmOverrides.value.provider,
+          model: llmOverrides.value.model,
+          thinking: llmOverrides.value.thinking,
+          reasoning_effort: llmOverrides.value.reasoning_effort,
         })
       : '',
   );

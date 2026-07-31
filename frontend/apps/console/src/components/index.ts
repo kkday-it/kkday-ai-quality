@@ -12,5 +12,6 @@ export { default as AsyncSection } from './AsyncSection.vue';
 export { default as KpiCard } from './KpiCard.vue';
 export { default as MdTextDiff } from './MdTextDiff.vue';
 export { default as LlmKnobs } from './LlmKnobs.vue';
-export { default as LlmConfigPicker } from './LlmConfigPicker.vue';
+export { default as LlmConfigSelect } from './LlmConfigSelect.vue';
 export { default as LlmConfigTestResult } from './LlmConfigTestResult.vue';
+export { default as ScrollFadeArea } from './ScrollFadeArea.vue';

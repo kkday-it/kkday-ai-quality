@@ -4,7 +4,8 @@ import authConfig from '@config/global/auth.config.json';
 export const BASE = '/api';
 
 /** 登入模式（auth.config.json authProvider·前後端同讀 SSOT）：local=自建 JWT｜be2=Auth Service token。 */
-export const AUTH_PROVIDER: string = (authConfig as { authProvider?: string }).authProvider ?? 'local';
+export const AUTH_PROVIDER: string =
+  (authConfig as { authProvider?: string }).authProvider ?? 'local';
 /** be2 接入佔位段（authSvcUrl/be2LoginUrl…；值待 platform 註冊回填）。 */
 export const BE2_CONFIG: { authSvcUrl?: string; be2LoginUrl?: string } =
   (authConfig as { be2?: { authSvcUrl?: string; be2LoginUrl?: string } }).be2 ?? {};
@@ -186,7 +187,12 @@ export async function postSse(
   const headers = new Headers(JSON_HEADERS);
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {

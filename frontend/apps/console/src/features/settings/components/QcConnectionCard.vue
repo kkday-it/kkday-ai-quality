@@ -52,7 +52,9 @@ watch(
 );
 const saving = ref(false);
 const testing = ref(false);
-const hasPasswordDisplay = computed(() => props.hasPassword || (pwDirty.value && !!form.value.password));
+const hasPasswordDisplay = computed(
+  () => props.hasPassword || (pwDirty.value && !!form.value.password),
+);
 
 const onSave = async () => {
   saving.value = true;
@@ -121,7 +123,12 @@ watch(testResult, async (r) => {
       <a-row :gutter="12">
         <a-col :span="12">
           <a-form-item field="host" label="Host">
-            <a-input v-model="form.host" :disabled="!canManage" :placeholder="envMeta.host" allow-clear />
+            <a-input
+              v-model="form.host"
+              :disabled="!canManage"
+              :placeholder="envMeta.host"
+              allow-clear
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
@@ -140,7 +147,12 @@ watch(testResult, async (r) => {
       <a-row :gutter="12">
         <a-col :span="12">
           <a-form-item field="user" label="User">
-            <a-input v-model="form.user" :disabled="!canManage" placeholder="資料庫帳號" allow-clear />
+            <a-input
+              v-model="form.user"
+              :disabled="!canManage"
+              placeholder="資料庫帳號"
+              allow-clear
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
@@ -157,7 +169,9 @@ watch(testResult, async (r) => {
       </a-row>
 
       <a-space v-if="canManage" align="center" :size="8">
-        <a-button type="primary" status="success" :loading="testing" @click="onTest">測試連線</a-button>
+        <a-button type="primary" status="success" :loading="testing" @click="onTest"
+          >測試連線</a-button
+        >
         <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
         <span class="text-xs text-[#86909c]">此環境唯一一條連線</span>
       </a-space>

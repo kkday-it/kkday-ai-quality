@@ -16,9 +16,10 @@ export type LlmArea = 'prejudge' | 'prompt_debug' | 'sandbox' | 'prompt_revise';
  * thinking 參數，此欄位對它們恆為 'default'、不讀取（見 capabilitiesFor 的 thinkingControl）。 */
 export type LlmThinking = 'default' | 'enabled' | 'disabled' | 'auto';
 /** reasoning_effort 旋鈕值域（含 minimal，僅部分 model 支援，見 modelCapabilities）。 */
-export type LlmReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type LlmReasoningEffort =
+  'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-/** 單一供應商的旋鈕（不含 provider——它是外層 knobs map 的 key）。 */
+/** 一組 LLM 旋鈕（不含 provider）。`LlmKnobs.vue` 的 v-model 型別。 */
 export interface LlmKnobs {
   model: string;
   temperature: number | null; // null＝用 API 預設
@@ -27,14 +28,18 @@ export interface LlmKnobs {
 }
 
 /**
- * 單一功能區的旋鈕默認（team 共用）：當前選定供應商 + **每個供應商各自的旋鈕**。
+ * 一筆具名模型配置——**全域共用**，一筆可同時被多個功能區引用。
  *
- * 2026-07-30 前為扁平單組旋鈕，三個供應商 tab 互相覆蓋（存 openai 就把 bytedance/gemini 沖掉）。
- * 現在切換供應商會帶出「那一家自己上次存的」設定，而非殘留前一家的 thinking/effort/temperature。
+ * 生效清單＝出廠種子（`SEED_MODEL_CONFIGS`，唯讀、不落庫）++ 使用者自訂（`store.llmModelConfigs`）。
+ * ⚠️「哪個功能區用哪一筆」不在這裡、也不在 DB——那是個人選擇（一個人切配置不該讓全團隊跟著變），
+ * 存 DB `settings.llm_area_configs`（team 共用單一份），見 `useLlmAreaConfig`。
  */
-export interface LlmAreaDefault {
+export interface LlmModelConfig extends LlmKnobs {
+  /** 穩定引用鍵；出廠種子一律 `seed-` 前綴，自訂配置不得使用該前綴（後端寫入邊界會擋）。 */
+  id: string;
+  /** 使用者可讀名，**全域唯一**——跑批會把多筆配置並排顯示，同名無從分辨。 */
+  name: string;
   provider: string;
-  knobs: Partial<Record<string, LlmKnobs>>;
 }
 
 /** 本次執行臨時旋鈕覆寫（不落庫）；provider 可切換本次用哪個供應商連線。 */
@@ -57,7 +62,10 @@ export interface QcConnection {
 export interface SettingsBundle {
   llm_connections?: Record<string, LlmConnection>;
   llm_tokens?: Record<string, string>; // { provider_id: token } per-provider
-  llm_area_defaults?: Partial<Record<LlmArea, LlmAreaDefault>>;
+  /** 使用者自訂的模型配置（**不含**出廠種子，種子不落庫）；整包替換語義。 */
+  llm_model_configs?: LlmModelConfig[];
+  /** 功能區 → 用哪一筆配置（area → config id）；團隊共用單一份。 */
+  llm_area_configs?: Record<string, string>;
   provider_models?: Record<string, string[]>;
   qc_connections?: Record<string, QcConnection>;
   qc_passwords?: Record<string, string>; // { env_id: password } per-env

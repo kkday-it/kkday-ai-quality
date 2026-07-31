@@ -16,7 +16,7 @@ import {
   getAttributionHistory,
   type AttributionHistoryEntry,
 } from '@/api';
-import { StateGuard } from '@/components';
+import { ScrollFadeArea, StateGuard } from '@/components';
 import { POLARITY_LABELS, STATUS_LABEL, type ProblemRow } from '../constants';
 
 // 「查看 LLM 日誌」入口目標（點開才載；PrejudgeLogDrawer 為歷史快照回看專用）
@@ -186,7 +186,7 @@ const statusText = (e: AttributionHistoryEntry): string => {
           <!-- 滾動容器包在 a-timeline 外層：.arco-timeline 是 flex column、item 有 min-height 78px，
                若把 max-h+overflow 直接掛在 timeline 上，超高時 flex-shrink 會把各 item 壓到下限
                → 高內容溢出蓋到下一項（時間軸堆疊 bug）。外包一層讓 timeline 自然撐高、由外層滾動。 -->
-          <div v-if="list.length" class="min-h-0 flex-1 overflow-auto">
+          <ScrollFadeArea v-if="list.length" class="min-h-0 flex-1">
             <a-timeline class="pl-1 pr-2">
               <a-timeline-item v-for="e in list" :key="e.id" :dot-color="DOT_COLOR[e.kind]">
                 <!-- 首行：時間 + 事件身分 -->
@@ -264,7 +264,7 @@ const statusText = (e: AttributionHistoryEntry): string => {
                 </div>
               </a-timeline-item>
             </a-timeline>
-          </div>
+          </ScrollFadeArea>
           <a-empty v-else description="尚無歸因歷史" />
         </StateGuard>
       </div>

@@ -18,22 +18,17 @@
  * 清草稿）。測試歷史另支援勾兩筆 run-vs-run 對比（同一套對比視圖）。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { Message } from '@arco-design/web-vue';
-import { PERM } from '@/api';
-import { usePermission } from '@/composables/usePermission';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { differs, fmtDt, metricRows } from '../utils';
 import type { ProblemRow } from '../constants/source-schema.constant';
 import type { CascadeNode } from '@/api';
 import {
   CollapsibleSidePanel,
-  LlmConfigPicker,
-  LlmConfigTestResult,
-  LlmKnobs,
+  LlmConfigSelect,
+  ScrollFadeArea,
   StickyTabs,
   TableLayout,
 } from '@/components';
-import { useLlmConfigTest } from '@/composables';
 // 相對路徑 import（非走 barrel）：本檔自身即為 components barrel 的一員，經 barrel 迴繞 import
 // 同資料夾元件會觸發 circular dep（見 barrel-exports 規則）。
 import AttributionFilterBar from './AttributionFilterBar.vue';
@@ -44,7 +39,7 @@ import PromptVersionPickerGroup from './PromptVersionPickerGroup.vue';
 import SandboxCompareCard from './SandboxCompareCard.vue';
 import SandboxPromptEntries from './SandboxPromptEntries.vue';
 import { idPlaceholderFor, schemaFor, STAGE_LABELS, type FilterField } from '../constants';
-import { useLlmAreaDefault } from '../composables/useLlmAreaDefault';
+import { useLlmAreaConfig } from '@/composables';
 import { usePromptSandboxDrafts } from '../composables/usePromptSandboxDrafts';
 import {
   SANDBOX_SCOPE_LABEL as SCOPE_LABEL,
@@ -83,23 +78,11 @@ const emit = defineEmits<{
 // 編輯/採納抽屜標題）與 active 版本（stale 提示）。
 const rulesStore = useJudgeRulesStore();
 const selectedCodes = ref<string[]>([]);
-const llm = useLlmAreaDefault('sandbox');
-const llmTest = useLlmConfigTest(() => llm.provider.value, () => llm.knobs);
-const { can } = usePermission();
+const llm = useLlmAreaConfig('sandbox');
 const versionSelection = ref<{ versions: Record<string, number> }>({ versions: {} });
 /** rule_code（prompt_C-3）→ 端點值（C-3 / polarity）。 */
 const toPromptArg = (code: string): string => code.replace('prompt_', '');
 const promptArgs = computed(() => selectedCodes.value.map(toPromptArg));
-
-/** 把目前 provider + 旋鈕存為 sandbox 功能區默認（team 共用）。 */
-const onSaveLlmAreaDefault = async () => {
-  try {
-    await llm.saveAsDefault();
-    Message.success('已存為本功能區默認');
-  } catch (e: any) {
-    Message.error('儲存失敗：' + (e?.message || e));
-  }
-};
 
 // ── 草稿閉環：納入測試的 rule_code / 雙跑對比開關（PromptVersionPickerGroup 直接 emit 給本檔，
 // 與 selectedCodes/versionSelection 同源；抽屜協調邏輯下沉 usePromptSandboxDrafts）──
@@ -153,22 +136,30 @@ const {
 } = usePromptSandboxHistory();
 
 // ── 沙盒執行（啟動測試 + SSE 執行日誌 + 輪詢至終態 + 當前顯示結果）──
-const { running, activeRun, runCompare, logEntries, logStreaming, run, closeLogStream, invalidate } =
-  usePromptSandboxJob({
-    scope: () => props.scope,
-    source: () => props.source,
-    sourceIds: () => props.sourceIds,
-    promptArgs,
-    versionSelection,
-    draftCodes,
-    compareEnabled,
-    overrides: llm.overrides,
-    scopeBody: targets.scopeBody,
-    labelFor: (code: string): string => rulesStore.labelFor(code),
-    settingsOpen,
-    activeTab,
-    onDone: loadHistory,
-  });
+const {
+  running,
+  activeRun,
+  runCompare,
+  logEntries,
+  logStreaming,
+  run,
+  closeLogStream,
+  invalidate,
+} = usePromptSandboxJob({
+  scope: () => props.scope,
+  source: () => props.source,
+  sourceIds: () => props.sourceIds,
+  promptArgs,
+  versionSelection,
+  draftCodes,
+  compareEnabled,
+  overrides: llm.overrides,
+  scopeBody: targets.scopeBody,
+  labelFor: (code: string): string => rulesStore.labelFor(code),
+  settingsOpen,
+  activeTab,
+  onDone: loadHistory,
+});
 
 // ── 草稿閉環（編輯 → 測試 → 對比 → 入庫）：草稿編輯 / 採納入庫抽屜協調 ──
 const { pickerRef, draftEditor, adopt, openDraftEditor, onDraftChanged, onAdopted, openAdopt } =
@@ -339,46 +330,21 @@ watch(
           </div>
         </div>
 
-        <!-- 初判設定（恆顯示）：模型 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）。 -->
+        <!-- 測試設定（恆顯示）：模型配置 + 開關控制是否納入本次測試（每支預設沿用 active，可個別切換歷史版本）。 -->
         <div>
-          <a-divider orientation="left" :margin="12">初判設定</a-divider>
-          <a-alert v-if="!Object.keys(llm.providerHasToken.value).length" type="warning" class="mb-2">
-            尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
+          <a-divider orientation="left" :margin="12">測試設定</a-divider>
+          <a-alert
+            v-if="!Object.keys(llm.providerHasToken.value).length"
+            type="warning"
+            class="mb-2"
+          >
+            尚無可用 LLM 連線，請先至「設定 › LLM 設定」建立並保存 API Token。
           </a-alert>
-          <LlmConfigPicker
-            :model-value="llm.provider.value"
+          <div class="mb-1 text-xs text-[var(--color-text-3)]">模型配置</div>
+          <LlmConfigSelect
+            v-model="llm.configId.value"
+            :configs="llm.configs.value"
             :provider-has-token="llm.providerHasToken.value"
-            class="mb-2"
-            @update:model-value="llm.setProvider"
-          />
-          <LlmKnobs
-            :model-value="llm.knobs"
-            :provider="llm.provider.value"
-            class="mb-2"
-            @update:model-value="llm.setKnobs"
-          />
-          <div class="mb-2 flex justify-end gap-2">
-            <a-button
-              v-if="can(PERM.settingsLlmConfigManage)"
-              type="primary"
-              status="warning"
-              size="small"
-              :loading="llmTest.testing.value"
-              :disabled="!llm.knobs.model"
-              @click="llmTest.onTest"
-              >測試連線</a-button
-            >
-            <a-button
-              size="small"
-              :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
-              @click="onSaveLlmAreaDefault"
-              >存為此區默認</a-button
-            >
-          </div>
-          <LlmConfigTestResult
-            :result="llmTest.testResult.value"
-            :provider="llm.provider.value"
-            :knobs="llm.knobs"
             class="mb-2"
           />
           <div class="mb-1 text-xs text-[var(--color-text-3)]">
@@ -446,7 +412,7 @@ watch(
         <!-- Tab 列固定可見、僅內容捲動（見 .claude/rules/frontend-vue.md Tabs 規則）：公共元件取代裸 a-tabs -->
         <StickyTabs v-model:active-key="activeTab" class="min-h-0 flex-1">
           <a-tab-pane key="results" title="測試結果">
-            <div class="h-full overflow-auto">
+            <ScrollFadeArea class="h-full">
               <a-spin v-if="running" class="block py-8 text-center" />
 
               <!-- run-vs-run 對比檢視（測試歷史勾兩筆） -->
@@ -557,7 +523,7 @@ watch(
               <div v-else class="py-8 text-center text-xs text-[var(--color-text-3)]">
                 勾選 Prompt 後點「確認」
               </div>
-            </div>
+            </ScrollFadeArea>
           </a-tab-pane>
           <a-tab-pane key="log">
             <template #title>

@@ -1,6 +1,8 @@
-// 「本次 LLM 配置」測試連線邏輯：canonical composable，供 Prompt 調試台 / 初判設定 /
-// Prompt Sandbox 三處「本次 LLM 配置」面板（LlmConfigPicker + LlmKnobs 組合）共用，避免各自
-// 重做 testLlm 呼叫 + 訊息提示（對齊同語義控件跨頁一致慣例）。
+// 「一組 model + 旋鈕能不能跑」的測試連線邏輯（與連線卡「這個 base_url + token 通不通」不同層）。
+// ⚠️ 2026-07-31 起唯一消費端＝設定 › LLM 設定 的模型配置編輯器（`LlmModelConfigList.vue`），
+// 各功能區頁面已不再各擺一顆測試鈕——旋鈕收斂進具名配置後，該在「編配置的地方」驗證，
+// 而不是在四個用配置的地方各驗一次。
+// 入參是 getter（呼叫當下才取值，避免閉包吃到舊值），本檔不關心那組值從哪個配置解析而來。
 import { ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { testLlm, type LlmPingResult } from '@/api';

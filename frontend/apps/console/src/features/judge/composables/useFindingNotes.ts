@@ -52,7 +52,8 @@ export function useFindingNotes() {
   };
 
   /** 備註時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'）。 */
-  const fmtNoteTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
+  const fmtNoteTime = (iso: string | null): string =>
+    iso ? iso.replace('T', ' ').slice(0, 19) : '';
 
   return {
     noteOpen,

@@ -3,7 +3,6 @@
 // 本檔僅保留型別與前端衍生預設，不再寫死 base_url / model 清單。
 
 import llm from '@config/global/llm_model.json';
-import type { LlmAreaDefault } from '../types';
 
 /** 下拉一個 model 選項：id + 質性描述（成本/用途 hint，內聚於各 model，不另立 modelMeta map）。 */
 export interface ModelOption {
@@ -32,9 +31,11 @@ export interface Provider {
   thinkingModes?: string[];
   /** 該供應商可用的 reasoning_effort 值域（取代舊固定全域 REASONING）。 */
   reasoningEffortOptions?: string[];
-  /** reasoning_effort 非 none 時是否鎖定 temperature（OpenAI reasoning model 為 true；Gemini/ByteDance 為 false）。 */
+  /** 推理生效時 API 是否拒絕自訂 temperature（OpenAI 為 true；Gemini/ByteDance 實測皆可自訂）。 */
   temperatureLockedWhenThinking?: boolean;
-  /** 不論 thinking 狀態、伺服器端一律忽略自訂 temperature（與上者為不同機制）；目前僅個別 model 覆寫，見 modelCapabilities。 */
+  /** 不論 thinking 狀態，API 一律**拒絕**自訂 temperature（只接受預設值）；與上者「僅推理生效時拒」
+   * 為不同機制。⚠️ 2026-07-31 實測校正——原註解寫「伺服器靜默忽略」是錯的（ByteDance seed 系列送
+   * 0.3 正常受理、送 99/-5 才被 InvalidParameter 拒 ⇒ 它真的會採用），該宣告已改為不鎖。 */
   temperatureAlwaysLocked?: boolean;
   /** 鎖定時實際送出的 temperature 值（通常 1）。 */
   lockedTemperatureValue?: number;
@@ -55,14 +56,12 @@ export interface Provider {
  */
 export const PROVIDERS = llm.providers as unknown as Provider[];
 
-/** reasoning_effort 完整值域（跨三供應商聯集，非單一 model 的實際支援值）；UI 恆用此清單畫按鈕，
- * 個別 model 不支援的值另用 capabilities.reasoningEffortOptions 算 disabled，不直接從清單移除
- * （避免同一控件在不同 model 間版位跳動）。資料源＝config/global/llm_model.json。 */
+/** reasoning_effort 完整值域（跨三供應商聯集，非單一 model 的實際支援值）。
+ * UI 的按鈕清單＝**provider 級 ∪ 該 model 能力表**再依本清單排序（見 LlmKnobs 的 REASONING_CHOICES）——
+ * per-model 覆寫可能多出 provider 級沒有的檔位（如 gemini-2.5-flash 的 none），只取 provider 級會讓它
+ * 點不到。個別 model 不支援的值用 disabled 灰掉、不從清單移除（避免版位在不同 model 間跳動）。
+ * 資料源＝config/global/llm_model.json。 */
 export const REASONING: string[] = llm.reasoning;
-
-/** thinking 開關完整值域（對齊 Ark 官方 thinking.type 三態）；UI 恆用此清單畫按鈕，個別 model
- * 不支援的模式另用 capabilities.thinkingModes 算 disabled。資料源＝config/global/llm_model.json。 */
-export const ALL_THINKING_MODES: string[] = llm.thinkingModes ?? ['enabled', 'disabled', 'auto'];
 
 /** Model 下拉最低版本門檻（僅 gpt-* 受限）；動態 API 清單與 curated 顯示皆以此過濾。 */
 export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
@@ -70,13 +69,21 @@ export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
 /** LLM 消費功能區清單；資料源＝config/global/llm_model.json areas[]。 */
 export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'sandbox'];
 
-/** 功能區出廠預設旋鈕（該區還沒存過團隊默認時的起點，如 prompt_revise 直接起在旗艦模型）；
- * 資料源＝config/global/llm_model.json areaDefaults，與後端 `settings.area_seed_knobs` 同一份。
- * 未登記的區回空物件＝沿用原本的空白起點。 */
-export const LLM_AREA_SEEDS: Record<string, Partial<LlmAreaDefault>> =
-  // JSON import 的字面型別是寬 string，值域正確性由後端 `settings.area_seed_knobs` 與
-  // capabilitiesFor 的檔位過濾把關（填了該 model 不支援的檔次，UI 會顯示為不可選）。
-  (llm.areaDefaults ?? {}) as Record<string, Partial<LlmAreaDefault>>;
+/** 功能區的顯示名（設定面板「這筆配置被誰用著」等處顯示用；未登記的區退回原始 key）。 */
+export const LLM_AREA_LABELS: Record<string, string> = {
+  prejudge: '初判分類',
+  prompt_debug: 'Prompt 調試台',
+  sandbox: 'Prompt 測試沙盒',
+  prompt_revise: 'AI 定點改寫',
+};
+
+/** 各功能區「還沒選過配置」時的起點配置 id；資料源＝config/global/llm_model.json areaDefaults。
+ *
+ * ⚠️ **不是「使用者當前選了哪個」**——那份在 DB `settings.llm_area_configs`（team 共用單一份）；
+ * 本常數只是「該區還沒綁過時」的起點。
+ * 未登記的區回 undefined，`useLlmAreaConfig` 會退回清單第一筆。 */
+export const LLM_AREA_DEFAULT_CONFIG_IDS: Record<string, string> = (llm.areaDefaults ??
+  {}) as Record<string, string>;
 
 /** 每 model 可配參數能力（thinking 控制形態 / reasoning_effort 值域 / temperature 鎖定規則）。 */
 export interface ModelCapability {
@@ -126,7 +133,7 @@ export function capabilitiesFor(modelId: string, provider?: string): ModelCapabi
 }
 
 /** 回某供應商切換時應帶入的預設 model id（provider 自帶 defaultModel，缺省則取 defaultModels 首筆）。
- * 供 UI 切換供應商時同步重置 model，避免殘留另一供應商的 model id（見 useLlmAreaDefault.setProvider）。
+ * 切換供應商時用它決定 model，避免殘留另一供應商的 model id（見 settings.default_model_for 同規則）。
  * @param providerId 供應商 id（如 openai/gemini/bytedance）。
  */
 export function defaultModelFor(providerId: string): string {

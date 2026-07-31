@@ -5,6 +5,7 @@
  */
 import { onMounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
+import { ScrollFadeArea } from '@/components';
 import { getRuleVersion } from '@/api/judgeRules.api';
 import { useJudgeRulesStore } from '@/stores/judgeRules.store';
 import { versionLabel } from '../utils';
@@ -45,7 +46,7 @@ const columns = [
 </script>
 
 <template>
-  <div class="h-full overflow-auto rounded-lg border p-3">
+  <ScrollFadeArea class="h-full rounded-lg border p-3">
     <!-- 對比兩版（並排 JSON + 變動標紅 + 展開對齊）-->
     <VersionDiffCompare class="mb-4" :history="store.history" :fetch="fetchVersion" active />
     <!-- 版本清單 + 恢復 -->
@@ -71,5 +72,5 @@ const columns = [
         </a-popconfirm>
       </template>
     </a-table>
-  </div>
+  </ScrollFadeArea>
 </template>

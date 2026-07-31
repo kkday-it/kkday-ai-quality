@@ -7,7 +7,11 @@ import { AUTH_PROVIDER, BE2_CONFIG } from '@/api';
 // 本地模式無登入系統（router 守衛已擋 /login 導回首頁，正常不會渲染到本頁）；
 // 若仍被直接訪問（如舊書籤），顯示提示而非空白頁。
 onMounted(() => {
-  if (AUTH_PROVIDER === 'be2' && BE2_CONFIG.be2LoginUrl && !BE2_CONFIG.be2LoginUrl.includes('REPLACE_ME')) {
+  if (
+    AUTH_PROVIDER === 'be2' &&
+    BE2_CONFIG.be2LoginUrl &&
+    !BE2_CONFIG.be2LoginUrl.includes('REPLACE_ME')
+  ) {
     window.location.replace(BE2_CONFIG.be2LoginUrl);
   }
 });

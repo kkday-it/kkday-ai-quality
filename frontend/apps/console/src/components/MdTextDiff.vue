@@ -6,6 +6,7 @@
  */
 import { computed, nextTick, ref, shallowRef, watch } from 'vue';
 import { diffLines } from 'diff';
+import ScrollFadeArea from './ScrollFadeArea.vue';
 
 const props = defineProps<{
   /** 舊文字（左側；del 標紅）。 */
@@ -31,7 +32,8 @@ interface DiffRow {
 }
 
 const rows = shallowRef<DiffRow[]>([]);
-const containerRef = ref<HTMLElement>();
+// 捲動容器由 ScrollFadeArea 持有（底部漸隱＋提示），本元件經其 getScrollEl() 取回做捲動定位
+const fadeRef = ref<InstanceType<typeof ScrollFadeArea> | null>(null);
 
 /** md 全文切行（去尾端換行產生的空 token）。 */
 const splitLines = (v: string): string[] => v.replace(/\n$/, '').split('\n');
@@ -91,7 +93,7 @@ function buildRows(): void {
 async function scrollToFirstChange(): Promise<void> {
   await nextTick();
   const idx = rows.value.findIndex((r) => r.changed);
-  const c = containerRef.value;
+  const c = fadeRef.value?.getScrollEl();
   if (idx < 0 || !c) return;
   const el = c.querySelector<HTMLElement>(`[data-row="${idx}"]`);
   if (el) c.scrollTop = Math.max(0, el.offsetTop - 48); // 48＝sticky 欄頭高 + 留白
@@ -124,10 +126,11 @@ const cellClass = (cell: DiffCell): string => {
       <span class="text-[rgb(var(--green-6))]">+{{ addCount }}</span>
       <span class="text-[rgb(var(--red-6))]">-{{ delCount }}</span>
     </div>
-    <!-- 左右並排 diff：單一捲動容器 + 每列 flex 兩格等高對齊；relative 供捲動定位 offsetTop 基準 -->
-    <div
-      ref="containerRef"
-      class="relative min-h-0 flex-1 overflow-auto rounded border bg-[var(--color-fill-1)] font-mono text-xs leading-relaxed"
+    <!-- 左右並排 diff：單一捲動容器 + 每列 flex 兩格等高對齊；ScrollFadeArea 根層即 relative，
+         仍是 data-row 元素的 offsetParent，捲動定位的 offsetTop 基準不變 -->
+    <ScrollFadeArea
+      ref="fadeRef"
+      class="min-h-0 flex-1 rounded border bg-[var(--color-fill-1)] font-mono text-xs leading-relaxed"
     >
       <!-- 欄頭（sticky）：左舊 / 右新 -->
       <div
@@ -155,6 +158,6 @@ const cellClass = (cell: DiffCell): string => {
           >{{ r.right.text || (r.right.type === 'empty' ? '' : ' ') }}
         </div>
       </div>
-    </div>
+    </ScrollFadeArea>
   </div>
 </template>

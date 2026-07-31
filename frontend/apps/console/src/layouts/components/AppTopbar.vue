@@ -17,7 +17,9 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="flex h-[52px] items-center gap-1.5 border-b border-[var(--color-border)] bg-white px-5">
+  <div
+    class="flex h-[52px] items-center gap-1.5 border-b border-[var(--color-border)] bg-white px-5"
+  >
     <span class="select-none text-base font-bold text-[rgb(var(--primary-6))]">AI 質檢</span>
     <span class="text-[var(--color-text-4)]">/</span>
     <a-select

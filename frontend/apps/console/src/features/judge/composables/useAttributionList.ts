@@ -26,7 +26,7 @@ import {
 import { exportName } from '../utils';
 import { useAttributionSelection } from './useAttributionSelection';
 import { useExportJob } from './useExportJob';
-import { useLlmAreaDefault } from './useLlmAreaDefault';
+import { useLlmAreaConfig } from '@/composables';
 import { usePrejudgeJob } from './usePrejudgeJob';
 
 /**
@@ -59,9 +59,13 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   // useLocalStorage ref 鏡射 filters，deep watch 寫回；filters 本身維持 reactive 物件 identity 不變，
   // 呼叫端既有 v-model / Object.assign 綁定不用改。mergeDefaults 保新增欄位時舊 localStorage 資料相容。
   const FILTERS_STORAGE_KEY = 'aiq.attributionList.filters';
-  const persistedFilters = useLocalStorage<AttributionFilters>(FILTERS_STORAGE_KEY, emptyFilters(), {
-    mergeDefaults: true,
-  });
+  const persistedFilters = useLocalStorage<AttributionFilters>(
+    FILTERS_STORAGE_KEY,
+    emptyFilters(),
+    {
+      mergeDefaults: true,
+    },
+  );
   const filters = reactive(cloneFilters(persistedFilters.value));
   watch(
     filters,
@@ -97,8 +101,8 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
   /** 排序狀態（'欄位:方向'，欄位∈occurred_at/score/go_date/confidence）；預設評論時間新到舊。 */
   const sortValue = ref('occurred_at:desc');
 
-  // ── LLM 連線 + 旋鈕（prejudge 功能區）──下沉 useLlmAreaDefault；同源「設定 › LLM 連線」。
-  const llm = useLlmAreaDefault('prejudge');
+  // ── LLM 模型配置（prejudge 功能區）──下沉 useLlmAreaConfig；配置庫同源「設定 › LLM 設定」。
+  const llm = useLlmAreaConfig('prejudge');
 
   // ── 伺服器端分頁 ──
   const rows = ref<ProblemRow[]>([]);
@@ -364,12 +368,11 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     activeFilterCount,
     resetFilters,
     // 模型（prejudge 功能區連線 + 旋鈕）
-    llmProvider: llm.provider,
-    llmKnobs: llm.knobs,
+    llmConfigId: llm.configId,
+    llmConfigs: llm.configs,
     llmProviderHasToken: llm.providerHasToken,
-    setLlmProvider: llm.setProvider,
-    setLlmKnobs: llm.setKnobs,
-    saveLlmAreaDefault: llm.saveAsDefault,
+    /** 攤平的本次執行旋鈕；頁面用它取 provider/model（重判確認文案），不再各存一份狀態。 */
+    llmOverrides: llm.overrides,
     // 分頁資料
     rows,
     total,

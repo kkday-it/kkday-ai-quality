@@ -70,13 +70,7 @@ export type SourceFilterDef =
 /** 可渲染的資料段落（由 RecordContextPanel 統一渲染；依來源裁剪，並分派到「關聯資料」欄或
  *  「反饋補充」區塊——見 SourceListSchema 的 contextSections / supplementSections）。 */
 export type ContextSection =
-  | 'order'
-  | 'product'
-  | 'package'
-  | 'supplier'
-  | 'traveller'
-  | 'inbound'
-  | 'org';
+  'order' | 'product' | 'package' | 'supplier' | 'traveller' | 'inbound' | 'org';
 
 /** 資料段落左側小標籤樣式（列表欄的「原文」/「補充」與 RecordContextPanel compact 版型
  *  共用，確保各段標籤欄等寬對齊；跨檔共用故收斂於此，勿再各處手抄同一串 utility class）。 */

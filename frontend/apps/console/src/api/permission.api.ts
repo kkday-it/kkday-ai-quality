@@ -35,7 +35,6 @@ export const PERM = {
   problemListExport: 'problem.list.export',
   prejudgeRun: 'prejudge.run',
   settingsLlmConfigManage: 'settings.llm-config.manage',
-  settingsLlmAreaDefaultWrite: 'settings.llm-area-default.write',
   settingsQcConfigManage: 'settings.qc-config.manage',
   settingsSecretRead: 'settings.secret.read',
 } as const;

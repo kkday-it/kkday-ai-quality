@@ -58,8 +58,11 @@ const labelOf = (key: string): string => {
  * 當成一個普通選項，結果選不到任何值、且顯示的是原始 `kind:name` 字串（踩過一次）。
  */
 const groups = computed(() => {
-  const out: Array<{ isGroup: true; label: string; options: Array<{ value: string; label: string }> }> =
-    [];
+  const out: Array<{
+    isGroup: true;
+    label: string;
+    options: Array<{ value: string; label: string }>;
+  }> = [];
   if (props.releases.length) {
     out.push({
       isGroup: true,

@@ -25,29 +25,93 @@
     "sandbox",
     "prompt_revise"
   ],
-  "areaDefaults": {
-    "prompt_revise": {
-      "model": "gpt-5.5",
-      "reasoning_effort": "high"
-    }
-  },
-  "modelCapabilities": {
-    "seed-2-0-lite-260228": {
-      "temperatureAlwaysLocked": true,
-      "lockedTemperatureValue": 1
+  "_modelConfigs_comment": "全新環境的初始模型配置：由後端 settings._blank_settings() 種入 DB，之後就是一般配置、與使用者自建的零差別——**沒有出廠層**，不存在唯讀／複製／還原出廠。⚠️ 刻意不含 name：名稱由規格衍生（settings.derive_config_name ↔ 前端 deriveConfigName，兩端有黃金清單 parity 測試），落庫的只有五個旋鈕欄，名稱不落庫就不可能與規格漂移。唯一性判「規格重複」而非「名稱重複」（spec_key 會折掉該供應商實際不生效的旋鈕再比對）。⚠️ 本欄只對「llm_model_configs 這個 key 不存在」的 row 生效，既有 row 要補內容必須走 migration。thinking/reasoning_effort 的 \"default\" ＝不覆寫、交由執行層依該 model 能力表決定。",
+  "modelConfigs": [
+    {
+      "id": "seed-openai-balanced",
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "thinking": "default",
+      "reasoning_effort": "medium",
+      "temperature": null
     },
-    "seed-2-0-lite-260428": {
-      "temperatureAlwaysLocked": true,
-      "lockedTemperatureValue": 1
+    {
+      "id": "seed-openai-flagship",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "thinking": "default",
+      "reasoning_effort": "high",
+      "temperature": null
+    },
+    {
+      "id": "seed-gemini-balanced",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "thinking": "default",
+      "reasoning_effort": "medium",
+      "temperature": null
+    },
+    {
+      "id": "seed-bytedance-balanced",
+      "provider": "bytedance",
+      "model": "seed-2-0-lite-260228",
+      "thinking": "default",
+      "reasoning_effort": "medium",
+      "temperature": null
+    }
+  ],
+  "_areaDefaults_comment": "各功能區「還沒選過配置」時的起點，值＝modelConfigs 的 id。⚠️ 不是「使用者當前選了哪個」——那份是個人選擇，存前端 localStorage aiq.llm.area.<area>，DB 不持有。各區檔次刻意不同：跑批類要便宜，改寫 Prompt 要聰明。",
+  "areaDefaults": {
+    "prejudge": "seed-openai-balanced",
+    "prompt_debug": "seed-openai-balanced",
+    "sandbox": "seed-openai-balanced",
+    "prompt_revise": "seed-openai-flagship"
+  },
+  "_modelCapabilities_comment": "per-model 可配參數能力覆寫（優先於所屬 provider 級預設）。⚠️ 2026-07-31 以 144 次真實 API 呼叫逐 model × 逐旋鈕實測校正（繞過 client 的自動降級直看原始回應）：reasoningEffortOptions 一律以實測可用值為準；temperatureAlwaysLocked＝送自訂溫度在任何狀態都被拒、temperatureLockedWhenThinking＝只有推理生效時被拒；thinkingModes 僅 nativeSwitch 供應商有意義。改任一欄前請重跑實測，勿憑官方文件字面推斷——實測與文件不符的案例已出現多次。",
+  "modelCapabilities": {
+    "gemini-2.5-flash": {
+      "reasoningEffortOptions": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "gemini-3.1-pro-preview": {
+      "reasoningEffortOptions": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "gemini-3.5-flash": {
+      "reasoningEffortOptions": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ]
     },
     "gpt-5-mini": {
       "reasoningEffortOptions": [
-        "minimal",
         "low",
         "medium",
         "high"
       ],
       "temperatureAlwaysLocked": true,
+      "lockedTemperatureValue": 1,
+      "temperatureLockedWhenThinking": false
+    },
+    "gpt-5.4": {
+      "reasoningEffortOptions": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "lockedTemperatureValue": 1
     },
     "gpt-5.4-mini": {
@@ -57,16 +121,8 @@
         "medium",
         "high",
         "xhigh"
-      ]
-    },
-    "gpt-5.4": {
-      "reasoningEffortOptions": [
-        "none",
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ]
+      ],
+      "lockedTemperatureValue": 1
     },
     "gpt-5.5": {
       "reasoningEffortOptions": [
@@ -75,13 +131,21 @@
         "medium",
         "high",
         "xhigh"
-      ]
+      ],
+      "temperatureAlwaysLocked": true,
+      "temperatureLockedWhenThinking": false,
+      "lockedTemperatureValue": 1
     },
     "gpt-oss-120b-250805": {
       "thinkingModes": [
         "enabled",
         "disabled",
         "auto"
+      ],
+      "reasoningEffortOptions": [
+        "low",
+        "medium",
+        "high"
       ]
     }
   },
@@ -240,10 +304,6 @@
         {
           "id": "seed-2-0-code-preview-260328",
           "desc": "Seed 2.0 · 程式碼（官方未公布單價，成本估算回退預設）"
-        },
-        {
-          "id": "gpt-oss-120b-250805",
-          "desc": "開源 120B · 偏慢（官方未公布單價，成本估算回退預設）"
         }
       ]
     }

@@ -8,7 +8,8 @@ type LocaleMessages = Record<string, unknown>;
 
 /** be2 挖字端點設定（auth.config.json be2 段；langPlatform 為 REPLACE_ME＝尚未註冊，走靜態）。 */
 const BE2 = (authConfig as { be2?: { apiLangUrl?: string; langPlatform?: string } }).be2 ?? {};
-const LANG_PLATFORM_READY = !!BE2.apiLangUrl && !!BE2.langPlatform && !BE2.langPlatform.includes('REPLACE_ME');
+const LANG_PLATFORM_READY =
+  !!BE2.apiLangUrl && !!BE2.langPlatform && !BE2.langPlatform.includes('REPLACE_ME');
 
 /** Klingon 模式 flag（對齊 be2 慣例 key；`localStorage['locale.klingon-active']='1'` 開啟）。非瀏覽器環境（測試/SSR）一律 off。 */
 export const isKlingonActive = (): boolean =>

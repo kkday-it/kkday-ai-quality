@@ -54,7 +54,7 @@ interface PromptSandboxJobDeps {
   draftCodes: MaybeRefOrGetter<string[]>;
   /** 有草稿時是否雙跑對比（關＝只跑草稿省 token 但無前後對照）。 */
   compareEnabled: MaybeRefOrGetter<boolean>;
-  /** 本次執行 LLM 覆寫（provider + 旋鈕，來自 useLlmAreaDefault('sandbox')）。 */
+  /** 本次執行 LLM 覆寫（provider + 旋鈕，來自 useLlmAreaConfig('sandbox') 選中配置攤平）。 */
   overrides: MaybeRefOrGetter<PromptSandboxStartBody['overrides']>;
   /** scope='all' 時組請求 body（來自 usePromptSandboxTargets）。 */
   scopeBody: (promptIds: string[]) => PromptSandboxStartBody;

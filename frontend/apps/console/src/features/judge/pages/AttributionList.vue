@@ -14,15 +14,13 @@ import { PERM } from '@/api';
 import {
   CollapsibleSidePanel,
   ExportProgressBar,
-  LlmConfigPicker,
-  LlmConfigTestResult,
-  LlmKnobs,
+  LlmConfigSelect,
+  ScrollFadeArea,
   StateGuard,
   TableLayout,
 } from '@/components';
-import { useLlmConfigTest } from '@/composables';
 import { usePermission } from '@/composables/usePermission';
-import { Message } from '@arco-design/web-vue';
+import { fmtPercent } from '@/utils';
 import {
   IconCheck,
   IconClose,
@@ -113,12 +111,10 @@ const {
   onFilterChange,
   activeFilterCount,
   resetFilters,
-  llmProvider,
-  llmKnobs,
+  llmConfigId,
+  llmConfigs,
   llmProviderHasToken,
-  setLlmProvider,
-  setLlmKnobs,
-  saveLlmAreaDefault,
+  llmOverrides,
   rows,
   total,
   unjudged,
@@ -211,24 +207,11 @@ const {
   logEntries,
   logError,
   lastRun,
-  llmProvider,
-  llmKnobs,
+  llmOverrides,
   runRejudgeRow: onRejudge,
   runBatch: doRun,
   openBatchTargeting: openPrejudge,
 });
-
-const llmTest = useLlmConfigTest(() => llmProvider.value, () => llmKnobs);
-
-/** 把目前 provider + 旋鈕存為 prejudge 功能區默認（team 共用）。 */
-const onSaveLlmAreaDefault = async () => {
-  try {
-    await saveLlmAreaDefault();
-    Message.success('已存為本功能區默認');
-  } catch (e: any) {
-    Message.error('儲存失敗：' + (e?.message || e));
-  }
-};
 
 // ── 操作：查看歸因詳情抽屜（純前端，資料取自該列 attributions）──
 const detailRow = ref<ProblemRow | null>(null);
@@ -336,7 +319,6 @@ const COLS = computed(() => [SEQ_COL, ...schema.value.columns]);
 /** 表格水平捲動總寬（欄寬合計 + selection 欄），欄多時橫向捲動不擠壓內容。 */
 const SCROLL_X = computed(() => COLS.value.reduce((w, c) => w + (Number(c.width) || 120), 0) + 48);
 
-
 onMounted(init);
 </script>
 
@@ -364,7 +346,7 @@ onMounted(init);
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigPicker/LlmKnobs）-->
+      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigSelect）-->
       <!-- 統一操作區：四顆全填滿、靠色相分主次，聚合成一條 button-group（見 rules/frontend-vue.md「同類按鈕聚合」）。
            順序＝三顆「初判*」相鄰成族、導出殿後：
            初判分類 primary(藍·主行為) → 初判 Prompt 測試 primary+warning(橙·試驗/dry-run) →
@@ -427,12 +409,12 @@ onMounted(init);
         <a-popover position="bl">
           <a-button size="mini" type="text">查看原因</a-button>
           <template #content>
-            <div class="max-h-64 w-96 overflow-auto text-xs">
+            <ScrollFadeArea max-height="16rem" class="w-96 text-xs">
               <div v-for="f in failedItems" :key="f.item_id" class="mb-1 break-all">
                 <span class="text-[#86909c]">{{ f.source_id || f.item_id }}</span
                 >：{{ f.error }}
               </div>
-            </div>
+            </ScrollFadeArea>
           </template>
         </a-popover>
         <a-button size="mini" type="primary" status="warning" @click="retryFailed"
@@ -590,9 +572,10 @@ onMounted(init);
               </div>
               <!-- 進線對話：按 [ROLE]: 前綴解析輪次（角色 tag + 該輪文字），一眼辨發話方；
                    非對話模式或解析失敗 fallback 原樣全文。內容區固定高度內滾動，避免長對話/長文
-                   把整列列高撐爆（列高改由關聯資料/判決歸因等其他欄決定），完整內容仍可從「查看詳情」抽屜看。 -->
+                   把整列列高撐爆（列高改由關聯資料/判決歸因等其他欄決定），完整內容仍可從「查看詳情」抽屜看。
+                   捲動區走 ScrollFadeArea：底部漸隱＋提示，避免使用者誤以為內容到此為止（捲到底自動消失）。 -->
               <template v-if="record.content">
-                <div v-if="dialogueTurns(record)" class="max-h-40 overflow-y-auto pr-1">
+                <ScrollFadeArea v-if="dialogueTurns(record)" max-height="10rem">
                   <div class="flex flex-col gap-1">
                     <template v-for="(t, ti) in dialogueTurns(record)" :key="ti">
                       <!-- 段落分隔：機器人／真人客服階段切換時插入標籤（對齊 conversation_full 的 ‖ 分段）-->
@@ -616,13 +599,14 @@ onMounted(init);
                       </div>
                     </template>
                   </div>
-                </div>
-                <div
-                  v-else
-                  class="max-h-40 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-relaxed text-[var(--color-text-2)]"
-                >
-                  {{ record.content }}
-                </div>
+                </ScrollFadeArea>
+                <ScrollFadeArea v-else max-height="10rem">
+                  <div
+                    class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-text-2)]"
+                  >
+                    {{ record.content }}
+                  </div>
+                </ScrollFadeArea>
               </template>
               <div class="mt-0.5 text-[11px] text-[var(--color-text-3)]">
                 #{{ record.source_record_id || record.source_id || '—' }} ·
@@ -667,18 +651,14 @@ onMounted(init);
           >
             <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
             <div v-if="a.content?.summary" class="flex gap-1.5">
-              <span :class="SECTION_LABEL_CLASS"
-                >摘要</span
-              >
+              <span :class="SECTION_LABEL_CLASS">摘要</span>
               <div class="min-w-0 font-medium leading-snug text-[var(--color-text-1)]">
                 {{ a.content.summary }}
               </div>
             </div>
             <!-- 歸因（L1→L2 麵包屑）-->
             <div class="flex gap-1.5">
-              <span :class="SECTION_LABEL_CLASS"
-                >歸因</span
-              >
+              <span :class="SECTION_LABEL_CLASS">歸因</span>
               <div class="min-w-0">
                 <template v-if="[a.l1?.label, a.l2?.label].some(Boolean)">
                   <template
@@ -702,9 +682,7 @@ onMounted(init);
             </div>
             <!-- 信心（值 + 分層 + 初判模型；stage 僅異常態顯示——三軸標籤收斂：status 移操作列）-->
             <div class="flex gap-1.5">
-              <span :class="SECTION_LABEL_CLASS"
-                >信心</span
-              >
+              <span :class="SECTION_LABEL_CLASS">信心</span>
               <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <!-- 信心按 tier 上色：綠可採信 / 琥珀需複審 / 紅必人工（< 0.8 需人工判決）-->
                 <span class="font-semibold" :class="confClass(a.confidence?.tier)">
@@ -733,9 +711,7 @@ onMounted(init);
             </div>
             <!-- 操作（判決徽章 + 確認採信(綠)/忽略駁回(紅)/備註；再點選中態＝撤銷判決）-->
             <div class="flex gap-1.5">
-              <span :class="SECTION_LABEL_CLASS"
-                >操作</span
-              >
+              <span :class="SECTION_LABEL_CLASS">操作</span>
               <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                 <a-tag
                   v-if="a.status && a.status !== 'new'"
@@ -816,11 +792,15 @@ onMounted(init);
             初判分類
           </a-button>
           <!-- 初判 Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式初判 -->
-          <a-button size="small" type="text" @click="openRowTest(record)"> 初判 Prompt 測試 </a-button>
+          <a-button size="small" type="text" @click="openRowTest(record)">
+            初判 Prompt 測試
+          </a-button>
           <!-- 未初判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="text" @click="viewDetail(record)"> 查看詳情 </a-button>
           <!-- 初判歷史（評論級時間軸：歷次初判快照/判決轉移/備註）-->
-          <a-button size="small" type="text" @click="openJudgmentHistory(record)"> 初判歷史 </a-button>
+          <a-button size="small" type="text" @click="openJudgmentHistory(record)">
+            初判歷史
+          </a-button>
         </div>
       </template>
     </TableLayout>
@@ -841,12 +821,7 @@ onMounted(init);
              v-show（非 v-if）保持掛載，PromptVersionPickerGroup 的預設值/emit 即使收合也立即生效；
              面板內容一頁化（目標範圍＋初判設定順排全展開，無內層頁籤，開面板即見全部配置）。 -->
         <div class="relative flex min-h-0 flex-1 gap-3 overflow-hidden">
-          <CollapsibleSidePanel
-            v-model="confirmSettingsOpen"
-            label="初判設定"
-            floating
-            fill
-          >
+          <CollapsibleSidePanel v-model="confirmSettingsOpen" label="初判設定" floating fill>
             <template v-if="confirmScope === 'batch'">
               <a-divider orientation="left" :margin="12">目標範圍</a-divider>
               <!-- 選取範圍：有勾選列才提供「已選內」；階段+篩選對兩種範圍皆生效（已選內＝在勾選列集合中再交集）-->
@@ -901,36 +876,16 @@ onMounted(init);
             <a-divider orientation="left" :margin="12">初判設定</a-divider>
             <div class="flex flex-col gap-3">
               <a-alert v-if="!Object.keys(llmProviderHasToken).length" type="warning">
-                尚無可用 LLM 連線，請先至「設定 › LLM 連線」建立並保存 API Token。
+                尚無可用 LLM 連線，請先至「設定 › LLM 設定」建立並保存 API Token。
               </a-alert>
-              <!-- self-start：不隨 flex-col 的 align stretch 撐滿，讓分段按鈕（a-radio-group）維持
-                   內容寬度、灰色軌道只包住按鈕本身（對齊 Prompt 調試台的緊湊呈現，不拉成整條底色）-->
-              <LlmConfigPicker
-                class="self-start"
-                :model-value="llmProvider"
-                :provider-has-token="llmProviderHasToken"
-                @update:model-value="setLlmProvider"
-              />
-              <LlmKnobs :model-value="llmKnobs" :provider="llmProvider" @update:model-value="setLlmKnobs" />
-              <div class="flex justify-end gap-2">
-                <a-button
-                  v-if="can(PERM.settingsLlmConfigManage)"
-                  type="primary"
-                  status="warning"
-                  size="small"
-                  :loading="llmTest.testing.value"
-                  :disabled="!llmKnobs.model"
-                  @click="llmTest.onTest"
-                  >測試連線</a-button
-                >
-                <a-button
-                  size="small"
-                  :disabled="!can(PERM.settingsLlmAreaDefaultWrite)"
-                  @click="onSaveLlmAreaDefault"
-                  >存為此區默認</a-button
-                >
+              <div>
+                <div class="mb-1 text-xs text-gray-500">模型配置</div>
+                <LlmConfigSelect
+                  v-model="llmConfigId"
+                  :configs="llmConfigs"
+                  :provider-has-token="llmProviderHasToken"
+                />
               </div>
-              <LlmConfigTestResult :result="llmTest.testResult.value" :provider="llmProvider" :knobs="llmKnobs" />
               <div>
                 <div class="mb-1 text-xs text-gray-500">
                   Prompt 版本（每支預設沿用目前 active 版，可個別切換歷史版本）
@@ -999,7 +954,9 @@ onMounted(init);
                   :status="
                     jobStatus === 'paused' ? 'warning' : progressPct >= 100 ? 'success' : 'normal'
                   "
-                />
+                >
+                  <template #text="{ percent }">{{ fmtPercent(percent) }}</template>
+                </a-progress>
                 <template v-if="running">
                   <a-button
                     v-if="jobStatus === 'paused'"
@@ -1206,7 +1163,7 @@ onMounted(init);
           <StateGuard :loading="noteLoading" error="">
             <!-- 滾動容器包在 a-timeline 外層（同 AttributionHistoryDrawer）：timeline 是 flex column、
                  item min-height 78px，max-h+overflow 直掛 timeline 會被 flex-shrink 壓縮致內容堆疊。 -->
-            <div v-if="noteList.length" class="min-h-0 flex-1 overflow-auto">
+            <ScrollFadeArea v-if="noteList.length" class="min-h-0 flex-1">
               <a-timeline class="pl-1">
                 <a-timeline-item v-for="n in noteList" :key="n.id">
                   <div
@@ -1222,7 +1179,7 @@ onMounted(init);
                   </div>
                 </a-timeline-item>
               </a-timeline>
-            </div>
+            </ScrollFadeArea>
             <a-empty v-else description="尚無備註" />
           </StateGuard>
         </div>

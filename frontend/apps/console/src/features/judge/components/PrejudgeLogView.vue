@@ -15,6 +15,7 @@ import {
   IconLoading,
   IconMinusCircleFill,
 } from '@arco-design/web-vue/es/icon';
+import { ScrollFadeArea } from '@/components';
 import PrejudgeLogTabs from './PrejudgeLogTabs.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 
@@ -167,7 +168,7 @@ const STATUS_LABELS: Record<ItemGroup['status'], string> = {
             ⟳ {{ summary.running }}
           </span>
         </div>
-        <div class="min-h-0 flex-1 overflow-auto">
+        <ScrollFadeArea class="min-h-0 flex-1">
           <!-- 整體流程偽列：job 級事件（任務啟動參數 / job error） -->
           <div
             class="cursor-pointer border-b px-2 py-1.5 text-xs"
@@ -221,7 +222,7 @@ const STATUS_LABELS: Record<ItemGroup['status'], string> = {
               {{ g.title }}
             </div>
           </div>
-        </div>
+        </ScrollFadeArea>
       </div>
       <!-- :key 換組即重掛（tab 回到流程、捲動歸零），單筆密度與單列初判體驗一致 -->
       <PrejudgeLogTabs

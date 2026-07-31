@@ -18,6 +18,7 @@
 import { computed, ref, watch } from 'vue';
 import { Modal } from '@arco-design/web-vue';
 import { IconDelete, IconDragDotVertical, IconPlus } from '@arco-design/web-vue/es/icon';
+import { ScrollFadeArea } from '@/components';
 import { useListDragSort } from '@/composables';
 
 interface BdTagVerticalItem {
@@ -201,7 +202,7 @@ const COLUMNS = [
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4 overflow-auto p-1">
+  <ScrollFadeArea class="h-full p-1" content-class="flex flex-col gap-4">
     <div class="flex flex-none flex-col gap-3 rounded-lg border p-3">
       <div>
         <div class="mb-1 text-xs font-medium">PM 選項池（拖曳排序）</div>
@@ -248,9 +249,9 @@ const COLUMNS = [
         </div>
       </div>
       <div class="text-[11px] leading-snug text-[var(--color-text-3)]">
-        兩份選項池各自獨立維護（增刪不影響下方表格既有指派）；拖曳把手調整排序，Vertical 順序即前台歸因列表
-        工具列篩選下拉的顯示順序。下方表格的 PM/Vertical 欄從此二池下拉選擇。刪除已被代碼綁定的值會二次
-        確認，確認後對應代碼的欄位會清空待重新指派。
+        兩份選項池各自獨立維護（增刪不影響下方表格既有指派）；拖曳把手調整排序，Vertical
+        順序即前台歸因列表 工具列篩選下拉的顯示順序。下方表格的 PM/Vertical
+        欄從此二池下拉選擇。刪除已被代碼綁定的值會二次 確認，確認後對應代碼的欄位會清空待重新指派。
       </div>
     </div>
 
@@ -268,7 +269,14 @@ const COLUMNS = [
     </div>
 
     <a-empty v-if="!codes.length" description="尚無代碼，於上方新增第一筆" />
-    <a-table v-else :data="tableRows" :columns="COLUMNS" :pagination="false" row-key="code" size="small">
+    <a-table
+      v-else
+      :data="tableRows"
+      :columns="COLUMNS"
+      :pagination="false"
+      row-key="code"
+      size="small"
+    >
       <template #bdTag="{ record }">
         <div class="flex flex-col gap-1 py-1">
           <span class="font-mono font-medium">{{ record.code }}</span>
@@ -309,5 +317,5 @@ const COLUMNS = [
         </a-popconfirm>
       </template>
     </a-table>
-  </div>
+  </ScrollFadeArea>
 </template>

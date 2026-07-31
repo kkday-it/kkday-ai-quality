@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import {
-  LlmConnectionsPanel,
-  QcConnectionsPanel,
-  DataImportPanel,
-} from '@/features/settings/pages';
+import { LlmSettingsPanel, QcConnectionsPanel, DataImportPanel } from '@/features/settings/pages';
 import { BdTagVerticalSettingsPanel } from '@/features/judge/components';
 import { StickyTabs } from '@/components';
 import { PERM } from '@/api';
@@ -15,9 +11,10 @@ import { usePermission } from '@/composables/usePermission';
 // gating 接線保留，日後要收緊只改 config/global/permissions.json 的 default，前端零改。
 const { can } = usePermission();
 
-// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 連線 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料匯出入。
-// LLM 模型旋鈕（model/thinking/reasoning/temperature）不在此分頁——已下沉各功能區就地配置＋存為區默認。
-// 前兩 tab 自帶多套 config 管理 + 卡片內啟用切換；vertical tab 維護 BD 代碼↔PM/Vertical 對照（版本化）；
+// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，四分頁 —— 🤖 LLM 設定 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜ 💾 資料匯出入。
+// LLM tab 內再分三個供應商 tab，每個底下＝連線（base_url+token）+ 模型配置庫（具名配置增刪改）；
+// 各功能區頁面只留一個配置下拉，不再內嵌旋鈕（見 LlmSettingsPanel / useLlmAreaConfig）。
+// vertical tab 維護 BD 代碼↔PM/Vertical 對照（版本化）；
 // import tab＝全庫資料包安全匯入（覆蓋式；admin 閘現階段延後）+ 導出偏好（Google Drive 資料夾，原
 // 「帳號」抽屜內容，2026-07-22 帳號抽屜整個退役後併入——與「導出資料包」按鈕消費同一份偏好，放
 // 一起最直覺，見 DataImportPanel.vue）。
@@ -44,7 +41,7 @@ watch(tab, (t) => {
   if (visible.value) syncQuery(t);
 });
 
-// 不只處理首次載入：頁面內的「管理連線」會在既有 route 上追加 query，必須即時開抽屜。
+// 不只處理首次載入：頁面內的「管理 LLM 設定」會在既有 route 上追加 query，必須即時開抽屜。
 watch(
   () => route.query.settings,
   (s) => {
@@ -87,7 +84,7 @@ watch(
     <!-- StickyTabs：分頁列固定，只有分頁內容捲動（原裸 a-tabs 內容過長時連分頁列一起被捲走，
          見 .claude/rules/frontend-vue.md「Tabs 切換展示」）。透明轉發 a-tabs 原生 API，零學習成本。 -->
     <StickyTabs v-model:active-key="tab">
-      <a-tab-pane key="llm" title="🤖 LLM 連線"><LlmConnectionsPanel /></a-tab-pane>
+      <a-tab-pane key="llm" title="🤖 LLM 設定"><LlmSettingsPanel /></a-tab-pane>
       <a-tab-pane key="qc" title="🗄️ QC DB 連線"><QcConnectionsPanel /></a-tab-pane>
       <a-tab-pane key="vertical" title="🧭 商品垂直分類">
         <BdTagVerticalSettingsPanel :active="tab === 'vertical'" />

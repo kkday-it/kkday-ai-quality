@@ -26,9 +26,7 @@ Object.defineProperty(globalThis, 'document', {
   configurable: true,
   value: {
     get cookie() {
-      return [...jar.entries()]
-        .map(([k, v]) => `${k}=${v}`)
-        .join('; ');
+      return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
     },
     // 簡化語義：`k=v; path=/` 寫入、`max-age=0` 刪除（涵蓋 http.api 的兩種用法即可）
     set cookie(s: string) {
@@ -107,11 +105,10 @@ describe('be2 AU9404 續期攔截（http.api j()）', () => {
   });
 
   it('refresh 失敗 → 拋 ApiError 403，不重放（原請求＋refresh 各一次）', async () => {
-    const fetchMock = vi.fn(
-      async (url: string): Promise<FakeResponse> =>
-        url.includes('/refresh-token/')
-          ? { ok: false, status: 401, headers: new Headers(), json: async () => ({}) }
-          : au9404(),
+    const fetchMock = vi.fn(async (url: string): Promise<FakeResponse> =>
+      url.includes('/refresh-token/')
+        ? { ok: false, status: 401, headers: new Headers(), json: async () => ({}) }
+        : au9404(),
     );
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 

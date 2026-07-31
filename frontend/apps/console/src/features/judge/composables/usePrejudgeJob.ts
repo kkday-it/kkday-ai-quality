@@ -49,7 +49,7 @@ export interface PrejudgeListFilters {
 interface PrejudgeJobDeps {
   /** 目前選定來源（getter / ref / 純值）。 */
   source: MaybeRefOrGetter<string>;
-  /** 本次執行 LLM 覆寫（provider+旋鈕，來自 useLlmAreaDefault('prejudge')）。 */
+  /** 本次執行 LLM 覆寫（provider+旋鈕，來自 useLlmAreaConfig('prejudge') 選中配置攤平）。 */
   llmOverrides: ComputedRef<LlmOverrides>;
   /** 生效的商品垂直分類（送查詢用；全選/未選為 undefined）。 */
   effVerticals: ComputedRef<string[] | undefined>;

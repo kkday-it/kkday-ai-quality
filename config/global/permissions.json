@@ -8,10 +8,9 @@
     "problem.list.export",
     "data.source.upload",
     "data.datapack.export",
-    "data.datapack.import",
-    "settings.llm-area-default.write"
+    "data.datapack.import"
   ],
-  "_default_comment": "有身分時（be2 接入後）所有登入者的基礎權限：日常操作（跑初判/審核/導出/匯入）+ 調功能區默認旋鈕。敏感權限（改連線/看密文）不在此，只授 grants。",
+  "_default_comment": "有身分時（be2 接入後）所有登入者的基礎權限：日常操作（跑初判/審核/導出/匯入）。LLM 模型配置庫（llm_model_configs）刻意不設 key——它只決定用哪個 model/思考多深，不涉及端點或機密，登入即可用。敏感權限（改連線/看密文）不在此，只授 grants。",
   "grants": {
     "alvin.bian@kkday.com": ["*"]
   },

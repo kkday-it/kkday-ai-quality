@@ -21,8 +21,10 @@ onMounted(() => {
   if (canManage.value) store.loadSecrets();
 });
 
-const onSave = (env: string, payload: { conn: { host: string; port: number | null; user: string }; password?: string }) =>
-  store.saveQcConnection(env, payload.conn, payload.password);
+const onSave = (
+  env: string,
+  payload: { conn: { host: string; port: number | null; user: string }; password?: string },
+) => store.saveQcConnection(env, payload.conn, payload.password);
 </script>
 
 <template>

@@ -36,10 +36,14 @@ def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVI
 | `finding.review.update` | findings PATCH /status | default |
 | `problem.list.export` | problems POST /export | default |
 | `prejudge.run` | v1/prejudge 啟動/暫停/恢復/停止 | default |
-| `settings.llm-area-default.write` | POST /api/settings（僅 `llm_area_defaults` 欄位） | default |
 | `settings.llm-config.manage` | POST /api/settings（`llm_connections`/`llm_tokens`/`provider_models` 欄位）、POST /api/settings/test-llm | 僅 grants |
 | `settings.qc-config.manage` | POST /api/settings（`qc_connections`/`qc_passwords` 欄位）、POST /api/datasource/qc-db/test | 僅 grants |
 | `settings.secret.read` | GET /api/settings/raw | 僅 grants |
+
+> **刻意沒有 key 的欄位**：`llm_model_configs`（LLM 模型配置庫）——它只決定「用哪個 model、思考多深」，
+> 要打哪個端點／拿什麼 token 打仍由受 `settings.llm-config.manage` 保護的 `llm_connections`/`llm_tokens`
+> 決定，不涉及新端點或機密外洩面，故列為登入即可用的日常操作。`overview_boards`/
+> `gdrive_upload_folder_url` 同理。
 
 email→key 映射 SSOT＝`config/global/permissions.json`（`default` + `grants`）；provider 切換＝`config/global/auth.config.json`。
 

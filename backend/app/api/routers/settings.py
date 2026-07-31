@@ -1,4 +1,4 @@
-"""設定端點（LLM 連線/功能區旋鈕/QC 連線讀寫 + 即時測試）；全路徑自帶 /api。"""
+"""設定端點（LLM 連線/模型配置庫/QC 連線讀寫 + 即時測試）；全路徑自帶 /api。"""
 
 from __future__ import annotations
 
@@ -40,25 +40,23 @@ class LlmConnectionIn(BaseModel):
     base_url: str = ""
 
 
-class LlmKnobsIn(BaseModel):
-    """單一供應商的旋鈕（不含 provider——它是外層 knobs map 的 key）。"""
+class LlmModelConfigIn(BaseModel):
+    """一筆模型配置（全域共用，一筆可同時被多個功能區引用）。
 
-    model: str | None = None
-    temperature: float | None = None
-    thinking: str | None = None
-    reasoning_effort: str | None = None
-
-
-class LlmAreaDefaultIn(BaseModel):
-    """單功能區旋鈕默認（team 共用）：當前選定供應商 + 各供應商各自的旋鈕。
-
-    `knobs` 只需帶「這次要更新的供應商」，未提及者後端原封保留（見 `save_settings` 的逐供應商
-    合併）——這是「存 openai 不該沖掉 bytedance/gemini」的契約前提。
-    `provider` 省略＝只更新旋鈕、不切換當前選定。
+    這裡只定**形狀**；值域與規格唯一性等語義校驗一律在寫入邊界
+    `settings._validate_model_configs` 做（拋 ValueError → 本檔轉 400）。
+    `id` 留空＝新建，後端補 uuid。
+    ⚠️ **沒有 `name` 欄位**——名稱由規格衍生（`settings.derive_config_name`），不由呼叫端指定；
+    前端照舊回傳 name 也不會炸（Pydantic 預設忽略未宣告欄位）。
+    ⚠️ 送來的是**完整清單**（整包替換語義）：少送一筆等於刪除該筆。
     """
 
-    provider: str | None = None
-    knobs: dict[str, LlmKnobsIn] | None = None
+    id: str | None = None
+    provider: str
+    model: str
+    thinking: str | None = None
+    reasoning_effort: str | None = None
+    temperature: float | None = None
 
 
 class QcConnectionIn(BaseModel):
@@ -76,8 +74,11 @@ class SettingsIn(BaseModel):
     llm_connections: dict[str, LlmConnectionIn] | None = None
     llm_tokens: dict[str, str] | None = None  # { provider_id: token } per-provider 機密
     provider_models: dict | None = None  # 各供應商自訂 model 清單
-    # LLM 旋鈕層（每功能區一份：prejudge/prompt_debug/sandbox）
-    llm_area_defaults: dict[str, LlmAreaDefaultIn] | None = None
+    # LLM 模型配置庫（全域具名配置，整包替換）。「哪個功能區用哪一筆」不在此、也不在 DB——
+    # 綁定走 `llm_area_configs`（area → config id，團隊共用單一份；見 settings.py 檔頭）。
+    llm_model_configs: list[LlmModelConfigIn] | None = None
+    # 功能區綁定（area → 配置 id）：團隊共用單一份；前端選了就送，無獨立儲存動作
+    llm_area_configs: dict[str, str] | None = None
     # QC DB 連線層（每環境一條：sit/stage/production）
     qc_connections: dict[str, QcConnectionIn] | None = None
     qc_passwords: dict[str, str] | None = None  # { env_id: password } per-env 機密
@@ -122,16 +123,24 @@ def _check_patch_permissions(user: dict, patch: dict) -> None:
 def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -> dict:
     """更新全項目共享設定（空/遮罩 token 不覆蓋既有）。
 
-    llm_area_defaults（存功能區默認旋鈕）/ overview_boards / gdrive_upload_folder_url 為日常操作
-    （settings.llm-area-default.write 入 default，登入即可用）；llm_connections/llm_tokens/
-    provider_models（改 LLM 連線）與 qc_connections/qc_passwords（改 QC 連線）為敏感操作，
-    僅 grants 授予者可用（見 _check_patch_permissions）。
+    llm_model_configs（模型配置庫）/ overview_boards / gdrive_upload_folder_url 為日常操作
+    （登入即可用）；llm_connections/llm_tokens/provider_models（改 LLM 連線）與
+    qc_connections/qc_passwords（改 QC 連線）為敏感操作，僅 grants 授予者可用
+    （見 _check_patch_permissions）。
+
+    Raises:
+        HTTPException: 403 缺敏感權限；400 模型配置校驗未過（名稱空/重複、旋鈕值域外…）。
     """
     from app.core import settings as app_settings
 
     patch = body.model_dump(exclude_none=True)
     _check_patch_permissions(user, patch)
-    data = app_settings.save_settings(patch)
+    try:
+        data = app_settings.save_settings(patch)
+    except ValueError as exc:
+        # settings 刻意不依賴 fastapi（資料層／API 層解耦），故校驗失敗以 ValueError 上拋，
+        # 在此轉 400。訊息是面向使用者寫的，原樣回前端顯示。
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     _activate_settings()  # 反映新 token（stub_mode）
     data["stub_mode"] = llm_client.is_stub()
     return data
@@ -202,6 +211,9 @@ def test_llm(
     cfg = {
         "token": token,
         "base_url": base_url,
+        # 必帶：`client._reasoning_kwargs` 以配置自帶的 provider 為判別軸（base_url 只是後備），
+        # 漏帶會讓自訂 gateway 的 ByteDance 連線在測試時走成 effortOnly、與實跑行為不一致。
+        "provider": body.provider,
         "model": body.model or config.env.ai_judge_model,
         "temperature": body.temperature,
         "thinking": body.thinking or "default",
