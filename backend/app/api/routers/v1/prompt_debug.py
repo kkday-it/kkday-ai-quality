@@ -497,7 +497,6 @@ async def prompt_debug_batch_start(
     sheet: str = Form("", description="XLSX 工作表名；空＝第一個工作表"),
     id_column: str = Form("session_oid"),
     text_column: str = Form("conversation_full"),
-    offset: int = Form(0, ge=0),
     limit: int = Form(0, ge=0, description="實際跑多少條；0＝全部"),
     workers: int = Form(
         0,
@@ -531,7 +530,6 @@ async def prompt_debug_batch_start(
             sheet=sheet,
             id_column=id_column.strip() or "session_oid",
             text_column=text_column.strip() or "conversation_full",
-            offset=offset,
             limit=limit,
             workers=workers,
             system_prompt=system_prompt,
@@ -627,7 +625,6 @@ async def prompt_debug_batch_start_multi(
     sheet: str = Form("", description="XLSX 工作表名；空＝第一個工作表"),
     id_column: str = Form("session_oid"),
     text_column: str = Form("conversation_full"),
-    offset: int = Form(0, ge=0),
     limit: int = Form(0, ge=0, description="實際跑多少條；0＝全部"),
     workers: int = Form(
         0,
@@ -693,7 +690,6 @@ async def prompt_debug_batch_start_multi(
             sheet=sheet,
             id_column=resolved_id_col,
             text_column=resolved_text_col,
-            offset=offset,
             limit=limit,
             workers=workers,
             system_prompt=system_prompt,

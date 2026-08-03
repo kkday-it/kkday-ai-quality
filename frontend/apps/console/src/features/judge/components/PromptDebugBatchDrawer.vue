@@ -85,7 +85,6 @@ const form = reactive({
   sheet: '',
   idColumn: 'session_oid',
   textColumn: 'conversation_full',
-  offset: 0,
   limit: 10,
 });
 
@@ -360,7 +359,6 @@ async function onStart(): Promise<void> {
       // DB 模式的欄名由後端依來源註冊表決定，前端不送（送了也會被忽略）
       idColumn: usingDb ? '' : form.idColumn.trim(),
       textColumn: usingDb ? '' : form.textColumn.trim(),
-      offset: form.offset,
       limit: form.limit,
       // 逐筆攤平：每筆自帶完整 provider + 旋鈕，故可以並排比「同 model 不同 effort」這種組合
       configs: selectedConfigs.value.map((c) => ({
@@ -739,12 +737,6 @@ watch(
         </a-col>
         <a-col :flex="'120px'">
           <div class="flex flex-col gap-1">
-            <span class="text-xs text-[#4e5969]">offset</span>
-            <a-input-number v-model="form.offset" class="w-full" :min="0" :step="10" />
-          </div>
-        </a-col>
-        <a-col :flex="'120px'">
-          <div class="flex flex-col gap-1">
             <span class="text-xs text-[#4e5969]">limit（0＝全部）</span>
             <a-input-number v-model="form.limit" class="w-full" :min="0" :step="10" />
           </div>
@@ -946,8 +938,7 @@ watch(
                 <div class="flex gap-1.5 text-[11px] leading-[1.6]">
                   <span class="shrink-0 text-[#86909c]">範圍</span>
                   <span class="min-w-0 text-[#4e5969]">
-                    offset {{ record.offset }} · limit {{ record.limit || '全部' }} · 最高
-                    {{ record.workers ?? '—' }} 併發
+                    limit {{ record.limit || '全部' }} · 最高 {{ record.workers ?? '—' }} 併發
                   </span>
                 </div>
                 <div class="flex items-center gap-1.5 text-[11px] leading-[1.6]">

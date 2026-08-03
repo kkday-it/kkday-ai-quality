@@ -347,7 +347,7 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
         "model": manifest["model"],
         "input_name": manifest["input_name"],
         "created_at": manifest["created_at"],
-        "total": total,  # 本次選中目標（offset/limit 後）
+        "total": total,  # 本次選中目標（limit 後）
         "resumed": resumed,  # 斷點復用的成功筆
         "pending": pending,  # 本次實際要請求的筆數
         "processed": 0,  # 本次已完成請求數（成功+失敗）
@@ -887,7 +887,7 @@ def _prepare_plan(
     """由 run 目錄 + manifest 組出執行素材（create / resume 共用）。
 
     Raises:
-        ValueError: 輸入解析失敗、offset/limit 選不出資料、或 schema 已與 manifest 不相容。
+        ValueError: 輸入解析失敗、limit 選不出資料、或 schema 已與 manifest 不相容。
     """
     taxonomy = prompt_debug.load_taxonomy()
     schema = prompt_debug.output_schema(taxonomy)
@@ -901,13 +901,9 @@ def _prepare_plan(
         id_column=manifest["id_column"],
         text_column=manifest["text_column"],
     )
-    selected = rows[manifest["offset"] :]
-    if manifest["limit"]:
-        selected = selected[: manifest["limit"]]
+    selected = rows[: manifest["limit"]] if manifest["limit"] else rows
     if not selected:
-        raise ValueError(
-            f"沒有可跑資料：有效行={len(rows)}，offset={manifest['offset']}，limit={manifest['limit']}"
-        )
+        raise ValueError(f"沒有可跑資料：有效行={len(rows)}，limit={manifest['limit']}")
     if len(selected) > _MAX_ROWS:
         raise ValueError(f"目標 {len(selected)} 條超過跑批上限 {_MAX_ROWS}；請用 limit 分段")
 
@@ -973,7 +969,6 @@ def create_and_start(
     sheet: str,
     id_column: str,
     text_column: str,
-    offset: int,
     limit: int,
     workers: int | None,
     system_prompt: str,
@@ -992,7 +987,7 @@ def create_and_start(
         id_column/text_column: 關鍵欄名（預設 session_oid / conversation_full）。
             ⚠️ `id_column` 會被當**動態 dict key** 用（CSV 欄頭與 jsonl 紀錄），撞到輸出契約欄名
             會靜默吃掉 item id，故以 `_assert_id_column_free` 在入口擋下。
-        offset/limit: 有效唯一行的切片（limit 0＝全部）。
+        limit: 取有效唯一行的前 N 筆（0＝全部）。
         workers: 併發 ceiling 的顯式覆寫；`None`/0＝自動（依 model 查表，見 `_resolve_workers`）。
             執行期仍由 AIMD governor 在此之下自動升降，這個值只是天花板。
         system_prompt: 本批固定使用的 system prompt（存檔為斷點依據）；
@@ -1012,8 +1007,8 @@ def create_and_start(
     Raises:
         ValueError: 參數 / 輸入解析錯誤（router 轉 400）。
     """
-    if offset < 0 or limit < 0:
-        raise ValueError("offset / limit 不可小於 0（limit 0＝全部）")
+    if limit < 0:
+        raise ValueError("limit 不可小於 0（0＝全部）")
     # 允許草稿：調試台是草稿工作台，「跑批只准正式版」在 46 草稿 vs 1 正式版的現實下等於跑批不可用。
     # 「頁面調 A、跑批跑 B」的防線改為「兩者共用同一個口徑來源」＋ manifest 顯式記下 kind，
     # 而不是限制跑批能讀什麼（限制只是把問題從「跑錯」變成「跑不了」）。
@@ -1040,7 +1035,6 @@ def create_and_start(
             "sheet": sheet or None,
             "id_column": id_column or "session_oid",
             "text_column": text_column or "conversation_full",
-            "offset": offset,
             "limit": limit,
             # 版本名為空＝送出前在頁面上臨時編輯過，此時只有 prompt_sha256 能追出實際用了什麼
             "prompt_version": prompt_version,
@@ -1076,7 +1070,6 @@ def create_and_start_group(
     sheet: str,
     id_column: str,
     text_column: str,
-    offset: int,
     limit: int,
     workers: int | None,
     system_prompt: str,
@@ -1103,7 +1096,7 @@ def create_and_start_group(
     router 一次做完，本函式只處理「參數合法、但這一家配置不完整」這類逐筆才會知道的失敗。
 
     Args:
-        input_name/input_bytes/sheet/id_column/text_column/offset/limit/workers/system_prompt:
+        input_name/input_bytes/sheet/id_column/text_column/limit/workers/system_prompt:
             與 `create_and_start` 同義，所有配置共用同一份（同輸入、同 Prompt 才有可比性）。
         entries: `[{config_name, overrides, effective}]`——`overrides` 是該配置的 flat 旋鈕
             （含 provider/model，不含 token，寫進 manifest 供事後追溯）；`effective` 是 router
@@ -1147,7 +1140,6 @@ def create_and_start_group(
                 sheet=sheet,
                 id_column=id_column,
                 text_column=text_column,
-                offset=offset,
                 limit=limit,
                 workers=workers,
                 system_prompt=system_prompt,
@@ -1363,7 +1355,6 @@ def list_runs(*, group_id: str | None = None) -> list[dict]:
                 # 名字快照（見 create_and_start）；舊 run 與腳本直呼的 run 沒有這欄，回空字串——
                 # 前端據此決定顯示配置名還是退回顯示 model 名。
                 "config_name": manifest.get("config_name", ""),
-                "offset": manifest["offset"],
                 "limit": manifest["limit"],
                 "workers": manifest.get("workers"),
                 # 一律 .get 帶預設：任何一份壞掉／舊版的 summary.json 只該讓那一列失真，

@@ -450,7 +450,7 @@ export interface PromptDebugBatchSnapshot {
   model: string;
   input_name: string;
   created_at: string;
-  /** 本次選中目標（offset/limit 後）。**`null`＝未知**：server 重啟後由磁碟推導的 run
+  /** 本次選中目標（limit 後）。**`null`＝未知**：server 重啟後由磁碟推導的 run
    * 拿不到當時的選中總數，此時不得拿來算進度百分比（過去後端回 0，前端就顯示「目標 0 / 成功 42」）。 */
   total: number | null;
   /** 斷點復用的成功筆。 */
@@ -502,7 +502,6 @@ export interface PromptDebugBatchRunRow {
   /** 本批用的模型配置名（**啟動當下的名字快照**，非 id——配置日後改名/刪除，歷史 run 仍讀得懂）。
    * 空＝改造前的舊 run 或腳本直呼，此時只有 model 可追。 */
   config_name: string;
-  offset: number;
   limit: number;
   /** 本批解析後的併發 ceiling（稽核用事實紀錄）；執行期 AIMD governor 只在其下調整。
    * `null`＝改造前的舊 run 沒記這欄。 */
@@ -561,7 +560,6 @@ export interface PromptDebugBatchGroupStartPayload {
   sheet?: string;
   idColumn?: string;
   textColumn?: string;
-  offset?: number;
   limit?: number;
   /** 併發 ceiling 覆寫；省略＝自動（依 model 查表 + 執行期 AIMD 自適應）。
    * 前端已不再送——沒有任何供應商公布「併發數」這個維度，填進去的數字必然是猜的。 */
@@ -636,7 +634,6 @@ export const startPromptDebugBatchGroup = (
   if (payload.sheet) fd.append('sheet', payload.sheet);
   if (payload.idColumn) fd.append('id_column', payload.idColumn);
   if (payload.textColumn) fd.append('text_column', payload.textColumn);
-  fd.append('offset', String(payload.offset ?? 0));
   fd.append('limit', String(payload.limit ?? 0));
   // 0＝交給後端自動解析（見 `workers` 欄註解）
   fd.append('workers', String(payload.workers ?? 0));
