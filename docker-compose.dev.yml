@@ -52,6 +52,10 @@ services:
       # ⚠️ 勿寫 OPENAI_API_KEY: ${VAR:-}——host shell 無值時以「空字串」覆蓋 env_file 真值 → 判決靜默走 stub
       #（2026-07-11 踩過：stub 假判覆蓋 1,452 筆真歸因，靠 pg_dump 整表還原）
       CORS_ALLOW_ORIGINS: http://localhost:${FRONTEND_PORT:-5273}
+      # pytest 專用測試庫（與 dev 庫隔離，conftest 缺庫會自動 createdb）。不設此值會落回
+      # conftest 預設的 localhost:5432——容器內 localhost 指向容器自身而非 db 服務，
+      # 整組測試會以 Connection refused 收場（踩過：178 個 error 全是這個原因）。
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres@db:5432/kkdb_ai_quality_test
     volumes:
       - ./backend/app:/app/backend/app       # 只掛 source package（保留 image 的 editable 安裝）→ --reload 即生效
       - ./backend/tests:/app/backend/tests   # 測試檔案熱編（image 未含/過舊時測試會跑到舊版，踩過改測試不生效）
