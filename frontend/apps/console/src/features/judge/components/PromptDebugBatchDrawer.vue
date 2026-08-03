@@ -715,7 +715,9 @@ watch(
         </template>
       </a-upload>
 
-      <a-row :gutter="[12, 8]" align="center" wrap class="mt-3">
+      <!-- 與上方「資料來源」區塊之間用分隔線斷開：這列是跑批範圍參數、不屬資料來源，
+           先前只靠 mt-3 貼在上傳框／說明文字下方，視覺上像是資料來源區塊的一部分 -->
+      <a-row :gutter="[12, 8]" align="center" wrap class="mt-4 border-t border-[#e5e6eb] pt-4">
         <!-- 欄名/工作表只描述「上傳檔長什麼樣」，DB 取數時由來源註冊表決定，不該讓人填 -->
         <a-col v-if="inputMode === 'upload' && isXlsx" :flex="'180px'">
           <div class="flex flex-col gap-1">
