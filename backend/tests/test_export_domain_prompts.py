@@ -1,7 +1,7 @@
-"""導出深化回歸：C-1~C-6 六域命中欄（符合/不符合）＋「分類統計」表名＋「Prompts」版本快照表。
+"""導出深化回歸：歸因分類欄（L1/L2 同格換行）＋「分類統計」表名＋「Prompts」版本快照表。
 
-六域欄為 review 級（合併儲存格）、值供 Excel 篩選：已初判評論逐域 符合/不符合、
-完全未初判評論六欄空白；Prompts 表輸出 7 支初判 prompt 的 active 版本溯源
+歸因分類為 attr 級（逐列各自有值）：上行「C-N 域名」、下行「C-N-M 細項」，只判到 L1 時單行；
+Prompts 表輸出 7 支初判 prompt 的 active 版本溯源
 （測試庫無 DB 版 → 版本欄「檔案默認」、內容回退 prompts/*.md）。
 """
 
@@ -26,7 +26,9 @@ def _pr_row(rec_oid: str) -> dict:
     }
 
 
-def _finding(rec_oid: str, l1_code: str, l1_label: str) -> TicketFinding:
+def _finding(
+    rec_oid: str, l1_code: str, l1_label: str, l2_code: str = "", l2_label: str = ""
+) -> TicketFinding:
     return TicketFinding(
         finding_id=f"fd_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
@@ -35,6 +37,8 @@ def _finding(rec_oid: str, l1_code: str, l1_label: str) -> TicketFinding:
         sentiment_score=1,
         l1_domain_code=l1_code,
         l1_label=l1_label,
+        l2_code=l2_code,
+        l2_label=l2_label,
         confidence=0.9,
         raw_confidence=0.9,
         confidence_tier="auto_accept",
@@ -55,24 +59,26 @@ def _sheet_cells(blob: bytes) -> tuple[list, list[list], list[str]]:
     return list(rows[1]), [list(r) for r in rows[2:]], wb.sheetnames
 
 
-def test_domain_columns_judged_vs_unjudged(temp_db) -> None:
-    """已初判評論：命中域＝符合、其餘＝不符合；未初判評論：六欄全空白。"""
+def test_taxonomy_column_merges_l1_and_l2(temp_db) -> None:
+    """歸因分類欄：判到 L2＝兩行（C-N 域名 / C-N-M 細項）、只判到 L1＝單行、未初判＝空白。"""
     db.insert_source_batch("reviews", [_pr_row("D1"), _pr_row("D2")])
-    # D1 判為 content + service 雙域；D2 完全未初判
     db.replace_source_findings(
         "reviews",
         "D1",
-        [_finding("D1", "content", "商品內容"), _finding("D1", "service", "客服營運")],
-    )
+        [
+            _finding("D1", "content", "商品內容", l2_code="C-1-1", l2_label="內容與實際不符"),
+            _finding("D1", "service", "客服營運"),  # 無 L2 → 單行
+        ],
+    )  # D2 完全未初判
     headers, rows, _names = _sheet_cells(db.export_problems_xlsx(source="reviews"))
-    dom_idx = {h.split(" ")[0]: i for i, h in enumerate(headers) if str(h).startswith("C-")}
-    assert set(dom_idx) == {"C-1", "C-2", "C-3", "C-4", "C-5", "C-6"}
-    d1 = next(r for r in rows if r[0] == "D1")
-    assert d1[dom_idx["C-1"]] == "符合" and d1[dom_idx["C-5"]] == "符合"
-    for cn in ("C-2", "C-3", "C-4", "C-6"):
-        assert d1[dom_idx[cn]] == "不符合"
+    tx = headers.index("歸因分類")
+    vals = {str(r[tx]) for r in rows if r[0] == "D1"} | {
+        str(r[tx]) for r in rows if r[0] is None
+    }  # 多歸因 fan-out：第 2 列的 review 級欄因合併儲存格而為 None
+    assert "商品內容\nC-1-1 內容與實際不符" in " ".join(v for v in vals if "C-1" in v)
+    assert any(v == "C-5 客服營運" for v in vals)  # 只判到 L1 → 不留孤兒碼與空行
     d2 = next(r for r in rows if r[0] == "D2")
-    assert all(not d2[dom_idx[cn]] for cn in dom_idx)  # 未初判 → 空白（None/""）
+    assert not d2[tx]  # 未初判 → 留白
 
 
 def test_stats_renamed_and_prompts_sheet_appended(temp_db) -> None:
@@ -127,53 +133,18 @@ def test_prompts_sheet_version_is_release_timestamp(temp_db) -> None:
 
 
 def test_provenance_and_verdict_columns(temp_db) -> None:
-    """雙溯源鏈：初判組（初判時間/Prompt 版本 pid+時間戳/極性版本）＋判決組（狀態/時間/人）＋說明表。"""
-    import re
-
-    from app.core import paths
-    from app.judge import prompt_source
-
+    """溯源欄：初判時間（review 級，已/未初判區分）＋判決組（狀態/時間/人）＋說明表存在。"""
     db.insert_source_batch("reviews", [_pr_row("V1"), _pr_row("V2")])
-    md = (paths.PROMPTS_DIR / "01_C-1_content.md").read_text(encoding="utf-8")
-    pol_md = (paths.PROMPTS_DIR / "00_polarity.md").read_text(encoding="utf-8")
-    saved = db.save_rule_version(
-        "prompt_C-1", {"text": md, "_meta": {"label": "商品內容"}}, note="發版"
-    )
-    saved_pol = db.save_rule_version(
-        "prompt_polarity", {"text": pol_md, "_meta": {"label": "情緒傾向"}}, note="發版"
-    )
-    prompt_source.reload()  # 清解析快取（load DB-first）
-    try:
-        db.replace_source_findings(
-            "reviews",
-            "V1",
-            [_finding("V1", "content", "商品內容")],
-            params={
-                "model": "gpt-5-mini",
-                "prompt_versions": {
-                    "prompt_C-1": saved["version"],
-                    "prompt_polarity": saved_pol["version"],
-                },
-            },
-        )
-        # V2 初判但無版本快照（模擬機制上線前的舊紀錄）
-        db.replace_source_findings("reviews", "V2", [_finding("V2", "content", "商品內容")])
-        # V1 人工判決（確認）→ 判決組三欄有值
-        db.update_finding_status("fd_reviews_V1__content", "confirmed", actor="qa@kkday.com")
-        blob = db.export_problems_xlsx(source="reviews")
-        headers, rows, names = _sheet_cells(blob)
-        assert "說明" in names  # 第 4 張說明表
-        i = {h: idx for idx, h in enumerate(headers)}
-        v1 = next(r for r in rows if r[0] == "V1")
-        v2 = next(r for r in rows if r[0] == "V2")
-        # 初判溯源
-        assert re.fullmatch(r"01_C-1_content v\d{14}", str(v1[i["Prompt 版本"]]))
-        assert re.fullmatch(r"00_polarity v\d{14}", str(v1[i["極性 Prompt 版本"]]))
-        assert v1[i["初判時間"]] and v2[i["初判時間"]]  # 初判事件時間，兩者皆有
-        assert not v2[i["Prompt 版本"]] and not v2[i["極性 Prompt 版本"]]  # 無快照→空白
-        # 判決溯源：V1 人工判決留痕；V2 待判決空白
-        assert v1[i["判決狀態"]] == "已確認"
-        assert v1[i["判決人"]] == "qa@kkday.com" and v1[i["判決時間"]]
-        assert v2[i["判決狀態"]] == "待判決" and not v2[i["判決人"]]
-    finally:
-        prompt_source.reload()
+    db.replace_source_findings("reviews", "V1", [_finding("V1", "content", "商品內容")])
+    db.replace_source_findings("reviews", "V2", [_finding("V2", "content", "商品內容")])
+    # V1 人工判決（確認）→ 判決組三欄有值；V2 維持待判決
+    db.update_finding_status("fd_reviews_V1__content", "confirmed", actor="qa@kkday.com")
+    headers, rows, names = _sheet_cells(db.export_problems_xlsx(source="reviews"))
+    assert "說明" in names  # 第 4 張說明表
+    i = {h: idx for idx, h in enumerate(headers)}
+    v1 = next(r for r in rows if r[0] == "V1")
+    v2 = next(r for r in rows if r[0] == "V2")
+    assert v1[i["初判時間"]] and v2[i["初判時間"]]  # 初判事件時間，兩者皆有
+    assert v1[i["判決狀態"]] == "已確認"
+    assert v1[i["判決人"]] == "qa@kkday.com" and v1[i["判決時間"]]
+    assert v2[i["判決狀態"]] == "待判決" and not v2[i["判決人"]]

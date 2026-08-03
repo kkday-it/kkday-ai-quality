@@ -17,9 +17,9 @@
 ```python
 from app.core.permissions import require_permission, permission_keys
 
+
 @router.post("/...")
-def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE))):
-    ...
+def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE))): ...
 ```
 
 多種敏感度共用同一端點（如 `POST /api/settings` 同時涵蓋日常操作與敏感連線變更）時，不套 `require_permission`

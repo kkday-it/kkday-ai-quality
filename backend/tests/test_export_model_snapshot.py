@@ -109,9 +109,9 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
     )
     assert len(rows) == 2  # S2 無 seed 快照 → 保留列（判定欄留白），不再整列排除
     by_id = {row[_col(headers, "rec_oid")]: row for row in rows}
-    assert not by_id["S2"][_col(headers, "L1 分類")]  # 未判 → 留白，不漏出 gpt 的內容
+    assert not by_id["S2"][_col(headers, "歸因分類")]  # 未判 → 留白，不漏出 gpt 的內容
     r = by_id["S1"]
-    assert r[_col(headers, "L1 分類")] == "供應商履約"  # 快照內容（非當前初判也非舊 gpt 初判）
+    assert r[_col(headers, "歸因分類")] == "C-3 供應商履約"  # 快照內容（非當前初判也非舊 gpt 初判）
     assert r[_col(headers, "問題摘要")] == "他模型觀點"
     assert r[_col(headers, "初判模型")] == "seed-2-0-lite"
     assert r[_col(headers, "情緒傾向")] == "4"  # row 級 our_sentiment 同步為快照 primary
@@ -187,7 +187,7 @@ def test_export_compare_models_side_by_side(temp_db) -> None:
         assert f"情緒·{m}" in headers and f"L1·{m}" in headers and f"L2·{m}" in headers
     by_id = {r[_col(headers, "rec_oid")]: r for r in rows}
     c1 = by_id["C1"]
-    assert c1[_col(headers, "L1 分類")] == "商品內容"  # 基準＝gpt 當前初判
+    assert c1[_col(headers, "歸因分類")] == "C-1 商品內容"  # 基準＝gpt 當前初判
     assert c1[_col(headers, "L1·seed-2-0-lite")] == "供應商履約"  # seed 最新快照
     assert c1[_col(headers, "情緒·seed-2-0-lite")] == "4"  # 正向 sentiment
     assert c1[_col(headers, "L1·gemini-flash")] == "理解期待"
