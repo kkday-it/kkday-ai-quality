@@ -7,7 +7,7 @@
 
 內容形態 {"pms": [str,...], "verticals": [str,...], "items": {bd_tag_code: {"note": str, "pm": str,
 "vertical": str}}}——`pms`/`verticals` 為獨立可配置選項池（設定頁下拉來源，各自可增刪，不隨 items
-增減自動變動）；`items` 一代碼對一組 PM+Vertical（非分組容器）。供 product_reviews 來源補算
+增減自動變動）；`items` 一代碼對一組 PM+Vertical（非分組容器）。供 reviews 來源補算
 vertical/PM 顯示欄，以及歸因列表商品垂直分類篩選展開代碼。即時讀 DB active 版本（存檔後不需手動
 reload），查無回空（呼叫端安全兜底，不中斷篩選）。
 """

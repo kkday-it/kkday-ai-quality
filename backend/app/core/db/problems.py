@@ -134,7 +134,7 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
     spec = source_registry.spec_for(src)
     canon = _srcmap.normalize_row(src, row) if src in _srcmap.sources() else {}
     source_id = row.get(spec.natural_key) if spec else canon.get("source_record_id")
-    # 商品名：product_reviews.order_snap_json（多語快照 JSON）/ conversations.product_name
+    # 商品名：reviews.order_snap_json（多語快照 JSON）/ conversations.product_name
     snap = row.get("order_snap_json")
     base = {
         "source_id": source_id,
@@ -175,19 +175,19 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "order_create_source_code": row.get("order_create_source_code"),
         "order_create_time": row.get("order_create_time"),
         "product_tz": row.get("product_tz"),
-        # vertical/PM：conversations 由 BQ 端預算好的字面值；product_reviews 無此欄，落 bd_tag
-        # 代碼後查 bd_tag_vertical 版本化規則 fallback（DB 版本化，可在配置抽屜編輯）
-        "vertical": row.get("vertical") or _bd_tag_vertical.vertical_for(row.get("bd_tag") or ""),
-        "bd_tag_cd": row.get("bd_tag_cd"),
-        "bd_tag": row.get("bd_tag"),
-        "bd_tag_note": row.get("bd_tag_note"),  # BD tag 中文說明（僅 product_reviews 有欄）
-        "PM": row.get("PM") or _bd_tag_vertical.pm_for(row.get("bd_tag") or ""),
+        # vertical/PM：conversations 由 BQ 端預算好的字面值；reviews 無此欄，落
+        # bd_tag_cd 代碼後查 bd_tag_vertical 版本化規則 fallback（DB 版本化，可在配置抽屜編輯）
+        "vertical": row.get("vertical")
+        or _bd_tag_vertical.vertical_for(row.get("bd_tag_cd") or ""),
+        "bd_tag_cd": row.get("bd_tag_cd"),  # BD 分工代碼（兩來源同名，篩選鍵）
+        "bd_tag": row.get("bd_tag"),  # BD tag 中文
+        "PM": row.get("PM") or _bd_tag_vertical.pm_for(row.get("bd_tag_cd") or ""),
         "cs_tag_oid": row.get("cs_tag_oid"),
         "cs_tag_name": row.get("cs_tag_name"),
         "user_message_count": row.get("user_message_count"),
         "traveller_type": canon.get("traveller_type"),
         "source_record_id": source_id,  # 評論ID（＝特徵 id）
-        # 外部評論融合欄（僅 product_reviews 有；輔助訊號——傾向/歸因以原文 LLM 判定為準）
+        # 外部評論融合欄（僅 reviews 有；輔助訊號——傾向/歸因以原文 LLM 判定為準）
         "ext_lst_oid": row.get("review_external_lst_oid"),
         "ext_sentiment": row.get("sentiment"),
         "ext_free_tag": _parse_free_tag(row.get("free_tag")),
@@ -335,7 +335,7 @@ def list_problems(
     （縱覽聚合走 attribution_overview/breakdown 的 attributions 直接聚合，非此列表）。
 
     Args:
-        source: 來源 code 過濾（product_reviews…）。
+        source: 來源 code 過濾（reviews…）。
         judged: True=僅已歸因 / False=僅未歸因 / None=全部。
         polarity: 傾向過濾（attributions.data.polarity）。
         stage: 初判階段多選（attributions.data.prejudge_stage；'unjudged'＝無初判，多值 OR）。
@@ -347,7 +347,7 @@ def list_problems(
         taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
         status: 判決狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
         model: 初判模型多選（attributions.model IN——當前初判維度；任一歸因命中即列出）。
-        has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 product_reviews 表有欄，其餘來源忽略）。
+        has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 reviews 表有欄，其餘來源忽略）。
         bucket: 進線分桶多選（conversations 專屬直欄；transferred/chatbot_only/human_supplier/
             human_kkday/human_other；其餘來源無此欄，忽略）。
 

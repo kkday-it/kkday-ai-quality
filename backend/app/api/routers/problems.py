@@ -64,9 +64,9 @@ def get_problems(
     confidence_tier（信心分層）為單值、taxonomy（歸因分類，任意層級 code 多選，l1/l2_code 任一 IN 命中＝子樹語義）為多值初判過濾。
     status（判決狀態 CSV 多選：new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
     model（初判模型 CSV 多選：attributions.model IN——當前初判維度）。
-    has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 product_reviews 生效）。
+    has_external：有無外部評論融合資料（true/false；缺省＝全部，僅 reviews 生效）。
     bucket（進線分桶 CSV 多選：conversations 專屬直欄，其餘來源忽略）。
-    date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 product_reviews）生效。
+    date_from/date_to 為 'YYYY-MM-DD' 區間（含端點）。星等/分類僅對有對應欄的來源（如 reviews）生效。
     rec_oid（評論 id，各來源表 natural_key）/prod_oid/order_oid 精確過濾；sort_by（occurred_at/score/go_date/confidence）+ sort_dir（asc/desc）動態排序，
     未指定或非白名單欄一律回退 occurred_at DESC；item_id tiebreaker（穩定·跨頁不變）。
     """
@@ -185,7 +185,7 @@ def get_attribution_overview(
     """歸因概覽聚合（概覽頁專用）：KPI + 傾向/L1域/信心分層/星等 分布 + 趨勢。
 
     可選 date_from/date_to（'YYYY-MM-DD' 區間，含端點）與 granularity（year|month|day，趨勢粒度）；
-    verticals（逗號串，全局商品垂直分類篩選；僅 product_reviews 生效）；
+    verticals（逗號串，全局商品垂直分類篩選；僅 reviews 生效）；
     model（逗號串，初判模型多選——當前初判維度，僅套初判級指標，total_intake 不受影響）。
     """
     return db.attribution_overview(

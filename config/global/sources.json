@@ -8,7 +8,7 @@
       "natural_key": "session_oid"
     },
     {
-      "value": "product_reviews",
+      "value": "reviews",
       "label": "商品評論",
       "hint": "商品評論 CSV/Excel",
       "natural_key": "rec_oid"

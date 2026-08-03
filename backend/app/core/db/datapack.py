@@ -42,7 +42,7 @@ FORMAT_VERSION = "1.0"
 # 本專案零 DB 級 ForeignKey（軟關聯），順序非硬性；仍固定一份 SSOT 供匯入/匯出共用、利審查。
 TABLE_LOAD_ORDER: tuple[str, ...] = (
     "settings",
-    "product_reviews",
+    "reviews",
     "conversations",
     "freshdesk_tickets",
     "app_feedback",

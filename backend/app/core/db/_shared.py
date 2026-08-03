@@ -204,7 +204,7 @@ def _vertical_scoped_spec(
     source: str | None, vertical: str | list[str] | None
 ) -> source_registry.SourceSpec | None:
     """歸因聚合（overview/breakdown）選表：source 命中拆表來源用其 spec；否則 source=None（縱覽全部）
-    但帶商品垂直分類篩選時，改走 conversations（product_reviews 與 conversations 現在都具 bd_tag_col，
+    但帶商品垂直分類篩選時，改走 conversations（reviews 與 conversations 現在都具 bd_tag_col，
     conversations 資料量較大且欄位齊全，維持原有單一來源 fallback 慣例）。
 
     有篩選時只統計「有 bd_tag 且落在所選 Vertical」的資料，無 bd_tag 來源（工單等）在有篩選時排除。
@@ -233,12 +233,12 @@ def apply_table_filters(
 
     僅含「來源表自身欄位」的條件；初判級條件（polarity/stage/tier/歸因分類）因兩端結構不同
     （列表用 EXISTS、目標選取用 join 分支）由各呼叫端自行套。語義逐條對齊 list_problems：
-    - vertical：Vertical 名稱經 bd_tag_vertical.codes_for_vertical 展開為 bd_tag 代碼，
-      直接對 spec.bd_tag_col 做 IN 比對（bd_tag 為扁平代碼欄，非 JSON，不需再 cast 抽 key）。
+    - vertical：Vertical 名稱經 bd_tag_vertical.codes_for_vertical 展開為 BD 分工代碼，
+      直接對 spec.bd_tag_col 做 IN 比對（bd_tag_cd 為扁平代碼欄，非 JSON，不需再 cast 抽 key）。
     - 日期：sargable 比較走 btree 索引；上界半開 `< date_to||'~'` 含當日整天。
       date_field='go_date' 且表有 go_date 用之，否則 spec.date_col。
     - rec_oid/prod_oid/order_oid：表有對應欄才生效。
-    - has_external：有無外部評論融合資料（僅有 review_external_lst_oid 欄的來源生效，如 product_reviews）。
+    - has_external：有無外部評論融合資料（僅有 review_external_lst_oid 欄的來源生效，如 reviews）。
     """
     from sqlalchemy import and_, or_
 
@@ -266,7 +266,7 @@ def apply_table_filters(
     # 有無外部評論：有 review_external_lst_oid 且有實際內容（sentiment 或 free_tag 非空）。與前端顯示一致
     # （v-if ext_sentiment || ext_free_tag.length）。未匹配列 upsert 後三欄皆空字串 ''（非 NULL），故
     # isnot(None) 不足——須同時排除 ''（free_tag 另排空陣列 '[]'/'null'），否則空字串列誤判為「有」。
-    # lst_oid 條件為語義防護（內容恆隨 lst_oid 而來，無孤兒內容列）。僅 product_reviews 有融合欄，餘忽略。
+    # lst_oid 條件為語義防護（內容恆隨 lst_oid 而來，無孤兒內容列）。僅 reviews 有融合欄，餘忽略。
     if has_external is not None and "review_external_lst_oid" in tbl.c:
         has_content = or_(
             and_(tbl.c["sentiment"].isnot(None), tbl.c["sentiment"] != ""),

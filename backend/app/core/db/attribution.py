@@ -54,7 +54,7 @@ def attribution_overview(
     glen = _GRAN_LEN.get(granularity, 7)
     _v_codes = _vertical_codes(vertical) if (spec is not None and spec.bd_tag_col) else []
     _ALL_TABLES = (
-        T.product_reviews,
+        T.reviews,
         T.conversations,
         T.freshdesk_tickets,
         T.app_feedback,

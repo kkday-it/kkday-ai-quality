@@ -1,6 +1,6 @@
 """反饋來源欄位映射（config/ai_judge/source_mapping.json 驅動）。
 
-5 來源（conversations/freshdesk_tickets/product_reviews/app_feedback/mixpanel_tracker）原始表頭
+5 來源（conversations/freshdesk_tickets/reviews/app_feedback/mixpanel_tracker）原始表頭
 天差地別；本模組以**外部化 SSOT** 提供三件事，供上傳流程與正規化共用（零硬編碼別名）：
   - detect_source(headers)：依 required_headers 指紋自動辨識上傳工作表屬哪個來源。
   - validate_headers(source, headers)：校驗必備欄是否齊全（缺則不可上傳）。

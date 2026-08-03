@@ -20,7 +20,7 @@
     },
     "sources": {
       "type": "object",
-      "description": "來源 code → 映射定義。key 即 canonical source 值（如 product_reviews）。",
+      "description": "來源 code → 映射定義。key 即 canonical source 值（如 reviews）。",
       "minProperties": 1,
       "additionalProperties": { "$ref": "#/$defs/sourceMapping" }
     }
@@ -46,7 +46,7 @@
         "const_fields": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "常數補值（無對應原始欄時）。如 product_reviews channel=\"review\"。"
+          "description": "常數補值（無對應原始欄時）。如 reviews channel=\"review\"。"
         },
         "merge_fields": {
           "type": "object",

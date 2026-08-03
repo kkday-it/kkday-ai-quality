@@ -30,7 +30,7 @@ def label_for(source: str) -> str:
     """來源 code → 中文顯示 label；未知 code 回傳原 code（不拋錯，供顯示層安全回退）。
 
     Args:
-        source: 來源 code（如 'product_reviews'）。
+        source: 來源 code（如 'reviews'）。
 
     Returns:
         中文 label（如 '商品評論'）；查無則原樣回傳 source。
@@ -40,7 +40,7 @@ def label_for(source: str) -> str:
 
 
 def natural_key(source: str) -> str | None:
-    """來源 code → 增量上傳 upsert 的自然唯一鍵欄名（如 product_reviews → 'rec_oid'）。
+    """來源 code → 增量上傳 upsert 的自然唯一鍵欄名（如 reviews → 'rec_oid'）。
 
     Args:
         source: 來源 code。

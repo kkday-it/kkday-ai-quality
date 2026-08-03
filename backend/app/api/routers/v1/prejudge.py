@@ -117,7 +117,7 @@ class PrejudgeIn(BaseModel):
     order_oid: str | None = None  # 訂單 OID（表級）
     confidence_tier: str | None = None  # 信心分層收斂（已初判分支；auto_accept/jury/needs_review）
     taxonomy: list[str] | None = None  # 歸因分類收斂（已初判分支；任意層級 code 多選，子樹語義）
-    has_external: bool | None = None  # 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews）
+    has_external: bool | None = None  # 有無外部評論融合資料（表級，兩分支皆套；僅 reviews）
     # 版本選擇功能：正式初判可指定 7 條 prompt 各自要用哪個歷史版本（預設沿用 active）。
     prompt_versions: dict[str, int] | None = None  # {rule_code: 版本號}
 

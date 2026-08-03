@@ -279,13 +279,13 @@ def prompt_id_of(arg: str) -> str:
 def _build_sandbox_item(source: str, source_id: str) -> dict:
     """單筆初判輸入 item 組裝：取原始資料 → normalize_row → canonical 欄位補齊。
 
-    比照 `prejudge_batch._work_one`——否則 `_text_of` 讀不到 product_reviews 的
+    比照 `prejudge_batch._work_one`——否則 `_text_of` 讀不到 reviews 的
     rec_title/rec_desc（在 rec_* 欄，非 content/comment）→ 判空文字。供沙盒測試
     （`prompt_sandbox.py`）呼叫。
 
     Args:
-        source: 來源 code（如 product_reviews）。
-        source_id: 該來源業務 id（product_reviews→rec_oid）。
+        source: 來源 code（如 reviews）。
+        source_id: 該來源業務 id（reviews→rec_oid）。
 
     Returns:
         item dict（含 content/prod_oid/order_oid/raw，供 `prejudge.to_findings`/`_text_of` 使用）。

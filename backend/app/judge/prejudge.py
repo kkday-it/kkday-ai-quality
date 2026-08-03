@@ -145,7 +145,7 @@ def _now_iso() -> str:
 def _text_of(item: dict) -> str:
     """取初判主輸入文字：優先 comment（app_feedback 源欄）/ content（canonical 主文），回退 raw 內常見文字欄。
 
-    有 canonical title（product_reviews rec_title / freshdesk subject）時前置「標題：」一行——
+    有 canonical title（reviews rec_title / freshdesk subject）時前置「標題：」一行——
     標題常單獨承載問題點（標題罵、內文短），一併送判並讓 evidence_quote 可自標題落地。
     """
     txt = (item.get("comment") or item.get("content") or "").strip()
@@ -325,7 +325,7 @@ def _base_kwargs(item: dict) -> dict:
     now = _now_iso()
     return {
         "finding_id": f"fd_{source}_{source_id}",  # 冪等：重新初判整組替換（見 db.replace_source_findings）
-        "ticket_id": source_id,  # ＝特徵 id（product_reviews→rec_oid…）
+        "ticket_id": source_id,  # ＝特徵 id（reviews→rec_oid…）
         "prod_oid": item.get("prod_oid", "") or "",
         "pkg_oid": item.get("pkg_oid", "") or "",
         "order_oid": item.get("order_oid", "") or "",

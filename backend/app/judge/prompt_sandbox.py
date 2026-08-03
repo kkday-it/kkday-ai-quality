@@ -68,7 +68,7 @@ def start(
     """啟動沙盒測試背景 job，立即回 job_id（前端輪詢 `get_job` 拿進度）。
 
     Args:
-        source: 來源 code（如 product_reviews）。
+        source: 來源 code（如 reviews）。
         item_ids: 受測 item 清單（scope=single 時長度 1）。選取筆數不設上限（使用者決策：大批量
             靠 `run_log` 既有 dropped 機制截斷 log，結果仍逐筆落庫）。
         prompt_ids: 使用者勾選的 prompt 子集（polarity / C-1..C-6）。

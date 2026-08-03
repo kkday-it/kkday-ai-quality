@@ -57,7 +57,7 @@
     "conversation_full"
    ]
   },
-  "product_reviews": {
+  "reviews": {
    "field_map": {
     "pkg_oid": "pkg_oid",
     "rec_oid": "source_record_id",

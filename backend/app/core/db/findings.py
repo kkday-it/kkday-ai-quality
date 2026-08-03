@@ -68,7 +68,7 @@ def replace_source_findings(
 
     Args:
         source: 來源 code。
-        source_id: 該來源列特徵 id（product_reviews→rec_oid…）。
+        source_id: 該來源列特徵 id（reviews→rec_oid…）。
         findings: 判決結果清單（to_findings 產出，≥1 筆）。
         params: 初判參數精餾快照（model；歷史去重比對鍵之一）。
         job_id: 批次任務 id（歷史關聯 prejudge_runs；直呼/測試可省略）。
