@@ -39,7 +39,7 @@ attributions = Table(
     Column("finding_id", Text, primary_key=True),
     # ── 來源複合鍵 (source, source_id)：關聯回來源表（source 定表、source_id 對該表特徵 id）──
     # 取代舊 item_id 複合字串（`{source}-{natural_id}`）。source_id 存特徵 id 原值
-    # （product_reviews→rec_oid / conversations→session_oid / freshdesk_tickets→id /
+    # （reviews→rec_oid / conversations→session_oid / freshdesk_tickets→id /
     #  app_feedback→oid / mixpanel_tracker→insert_id）。
     Column("source", Text),
     Column("source_id", Text),
@@ -95,43 +95,49 @@ attributions = Table(
 # ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────
 # 統一經 source_registry（table + natural_key）+ config/ai_judge/source_mapping.json（源欄→canonical）
 # 產出顯示層 canonical 欄（content/score/occurred_at…）。欄位一律 Text（忠實 raw；巢狀 JSON 於
-# _enrich 端解析，如 product_reviews.order_snap_json → prod_name）。
-product_reviews = Table(
-    "product_reviews",
+# _enrich 端解析，如 reviews.order_snap_json → prod_name）。
+# 欄序依 BQ 取數 SQL 的 27 欄輸出契約分組排列（雙主鍵 → 評論／訂單／商品／供應商），
+# 與 conversations 的分組風格一致，便於逐欄對照匯入檔。
+reviews = Table(
+    "reviews",
     metadata,
     Column("rec_oid", Text, primary_key=True),  # 特徵 id
-    Column("member_uuid", Text),
+    Column(
+        "review_external_lst_oid", Text
+    ),  # 外部評論號（評論系統 rec_oid 對橋回查鍵；無對應為 NULL）
+    # ── 評論資訊 ─────────────────────────────────────────────
     Column("create_date", Text),  # canonical occurred_at
     Column("rec_title", Text),  # canonical title
     Column("rec_desc", Text),  # canonical content（初判主輸入）
     Column("rec_scores", Text),  # canonical score
     Column("traveller_type", Text),
-    Column("lang_code", Text),  # canonical lang
-    Column("prod_oid", Text),
-    Column("pkg_oid", Text),
-    Column("order_oid", Text),
-    Column("order_mid", Text),  # ⚠️ 會員 id（個資）
-    Column("supplier_oid", Text),
-    Column("order_snap_json", Text),  # 多語商品名快照 JSON（enrich 解析 prod_name/package_name）
-    Column("go_date", Text),  # canonical go_date（出發日；BQ 端已 DATE 轉型）
-    Column(
-        "review_external_lst_oid", Text
-    ),  # 外部評論號（評論系統 rec_oid 對橋回查鍵；無對應為 NULL）
+    Column("lang_code", Text),  # canonical lang（評論語系，非訂單語系）
     Column("sentiment", Text),  # 外部 LLM 情緒分 1-5（輔助訊號·傾向以原文判定為準）
     Column(
         "free_tag", Text
     ),  # 外部 LLM 面向標籤 JSON 字串 [{tag_name,tag_value,tag_list}]（輔助訊號）
+    Column("member_uuid", Text),
+    # ── 訂單資訊 ─────────────────────────────────────────────
+    Column("order_oid", Text),
+    Column("order_mid", Text),  # ⚠️ 會員 id（個資）
+    Column("order_create_time", Text),
     Column("order_lang", Text),
+    Column("go_date", Text),  # canonical go_date（出發日；BQ 端已 DATE 轉型）
     Column("order_price", Text),
     Column("order_profit", Text),
     Column("order_create_source_code", Text),
-    Column("order_create_time", Text),
+    # ── 商品資訊 ─────────────────────────────────────────────
+    Column("prod_oid", Text),
+    Column("pkg_oid", Text),
     Column("product_name", Text),
-    Column("bd_tag", Text),
-    Column("bd_tag_note", Text),
+    Column("order_snap_json", Text),  # 多語商品名快照 JSON（enrich 解析 prod_name/package_name）
+    Column("bd_tag_cd", Text),  # BD 分工代碼（商品垂直分類篩選鍵，見 bd_tag_vertical）
+    Column("bd_tag", Text),  # BD tag 中文
+    # ── 供應商資訊 ───────────────────────────────────────────
+    Column("supplier_oid", Text),
     Column("supplier_name", Text),  # canonical supplier_name
-    Index("idx_product_reviews_create_date", "create_date"),
-    Index("idx_product_reviews_prod_oid", "prod_oid"),
+    Index("idx_reviews_create_date", "create_date"),
+    Index("idx_reviews_prod_oid", "prod_oid"),
 )
 
 conversations = Table(
@@ -338,7 +344,7 @@ llm_usage = Table(
     Column("cached_tokens", Integer),  # prompt 中命中 prompt cache 的部分（折扣計價）
     Column("total_tokens", Integer),  # prompt + completion
     Column("cost_usd", Float),  # pricing.cost_usd 換算（含 cache 折扣）
-    Column("source", Text),  # 初判來源（product_reviews…；ad-hoc 呼叫可空）
+    Column("source", Text),  # 初判來源（reviews…；ad-hoc 呼叫可空）
     Column("source_id", Text),  # 該來源特徵 id（可空）
     Column("job_id", Text),  # 批次任務 id（單次呼叫為空）
     Column("created_at", DateTime(timezone=True), server_default=func.now()),  # 呼叫時間
@@ -360,7 +366,7 @@ prejudge_runs = Table(
     Column(
         "rejudge", Boolean
     ),  # 標的先前已有初判 → 重新初判（single/selected 查 attributions；batch 依 stages 含已初判階段）
-    Column("source", Text),  # 反饋來源 code（product_reviews…）
+    Column("source", Text),  # 反饋來源 code（reviews…）
     Column("model", Text),  # 主初判模型
     Column("params", JSONB),  # 發起參數快照（stages/verticals/傾向/信心上限…；item_ids 只留樣本）
     Column("status", Text, nullable=False),  # running/paused/cancelling → 終態 done/error/cancelled
@@ -388,7 +394,7 @@ attribution_history = Table(
     "attribution_history",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("source", Text, nullable=False),  # 反饋來源 code（product_reviews…）
+    Column("source", Text, nullable=False),  # 反饋來源 code（reviews…）
     Column("source_id", Text, nullable=False),  # 該來源特徵 id（評論級鍵）
     Column(
         "kind", Text, nullable=False
@@ -426,7 +432,7 @@ prompt_sandbox_runs = Table(
     "prompt_sandbox_runs",
     metadata,
     Column("run_id", Text, primary_key=True),  # psbx_* uuid4 hex
-    Column("source", Text, nullable=False),  # 來源 code（product_reviews…）
+    Column("source", Text, nullable=False),  # 來源 code（reviews…）
     Column(
         "scope", Text, nullable=False
     ),  # single（單列）/ selection（勾選多筆）/ all（依條件批量選取）

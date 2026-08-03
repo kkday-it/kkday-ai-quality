@@ -1,6 +1,6 @@
 """反饋來源 → 實體表 registry（來源選表 SSOT）。
 
-5 反饋來源皆已拆為獨立實體表（見 tables.py）：product_reviews / conversations /
+5 反饋來源皆已拆為獨立實體表（見 tables.py）：reviews / conversations /
 freshdesk_tickets / app_feedback / mixpanel_tracker，各以特徵 id 為 natural_key。
 本模組登記每個來源的 table + natural_key + score_col/bd_tag_col/date_col，供 db 子模組
 統一 spec 驅動查詢（source=None＝縱覽全部，走 attributions 直接聚合，非單表）。
@@ -30,16 +30,15 @@ class SourceSpec:
 # 5 反饋來源登記（value=source code → SourceSpec）。各表對齊源 schema、PK=特徵 id；
 # canonical 顯示欄映射走 config/ai_judge/source_mapping.json 的 field_map（源欄→canonical）。
 # score_col/bd_tag_col/date_col 為「該來源實際源欄名」（供 list score 篩選 / vertical 篩選 / 日期排序）。
-# ⚠️ bd_tag_col 兩表欄名不同：product_reviews 的代碼欄叫 bd_tag（bd_tag_note 才是文字），
-# conversations 的代碼欄叫 bd_tag_cd（bd_tag 才是文字）——BQ 端兩份查詢的匯出命名各自演進不同步，
-# 不可假設同名，見 review-fusion 與售前售後進線兩份 SQL 的欄位對照。
+# bd_tag_col 一律指向「代碼欄」bd_tag_cd（bd_tag 為中文文字，不作篩選鍵）——
+# reviews 與 conversations 兩份 BQ 取數 SQL 已統一此命名。
 _REGISTRY: dict[str, SourceSpec] = {
-    "product_reviews": SourceSpec(
-        source="product_reviews",
-        table=T.product_reviews,
+    "reviews": SourceSpec(
+        source="reviews",
+        table=T.reviews,
         natural_key="rec_oid",
         score_col="rec_scores",
-        bd_tag_col="bd_tag",
+        bd_tag_col="bd_tag_cd",
         date_col="create_date",
     ),
     "conversations": SourceSpec(
@@ -76,7 +75,7 @@ def spec_for(source: str | None) -> SourceSpec | None:
     """依來源 code 取其拆表規格；未拆表 / None / 未知來源一律回 None（呼叫端 fallback 舊邏輯）。
 
     Args:
-        source: 來源 code（如 'product_reviews'）；None 表示不限定來源。
+        source: 來源 code（如 'reviews'）；None 表示不限定來源。
 
     Returns:
         該來源的 SourceSpec；未命中回 None。
