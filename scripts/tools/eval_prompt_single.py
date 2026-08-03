@@ -44,7 +44,7 @@ from app.judge.prompt_eval import (  # noqa: E402  指標純函式 SSOT（後端
     compute_polarity_metrics,
 )
 
-_SOURCE = "product_reviews"
+_SOURCE = "reviews"
 
 
 # ─────────────────────────── prompt 對照 ───────────────────────────
@@ -72,7 +72,7 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
         rows = c.execute(
             text(
                 "SELECT rec_oid::text AS sid, coalesce(rec_title,'') AS t, coalesce(rec_desc,'') AS d "
-                "FROM product_reviews WHERE rec_oid::text = ANY(:ids)"
+                "FROM reviews WHERE rec_oid::text = ANY(:ids)"
             ),
             {"ids": ids},
         ).all()

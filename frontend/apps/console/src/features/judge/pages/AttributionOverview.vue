@@ -40,8 +40,8 @@ use([
   CanvasRenderer,
 ]);
 
-/** 有星等欄的來源（product_reviews=rec_scores / freshdesk=st_survey_rating / app_feedback=score）→ 才顯示星等分布。 */
-const SCORE_SOURCES = new Set(['product_reviews', 'freshdesk_tickets', 'app_feedback']);
+/** 有星等欄的來源（reviews=rec_scores / freshdesk=st_survey_rating / app_feedback=score）→ 才顯示星等分布。 */
+const SCORE_SOURCES = new Set(['reviews', 'freshdesk_tickets', 'app_feedback']);
 
 /** 單一檢視：key（＝source code 或 'overview'）/ source（undefined＝縱覽全部）/ 顯示名 / 有無星等。 */
 interface DashView {

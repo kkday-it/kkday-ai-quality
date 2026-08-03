@@ -36,7 +36,7 @@ def test_guard_stub_rejects_unconditionally(monkeypatch):
     """
     monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "")
     with pytest.raises(ValueError, match="stub"):
-        ps.start("product_reviews", ["r1"], ["polarity"], {"model": ""}, scope="single")
+        ps.start("reviews", ["r1"], ["polarity"], {"model": ""}, scope="single")
 
 
 def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
@@ -59,7 +59,7 @@ def test_start_run_and_persist_snapshot(temp_db, monkeypatch):
 
     eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
     job_id = ps.start(
-        "product_reviews",
+        "reviews",
         ["r1", "r2"],
         ["polarity"],
         eff,
@@ -95,13 +95,13 @@ def test_run_records_per_item_error_without_failing_whole_job(temp_db, monkeypat
 
     def _fake_classify(item, prompt_ids, model, *, versions=None, drafts=None):
         if item["source_id"] == "bad":
-            raise ValueError("找不到評論：product_reviews/bad")
+            raise ValueError("找不到評論：reviews/bad")
         return {"source_id": item["source_id"], "prompts": []}
 
     monkeypatch.setattr(prompt_eval, "sandbox_classify", _fake_classify)
 
     eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
-    job_id = ps.start("product_reviews", ["ok", "bad"], ["polarity"], eff, scope="selection")
+    job_id = ps.start("reviews", ["ok", "bad"], ["polarity"], eff, scope="selection")
     snap = _wait_done(job_id)
 
     assert snap["status"] == "done"
@@ -119,7 +119,7 @@ def test_start_versions_unknown_rule_code_fails_fast(monkeypatch):
     monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
     with pytest.raises(ValueError, match="未知 rule_code"):
         ps.start(
-            "product_reviews",
+            "reviews",
             ["r1"],
             ["polarity"],
             {"model": "gpt-5-mini"},
@@ -133,7 +133,7 @@ def test_start_versions_nonexistent_version_fails_fast(temp_db, monkeypatch):
     monkeypatch.setattr(app_settings, "resolve_provider_token", lambda eff: "sk-fake")
     with pytest.raises(ValueError, match="無版本"):
         ps.start(
-            "product_reviews",
+            "reviews",
             ["r1"],
             ["polarity"],
             {"model": "gpt-5-mini"},
@@ -162,7 +162,7 @@ def test_start_versions_thread_through_to_sandbox_classify_and_persist(temp_db, 
 
     eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
     job_id = ps.start(
-        "product_reviews",
+        "reviews",
         ["r1"],
         ["polarity"],
         eff,
@@ -192,7 +192,7 @@ def test_no_versions_persists_empty_dict(temp_db, monkeypatch):
         },
     )
     eff = {"token": "sk-fake", "model": "gpt-5-mini", "base_url": ""}
-    job_id = ps.start("product_reviews", ["r1"], ["polarity"], eff, scope="single")
+    job_id = ps.start("reviews", ["r1"], ["polarity"], eff, scope="single")
     snap = _wait_done(job_id)
     detail = core_db.sandbox_run_detail(snap["run_id"])
     assert detail["versions"] == {}

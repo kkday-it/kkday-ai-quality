@@ -8,29 +8,30 @@ from app.core.db import source_registry
 from app.core.db import tables as T
 
 
-def test_spec_for_product_reviews_returns_correct_spec() -> None:
-    """已註冊來源（product_reviews）回傳正確 SourceSpec（表物件 + 自然鍵 + 語意欄名）。"""
-    spec = source_registry.spec_for("product_reviews")
+def test_spec_for_reviews_returns_correct_spec() -> None:
+    """已註冊來源（reviews）回傳正確 SourceSpec（表物件 + 自然鍵 + 語意欄名）。"""
+    spec = source_registry.spec_for("reviews")
     assert spec is not None
-    assert spec.source == "product_reviews"
-    assert spec.table is T.product_reviews
+    assert spec.source == "reviews"
+    assert spec.table is T.reviews
     assert spec.natural_key == "rec_oid"
     assert spec.score_col == "rec_scores"
-    assert spec.bd_tag_col == "bd_tag"  # 商品垂直分類篩選改走 bd_tag 維度（2026-07-27）
+    assert spec.bd_tag_col == "bd_tag_cd"  # 篩選鍵一律指向代碼欄（bd_tag 為中文文字）
     assert spec.date_col == "create_date"
 
 
-def test_spec_for_conversations_bd_tag_col_differs_from_product_reviews() -> None:
-    """conversations 的代碼欄叫 bd_tag_cd（非 bd_tag）——兩表命名不同，不可假設同名。"""
-    spec = source_registry.spec_for("conversations")
-    assert spec is not None
-    assert spec.bd_tag_col == "bd_tag_cd"
+def test_bd_tag_col_is_code_column_across_sources() -> None:
+    """兩來源的 bd_tag_col 皆為 bd_tag_cd（代碼欄）——BQ 取數 SQL 已統一命名，不可誤指向中文欄。"""
+    for source in ("reviews", "conversations"):
+        spec = source_registry.spec_for(source)
+        assert spec is not None
+        assert spec.bd_tag_col == "bd_tag_cd", source
 
 
 @pytest.mark.parametrize(
     ("source", "natural_key"),
     [
-        ("product_reviews", "rec_oid"),
+        ("reviews", "rec_oid"),
         ("conversations", "session_oid"),
         ("freshdesk_tickets", "id"),
         ("app_feedback", "oid"),

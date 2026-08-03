@@ -50,7 +50,7 @@ const mk = (
   opts: { selected?: string[]; verticals?: string[]; filters?: Record<string, unknown> } = {},
 ) =>
   usePrejudgeJob({
-    source: () => 'product_reviews',
+    source: () => 'reviews',
     llmOverrides: computed(() => ({ provider: 'openai', model: 'gpt-5-nano' })),
     effVerticals: computed(() => opts.verticals),
     selectedKeys: ref(opts.selected ?? []),
@@ -126,7 +126,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
       expect.objectContaining({
         within_ids: ['x', 'y'],
         scope: 'all',
-        source: 'product_reviews',
+        source: 'reviews',
         overrides: { provider: 'openai', model: 'gpt-5-nano' },
       }),
     );
@@ -141,7 +141,7 @@ describe('usePrejudgeJob doRun body 建構', () => {
     await vi.waitFor(() => expect(startPrejudgeMock).toHaveBeenCalledTimes(1));
     const body = startPrejudgeMock.mock.calls[0][0];
     expect(body).toMatchObject({
-      source: 'product_reviews',
+      source: 'reviews',
       scope: 'all',
       verticals: ['Tour'],
       stages: ['unjudged'],

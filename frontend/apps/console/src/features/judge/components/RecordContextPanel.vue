@@ -57,6 +57,10 @@ const cell = (v: unknown): string => {
   }
   return s;
 };
+
+/** BD TAG 顯示文字：代碼在前、中文在後（`0006 · 行程｜郊區行程`）；缺任一邊只顯示有值那個。 */
+const bdTagText = (r: ProblemRow): string =>
+  [r.bd_tag_cd, r.bd_tag].filter(Boolean).map(String).join(' · ') || '—';
 </script>
 
 <template>
@@ -143,23 +147,17 @@ const cell = (v: unknown): string => {
       <div v-if="record.supplier_name" class="font-medium">{{ record.supplier_name }}</div>
       <div class="text-xs text-[var(--color-text-2)]">OID: {{ cell(record.supplier_oid) }}</div>
     </a-descriptions-item>
-    <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值）-->
+    <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，reviews 與 conversations 皆有值）-->
     <a-descriptions-item
-      v-if="
-        hasSection('org') &&
-        (record.vertical || record.bd_tag || record.bd_tag_cd || record.bd_tag_note || record.PM)
-      "
+      v-if="hasSection('org') && (record.vertical || record.bd_tag || record.bd_tag_cd || record.PM)"
       label="組織分工"
     >
       <div v-if="record.vertical" class="mb-1">
         <a-tag size="small" color="cyan">{{ record.vertical }}</a-tag>
       </div>
-      <div
-        v-if="record.bd_tag || record.bd_tag_cd || record.bd_tag_note"
-        class="text-xs text-[var(--color-text-2)]"
-      >
-        BD TAG: {{ cell(record.bd_tag) }}（{{ cell(record.bd_tag_cd) }}）
-        {{ cell(record.bd_tag_note) }}
+      <!-- bd_tag_cd＝代碼、bd_tag＝中文（兩來源同名，見 db/source_registry）-->
+      <div v-if="record.bd_tag || record.bd_tag_cd" class="text-xs text-[var(--color-text-2)]">
+        BD TAG: {{ bdTagText(record) }}
       </div>
       <div v-if="record.PM" class="text-xs text-[var(--color-text-2)]">PM: {{ record.PM }}</div>
     </a-descriptions-item>
@@ -203,7 +201,7 @@ const cell = (v: unknown): string => {
           OID: {{ cell(record.order_oid) }} · 出發:
           {{ fmtDt(record.go_date, true) || '—' }}
         </div>
-        <!-- 訂單目前狀態（conversations 專屬）/ 金額 / 建立來源（product_reviews 亦有欄；
+        <!-- 訂單目前狀態（conversations 專屬）/ 金額 / 建立來源（reviews 亦有欄；
              其餘來源皆無值，恆不顯示）-->
         <div
           v-if="record.order_status_now || record.order_price || record.order_create_source_code"
@@ -297,7 +295,7 @@ const cell = (v: unknown): string => {
         >
       </div>
     </div>
-    <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，product_reviews 與 conversations 皆有值，
+    <!-- 組織分工：垂直分類／BD TAG／PM（bd_tag_vertical 系統，reviews 與 conversations 皆有值，
          獨立於上方「進線」段之外的共用段落） -->
     <div v-if="hasSection('org')" class="flex gap-1.5">
       <span v-if="showLabels" :class="SECTION_LABEL_CLASS">組織分工</span>
@@ -305,12 +303,15 @@ const cell = (v: unknown): string => {
         <div v-if="record.vertical" class="flex flex-wrap items-center gap-1.5">
           <a-tag size="small" color="cyan">{{ record.vertical }}</a-tag>
         </div>
-        <div v-if="record.bd_tag" class="text-[var(--color-text-2)]">
-          BD TAG: {{ record.bd_tag
-          }}<template v-if="record.bd_tag_note"> · {{ record.bd_tag_note }}</template>
+        <div v-if="record.bd_tag || record.bd_tag_cd" class="text-[var(--color-text-2)]">
+          BD TAG: {{ bdTagText(record) }}
         </div>
         <div v-if="record.PM" class="text-[var(--color-text-2)]">PM: {{ record.PM }}</div>
-        <span v-if="!record.vertical && !record.bd_tag && !record.PM" class="text-gray-300">—</span>
+        <span
+          v-if="!record.vertical && !record.bd_tag && !record.bd_tag_cd && !record.PM"
+          class="text-gray-300"
+          >—</span
+        >
       </div>
     </div>
     <!-- 旅客 -->

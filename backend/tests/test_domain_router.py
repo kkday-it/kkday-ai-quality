@@ -140,7 +140,7 @@ def test_report_shadow_swallows_db_errors(router_env, monkeypatch) -> None:
     monkeypatch.setattr(T, "get_engine", _boom)
     d = domain_router.RouterDecision(pids=["01_C-1_content"], shadow=True, probs={"content": 0.9})
     domain_router.report_shadow(  # 不應拋出
-        d, [{"l1_domain_code": "supplier"}], source="product_reviews", source_id="X"
+        d, [{"l1_domain_code": "supplier"}], source="reviews", source_id="X"
     )
 
 

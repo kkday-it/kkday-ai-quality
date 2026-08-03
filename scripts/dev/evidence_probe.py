@@ -71,7 +71,7 @@ def run_single(order_oid: str) -> int:
 def _pick_target_order_oids(limit: int) -> list[str]:
     """從 app DB 取壓測標的：負向（優先）+ 中立補足的 Tour 垂直評論 order_oid（近期優先）。
 
-    與歸因列表同源條件（attributions.is_primary × product_reviews），確保壓測母體＝
+    與歸因列表同源條件（attributions.is_primary × reviews），確保壓測母體＝
     真實判決會取佐證的訂單集合。
     """
     from sqlalchemy import text
@@ -81,9 +81,9 @@ def _pick_target_order_oids(limit: int) -> list[str]:
     sql = text(
         """
         SELECT pr.order_oid, a.polarity
-        FROM product_reviews pr
+        FROM reviews pr
         JOIN attributions a
-          ON a.source = 'product_reviews' AND a.source_id = pr.rec_oid AND a.is_primary = true
+          ON a.source = 'reviews' AND a.source_id = pr.rec_oid AND a.is_primary = true
         WHERE a.polarity IN ('negative', 'neutral')
           AND pr.order_oid IS NOT NULL AND pr.order_oid <> ''
         ORDER BY (a.polarity = 'negative') DESC, pr.create_date DESC

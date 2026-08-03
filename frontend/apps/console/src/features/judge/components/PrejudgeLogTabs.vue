@@ -146,7 +146,7 @@ interface FindingDigest {
 const findingsOf = (e: LogEntry): FindingDigest[] =>
   Array.isArray(e.data?.findings) ? (e.data?.findings as FindingDigest[]) : [];
 
-/** 「開始初判」entry 的原文標題（source-schema `title`；評論類來源如 product_reviews 才有值）。 */
+/** 「開始初判」entry 的原文標題（source-schema `title`；評論類來源如 reviews 才有值）。 */
 const titleOf = (e: LogEntry): string => String(e.data?.title || '');
 
 /** 「開始初判」entry 的內容輪次：依來源 schema contentMode（conversations＝dialogue）解析 [ROLE]:

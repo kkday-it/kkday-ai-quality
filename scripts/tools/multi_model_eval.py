@@ -4,10 +4,10 @@
 用於比較不同 LLM（字節 / Gemini / Claude…）在同一評測集上的初判準確率。唯讀配方（to_findings
 收集、ThreadPool+copy_context 繼承 LLM 配置、cache_read=False、stub 拒跑），特點：
 ① 額外收集 sentiment_score（情緒分準確度用）② 以 --config-id 明確選某一 LLM 配置切換模型
-③ 評測集為「有外部 free_tag ground truth 且已初判」的 product_reviews（供對比外部評論系統）。
+③ 評測集為「有外部 free_tag ground truth 且已初判」的 reviews（供對比外部評論系統）。
 
 兩模式：
-- --build-set：建評測集 JSON（免 token）。預設該週有外部 free_tag 且已初判的 product_reviews。
+- --build-set：建評測集 JSON（免 token）。預設該週有外部 free_tag 且已初判的 reviews。
 - --run --config-id <id>：以該配置逐則重新初判評測集，收集每則 sentiment/polarity/歸因。
 
 用法（backend venv）：
@@ -40,24 +40,24 @@ from app.core.config import env  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
 from app.judge.llm import client  # noqa: E402
 
-_SOURCE = "product_reviews"
+_SOURCE = "reviews"
 _FETCH_CHUNK = 200
 
 
 def _build_evalset(date_from: str, date_to: str, judged_only: bool) -> list[dict]:
-    """建評測集：該日期窗內有外部 free_tag ground truth（可選：且已初判）的 product_reviews。
+    """建評測集：該日期窗內有外部 free_tag ground truth（可選：且已初判）的 reviews。
 
     每則收集對比所需 ground truth：星等（rec_scores，用戶真實評分）、外部 sentiment、外部 free_tag。
     完整源列於 run 階段以 get_items_by_ids 依 rec_oid 取回（供 to_findings normalize）。
     """
     join = (
-        "JOIN attributions j ON j.source='product_reviews' AND j.source_id=pr.rec_oid"
+        "JOIN attributions j ON j.source='reviews' AND j.source_id=pr.rec_oid"
         if judged_only
         else ""
     )
     q = (
         "SELECT DISTINCT pr.rec_oid, pr.rec_scores, pr.sentiment, pr.free_tag "
-        f"FROM product_reviews pr {join} "
+        f"FROM reviews pr {join} "
         "WHERE pr.free_tag IS NOT NULL AND pr.free_tag NOT IN ('','[]','null') "
         "AND pr.create_date >= :df AND pr.create_date < :dt "
         "ORDER BY pr.rec_oid"

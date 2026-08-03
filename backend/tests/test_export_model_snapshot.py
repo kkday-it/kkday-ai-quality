@@ -35,7 +35,7 @@ def _finding(
     summary: str = "頁面資訊與現場不符",
 ) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_product_reviews_{rec_oid}__{l1_code}",
+        finding_id=f"fd_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity=polarity,
@@ -65,10 +65,10 @@ def _col(headers: list, name: str) -> int:
 
 def test_export_current_mode_status_and_model_columns(temp_db) -> None:
     """當前初判模式：「初判模型」「判決狀態」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
-    db.insert_source_batch("product_reviews", [_pr_row("E1")])
-    db.replace_source_findings("product_reviews", "E1", [_finding("E1", "gpt-5-mini")])
-    db.update_finding_status("fd_product_reviews_E1__content", "confirmed", actor="qa@kkday.com")
-    headers, rows = _cells(db.export_problems_xlsx(source="product_reviews"))
+    db.insert_source_batch("reviews", [_pr_row("E1")])
+    db.replace_source_findings("reviews", "E1", [_finding("E1", "gpt-5-mini")])
+    db.update_finding_status("fd_reviews_E1__content", "confirmed", actor="qa@kkday.com")
+    headers, rows = _cells(db.export_problems_xlsx(source="reviews"))
     assert "初判模型" in headers and "判決狀態" in headers
     r = rows[0]
     assert r[_col(headers, "初判模型")] == "gpt-5-mini"
@@ -79,12 +79,12 @@ def test_export_system_verdict_by_is_localized(temp_db) -> None:
     """系統判決（G1 自動確認）留痕 verdict_by='system:auto_confirm'：導出「判決人」欄需中文化為
     「系統自動確認」（`_shared._VERDICT_BY_LABEL_ZH`），不得原樣輸出內部技術字串。人工判決仍原樣
     顯示 email（見 test_export_current_mode_status_and_model_columns）。"""
-    db.insert_source_batch("product_reviews", [_pr_row("AC1")])
+    db.insert_source_batch("reviews", [_pr_row("AC1")])
     f = _finding("AC1", "gpt-5-mini")
     f.status = "auto_confirmed"
     f.verdict_by = "system:auto_confirm"
-    db.replace_source_findings("product_reviews", "AC1", [f])
-    headers, rows = _cells(db.export_problems_xlsx(source="product_reviews"))
+    db.replace_source_findings("reviews", "AC1", [f])
+    headers, rows = _cells(db.export_problems_xlsx(source="reviews"))
     r = rows[0]
     assert r[_col(headers, "判決狀態")] == "自動確認"
     assert r[_col(headers, "判決人")] == "系統自動確認"
@@ -92,20 +92,20 @@ def test_export_system_verdict_by_is_localized(temp_db) -> None:
 
 def test_export_snapshot_model_replaces_content(temp_db) -> None:
     """快照模式：內容/列傾向替換為所選模型快照；判決軸空白；無該模型快照的評論整列排除。"""
-    db.insert_source_batch("product_reviews", [_pr_row("S1"), _pr_row("S2")])
+    db.insert_source_batch("reviews", [_pr_row("S1"), _pr_row("S2")])
     # S1：先 gpt-5-mini 判 content/負向 → 再 seed 重新初判 supplier/正向（當前初判＝seed）
-    db.replace_source_findings("product_reviews", "S1", [_finding("S1", "gpt-5-mini")])
-    db.update_finding_status("fd_product_reviews_S1__content", "confirmed", actor="qa@kkday.com")
+    db.replace_source_findings("reviews", "S1", [_finding("S1", "gpt-5-mini")])
+    db.update_finding_status("fd_reviews_S1__content", "confirmed", actor="qa@kkday.com")
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "S1",
         [_finding("S1", "seed-2-0-lite", "supplier", "供應商履約", "positive", "他模型觀點")],
     )
     # S2：只有 gpt-5-mini 判過 → 選 seed 輸出時應被排除
-    db.replace_source_findings("product_reviews", "S2", [_finding("S2", "gpt-5-mini")])
+    db.replace_source_findings("reviews", "S2", [_finding("S2", "gpt-5-mini")])
 
     headers, rows = _cells(
-        db.export_problems_xlsx(source="product_reviews", snapshot_model="seed-2-0-lite")
+        db.export_problems_xlsx(source="reviews", snapshot_model="seed-2-0-lite")
     )
     assert len(rows) == 1  # S2 無 seed 快照 → 排除
     r = rows[0]
@@ -120,16 +120,14 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
 
 def test_export_snapshot_selects_that_models_view(temp_db) -> None:
     """快照模式選舊模型：輸出該模型當時判的內容（與當前初判不同），統計附註揭露口徑。"""
-    db.insert_source_batch("product_reviews", [_pr_row("S3")])
+    db.insert_source_batch("reviews", [_pr_row("S3")])
+    db.replace_source_findings("reviews", "S3", [_finding("S3", "gpt-5-mini", summary="gpt 觀點")])
     db.replace_source_findings(
-        "product_reviews", "S3", [_finding("S3", "gpt-5-mini", summary="gpt 觀點")]
-    )
-    db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "S3",
         [_finding("S3", "seed-2-0-lite", summary="seed 觀點")],
     )
-    blob = db.export_problems_xlsx(source="product_reviews", snapshot_model="gpt-5-mini")
+    blob = db.export_problems_xlsx(source="reviews", snapshot_model="gpt-5-mini")
     headers, rows = _cells(blob)
     assert rows[0][_col(headers, "問題摘要")] == "gpt 觀點"  # 舊模型快照，非當前初判（seed）
     # 統計表 A2 揭露輸出版本口徑
@@ -143,26 +141,24 @@ def test_export_compare_models_side_by_side(temp_db) -> None:
 
     用 2 個 compare model（總欄數 > 26）同時鎖住 _style_header 欄字母溢出修復（chr(64+i) → 'get_column_letter'）。
     """
-    db.insert_source_batch("product_reviews", [_pr_row("C1"), _pr_row("C2")])
+    db.insert_source_batch("reviews", [_pr_row("C1"), _pr_row("C2")])
     # C1：seed 判 supplier/正向、gemini 判 customer/負向，最後 gpt 判 content/負向（當前初判＝gpt）
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "C1",
         [_finding("C1", "seed-2-0-lite", "supplier", "供應商履約", "positive")],
     )
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "C1",
         [_finding("C1", "gemini-flash", "customer", "理解期待", "negative")],
     )
-    db.replace_source_findings("product_reviews", "C1", [_finding("C1", "gpt-5-mini")])
+    db.replace_source_findings("reviews", "C1", [_finding("C1", "gpt-5-mini")])
     # C2：只有 gpt 判過 → compare 欄該留空
-    db.replace_source_findings("product_reviews", "C2", [_finding("C2", "gpt-5-mini")])
+    db.replace_source_findings("reviews", "C2", [_finding("C2", "gpt-5-mini")])
 
     headers, rows = _cells(
-        db.export_problems_xlsx(
-            source="product_reviews", compare_models=["seed-2-0-lite", "gemini-flash"]
-        )
+        db.export_problems_xlsx(source="reviews", compare_models=["seed-2-0-lite", "gemini-flash"])
     )
     # 對比欄成組出現（情緒/L1/L2 × 2 模型）
     for m in ("seed-2-0-lite", "gemini-flash"):

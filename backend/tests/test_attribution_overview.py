@@ -25,7 +25,7 @@ def _finding(
     rec_oid: str, polarity: str, l1_code: str = "", l1_label: str = "", conf: float = 0.9
 ) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_product_reviews_{rec_oid}__{l1_code or 'none'}",
+        finding_id=f"fd_reviews_{rec_oid}__{l1_code or 'none'}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity=polarity,
@@ -41,7 +41,7 @@ def _finding(
 def _seed(temp_db) -> None:
     """R1 負向content / R2 正向未歸因 / R3 負向supplier（皆 6 月）+ R4 負向content（7 月·出區間）。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             _pr("R1", "2026-06-10 08:30:00"),
             _pr("R2", "2026-06-15 09:00:00"),
@@ -49,24 +49,18 @@ def _seed(temp_db) -> None:
             _pr("R4", "2026-07-05 00:00:00"),  # 隔月·應被日期區間排除
         ],
     )
+    db.replace_source_findings("reviews", "R1", [_finding("R1", "negative", "content", "商品內容")])
+    db.replace_source_findings("reviews", "R2", [_finding("R2", "positive")])
     db.replace_source_findings(
-        "product_reviews", "R1", [_finding("R1", "negative", "content", "商品內容")]
+        "reviews", "R3", [_finding("R3", "negative", "supplier", "供應商履約", 0.6)]
     )
-    db.replace_source_findings("product_reviews", "R2", [_finding("R2", "positive")])
-    db.replace_source_findings(
-        "product_reviews", "R3", [_finding("R3", "negative", "supplier", "供應商履約", 0.6)]
-    )
-    db.replace_source_findings(
-        "product_reviews", "R4", [_finding("R4", "negative", "content", "商品內容")]
-    )
+    db.replace_source_findings("reviews", "R4", [_finding("R4", "negative", "content", "商品內容")])
 
 
 def test_attribution_overview_kpi_and_distributions(temp_db) -> None:
     """6 月區間：total_intake/judged/attributed KPI + 傾向 / L1 分布正確（R4 因日期排除）。"""
     _seed(temp_db)
-    ov = db.attribution_overview(
-        source="product_reviews", date_from="2026-06-01", date_to="2026-06-30"
-    )
+    ov = db.attribution_overview(source="reviews", date_from="2026-06-01", date_to="2026-06-30")
     assert ov["total_intake"] == 3  # R1/R2/R3（R4 隔月排除）
     assert ov["judged"] == 3  # 皆有 finding
     assert ov["attributed"] == 2  # R1 content + R3 supplier（R2 正向無 l1）
@@ -79,9 +73,7 @@ def test_attribution_overview_kpi_and_distributions(temp_db) -> None:
 def test_attribution_overview_date_upper_bound_includes_full_day(temp_db) -> None:
     """上界含當日整天：date_to=2026-06-20 仍納入 R3（'…20 23:00'），排除隔月 R4（Phase 1 sargable 語義）。"""
     _seed(temp_db)
-    ov = db.attribution_overview(
-        source="product_reviews", date_from="2026-06-20", date_to="2026-06-20"
-    )
+    ov = db.attribution_overview(source="reviews", date_from="2026-06-20", date_to="2026-06-20")
     assert ov["total_intake"] == 1  # 僅 R3（當日有時間分量仍入選）
     assert ov["attributed"] == 1
     assert {r["code"] for r in ov["by_l1"]} == {"supplier"}
@@ -92,11 +84,11 @@ def test_attribution_overview_model_filter_source_branch(temp_db) -> None:
     _seed(temp_db)
     # R1/R2 用預設空 model；改 R3 為另一模型（重新初判快照語義：attributions.model=當前初判模型）
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "R3",
         [
             TicketFinding(
-                finding_id="fd_product_reviews_R3__supplier",
+                finding_id="fd_reviews_R3__supplier",
                 ticket_id="R3",
                 recommended_action="no_action",
                 polarity="negative",
@@ -110,7 +102,7 @@ def test_attribution_overview_model_filter_source_branch(temp_db) -> None:
             )
         ],
     )
-    ov = db.attribution_overview(source="product_reviews", model=["seed-2-0-lite"])
+    ov = db.attribution_overview(source="reviews", model=["seed-2-0-lite"])
     assert ov["total_intake"] == 4  # 進線數不受 model 篩選影響
     assert ov["judged"] == 1 and ov["attributed"] == 1  # 僅 R3
     assert {r["code"] for r in ov["by_l1"]} == {"supplier"}
@@ -120,11 +112,11 @@ def test_attribution_overview_model_filter_all_sources_branch(temp_db) -> None:
     """model 篩選（縱覽 branch，source=None）：attributions 直接聚合也吃 model 條件。"""
     _seed(temp_db)
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "R1",
         [
             TicketFinding(
-                finding_id="fd_product_reviews_R1__content",
+                finding_id="fd_reviews_R1__content",
                 ticket_id="R1",
                 recommended_action="no_action",
                 polarity="negative",
@@ -146,5 +138,5 @@ def test_attribution_overview_model_filter_all_sources_branch(temp_db) -> None:
 def test_attribution_breakdown_model_filter(temp_db) -> None:
     """breakdown 的 model 篩選經 extra 統一套用。"""
     _seed(temp_db)
-    ov = db.attribution_breakdown(source="product_reviews", l1="content", model=["nonexistent"])
+    ov = db.attribution_breakdown(source="reviews", l1="content", model=["nonexistent"])
     assert ov["by_l2"] == []  # 無該模型初判 → 空分布

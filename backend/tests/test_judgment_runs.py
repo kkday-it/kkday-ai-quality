@@ -8,7 +8,7 @@ def _run_row(job_id="pj_test01", kind="batch", **over):
         "job_id": job_id,
         "kind": kind,
         "rejudge": False,
-        "source": "product_reviews",
+        "source": "reviews",
         "model": "gpt-5-mini",
         "ensemble_voters": 0,
         "params": {"scope": "all", "item_ids_count": 3},
@@ -48,7 +48,7 @@ def test_run_lifecycle_and_list(temp_db) -> None:
 
 def test_list_source_filter_and_paging(temp_db) -> None:
     """source 篩選 + limit/offset 分頁。"""
-    db.insert_prejudge_run(_run_row(job_id="pj_a", source="product_reviews"))
+    db.insert_prejudge_run(_run_row(job_id="pj_a", source="reviews"))
     db.insert_prejudge_run(_run_row(job_id="pj_b", source="conversations", kind="single"))
     assert db.list_prejudge_runs(source="conversations")["total"] == 1
     assert db.list_prejudge_runs(limit=1)["total"] == 2
@@ -70,7 +70,7 @@ def test_detail_aggregates_llm_usage_by_stage(temp_db) -> None:
                 "cached_tokens": 0,
                 "total_tokens": 110,
                 "cost_usd": 0.001,
-                "source": "product_reviews",
+                "source": "reviews",
                 "source_id": "R1",
                 "job_id": "pj_det",
             },
@@ -84,7 +84,7 @@ def test_detail_aggregates_llm_usage_by_stage(temp_db) -> None:
                 "cached_tokens": 3000,
                 "total_tokens": 4500,
                 "cost_usd": 0.02,
-                "source": "product_reviews",
+                "source": "reviews",
                 "source_id": "R1",
                 "job_id": "pj_det",
             },
@@ -99,7 +99,7 @@ def test_detail_aggregates_llm_usage_by_stage(temp_db) -> None:
                 "cached_tokens": 0,
                 "total_tokens": 2,
                 "cost_usd": 0.9,
-                "source": "product_reviews",
+                "source": "reviews",
                 "source_id": "R2",
                 "job_id": "pj_other",
             },
@@ -120,7 +120,7 @@ def test_any_judged_detects_rejudge(temp_db) -> None:
     from app.core.schema import TicketFinding
 
     f = TicketFinding(
-        finding_id="fd_product_reviews_R9",
+        finding_id="fd_reviews_R9",
         ticket_id="R9",
         recommended_action="no_action",
         polarity="negative",
@@ -130,9 +130,9 @@ def test_any_judged_detects_rejudge(temp_db) -> None:
         prejudge_stage="judged",
         model_used="stub",
     )
-    db.replace_source_findings("product_reviews", "R9", [f])
-    assert db.any_judged("product_reviews", ["R9", "R404"]) is True
-    assert db.any_judged("product_reviews", ["R404"]) is False
+    db.replace_source_findings("reviews", "R9", [f])
+    assert db.any_judged("reviews", ["R9", "R404"]) is True
+    assert db.any_judged("reviews", ["R404"]) is False
     assert db.any_judged("conversations", ["R9"]) is False  # 跨來源不誤判
-    assert db.any_judged("product_reviews", []) is False
+    assert db.any_judged("reviews", []) is False
     assert db.any_judged(None, ["R9"]) is False

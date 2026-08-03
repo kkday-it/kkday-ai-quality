@@ -16,7 +16,7 @@
 ## 核心流程
 ```
 資料上傳（5 來源 xlsx/csv·自動辨識+校驗）
-  → 各來源專表（product_reviews / conversations / freshdesk_tickets / app_feedback / mixpanel_tracker）
+  → 各來源專表（reviews / conversations / freshdesk_tickets / app_feedback / mixpanel_tracker）
   → 初判歸因（prejudge：極性閘門 → 六域 prompt 並行判斷 → L1/L2 + 信心 + 初判階段）
   → attributions（1:N 多歸因：一則評論可判多條獨立歸因，各自一列）
   → 歸因列表 / 歸因概覽（KPI+漏斗+趨勢）/ 美化 xlsx 導出

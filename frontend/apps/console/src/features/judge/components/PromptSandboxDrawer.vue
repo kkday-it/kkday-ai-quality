@@ -52,7 +52,7 @@ import type { PrejudgeListFilters } from '../composables/usePrejudgeJob';
 const props = defineProps<{
   /** 是否顯示。 */
   visible: boolean;
-  /** 當前反饋來源 code（product_reviews…）。 */
+  /** 當前反饋來源 code（reviews…）。 */
   source: string;
   /** 觸發入口：single＝單列按鈕；all＝工具列批量（內建依條件目標選取，含「已選內」子模式）。 */
   scope: 'single' | 'all';

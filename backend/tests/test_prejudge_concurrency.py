@@ -159,7 +159,7 @@ def test_capped_source_ids_after_consecutive_failures(temp_db) -> None:
     from app.core.db import prejudge_targets as pt
     from app.core.db import tables as T
 
-    src = "product_reviews"
+    src = "reviews"
     base = datetime(2026, 7, 14, tzinfo=timezone.utc)
 
     def ev(sid: str, kind: str, minute: int) -> None:

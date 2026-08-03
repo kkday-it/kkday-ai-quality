@@ -17,7 +17,7 @@ export interface GetProblemsParams {
   dateFrom?: string;
   /** 日期區間迄（含，'YYYY-MM-DD'）。 */
   dateTo?: string;
-  /** 評論 rec_oid 精確過濾（product_reviews 評論 id；對應各來源表 natural_key）。 */
+  /** 評論 rec_oid 精確過濾（reviews 評論 id；對應各來源表 natural_key）。 */
   recOid?: string;
   /** 商品 prod_oid 精確過濾。 */
   prodOid?: string;
@@ -29,7 +29,7 @@ export interface GetProblemsParams {
   status?: string[];
   /** 初判模型過濾（多選；attributions.model IN——當前初判維度；CSV 傳後端）。 */
   model?: string[];
-  /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 product_reviews 生效）。 */
+  /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 reviews 生效）。 */
   hasExternal?: string;
   /** 歸因分類過濾（多選任意層級 code；後端 l1/l2_code 任一 IN 命中＝子樹語義）。 */
   taxonomy?: string[];
@@ -150,7 +150,7 @@ export interface PrejudgeBody {
   /** 初判級收斂（僅已初判分支）：信心分層 / 歸因分類（多選任意層級 code，子樹語義）。 */
   confidence_tier?: string;
   taxonomy?: string[];
-  /** 有無外部評論融合資料（表級，兩分支皆套；僅 product_reviews 生效）。 */
+  /** 有無外部評論融合資料（表級，兩分支皆套；僅 reviews 生效）。 */
   has_external?: boolean;
   /** 版本選擇功能：7 條 prompt 各自指定歷史版本（{rule_code: 版本號}；未指定沿用 active）。 */
   prompt_versions?: Record<string, number>;

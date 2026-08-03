@@ -90,11 +90,11 @@ def test_sandbox_start_rejects_bad_drafts(temp_db) -> None:
     eff = {"model": "m", "api_token": "t"}
     with pytest.raises(ValueError, match="未知 rule_code"):
         prompt_sandbox.start(
-            "product_reviews", ["x"], ["polarity"], eff, scope="single", drafts={"bogus": "md"}
+            "reviews", ["x"], ["polarity"], eff, scope="single", drafts={"bogus": "md"}
         )
     with pytest.raises(ValueError, match="草稿驗證不過"):
         prompt_sandbox.start(
-            "product_reviews",
+            "reviews",
             ["x"],
             ["polarity"],
             eff,
@@ -119,7 +119,7 @@ def test_sandbox_one_compare_shape(temp_db, monkeypatch) -> None:
         prompt_eval, "sandbox_classify", lambda item, pids, model, versions=None, drafts=None: fake
     )
     out = prompt_sandbox._one(
-        "product_reviews",
+        "reviews",
         "sid1",
         ["polarity"],
         "m",
@@ -132,7 +132,7 @@ def test_sandbox_one_compare_shape(temp_db, monkeypatch) -> None:
     assert "source_id" not in out["baseline"] and "text" not in out["draft"]
     # 單跑（compare=False）維持 sandbox_classify 原形狀
     out2 = prompt_sandbox._one(
-        "product_reviews", "sid1", ["polarity"], "m", versions=None, drafts=None, compare=False
+        "reviews", "sid1", ["polarity"], "m", versions=None, drafts=None, compare=False
     )
     assert out2 is fake
 
@@ -247,7 +247,7 @@ def test_runs_compare_keeps_error_items_out_of_metrics(temp_db) -> None:
 
     run_a = db.insert_sandbox_run(
         {
-            "source": "product_reviews",
+            "source": "reviews",
             "scope": "single",
             "item_ids": ["s1", "s2"],
             "prompt_ids": ["C-1"],
@@ -260,7 +260,7 @@ def test_runs_compare_keeps_error_items_out_of_metrics(temp_db) -> None:
     )
     run_b = db.insert_sandbox_run(
         {
-            "source": "product_reviews",
+            "source": "reviews",
             "scope": "single",
             "item_ids": ["s1", "s3"],
             "prompt_ids": ["C-1"],
@@ -296,7 +296,7 @@ def test_run_detail_compare_metrics(temp_db) -> None:
     }
     run_id = db.insert_sandbox_run(
         {
-            "source": "product_reviews",
+            "source": "reviews",
             "scope": "single",
             "item_ids": ["s1", "s2"],
             "prompt_ids": ["C-1"],

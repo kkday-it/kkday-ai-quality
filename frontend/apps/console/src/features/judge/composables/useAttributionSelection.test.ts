@@ -11,7 +11,7 @@ import { getProblems } from '@/api';
 import { useAttributionSelection } from './useAttributionSelection';
 
 const getProblemsMock = vi.mocked(getProblems);
-const filterQuery = () => ({ source: 'product_reviews' });
+const filterQuery = () => ({ source: 'reviews' });
 /** 建最小 ProblemRow（測試只用到 _group；其餘欄不影響選取邏輯）。 */
 const pr = (g: string): ProblemRow => ({ _group: g }) as unknown as ProblemRow;
 const mk = (pageSize = 20, rows: Partial<ProblemRow>[] = []) =>
@@ -55,7 +55,7 @@ describe('useAttributionSelection', () => {
     await sel.selectPages();
     expect([...sel.selectedKeys.value].sort()).toEqual(['a', 'b', 'c', 'd']);
     expect(getProblemsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ source: 'product_reviews', offset: 0, limit: 4 }),
+      expect.objectContaining({ source: 'reviews', offset: 0, limit: 4 }),
     );
   });
 

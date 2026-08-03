@@ -10,7 +10,7 @@ def _row(
     completion=40,
     cached=20,
     cost=0.01,
-    source="product_reviews",
+    source="reviews",
 ):
     return {
         "stage": stage,
@@ -57,7 +57,7 @@ def test_insert_and_overview_aggregation(temp_db) -> None:
     assert by_stage == {"polarity": 1, "attribute": 2}
 
     by_source = {r["key"]: r["calls"] for r in ov["by_source"]}
-    assert by_source == {"product_reviews": 2, "conversations": 1}
+    assert by_source == {"reviews": 2, "conversations": 1}
 
 
 def test_insert_single_row(temp_db) -> None:

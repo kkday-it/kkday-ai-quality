@@ -10,7 +10,7 @@ from app.core import db
 
 def _row(**overrides) -> dict:
     base = {
-        "source": "product_reviews",
+        "source": "reviews",
         "scope": "single",
         "item_ids": ["r1"],
         "prompt_ids": ["polarity", "C-1"],
@@ -31,7 +31,7 @@ def test_insert_and_get_detail(temp_db) -> None:
     assert run_id.startswith("psbx_")
     detail = db.sandbox_run_detail(run_id)
     assert detail is not None
-    assert detail["source"] == "product_reviews"
+    assert detail["source"] == "reviews"
     assert detail["scope"] == "single"
     assert detail["item_ids"] == ["r1"]
     assert detail["prompt_ids"] == ["polarity", "C-1"]

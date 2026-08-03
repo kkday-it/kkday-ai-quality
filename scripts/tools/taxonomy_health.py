@@ -234,7 +234,7 @@ def build_report(models: list[str], source: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--models", nargs="*", default=_DEFAULT_MODELS)
-    ap.add_argument("--source", default="product_reviews")
+    ap.add_argument("--source", default="reviews")
     ap.add_argument("--out", default="/app/data/reports/taxonomy_health.md")
     args = ap.parse_args()
 

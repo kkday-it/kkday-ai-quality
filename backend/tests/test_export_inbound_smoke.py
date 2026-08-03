@@ -1,6 +1,6 @@
 """db/export.py + routers/inbound.py 的 happy-path 補測（此前零覆蓋的兩塊）。
 
-export：seed 一列 product_reviews + 歸因 → 導出 xlsx bytes（PK 魔數 + openpyxl 可回讀）。
+export：seed 一列 reviews + 歸因 → 導出 xlsx bytes（PK 魔數 + openpyxl 可回讀）。
 inbound：GET /api/batches 清單 smoke（上傳批次登記面；multipart 上傳全流程另有手動驗證）。
 """
 
@@ -12,7 +12,7 @@ from app.core.schema import TicketFinding
 
 def _seed_one(temp_db) -> None:
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             {
                 "rec_oid": "R1",
@@ -25,11 +25,11 @@ def _seed_one(temp_db) -> None:
         ],
     )
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "R1",
         [
             TicketFinding(
-                finding_id="fd_product_reviews_R1__content",
+                finding_id="fd_reviews_R1__content",
                 ticket_id="R1",
                 recommended_action="rewrite_field",
                 polarity="negative",
@@ -51,7 +51,7 @@ def test_export_problems_xlsx_happy_path(temp_db) -> None:
     from openpyxl import load_workbook
 
     _seed_one(temp_db)
-    blob = db.export_problems_xlsx(source="product_reviews")
+    blob = db.export_problems_xlsx(source="reviews")
     assert isinstance(blob, bytes) and blob[:2] == b"PK"
     wb = load_workbook(io.BytesIO(blob))
     ws = wb.active

@@ -30,7 +30,7 @@ const openRunLog = (jobId: string) => {
 
 const props = defineProps<{
   visible: boolean;
-  /** 反饋來源 code（product_reviews…）。 */
+  /** 反饋來源 code（reviews…）。 */
   source: string;
   /** 目標評論列（取 _group＝source_id；null＝未選）。 */
   row: ProblemRow | null;

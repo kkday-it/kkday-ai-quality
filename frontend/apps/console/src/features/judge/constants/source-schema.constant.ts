@@ -156,13 +156,13 @@ export interface Attribution {
 
 /**
  * 歸因列表單列（`_enrich_problem` 回傳）。常用欄位具名、其餘走 index signature——
- * 各來源欄位集不同（product_reviews 有 score、conversations 無），故不列窮舉、以 `unknown` 保型別安全
+ * 各來源欄位集不同（reviews 有 score、conversations 無），故不列窮舉、以 `unknown` 保型別安全
  * （取代 any：動態欄位存取回 unknown，仍受檢查，勝過完全關閉的 any）。
  */
 export interface ProblemRow {
   item_id: string;
   polarity?: string; // 列級傾向（列樣式；歸因詳情走 attributions[]）
-  source_id?: string; // 該來源特徵 id（product_reviews→rec_oid…；選取/導出業務身分）
+  source_id?: string; // 該來源特徵 id（reviews→rec_oid…；選取/導出業務身分）
   // ── 一列一 review（後端 _paged_fanout 附）：多歸因收進 attributions 陣列，右側單欄堆疊呈現 ──
   _group?: string; // 該 review 的特徵 id（source_id；前端 rowKey / expand key）
   _seq?: number; // review 在本頁的序號（#seq 顯示）
@@ -216,17 +216,17 @@ const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
 ];
 
-/** 組某來源的篩選：共用集（+ product_reviews 專屬「有無外部評論」；+ conversations 專屬「分桶／商品垂直分類」）。 */
+/** 組某來源的篩選：共用集（+ reviews 專屬「有無外部評論」；+ conversations 專屬「分桶／商品垂直分類」）。 */
 function filtersFor(source: string): SourceFilterDef[] {
   const base = [...BASE_FILTERS];
-  // 有無外部評論：僅 product_reviews 有融合欄（sentiment/free_tag）
-  if (source === 'product_reviews') base.push({ type: 'hasExternal' });
+  // 有無外部評論：僅 reviews 有融合欄（sentiment/free_tag）
+  if (source === 'reviews') base.push({ type: 'hasExternal' });
   // 分桶：僅 conversations 有直欄
   if (source === 'conversations') base.push({ type: 'bucket' });
   return base;
 }
 
-/** 關聯資料欄預設段落（訂單→商品→方案→供應商→旅客；product_reviews 等評論形來源全段適用）。 */
+/** 關聯資料欄預設段落（訂單→商品→方案→供應商→旅客；reviews 等評論形來源全段適用）。 */
 const DEFAULT_CONTEXT_SECTIONS: ContextSection[] = [
   'order',
   'product',
@@ -243,9 +243,9 @@ const SOURCE_DISPLAY: Record<
     'contentLabel' | 'idNoun' | 'contentMode' | 'contextSections' | 'supplementSections'
   >
 > = {
-  // 'org'＝組織分工（vertical/BD TAG/PM，bd_tag 系統）：product_reviews 與 conversations 皆有值，
+  // 'org'＝組織分工（vertical/BD TAG/PM，bd_tag 系統）：reviews 與 conversations 皆有值，
   // 獨立於 'inbound'（bucket/行程階段/處理方/客服標籤/訊息數，conversations 專屬）之外的共用段落。
-  product_reviews: {
+  reviews: {
     contentLabel: '反饋內容',
     idNoun: '評論',
     contentMode: 'text',
@@ -298,7 +298,7 @@ const FALLBACK_DISPLAY: Pick<
 
 /** 5 反饋來源皆用統一複合欄 + 共用篩選；顯示差異（標籤/內容模式/關聯段落）依 SOURCE_DISPLAY。 */
 const _SOURCES = [
-  'product_reviews',
+  'reviews',
   'conversations',
   'freshdesk_tickets',
   'app_feedback',
@@ -333,7 +333,7 @@ export function schemaFor(source: string): SourceListSchema {
 
 /**
  * 精確查詢輸入框 placeholder（業務名詞 + 該來源 natural_key）：如
- * product_reviews→「評論 rec_oid 如 1,2,3」、conversations→「進線 session_oid 如 1,2,3」。
+ * reviews→「評論 rec_oid 如 1,2,3」、conversations→「進線 session_oid 如 1,2,3」。
  * 後端 rec_oid 參數實際按各來源 natural_key 查（_shared.py），placeholder 與之對齊避免誤導。
  * @param source 來源 code
  * @returns 該來源的 recOid 篩選 placeholder

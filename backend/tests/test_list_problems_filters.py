@@ -14,7 +14,7 @@ from app.core.schema import TicketFinding
 
 
 def _pr_row(rec_oid: str = "REC1", **overrides) -> dict:
-    """建一筆 product_reviews 源列（現行拆表 schema：源欄名、值皆 Text）。"""
+    """建一筆 reviews 源列（現行拆表 schema：源欄名、值皆 Text）。"""
     base = {
         "rec_oid": rec_oid,
         "member_uuid": "U1",
@@ -42,7 +42,7 @@ def _conv_row(session_oid: str = "SESS1", **overrides) -> dict:
         "session_oid": session_oid,
         "inbound_time": "2026-06-01 10:00:00",
         "conversation_full": "內容",
-        "bd_tag_cd": "0006",  # conversations 的代碼欄叫 bd_tag_cd（非 bd_tag，見 source_registry）
+        "bd_tag_cd": "0006",  # BD 分工代碼欄（兩來源同名，見 source_registry）
     }
     base.update(overrides)
     return base
@@ -68,24 +68,16 @@ def _seed_bd_tag_vertical(monkeypatch) -> None:
 
 def test_insert_source_batch_upsert_overwrites_and_preserves_count(temp_db) -> None:
     """同一 rec_oid 匯入兩次：第二次覆蓋第一次，總筆數不變（覆蓋非新增）。"""
-    db.insert_source_batch("product_reviews", [_pr_row(rec_desc="第一版", rec_scores="3")])
+    db.insert_source_batch("reviews", [_pr_row(rec_desc="第一版", rec_scores="3")])
     with T.get_engine().connect() as c:
-        row1 = (
-            c.execute(select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1"))
-            .mappings()
-            .first()
-        )
+        row1 = c.execute(select(T.reviews).where(T.reviews.c.rec_oid == "REC1")).mappings().first()
     assert row1["rec_desc"] == "第一版"
     assert row1["rec_scores"] == "3"
 
-    db.insert_source_batch("product_reviews", [_pr_row(rec_desc="第二版", rec_scores="5")])
+    db.insert_source_batch("reviews", [_pr_row(rec_desc="第二版", rec_scores="5")])
     with T.get_engine().connect() as c:
-        total = c.execute(select(T.product_reviews)).mappings().all()
-        row2 = (
-            c.execute(select(T.product_reviews).where(T.product_reviews.c.rec_oid == "REC1"))
-            .mappings()
-            .first()
-        )
+        total = c.execute(select(T.reviews)).mappings().all()
+        row2 = c.execute(select(T.reviews).where(T.reviews.c.rec_oid == "REC1")).mappings().first()
     assert len(total) == 1  # 總筆數不變（衝突鍵 rec_oid 覆蓋）
     assert row2["rec_desc"] == "第二版"
     assert row2["rec_scores"] == "5"
@@ -93,32 +85,30 @@ def test_insert_source_batch_upsert_overwrites_and_preserves_count(temp_db) -> N
 
 def test_insert_source_batch_empty_list_returns_zero(temp_db) -> None:
     """空清單直接回 0，不觸碰 DB。"""
-    assert db.insert_source_batch("product_reviews", []) == 0
+    assert db.insert_source_batch("reviews", []) == 0
 
 
-def test_list_problems_product_reviews_derives_vertical_pm_from_bd_tag(
-    temp_db, monkeypatch
-) -> None:
-    """product_reviews 無 BQ 端預算 vertical/PM，靠 bd_tag_vertical 版本化規則 fallback 補上。"""
+def test_list_problems_reviews_derives_vertical_pm_from_bd_tag(temp_db, monkeypatch) -> None:
+    """reviews 無 BQ 端預算 vertical/PM，靠 bd_tag_vertical 版本化規則 fallback 補上。"""
     _seed_bd_tag_vertical(monkeypatch)
-    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1", bd_tag="0006")])
-    result = db.list_problems(source="product_reviews")
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="R1", bd_tag_cd="0006")])
+    result = db.list_problems(source="reviews")
     row = result["rows"][0]
-    assert row["bd_tag"] == "0006"
+    assert row["bd_tag_cd"] == "0006"
     assert row["vertical"] == "Tour"
     assert row["PM"] == "Kiki"
 
 
 def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
-    """source='product_reviews' + taxonomy 篩選：任意層級 code（l1/l2/l3_code 任一 IN）子樹語義。"""
+    """source='reviews' + taxonomy 篩選：任意層級 code（l1/l2/l3_code 任一 IN）子樹語義。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [_pr_row(rec_oid="R1", rec_scores="5"), _pr_row(rec_oid="R2", rec_scores="2")],
     )
     # R1 判到 L2（l3 空）；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R1",
+            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
             polarity="negative",
@@ -127,35 +117,34 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
             l2_code="C-1-2",
             l2_label="行程資訊",
         ),
-        "product_reviews",
+        "reviews",
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R2",
+            finding_id="fd_reviews_R2",
             ticket_id="R2",
             recommended_action="no_action",
             polarity="negative",
             l1_domain_code="supplier",
             l1_label="供應商履約",
         ),
-        "product_reviews",
+        "reviews",
     )
     # L1 code 命中（子樹語義）
-    r = db.list_problems(source="product_reviews", taxonomy=["content"])
+    r = db.list_problems(source="reviews", taxonomy=["content"])
     assert r["total"] == 1 and r["rows"][0]["_group"] == "R1"
     # L2 code 命中
-    r = db.list_problems(source="product_reviews", taxonomy=["C-1-2"])
+    r = db.list_problems(source="reviews", taxonomy=["C-1-2"])
     assert r["total"] == 1 and r["rows"][0]["_group"] == "R1"
     # 多選 OR：兩域都中
-    r = db.list_problems(source="product_reviews", taxonomy=["content", "supplier"])
+    r = db.list_problems(source="reviews", taxonomy=["content", "supplier"])
     assert r["total"] == 2
 
 
 def test_list_problems_source_registry_vertical_filter(temp_db, monkeypatch) -> None:
     """source='conversations' + vertical='Tour'：依 bd_tag_vertical 規則展開 bd_tag_cd 代碼篩選。
 
-    2026-07-27 商品垂直分類全面改走 bd_tag 維度（取代舊制 CATEGORY_xxx 分組）；conversations 的
-    代碼欄叫 bd_tag_cd，product_reviews 叫 bd_tag，兩表欄名不同，此測試鎖 conversations 分支。
+    商品垂直分類走 BD 分工代碼維度；兩來源的代碼欄同名 bd_tag_cd，此測試鎖 conversations 分支。
     """
     _seed_bd_tag_vertical(monkeypatch)
     db.insert_source_batch(
@@ -171,54 +160,52 @@ def test_list_problems_source_registry_vertical_filter(temp_db, monkeypatch) -> 
 
 
 def test_list_problems_source_registry_date_range_filter(temp_db) -> None:
-    """source='product_reviews' + date_from/date_to：依 create_date 區間篩選（含端點）。"""
+    """source='reviews' + date_from/date_to：依 create_date 區間篩選（含端點）。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             _pr_row(rec_oid="R1", create_date="2026-05-01 10:00:00"),
             _pr_row(rec_oid="R2", create_date="2026-06-15 10:00:00"),
         ],
     )
-    result = db.list_problems(
-        source="product_reviews", date_from="2026-06-01", date_to="2026-06-30"
-    )
+    result = db.list_problems(source="reviews", date_from="2026-06-01", date_to="2026-06-30")
     assert result["total"] == 1
     assert result["rows"][0]["_group"] == "R2"
 
 
 def test_list_problems_source_registry_judged_filter(temp_db) -> None:
-    """source='product_reviews' + judged：僅回有 / 無對應 attributions 列者。"""
-    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
+    """source='reviews' + judged：僅回有 / 無對應 attributions 列者。"""
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R1",
-            ticket_id="R1",  # source_id（product_reviews→rec_oid）
+            finding_id="fd_reviews_R1",
+            ticket_id="R1",  # source_id（reviews→rec_oid）
             recommended_action="no_action",
         ),
-        "product_reviews",
+        "reviews",
     )
 
-    judged = db.list_problems(source="product_reviews", judged=True)
+    judged = db.list_problems(source="reviews", judged=True)
     assert judged["total"] == 1
     assert judged["rows"][0]["_group"] == "R1"
 
-    unjudged = db.list_problems(source="product_reviews", judged=False)
+    unjudged = db.list_problems(source="reviews", judged=False)
     assert unjudged["total"] == 1
     assert unjudged["rows"][0]["_group"] == "R2"
 
 
-def test_prejudge_target_ids_uses_registry_for_product_reviews(temp_db) -> None:
-    """prejudge_target_ids(source='product_reviews') 走專表 join，只回未初判 source_id。"""
-    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
+def test_prejudge_target_ids_uses_registry_for_reviews(temp_db) -> None:
+    """prejudge_target_ids(source='reviews') 走專表 join，只回未初判 source_id。"""
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R1",
+            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
         ),
-        "product_reviews",
+        "reviews",
     )
-    ids = db.prejudge_target_ids("product_reviews", stages=["unjudged"])
+    ids = db.prejudge_target_ids("reviews", stages=["unjudged"])
     assert ids == ["R2"]
 
 
@@ -229,33 +216,33 @@ def test_prejudge_target_ids_has_external_filter(temp_db) -> None:
     R3＝無融合資料（NULL）。驗證 True 只回 R1、False 回 R2+R3（與列表 SSOT apply_table_filters 同語義）。
     """
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
     )
     with T.get_engine().begin() as c:
         c.execute(
-            T.product_reviews.update()
-            .where(T.product_reviews.c.rec_oid == "R1")
+            T.reviews.update()
+            .where(T.reviews.c.rec_oid == "R1")
             .values(review_external_lst_oid="EX1", sentiment="4", free_tag='["服務"]')
         )
         c.execute(
-            T.product_reviews.update()
-            .where(T.product_reviews.c.rec_oid == "R2")
+            T.reviews.update()
+            .where(T.reviews.c.rec_oid == "R2")
             .values(review_external_lst_oid="", sentiment="", free_tag="")
         )
-    ids_has = db.prejudge_target_ids("product_reviews", stages=["unjudged"], has_external=True)
+    ids_has = db.prejudge_target_ids("reviews", stages=["unjudged"], has_external=True)
     assert set(ids_has) == {"R1"}
-    ids_no = db.prejudge_target_ids("product_reviews", stages=["unjudged"], has_external=False)
+    ids_no = db.prejudge_target_ids("reviews", stages=["unjudged"], has_external=False)
     assert set(ids_no) == {"R2", "R3"}
     # None＝不篩選：三列全回
-    ids_all = db.prejudge_target_ids("product_reviews", stages=["unjudged"])
+    ids_all = db.prejudge_target_ids("reviews", stages=["unjudged"])
     assert set(ids_all) == {"R1", "R2", "R3"}
 
 
-def test_get_items_by_ids_uses_registry_for_product_reviews(temp_db) -> None:
-    """get_items_by_ids(ids, source='product_reviews') 走專表，回傳列含源欄位（如 rec_scores）。"""
-    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1", rec_scores="4")])
-    rows = db.get_items_by_ids(["R1"], source="product_reviews")
+def test_get_items_by_ids_uses_registry_for_reviews(temp_db) -> None:
+    """get_items_by_ids(ids, source='reviews') 走專表，回傳列含源欄位（如 rec_scores）。"""
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="R1", rec_scores="4")])
+    rows = db.get_items_by_ids(["R1"], source="reviews")
     assert len(rows) == 1
     assert rows[0]["rec_scores"] == "4"
 
@@ -272,42 +259,38 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
     回歸鎖：_paged_fanout 外層 join attributions，confidence 排序子查詢若不指定 correlate 範圍，
     SQLAlchemy 會把子查詢的 attributions 也 auto-correlate 掉 → 「no FROM clauses」500。
     """
-    db.insert_source_batch("product_reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R1",
+            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
             confidence=0.3,
         ),
-        "product_reviews",
+        "reviews",
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R2",
+            finding_id="fd_reviews_R2",
             ticket_id="R2",
             recommended_action="no_action",
             confidence=0.9,
         ),
-        "product_reviews",
+        "reviews",
     )
 
-    asc = db.list_problems(
-        source="product_reviews", judged=True, sort_by="confidence", sort_dir="asc"
-    )
+    asc = db.list_problems(source="reviews", judged=True, sort_by="confidence", sort_dir="asc")
     assert asc["total"] == 2
     assert [r["_group"] for r in asc["rows"]] == ["R1", "R2"]  # 0.3 在前
 
-    desc = db.list_problems(
-        source="product_reviews", judged=True, sort_by="confidence", sort_dir="desc"
-    )
+    desc = db.list_problems(source="reviews", judged=True, sort_by="confidence", sort_dir="desc")
     assert [r["_group"] for r in desc["rows"]] == ["R2", "R1"]  # 0.9 在前
 
 
 def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
     """prejudge_target_ids 列表全維度篩選：表級（日期/prod_oid）兩分支皆套、初判級（tier/歸因分類）僅已初判分支。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             _pr_row(rec_oid="R1", rec_scores="1", create_date="2026-07-01 09:00:00"),
             _pr_row(rec_oid="R2", rec_scores="5", create_date="2026-06-01 09:00:00"),
@@ -317,7 +300,7 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
     # R3 已初判（負向 · pending_review · jury · content）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R3",
+            finding_id="fd_reviews_R3",
             ticket_id="R3",
             recommended_action="no_action",
             polarity="negative",
@@ -328,74 +311,64 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
             l1_domain_code="content",
             l1_label="商品內容",
         ),
-        "product_reviews",
+        "reviews",
     )
 
     # 未初判分支 + 日期區間：只 R1（R2 在區間外）
     assert db.prejudge_target_ids(
-        "product_reviews", stages=["unjudged"], date_from="2026-06-15", date_to="2026-07-01"
+        "reviews", stages=["unjudged"], date_from="2026-06-15", date_to="2026-07-01"
     ) == ["R1"]
     # 已初判分支 + 初判級收斂（tier/L1 命中）→ R3；tier 不符 → 空
     assert db.prejudge_target_ids(
-        "product_reviews",
+        "reviews",
         stages=["pending_review"],
         confidence_tier="jury",
         taxonomy=["content"],
     ) == ["R3"]
     assert (
-        db.prejudge_target_ids(
-            "product_reviews", stages=["pending_review"], confidence_tier="auto_accept"
-        )
+        db.prejudge_target_ids("reviews", stages=["pending_review"], confidence_tier="auto_accept")
         == []
     )
     # 已初判分支 + 表級 prod_oid：R3 有 P9
-    assert db.prejudge_target_ids("product_reviews", stages=["pending_review"], prod_oid="P9") == [
-        "R3"
-    ]
-    assert (
-        db.prejudge_target_ids("product_reviews", stages=["pending_review"], prod_oid="NOPE") == []
-    )
+    assert db.prejudge_target_ids("reviews", stages=["pending_review"], prod_oid="P9") == ["R3"]
+    assert db.prejudge_target_ids("reviews", stages=["pending_review"], prod_oid="NOPE") == []
 
 
 def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
     """within_ids 範圍收斂：目標選取僅在勾選列集合內（未初判/已初判分支皆套；空清單＝空範圍）。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
     )
     # R3 已初判（judged）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_R3",
+            finding_id="fd_reviews_R3",
             ticket_id="R3",
             recommended_action="no_action",
             prejudge_stage="judged",
         ),
-        "product_reviews",
+        "reviews",
     )
     # 未初判分支 + within {R1,R3} → 只 R1（R2 不在範圍、R3 已初判）
-    assert db.prejudge_target_ids(
-        "product_reviews", stages=["unjudged"], within_ids=["R1", "R3"]
-    ) == ["R1"]
+    assert db.prejudge_target_ids("reviews", stages=["unjudged"], within_ids=["R1", "R3"]) == ["R1"]
     # 全階段 + within {R1,R3} → R1+R3（整個勾選集合；R2 不在範圍）
     assert sorted(
-        db.prejudge_target_ids(
-            "product_reviews", stages=["unjudged", "judged"], within_ids=["R1", "R3"]
-        )
+        db.prejudge_target_ids("reviews", stages=["unjudged", "judged"], within_ids=["R1", "R3"])
     ) == ["R1", "R3"]
     # 空清單＝空範圍（非「不限」）
-    assert db.prejudge_target_ids("product_reviews", stages=["unjudged"], within_ids=[]) == []
+    assert db.prejudge_target_ids("reviews", stages=["unjudged"], within_ids=[]) == []
 
 
 def test_list_problems_model_filter(temp_db) -> None:
     """model 篩選（attributions.model IN——當前初判維度）：單選/多選命中、未命中排除。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [_pr_row(rec_oid="M1", rec_scores="2"), _pr_row(rec_oid="M2", rec_scores="1")],
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_M1",
+            finding_id="fd_reviews_M1",
             ticket_id="M1",
             recommended_action="no_action",
             polarity="negative",
@@ -403,11 +376,11 @@ def test_list_problems_model_filter(temp_db) -> None:
             l1_label="商品內容",
             model_used="gpt-5-mini",
         ),
-        "product_reviews",
+        "reviews",
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_product_reviews_M2",
+            finding_id="fd_reviews_M2",
             ticket_id="M2",
             recommended_action="no_action",
             polarity="negative",
@@ -415,13 +388,13 @@ def test_list_problems_model_filter(temp_db) -> None:
             l1_label="供應商履約",
             model_used="seed-2-0-lite",
         ),
-        "product_reviews",
+        "reviews",
     )
-    r = db.list_problems(source="product_reviews", model=["gpt-5-mini"])
+    r = db.list_problems(source="reviews", model=["gpt-5-mini"])
     assert r["total"] == 1 and r["rows"][0]["_group"] == "M1"
     # DTO 帶 model（列表 model 標籤資料源）
     assert r["rows"][0]["attributions"][0]["model"] == "gpt-5-mini"
-    r = db.list_problems(source="product_reviews", model=["gpt-5-mini", "seed-2-0-lite"])
+    r = db.list_problems(source="reviews", model=["gpt-5-mini", "seed-2-0-lite"])
     assert r["total"] == 2
-    r = db.list_problems(source="product_reviews", model=["nonexistent"])
+    r = db.list_problems(source="reviews", model=["nonexistent"])
     assert r["total"] == 0

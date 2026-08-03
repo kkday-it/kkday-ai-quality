@@ -28,7 +28,7 @@ def _pr_row(rec_oid: str) -> dict:
 
 def _finding(rec_oid: str, l1_code: str, l1_label: str) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_product_reviews_{rec_oid}__{l1_code}",
+        finding_id=f"fd_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity="negative",
@@ -57,14 +57,14 @@ def _sheet_cells(blob: bytes) -> tuple[list, list[list], list[str]]:
 
 def test_domain_columns_judged_vs_unjudged(temp_db) -> None:
     """已初判評論：命中域＝符合、其餘＝不符合；未初判評論：六欄全空白。"""
-    db.insert_source_batch("product_reviews", [_pr_row("D1"), _pr_row("D2")])
+    db.insert_source_batch("reviews", [_pr_row("D1"), _pr_row("D2")])
     # D1 判為 content + service 雙域；D2 完全未初判
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "D1",
         [_finding("D1", "content", "商品內容"), _finding("D1", "service", "客服營運")],
     )
-    headers, rows, _names = _sheet_cells(db.export_problems_xlsx(source="product_reviews"))
+    headers, rows, _names = _sheet_cells(db.export_problems_xlsx(source="reviews"))
     dom_idx = {h.split(" ")[0]: i for i, h in enumerate(headers) if str(h).startswith("C-")}
     assert set(dom_idx) == {"C-1", "C-2", "C-3", "C-4", "C-5", "C-6"}
     d1 = next(r for r in rows if r[0] == "D1")
@@ -77,9 +77,9 @@ def test_domain_columns_judged_vs_unjudged(temp_db) -> None:
 
 def test_stats_renamed_and_prompts_sheet_appended(temp_db) -> None:
     """工作表：資料表 →「分類統計」→「Prompts」；不得再出現舊名「歸因統計」。"""
-    db.insert_source_batch("product_reviews", [_pr_row("D3")])
-    db.replace_source_findings("product_reviews", "D3", [_finding("D3", "content", "商品內容")])
-    _h, _r, names = _sheet_cells(db.export_problems_xlsx(source="product_reviews"))
+    db.insert_source_batch("reviews", [_pr_row("D3")])
+    db.replace_source_findings("reviews", "D3", [_finding("D3", "content", "商品內容")])
+    _h, _r, names = _sheet_cells(db.export_problems_xlsx(source="reviews"))
     assert "分類統計" in names and "Prompts" in names
     assert "歸因統計" not in names
     assert names.index("分類統計") < names.index("Prompts")  # Prompts 於統計之後
@@ -90,9 +90,9 @@ def test_prompts_sheet_lists_all_seven_with_version(temp_db) -> None:
     內容全文非空（回退 prompts/*.md）。"""
     from app.judge import prompt_source
 
-    db.insert_source_batch("product_reviews", [_pr_row("D4")])
-    db.replace_source_findings("product_reviews", "D4", [_finding("D4", "content", "商品內容")])
-    wb = load_workbook(io.BytesIO(db.export_problems_xlsx(source="product_reviews")))
+    db.insert_source_batch("reviews", [_pr_row("D4")])
+    db.replace_source_findings("reviews", "D4", [_finding("D4", "content", "商品內容")])
+    wb = load_workbook(io.BytesIO(db.export_problems_xlsx(source="reviews")))
     ws = wb["Prompts"]
     rows = [list(r) for r in ws.iter_rows(values_only=True)][1:]
     assert [r[0] for r in rows] == list(prompt_source.PROMPT_IDS)  # 首欄＝prompt 檔名 id
@@ -108,8 +108,8 @@ def test_prompts_sheet_version_is_release_timestamp(temp_db) -> None:
     from app.core import paths
     from app.judge import prompt_source
 
-    db.insert_source_batch("product_reviews", [_pr_row("D5")])
-    db.replace_source_findings("product_reviews", "D5", [_finding("D5", "content", "商品內容")])
+    db.insert_source_batch("reviews", [_pr_row("D5")])
+    db.replace_source_findings("reviews", "D5", [_finding("D5", "content", "商品內容")])
     # seed 真實 md 為 active 版（假內容會使 structure() 的 DB-first 解析炸掉）
     md = (paths.PROMPTS_DIR / "01_C-1_content.md").read_text(encoding="utf-8")
     db.save_rule_version(
@@ -117,7 +117,7 @@ def test_prompts_sheet_version_is_release_timestamp(temp_db) -> None:
     )
     prompt_source.reload()  # 清解析快取，使 load 走 DB-first
     try:
-        wb = load_workbook(io.BytesIO(db.export_problems_xlsx(source="product_reviews")))
+        wb = load_workbook(io.BytesIO(db.export_problems_xlsx(source="reviews")))
         rows = [list(r) for r in wb["Prompts"].iter_rows(values_only=True)][1:]
         c1 = next(r for r in rows if r[0] == "01_C-1_content")
         assert re.fullmatch(r"v\d{14}", str(c1[2]))  # 發版時間戳，非 v1 流水號
@@ -133,7 +133,7 @@ def test_provenance_and_verdict_columns(temp_db) -> None:
     from app.core import paths
     from app.judge import prompt_source
 
-    db.insert_source_batch("product_reviews", [_pr_row("V1"), _pr_row("V2")])
+    db.insert_source_batch("reviews", [_pr_row("V1"), _pr_row("V2")])
     md = (paths.PROMPTS_DIR / "01_C-1_content.md").read_text(encoding="utf-8")
     pol_md = (paths.PROMPTS_DIR / "00_polarity.md").read_text(encoding="utf-8")
     saved = db.save_rule_version(
@@ -145,7 +145,7 @@ def test_provenance_and_verdict_columns(temp_db) -> None:
     prompt_source.reload()  # 清解析快取（load DB-first）
     try:
         db.replace_source_findings(
-            "product_reviews",
+            "reviews",
             "V1",
             [_finding("V1", "content", "商品內容")],
             params={
@@ -157,12 +157,10 @@ def test_provenance_and_verdict_columns(temp_db) -> None:
             },
         )
         # V2 初判但無版本快照（模擬機制上線前的舊紀錄）
-        db.replace_source_findings("product_reviews", "V2", [_finding("V2", "content", "商品內容")])
+        db.replace_source_findings("reviews", "V2", [_finding("V2", "content", "商品內容")])
         # V1 人工判決（確認）→ 判決組三欄有值
-        db.update_finding_status(
-            "fd_product_reviews_V1__content", "confirmed", actor="qa@kkday.com"
-        )
-        blob = db.export_problems_xlsx(source="product_reviews")
+        db.update_finding_status("fd_reviews_V1__content", "confirmed", actor="qa@kkday.com")
+        blob = db.export_problems_xlsx(source="reviews")
         headers, rows, names = _sheet_cells(blob)
         assert "說明" in names  # 第 4 張說明表
         i = {h: idx for idx, h in enumerate(headers)}

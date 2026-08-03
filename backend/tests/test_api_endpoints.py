@@ -87,9 +87,9 @@ def test_settings_gdrive_upload_folder_url_roundtrip(client, auth_headers) -> No
 
 # ── findings：狀態覆核 ──────────────────────────────────────
 def _seed_one_finding() -> str:
-    """種一筆 product_reviews 列 + 對應歸因，回 finding_id（供狀態端點成功路徑測試）。"""
+    """種一筆 reviews 列 + 對應歸因，回 finding_id（供狀態端點成功路徑測試）。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             {
                 "rec_oid": "R1",
@@ -99,9 +99,9 @@ def _seed_one_finding() -> str:
             }
         ],
     )
-    fid = "fd_product_reviews_R1__content"
+    fid = "fd_reviews_R1__content"
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "R1",
         [
             TicketFinding(
@@ -140,7 +140,7 @@ def test_patch_finding_status_rejects_invalid_value(client, auth_headers) -> Non
 
 # ── problems ──────────────────────────────────────────────────────
 def test_problems_list_contract(client, auth_headers) -> None:
-    r = client.get("/api/problems?source=product_reviews", headers=auth_headers)
+    r = client.get("/api/problems?source=reviews", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert set(body.keys()) == {"rows", "total"} and body["total"] == 0
@@ -149,13 +149,11 @@ def test_problems_list_contract(client, auth_headers) -> None:
 def test_problems_status_filter_and_model_in_dto(client, auth_headers) -> None:
     """status 篩選命中/未命中 + attribution DTO 帶 model/notes_count（列表 model 標籤資料源）。"""
     _seed_one_finding()
-    hit = client.get("/api/problems?source=product_reviews&status=new", headers=auth_headers).json()
+    hit = client.get("/api/problems?source=reviews&status=new", headers=auth_headers).json()
     assert hit["total"] == 1
     a = hit["rows"][0]["attributions"][0]
     assert "model" in a and a["notes_count"] == 0
-    miss = client.get(
-        "/api/problems?source=product_reviews&status=dismissed", headers=auth_headers
-    ).json()
+    miss = client.get("/api/problems?source=reviews&status=dismissed", headers=auth_headers).json()
     assert miss["total"] == 0
 
 
@@ -165,7 +163,7 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
     assert (
         client.patch(
             "/api/findings/batch/verdict",
-            json={"source": "product_reviews", "source_ids": [], "status": "confirmed"},
+            json={"source": "reviews", "source_ids": [], "status": "confirmed"},
             headers=auth_headers,
         ).status_code
         == 422
@@ -173,7 +171,7 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
     _seed_one_finding()
     r = client.patch(
         "/api/findings/batch/verdict",
-        json={"source": "product_reviews", "source_ids": ["R1"], "status": "confirmed"},
+        json={"source": "reviews", "source_ids": ["R1"], "status": "confirmed"},
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -185,20 +183,18 @@ def test_batch_status_endpoint(client, auth_headers) -> None:
 def test_attribution_history_endpoints(client, auth_headers) -> None:
     """歷史列表（初判事件）+ 評論級備註新增。"""
     _seed_one_finding()
-    r = client.get(
-        "/api/attribution-history?source=product_reviews&source_id=R1", headers=auth_headers
-    )
+    r = client.get("/api/attribution-history?source=reviews&source_id=R1", headers=auth_headers)
     assert r.status_code == 200
     events = r.json()
     assert len(events) == 1 and events[0]["kind"] == "prejudge"
     rn = client.post(
         "/api/attribution-history/notes",
-        json={"source": "product_reviews", "source_id": "R1", "content": "e2e 備註"},
+        json={"source": "reviews", "source_id": "R1", "content": "e2e 備註"},
         headers=auth_headers,
     )
     assert rn.status_code == 200 and rn.json()["kind"] == "note"
     events = client.get(
-        "/api/attribution-history?source=product_reviews&source_id=R1", headers=auth_headers
+        "/api/attribution-history?source=reviews&source_id=R1", headers=auth_headers
     ).json()
     assert [e["kind"] for e in events] == ["prejudge", "note"]  # 舊到新：初判先發生
 
@@ -211,7 +207,7 @@ def test_prompt_sandbox_start_rejects_stub_unconditionally(client, auth_headers,
     monkeypatch.setattr(config.env, "openai_api_key", "")
     r = client.post(
         "/api/v1/prejudge/prompt-sandbox",
-        json={"source": "product_reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
+        json={"source": "reviews", "item_ids": ["R1"], "prompt_ids": ["polarity"]},
         headers=auth_headers,
     )
     assert r.status_code == 400
@@ -223,7 +219,7 @@ def test_prompt_sandbox_count_item_ids_priority(client, auth_headers):
     r = client.post(
         "/api/v1/prejudge/prompt-sandbox/count",
         json={
-            "source": "product_reviews",
+            "source": "reviews",
             "item_ids": ["R1", "R2", "R3"],
             "prompt_ids": ["polarity"],
         },
@@ -237,7 +233,7 @@ def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
     """scope=all 時依 stages 目標選取（預設 unjudged）解析——與初判分類同一套 _resolve_target_ids，
     未落任何 finding 的列即命中，零改動重用 db.prejudge_target_ids。"""
     db.insert_source_batch(
-        "product_reviews",
+        "reviews",
         [
             {
                 "rec_oid": "SBX1",
@@ -249,7 +245,7 @@ def test_prompt_sandbox_count_resolves_scope_all(client, auth_headers):
     )
     r = client.post(
         "/api/v1/prejudge/prompt-sandbox/count",
-        json={"source": "product_reviews", "scope": "all", "prompt_ids": ["polarity"]},
+        json={"source": "reviews", "scope": "all", "prompt_ids": ["polarity"]},
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -267,7 +263,7 @@ def test_prompt_sandbox_runs_list_and_detail(client, auth_headers):
     """歷史列表/詳情端點直接讀已落庫的沙盒 run（不重跑 job，隔離驗證 GET 端點契約）。"""
     run_id = db.insert_sandbox_run(
         {
-            "source": "product_reviews",
+            "source": "reviews",
             "scope": "single",
             "item_ids": ["R1"],
             "prompt_ids": ["polarity", "C-1"],

@@ -90,7 +90,7 @@ def _to_attributions(
         l1_domain, l1_label, l2_code, l2_label = _norm_attr(a, l1_lab, l2_lab)
         out.append(
             {
-                "finding_id": f"fd_product_reviews_{sid}__{l1_domain}",
+                "finding_id": f"fd_reviews_{sid}__{l1_domain}",
                 "polarity": polarity,
                 "sentiment_score": sentiment,
                 "stage": "judged",
@@ -115,7 +115,7 @@ def main() -> int:
         help="要灌入的模型檔（相對 --dir）——僅專案已配置的 provider 模型（ByteDance/Gemini）；"
         "claude-fable-5 是 workflow 手動評測非配置 LLM，預設不灌（要對比可顯式加 claude_v4.json）",
     )
-    ap.add_argument("--source", default="product_reviews")
+    ap.add_argument("--source", default="reviews")
     ap.add_argument("--triggered-by", default="multimodel_backfill")
     ap.add_argument("--job-id", default="multimodel_v4_backfill")
     ap.add_argument("--dry-run", action="store_true", help="只統計不寫入")

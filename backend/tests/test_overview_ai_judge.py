@@ -12,7 +12,7 @@ from app.core.schema import TicketFinding
 
 def _finding(sid: str, l1_code: str, created_at: str, suffix: str = "") -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_product_reviews_{sid}{('__' + suffix) if suffix else ''}",
+        finding_id=f"fd_reviews_{sid}{('__' + suffix) if suffix else ''}",
         ticket_id=sid,
         recommended_action="no_action",
         polarity="negative" if l1_code else "positive",
@@ -29,17 +29,17 @@ def _finding(sid: str, l1_code: str, created_at: str, suffix: str = "") -> Ticke
 def _seed(temp_db) -> None:
     """6 月：A(content)/B(supplier)/C(non_issue)；7 月：D(content)/E(content+supplier 雙歸因)。"""
     db.replace_source_findings(
-        "product_reviews", "A", [_finding("A", "content", "2026-06-10T08:00:00", "content")]
+        "reviews", "A", [_finding("A", "content", "2026-06-10T08:00:00", "content")]
     )
     db.replace_source_findings(
-        "product_reviews", "B", [_finding("B", "supplier", "2026-06-11T08:00:00", "supplier")]
+        "reviews", "B", [_finding("B", "supplier", "2026-06-11T08:00:00", "supplier")]
     )
-    db.replace_source_findings("product_reviews", "C", [_finding("C", "", "2026-06-12T08:00:00")])
+    db.replace_source_findings("reviews", "C", [_finding("C", "", "2026-06-12T08:00:00")])
     db.replace_source_findings(
-        "product_reviews", "D", [_finding("D", "content", "2026-07-01T08:00:00", "content")]
+        "reviews", "D", [_finding("D", "content", "2026-07-01T08:00:00", "content")]
     )
     db.replace_source_findings(
-        "product_reviews",
+        "reviews",
         "E",
         [
             _finding("E", "content", "2026-07-02T08:00:00", "content"),

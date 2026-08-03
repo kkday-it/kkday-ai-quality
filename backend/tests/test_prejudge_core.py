@@ -95,7 +95,7 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     }
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [dict(attr)])
     fs = prejudge.to_findings(
-        {"source": "product_reviews", "source_id": "t1", "content": "整體很棒，只是船沒搭到"},
+        {"source": "reviews", "source_id": "t1", "content": "整體很棒，只是船沒搭到"},
         model="m",
     )
     assert len(fs) == 1 and fs[0].polarity == "neutral" and fs[0].l1_domain_code == "supplier"
@@ -103,7 +103,7 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
     # 混合中性但找不到具體問題點 → 純 non_issue（judged，非 pending_data）
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: [])
     fs = prejudge.to_findings(
-        {"source": "product_reviews", "source_id": "t2", "content": "整體很棒"}, model="m"
+        {"source": "reviews", "source_id": "t2", "content": "整體很棒"}, model="m"
     )
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and fs[0].prejudge_stage == "judged"
 
@@ -118,7 +118,7 @@ def test_to_findings_gate_excludes_neutral_when_config_negative_only(
     called = []
     monkeypatch.setattr(prejudge, "_resolve_attrs_multi", lambda *a, **k: called.append(1) or [])
     fs = prejudge.to_findings(
-        {"source": "product_reviews", "source_id": "t3", "content": "還行"}, model="m"
+        {"source": "reviews", "source_id": "t3", "content": "還行"}, model="m"
     )
     assert len(fs) == 1 and fs[0].l1_domain_code == "" and not called
 
@@ -180,7 +180,7 @@ def stub_engine(monkeypatch, fixed_config):
 
 
 def _item(rating: int | None, comment: str, **extra) -> dict:
-    base = {"source": "product_reviews", "source_id": "R1", "comment": comment, "prod_oid": "P1"}
+    base = {"source": "reviews", "source_id": "R1", "comment": comment, "prod_oid": "P1"}
     if rating is not None:
         base["rating"] = rating
     base.update(extra)
@@ -194,7 +194,7 @@ def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "positive"
     assert f.prejudge_stage == "judged"
-    assert f.finding_id == "fd_product_reviews_R1"
+    assert f.finding_id == "fd_reviews_R1"
 
 
 def test_to_findings_positive_non_issue(stub_engine) -> None:

@@ -74,12 +74,12 @@ _EFF = {"provider": "openai", "base_url": "", "model": "gpt-5-mini", "api_token"
 
 def test_start_job_runs_to_done(batch_env):
     """整批跑完：三筆全 ok、status=done、落庫每筆一次（(source, source_id) 對齊）。"""
-    job_id = pb.start_job(["r1", "r2", "r3"], dict(_EFF), "gpt-5-mini", source="product_reviews")
+    job_id = pb.start_job(["r1", "r2", "r3"], dict(_EFF), "gpt-5-mini", source="reviews")
     snap = _wait_status(job_id, {"done"})
     assert snap["total"] == 3 and snap["processed"] == 3
     assert snap["ok"] == 3 and snap["failed"] == 0
     assert sorted(sid for _, sid in batch_env["replaced"]) == ["r1", "r2", "r3"]
-    assert all(src == "product_reviews" for src, _ in batch_env["replaced"])
+    assert all(src == "reviews" for src, _ in batch_env["replaced"])
 
 
 def test_resolve_versions_used_merges_pinned_over_active(monkeypatch):
@@ -121,7 +121,7 @@ def test_start_job_writes_prompt_versions_into_history_params(batch_env, monkeyp
         ["r1"],
         dict(_EFF),
         "gpt-5-mini",
-        source="product_reviews",
+        source="reviews",
         prompt_versions={"prompt_C-1": 2},
     )
     _wait_status(job_id, {"done"})
@@ -138,7 +138,7 @@ def test_single_item_failure_isolated(batch_env, monkeypatch):
         return []
 
     monkeypatch.setattr(prejudge, "to_findings", boom)
-    job_id = pb.start_job(["a", "bad", "b"], dict(_EFF), "m", source="product_reviews")
+    job_id = pb.start_job(["a", "bad", "b"], dict(_EFF), "m", source="reviews")
     snap = _wait_status(job_id, {"done"})
     assert snap["ok"] == 2 and snap["failed"] == 1 and snap["processed"] == 3
 
@@ -185,7 +185,7 @@ def test_cancel_running_job_drains_to_cancelled(batch_env, monkeypatch):
         return []
 
     monkeypatch.setattr(prejudge, "to_findings", blocking)
-    job_id = pb.start_job([f"r{i}" for i in range(6)], dict(_EFF), "m", source="product_reviews")
+    job_id = pb.start_job([f"r{i}" for i in range(6)], dict(_EFF), "m", source="reviews")
     assert entered.wait(5)  # 確認至少一筆已在跑
     assert pb.cancel_job(job_id) is True
     release.set()  # 放行 in-flight，讓 drain 收斂
@@ -228,7 +228,7 @@ def test_copy_context_carries_settings_into_worker(batch_env, monkeypatch):
 
     monkeypatch.setattr(prejudge, "to_findings", capture)
     eff = {**_EFF, "model": "gpt-5.4", "api_token": "sk-ctx-test"}
-    job_id = pb.start_job(["r1", "r2"], eff, "gpt-5.4", source="product_reviews")
+    job_id = pb.start_job(["r1", "r2"], eff, "gpt-5.4", source="reviews")
     _wait_status(job_id, {"done"})
     assert len(seen) == 2
     for cur in seen:
@@ -245,7 +245,7 @@ def test_run_second_gate_blocks_stub_in_production(batch_env, monkeypatch):
 
     monkeypatch.setattr(pb, "is_production", lambda: True)
     monkeypatch.setattr(config.env, "openai_api_key", "")  # 斷開 env fallback，確保解不出 token
-    job_id = pb.start_job(["r1", "r2"], dict(_EFF), "gpt-5-mini", source="product_reviews")
+    job_id = pb.start_job(["r1", "r2"], dict(_EFF), "gpt-5-mini", source="reviews")
     snap = _wait_status(job_id, {"error"})
     assert snap["processed"] == 0
     assert batch_env["replaced"] == []  # 零筆落庫
@@ -255,6 +255,6 @@ def test_run_second_gate_passes_with_token_in_production(batch_env, monkeypatch)
     """正式環境有真 token（該配置自身 api_token）→ 防線放行、整批照跑。"""
     monkeypatch.setattr(pb, "is_production", lambda: True)
     eff = {**_EFF, "api_token": "sk-real"}
-    job_id = pb.start_job(["r1", "r2"], eff, "gpt-5-mini", source="product_reviews")
+    job_id = pb.start_job(["r1", "r2"], eff, "gpt-5-mini", source="reviews")
     snap = _wait_status(job_id, {"done"})
     assert snap["processed"] == 2

@@ -8,7 +8,7 @@
  *
  * 資料/篩選/選取/初判歸因/導出邏輯下沉 `useAttributionList`；欄位/篩選器與顯示差異化
  * （內容欄標籤/對話模式/關聯資料段落/精確查詢 placeholder）依來源讀 `SOURCE_LIST_SCHEMAS`：
- * product_reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
+ * reviews＝評論全文＋星等；conversations＝進線對話輪次（[ROLE]: 解析）＋進線屬性段。
  */
 import { PERM } from '@/api';
 import {
@@ -95,7 +95,7 @@ const openJudgmentHistory = (record: ProblemRow) => {
   historyOpen.value = true;
 };
 
-const source = ref('product_reviews');
+const source = ref('reviews');
 
 const {
   schema,
@@ -615,7 +615,7 @@ onMounted(init);
             </div>
           </div>
           <!-- ② 補充：supplementSections 段落（conversations 的進線屬性）+ 外部評論融合維度
-               （product_reviews）；共用單一外層標籤，內部各段不再各自帶標籤（showLabels=false），
+               （reviews）；共用單一外層標籤，內部各段不再各自帶標籤（showLabels=false），
                兩者皆無值的列整塊不顯示 -->
           <div
             v-if="hasSupplement(record)"
