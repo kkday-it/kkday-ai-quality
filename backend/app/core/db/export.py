@@ -11,6 +11,7 @@ export_stats.py）與「Prompts」工作表（初判 prompt active 版本快照�
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import timezone
 from typing import TYPE_CHECKING
@@ -119,6 +120,115 @@ _COL_GROUPS: dict[str, str] = {
 }
 
 
+# reviews 專屬版面：欄序＝BQ 取數 SQL 的 27 欄輸出契約（雙主鍵 + 評論/訂單/商品/供應商四分組）
+# + 尾附 AI 判決結果（沿用 _EXPORT_XLSX_COLS 的歸因級欄定義，非平行另寫一份）。
+# ⚠️ 表頭＝屬性名（SQL/DB 欄名），欄鍵＝_enrich_problem dto 鍵名，兩者不逐字相同：
+# rec_oid→source_id、review_external_lst_oid→ext_lst_oid、create_date→occurred_at、
+# rec_title→title、rec_desc→content、rec_scores→score、lang_code→lang、
+# sentiment→ext_sentiment、free_tag→ext_free_tag、product_name→prod_name
+# （皆走既有 canonical/衍生欄，避免重複另存一份 raw 別名）。
+# order_snap_json 不直出原始 JSON——改出其解析結果 package_name（方案名），對閱讀有意義。
+_REVIEW_EXPORT_COLS: list[tuple[str, str, int]] = [
+    ("rec_oid", "source_id", 14),
+    ("review_external_lst_oid", "ext_lst_oid", 14),
+    # ── 評論資訊 ──
+    ("create_date", "occurred_at", 18),
+    ("rec_title", "title", 22),
+    ("rec_desc", "content", 40),
+    ("rec_scores", "score", 10),
+    ("traveller_type", "traveller_type", 12),
+    ("lang_code", "lang", 10),
+    ("sentiment", "ext_sentiment", 10),
+    ("free_tag", "ext_free_tag", 20),
+    ("member_uuid", "member_uuid", 18),  # ⚠️ 個資
+    # ── 訂單資訊 ──
+    ("order_oid", "order_oid", 16),
+    ("order_mid", "order_mid", 16),
+    ("order_create_time", "order_create_time", 18),
+    ("order_lang", "order_lang", 10),
+    ("go_date", "go_date", 14),
+    ("order_price", "order_price", 12),
+    ("order_profit", "order_profit", 12),
+    ("order_create_source_code", "order_create_source_code", 14),
+    # ── 商品資訊 ──
+    ("prod_oid", "prod_oid", 12),
+    ("pkg_oid", "pkg_oid", 12),
+    ("product_name", "prod_name", 24),
+    ("package_name", "package_name", 24),
+    ("bd_tag_cd", "bd_tag_cd", 12),
+    ("bd_tag", "bd_tag", 14),
+    # ── 供應商資訊 ──
+    ("supplier_oid", "supplier_oid", 12),
+    ("supplier_name", "supplier_name", 16),
+] + [
+    c
+    for c in _EXPORT_XLSX_COLS
+    if c[1]
+    in {
+        "summary",
+        "our_sentiment",
+        "l1_label",
+        "l2_label",
+        "confidence",
+        "confidence_tier",
+        "prejudge_stage",
+        "model",
+        "prejudged_at",
+        "prompt_version",
+        "polarity_prompt_version",
+        "status",
+        "verdict_at",
+        "verdict_by",
+    }
+]
+
+# reviews 專屬版面的分組（雙主鍵留白獨立；AI 判決結果尾段沿用同一組標題）
+_REVIEW_COL_GROUPS: dict[str, str] = {
+    "source_id": "",
+    "ext_lst_oid": "",
+    "occurred_at": "評論資訊",
+    "title": "評論資訊",
+    "content": "評論資訊",
+    "score": "評論資訊",
+    "traveller_type": "評論資訊",
+    "lang": "評論資訊",
+    "ext_sentiment": "評論資訊",
+    "ext_free_tag": "評論資訊",
+    "member_uuid": "評論資訊",
+    "order_oid": "訂單資訊",
+    "order_mid": "訂單資訊",
+    "order_create_time": "訂單資訊",
+    "order_lang": "訂單資訊",
+    "go_date": "訂單資訊",
+    "order_price": "訂單資訊",
+    "order_profit": "訂單資訊",
+    "order_create_source_code": "訂單資訊",
+    "prod_oid": "商品資訊",
+    "pkg_oid": "商品資訊",
+    "prod_name": "商品資訊",
+    "package_name": "商品資訊",
+    "bd_tag_cd": "商品資訊",
+    "bd_tag": "商品資訊",
+    "supplier_oid": "供應商資訊",
+    "supplier_name": "供應商資訊",
+    # AI 判決結果尾段（與進線版面同組標題；此處直接列舉，避免引用尚未定義的 _CONV_COL_GROUPS）
+    "summary": "AI 判決結果",
+    "our_sentiment": "AI 判決結果",
+    "l1_label": "AI 判決結果",
+    "l2_label": "AI 判決結果",
+    "confidence": "AI 判決結果",
+    "confidence_tier": "AI 判決結果",
+    "prejudge_stage": "AI 判決結果",
+    "model": "AI 判決結果",
+    "prejudged_at": "AI 判決結果",
+    "prompt_version": "AI 判決結果",
+    "polarity_prompt_version": "AI 判決結果",
+    "status": "AI 判決結果",
+    "verdict_at": "AI 判決結果",
+    "verdict_by": "AI 判決結果",
+}
+
+
 def _group_of(key: str, groups: dict[str, str]) -> str:
     """欄位鍵 → 雙層表頭第一列群組標題。dom__/cmp__ 前綴（動態欄，見 `_domain_match_cols`/
     `_compare_cols`）依前綴判定；其餘查傳入的 groups 映射（通用來源＝`_COL_GROUPS`、
@@ -151,35 +261,39 @@ def _grouped_header_spans(
 # inbound_time→occurred_at、product_name→prod_name
 # （皆走既有 canonical/衍生欄，避免重複另存一份 raw 別名）、conversation_full→content。
 _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
-    ("進線編號", "source_id", 16),
-    ("分桶", "bucket", 14),
-    ("進線時間", "occurred_at", 20),
-    ("行程階段", "trip_stage", 14),
-    ("出發日差", "godate_diff", 10),
-    ("處理方", "msg_handler_bucket", 10),
-    ("會員 UUID", "member_uuid", 22),  # ⚠️ 個資
-    ("訂單編號", "order_oid", 16),
-    ("訂單號", "order_mid", 16),
-    ("訂單建立時間", "order_create_time", 20),
-    ("訂單目前狀態", "order_status_now", 14),
-    ("訂單語系", "order_lang", 10),
-    ("出發日", "go_date", 14),
-    ("訂單金額", "order_price", 12),
-    ("訂單利潤", "order_profit", 12),
-    ("訂單建立來源", "order_create_source_code", 14),
-    ("商品編號", "prod_oid", 12),
-    ("商品名稱", "prod_name", 28),
-    ("商品時區", "product_tz", 12),
-    ("商品垂直分類", "vertical", 12),
-    ("BD 標籤代碼", "bd_tag_cd", 12),
-    ("BD 標籤", "bd_tag", 16),
+    ("session_oid", "source_id", 16),
+    # ── 進線資訊 ──
+    ("bucket", "bucket", 14),
+    ("inbound_time", "occurred_at", 18),
+    ("trip_stage", "trip_stage", 14),
+    ("godate_diff", "godate_diff", 10),
+    ("msg_handler_bucket", "msg_handler_bucket", 12),
+    ("member_uuid", "member_uuid", 18),  # ⚠️ 個資
+    ("cs_tag_oid", "cs_tag_oid", 12),
+    ("cs_tag_name", "cs_tag_name", 14),
+    ("user_message_count", "user_message_count", 10),
+    ("conversation_full", "content", 40),
+    # ── 訂單資訊 ──
+    ("order_oid", "order_oid", 16),
+    ("order_mid", "order_mid", 16),
+    ("order_create_time", "order_create_time", 18),
+    ("order_status_now", "order_status_now", 14),
+    ("order_lang", "order_lang", 10),
+    ("go_date", "go_date", 14),
+    ("order_price", "order_price", 12),
+    ("order_profit", "order_profit", 12),
+    ("order_create_source_code", "order_create_source_code", 14),
+    # ── 商品資訊（vertical/PM 由 bd_tag_cd 經 bd_tag_vertical 規則派生，緊接 BD 欄）──
+    ("prod_oid", "prod_oid", 12),
+    ("product_name", "prod_name", 24),
+    ("product_tz", "product_tz", 12),
+    ("bd_tag_cd", "bd_tag_cd", 12),
+    ("bd_tag", "bd_tag", 14),
+    ("vertical", "vertical", 12),
     ("PM", "PM", 12),
-    ("供應商編號", "supplier_oid", 12),
-    ("供應商名稱", "supplier_name", 20),
-    ("客服標籤編號", "cs_tag_oid", 12),
-    ("客服標籤名稱", "cs_tag_name", 16),
-    ("旅客訊息數", "user_message_count", 10),
-    ("進線對話全文", "content", 48),
+    # ── 供應商資訊 ──
+    ("supplier_oid", "supplier_oid", 12),
+    ("supplier_name", "supplier_name", 16),
 ] + [
     c
     for c in _EXPORT_XLSX_COLS
@@ -205,13 +319,18 @@ _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
 # conversations 專屬版面的雙層表頭第一列分組（五分組 + AI 判決結果尾段）；與通用 `_COL_GROUPS`
 # 分開一份，因同名欄鍵（如 order_mid/go_date/prod_oid）在兩版面歸屬的群組標題不同，不可共用。
 _CONV_COL_GROUPS: dict[str, str] = {
-    "source_id": "進線資訊",
+    # 主鍵獨立欄：映射空字串 → _grouped_header_spans 自成一格、標題留白，不併入任何分組合併
+    "source_id": "",
     "bucket": "進線資訊",
     "occurred_at": "進線資訊",
     "trip_stage": "進線資訊",
     "godate_diff": "進線資訊",
     "msg_handler_bucket": "進線資訊",
-    "member_uuid": "訂單資訊",
+    "member_uuid": "進線資訊",
+    "cs_tag_oid": "進線資訊",
+    "cs_tag_name": "進線資訊",
+    "user_message_count": "進線資訊",
+    "content": "進線資訊",
     "order_oid": "訂單資訊",
     "order_mid": "訂單資訊",
     "order_create_time": "訂單資訊",
@@ -224,16 +343,12 @@ _CONV_COL_GROUPS: dict[str, str] = {
     "prod_oid": "商品資訊",
     "prod_name": "商品資訊",
     "product_tz": "商品資訊",
-    "vertical": "商品資訊",
     "bd_tag_cd": "商品資訊",
     "bd_tag": "商品資訊",
+    "vertical": "商品資訊",
     "PM": "商品資訊",
     "supplier_oid": "供應商資訊",
     "supplier_name": "供應商資訊",
-    "cs_tag_oid": "客服標籤對話",
-    "cs_tag_name": "客服標籤對話",
-    "user_message_count": "客服標籤對話",
-    "content": "客服標籤對話",
     "summary": "AI 判決結果",
     "our_sentiment": "AI 判決結果",
     "l1_label": "AI 判決結果",
@@ -248,6 +363,13 @@ _CONV_COL_GROUPS: dict[str, str] = {
     "status": "AI 判決結果",
     "verdict_at": "AI 判決結果",
     "verdict_by": "AI 判決結果",
+}
+
+# 各來源的導出版面：(欄定義, 分組映射, 凍結欄數)。凍結涵蓋「主鍵 + 首個資訊分組」整段，
+# 讓橫捲時識別欄與內容欄始終可見；未登記來源走通用版面（前 4 欄＝編號～評論內容）。
+_EXPORT_LAYOUTS: dict[str, tuple[list[tuple[str, str, int]], dict[str, str], int]] = {
+    "conversations": (_CONV_EXPORT_COLS, _CONV_COL_GROUPS, 11),
+    "reviews": (_REVIEW_EXPORT_COLS, _REVIEW_COL_GROUPS, 11),
 }
 
 
@@ -282,8 +404,16 @@ def _export_cell(key: str, value) -> str:
 
 
 def _xlsx_safe(value):
-    """xlsx 格值清洗：str 剔除 openpyxl 非法控制字元（否則 IllegalCharacterError）；非 str 原樣。"""
-    return _XLSX_ILLEGAL_RE.sub("", value) if isinstance(value, str) else value
+    """xlsx 格值清洗：list/dict 序列化為 JSON 字串、str 剔除 openpyxl 非法控制字元；其餘原樣。
+
+    巢狀值（如 ext_free_tag 是 _parse_free_tag 解析後的 list）直接寫入會讓 openpyxl 拋
+    `ValueError: Cannot convert [] to Excel`——xlsx 儲存格只接受標量，故在此統一攤平。
+    """
+    if isinstance(value, (list, dict)):
+        value = json.dumps(value, ensure_ascii=False) if value else ""
+    if isinstance(value, str):
+        return _XLSX_ILLEGAL_RE.sub("", value)
+    return value
 
 
 def _flat_attr(a: dict) -> dict:
@@ -482,28 +612,32 @@ def export_problems_xlsx(
         rows = [r for r in rows if r.get("_group") in idset]
     stats_note: str | None = None
     if snapshot_model:
-        # 輸出結果版本＝指定模型：內容替換為該模型最新歷史快照（該模型未初判過的評論整列排除），
-        # 並同步 row 級 polarity/our_sentiment——否則整列底色/情緒傾向欄仍是當前初判值，
-        # 與被替換的 L1/L2/摘要（快照值）自相矛盾。
+        # 輸出結果版本＝指定模型：內容替換為該模型最新歷史快照。
+        # 該模型沒判過的評論**保留資料列、判定欄留白**（不整列排除）——導出筆數因此與列表
+        # 總數一致，不會被誤讀成資料遺失，且能一眼看出該模型的覆蓋率。
+        # 兩種情況都要同步 row 級 polarity/our_sentiment：有快照時覆蓋為快照值、無快照時清空，
+        # 否則整列底色/情緒傾向欄殘留當前初判值，與空白（或被替換）的 L1/L2/摘要自相矛盾。
         from app.core.db.attribution_history import latest_snapshots
 
         snaps = latest_snapshots(source or "", snapshot_model)
-        matched = [r for r in rows if r.get("_group") in snaps]
-        stats_note = (
-            f"輸出結果版本＝{snapshot_model}；篩選命中 {len(rows)} 則，"
-            f"其中 {len(matched)} 則有該模型初判紀錄（已排除 {len(rows) - len(matched)} 則）"
-        )
-        rows = matched
+        hit = 0
         for r in rows:
-            adapted = [
-                _adapt_snapshot(a, snapshot_model) for a in snaps[r["_group"]]["attributions"]
-            ]
+            snap = snaps.get(r.get("_group"))
+            adapted = (
+                [_adapt_snapshot(a, snapshot_model) for a in snap["attributions"]] if snap else []
+            )
+            if snap:
+                hit += 1
             r["attributions"] = adapted
             primary = next(
                 (a for a in adapted if a.get("is_primary")), adapted[0] if adapted else None
             )
             r["polarity"] = primary.get("polarity") if primary else None
             r["our_sentiment"] = primary.get("sentiment_score") if primary else None
+        stats_note = (
+            f"輸出結果版本＝{snapshot_model}；篩選命中 {len(rows)} 則，"
+            f"其中 {hit} 則有該模型初判紀錄（其餘 {len(rows) - hit} 則判定欄留白）"
+        )
     # 並排對比模型：每模型一組 review 級欄（情緒/L1/L2）附在基準右側；值取該模型最新快照，
     # 逐 row 注入 `cmp__{model}__*` 鍵——鍵前綴不撞 _attr_keys，故 fan-out 迴圈自動當 review
     # 級處理（合併儲存格、參與行高），無須改動渲染主迴圈。
@@ -539,9 +673,11 @@ def export_problems_xlsx(
     if ctx is not None:
         ctx.report(0, total)  # 資料到手、開始組檔：告知前端總量（進度條由「準備中」轉實際百分比）
     # conversations 專屬 30 欄版面（欄序=CSV 30 欄，五分組）；其餘來源沿用通用 26 欄跨來源版面。
-    conv_mode = source == "conversations"
-    cols = (_CONV_EXPORT_COLS if conv_mode else _EXPORT_XLSX_COLS) + dom_cols + cmp_cols
-    group_spans = _grouped_header_spans(cols, _CONV_COL_GROUPS if conv_mode else _COL_GROUPS)
+    layout_cols, layout_groups, freeze_cols = _EXPORT_LAYOUTS.get(
+        source or "", (_EXPORT_XLSX_COLS, _COL_GROUPS, 4)
+    )
+    cols = layout_cols + dom_cols + cmp_cols
+    group_spans = _grouped_header_spans(cols, layout_groups)
     wb = Workbook()
     ws = wb.active
     ws.title = _export_sheet_title(source, rows, date_from, date_to)
@@ -583,7 +719,7 @@ def export_problems_xlsx(
         merges.append((r_excel, n))
         r_excel += n
     # 凍結雙層表頭（列1分類群組＋列2具體欄位）+ 前 4 欄（編號～評論內容）；篩選箭頭掛列 2。
-    _style_header_grouped(ws, group_spans, [c[2] for c in cols], freeze_cols=4)
+    _style_header_grouped(ws, group_spans, [c[2] for c in cols], freeze_cols=freeze_cols)
     # polarity 整列底色（正綠/中灰/負紅；未初判不上色）。置於「合併前」——此時全為普通 cell，
     # 可安全逐格設 fill（合併後 MergedCell 無法設樣式）；且晚於 _style_header_grouped 故覆蓋其斑馬紋。
     _pol_fill = {

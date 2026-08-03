@@ -101,15 +101,16 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
         "S1",
         [_finding("S1", "seed-2-0-lite", "supplier", "供應商履約", "positive", "他模型觀點")],
     )
-    # S2：只有 gpt-5-mini 判過 → 選 seed 輸出時應被排除
+    # S2：只有 gpt-5-mini 判過 → 選 seed 輸出時保留該列、判定欄留白
     db.replace_source_findings("reviews", "S2", [_finding("S2", "gpt-5-mini")])
 
     headers, rows = _cells(
         db.export_problems_xlsx(source="reviews", snapshot_model="seed-2-0-lite")
     )
-    assert len(rows) == 1  # S2 無 seed 快照 → 排除
-    r = rows[0]
-    assert r[_col(headers, "編號")] == "S1"
+    assert len(rows) == 2  # S2 無 seed 快照 → 保留列（判定欄留白），不再整列排除
+    by_id = {row[_col(headers, "rec_oid")]: row for row in rows}
+    assert not by_id["S2"][_col(headers, "L1 分類")]  # 未判 → 留白，不漏出 gpt 的內容
+    r = by_id["S1"]
     assert r[_col(headers, "L1 分類")] == "供應商履約"  # 快照內容（非當前初判也非舊 gpt 初判）
     assert r[_col(headers, "問題摘要")] == "他模型觀點"
     assert r[_col(headers, "初判模型")] == "seed-2-0-lite"
@@ -133,7 +134,28 @@ def test_export_snapshot_selects_that_models_view(temp_db) -> None:
     # 統計表 A2 揭露輸出版本口徑
     wb = load_workbook(io.BytesIO(blob))
     a2 = wb["分類統計"]["A2"].value
-    assert "gpt-5-mini" in a2 and "已排除 0 則" in a2
+    assert "gpt-5-mini" in a2 and "其餘 0 則" in a2
+
+
+def test_export_snapshot_keeps_unjudged_rows_blank(temp_db) -> None:
+    """快照模式：該模型沒判過的評論**仍出現在輸出**、判定欄留白（不整列排除）。
+
+    舊行為是整列丟掉，導致導出筆數少於列表總數、看起來像資料遺失，也看不出覆蓋率。
+    """
+    db.insert_source_batch("reviews", [_pr_row("K1"), _pr_row("K2")])
+    db.replace_source_findings("reviews", "K1", [_finding("K1", "gpt-5-mini", summary="gpt 判的")])
+    db.replace_source_findings(
+        "reviews", "K2", [_finding("K2", "seed-2-0-lite", summary="seed 判的")]
+    )
+    blob = db.export_problems_xlsx(source="reviews", snapshot_model="gpt-5-mini")
+    headers, rows = _cells(blob)
+    by_id = {r[_col(headers, "rec_oid")]: r for r in rows}
+    assert set(by_id) == {"K1", "K2"}, "未被該模型判過的列不應被排除"
+    assert by_id["K1"][_col(headers, "問題摘要")] == "gpt 判的"
+    # K2 沒有 gpt 快照 → 判定欄留白，且不可漏出 seed 的內容
+    assert not by_id["K2"][_col(headers, "問題摘要")]
+    wb = load_workbook(io.BytesIO(blob))
+    assert "其餘 1 則" in wb["分類統計"]["A2"].value
 
 
 def test_export_compare_models_side_by_side(temp_db) -> None:
@@ -163,7 +185,7 @@ def test_export_compare_models_side_by_side(temp_db) -> None:
     # 對比欄成組出現（情緒/L1/L2 × 2 模型）
     for m in ("seed-2-0-lite", "gemini-flash"):
         assert f"情緒·{m}" in headers and f"L1·{m}" in headers and f"L2·{m}" in headers
-    by_id = {r[_col(headers, "編號")]: r for r in rows}
+    by_id = {r[_col(headers, "rec_oid")]: r for r in rows}
     c1 = by_id["C1"]
     assert c1[_col(headers, "L1 分類")] == "商品內容"  # 基準＝gpt 當前初判
     assert c1[_col(headers, "L1·seed-2-0-lite")] == "供應商履約"  # seed 最新快照
