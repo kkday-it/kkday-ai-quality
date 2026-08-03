@@ -435,6 +435,36 @@ def prompt_debug_regression_status(
     return snap
 
 
+@router.get("/prompt-debug/source-item")
+def prompt_debug_source_item(
+    source: str,
+    item_id: str,
+    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
+) -> dict:
+    """撈單筆來源對話原文，供調試台把 DB 內容一鍵填進調試文本框（跑批 DB 取數的單筆版）。
+
+    查無資料／內容為空一律 404：這兩種情形對使用者是同一件事——「這個 ID 在這個來源撈不到可判的
+    文字」，分不同碼只會讓前端多寫一段沒有差別的分支。
+
+    Args:
+        source: 反饋來源 id（如 `conversations`）。
+        item_id: 該來源的自然鍵值（如 session_oid）。
+
+    Returns:
+        `{"source", "item_id", "content"}`——content 為 canonical 對話原文。
+
+    Raises:
+        HTTPException: 404，來源不存在／查無此列／內容為空。
+    """
+    from app.judge import prompt_debug
+
+    try:
+        content = prompt_debug.fetch_source_text(source, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"source": source, "item_id": item_id.strip(), "content": content}
+
+
 # ── 批量跑批（上傳檔 × 當前正式版 Prompt → 斷點續跑批次）─────────────────────────────
 
 

@@ -155,6 +155,21 @@ export const getPromptRelease = (name: string): Promise<{ name: string; system_p
   j(`${BASE}/v1/prejudge/prompt-debug/releases/${encodeURIComponent(name)}`);
 
 /**
+ * 依「反饋來源 + 單一自然鍵」撈該筆對話原文，供調試台把 DB 內容直接填進調試文本框。
+ * 與跑批 DB 取數同一條解析路徑（來源註冊表 + canonical 映射），差別在單筆即時、不落快照。
+ * @param source 反饋來源 id（如 `conversations`）
+ * @param itemId 該來源的自然鍵值（如 session_oid）
+ * @throws {Error} 404——查無此列或該筆對話內容為空
+ */
+export const getSourceItemText = (
+  source: string,
+  itemId: string,
+): Promise<{ source: string; item_id: string; content: string }> =>
+  j(
+    `${BASE}/v1/prejudge/prompt-debug/source-item?source=${encodeURIComponent(source)}&item_id=${encodeURIComponent(itemId)}`,
+  );
+
+/**
  * 把某個**已存檔的草稿**升為正式版，立即成為線上唯一口徑（跑批與調試台預設都改用它）。
  * 需 `judge-rule.version.manage`。
  * @param draft 來源草稿名（時間戳）

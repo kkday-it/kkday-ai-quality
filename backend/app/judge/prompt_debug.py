@@ -367,6 +367,45 @@ def _record_usage_best_effort(cfg: dict[str, Any], payload: dict[str, Any], job_
         pass
 
 
+def fetch_source_text(source: str, item_id: str) -> str:
+    """依「反饋來源 + 單一自然鍵」撈該筆對話原文，供調試台一鍵填入調試文本框。
+
+    與跑批的 DB 取數（`prompt_debug_batch.build_db_input_csv`）走同一條解析路徑——來源註冊表決定
+    查哪張表與自然鍵、`source_mapping.normalize_row` 決定內容源欄（conversation_full / rec_desc /
+    description 各來源不同，映射表是 SSOT）。差別只在**單筆、即時、不落快照**：調試台要看的就是
+    當前 DB 的文字，沒有跑批那條「續跑重放同一份」的一致性要求，故不比照落 CSV。
+
+    Args:
+        source: 反饋來源 id（`config/global/sources.json` 的 value，如 `conversations`）。
+        item_id: 該來源的自然鍵值（如 session_oid）。
+
+    Returns:
+        canonical 對話原文（已 strip）。
+
+    Raises:
+        ValueError: 來源不存在、id 為空、查無此列、或該列對話內容為空。
+    """
+    from app.core.db import source_registry
+    from app.core.judge_config import source_mapping
+
+    spec = source_registry.spec_for(source)
+    if spec is None:
+        raise ValueError(f"未知的反饋來源：{source}")
+    wanted = str(item_id).strip()
+    if not wanted:
+        raise ValueError("請輸入要撈取的 ID")
+
+    rows = db.get_items_by_ids([wanted], source)
+    if not rows:
+        raise ValueError(f"查無資料：來源「{source}」沒有 {spec.natural_key}={wanted} 這筆")
+
+    content = source_mapping.normalize_row(source, rows[0]).get("content")
+    content = "" if content is None else str(content).strip()
+    if not content:
+        raise ValueError(f"{spec.natural_key}={wanted} 這筆的對話內容是空的")
+    return content
+
+
 def user_prompt_for(text: str) -> str:
     """把待判對話包成 user prompt（單次調試與批量跑批共用同一包裝，A/B 才可比）。"""
     return (

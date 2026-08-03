@@ -3,6 +3,7 @@ import {
   getPromptDebugDefaults,
   getPromptDraft,
   getPromptRelease,
+  getSourceItemText,
   savePromptDraft,
   streamPromptDebug,
   type PromptDebugDefaults,
@@ -12,9 +13,11 @@ import {
 } from '@/api';
 import { LlmConfigSelect } from '@/components';
 import { Message, Modal } from '@arco-design/web-vue';
+import { IconDownload } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useLlmAreaConfig } from '@/composables';
+import { SOURCES } from '../constants';
 // 評判區塊跟著判決結果一起出現，lazy 只會讓結果到齊的瞬間閃一下，故靜態載入
 import PromptReviewPanel from '../components/PromptReviewPanel.vue';
 
@@ -335,6 +338,32 @@ const samples = [
   },
 ];
 
+// ── 從 DB 撈單筆對話填入調試文本（跑批 DB 取數的單筆版）─────────────────────────────
+//
+// 為什麼調試台也要這個入口：日常用法是「跑批看到某筆判錯 → 想單獨調它」，改造前只能自己去 DB
+// 撈 conversation_full 再貼過來。來源解析與跑批同一條路徑（來源註冊表 + canonical 映射），
+// 差別只在單筆即時、不落快照——調試台要看的就是當前 DB 的文字。
+const fetchSource = ref(SOURCES[0]?.value ?? '');
+const fetchItemId = ref('');
+const fetchingItem = ref(false);
+const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
+
+/** 撈當前 source + id 的對話原文覆蓋調試文本框；查無資料／內容為空由後端回 404，這裡只轉訊息。 */
+async function fetchItemText() {
+  const itemId = fetchItemId.value.trim();
+  if (!itemId) return;
+  fetchingItem.value = true;
+  try {
+    const { content } = await getSourceItemText(fetchSource.value, itemId);
+    inputText.value = content;
+    Message.success(`已載入 ${itemId}（${content.length.toLocaleString()} 字元）`);
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : '撈取失敗');
+  } finally {
+    fetchingItem.value = false;
+  }
+}
+
 /**
  * 丟棄編輯、回到**當前選定版本**的原文。
  *
@@ -582,6 +611,41 @@ function openLlmSettings(): void {
             {{ sample.label }}
           </a-button>
         </div>
+        <!-- 從 DB 撈單筆：跑批看到某筆判錯 → 貼 ID 直接調它，免自己去 DB 撈對話原文 -->
+        <a-row :gutter="[8, 8]" align="center" wrap class="mb-3 shrink-0">
+          <a-col :flex="'180px'">
+            <a-select
+              v-model="fetchSource"
+              class="w-full"
+              size="small"
+              :options="SOURCE_OPTS"
+              :disabled="streaming"
+            />
+          </a-col>
+          <a-col :flex="'auto'">
+            <a-input
+              v-model="fetchItemId"
+              class="w-full"
+              size="small"
+              placeholder="貼上單一 ID（如 session_oid）從資料庫撈對話"
+              allow-clear
+              :disabled="streaming"
+              @press-enter="fetchItemText"
+            />
+          </a-col>
+          <a-col :flex="'none'">
+            <a-button
+              type="outline"
+              size="small"
+              :loading="fetchingItem"
+              :disabled="streaming || !fetchItemId.trim()"
+              @click="fetchItemText"
+            >
+              <template #icon><icon-download /></template>
+              撈取
+            </a-button>
+          </a-col>
+        </a-row>
         <a-textarea
           v-model="inputText"
           class="input-editor"
