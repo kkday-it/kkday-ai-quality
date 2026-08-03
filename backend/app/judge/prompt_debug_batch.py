@@ -244,26 +244,24 @@ def _csv_cell(value: Any) -> Any:
 
 
 def _csv_row(item_id: str, parsed: dict, columns: list[str]) -> dict[str, Any]:
-    """條件欄（L3 cause / L4 target）落表紀律：n/a 哨兵與不合法情境的值一律留空。
+    """條件欄（L4 target／subtype）落表紀律：n/a 哨兵與不合法情境的值一律留空。
 
     JSON（preds/raw）保留原值可稽核；表格層對齊裁判表口徑（用戶要求：表中不得出現 n/a 與 null）。
+
+    L3 自 260803 表起**不再是條件欄**——全表以「其他」兜底、跳出也填「其他」，恆有值可落表
+    （舊版的 `unclear → 其他` 顯示層映射與「跳出清空 L3」一併隨該版退役）。
     """
     is_oot = parsed.get("L2") == prompt_debug._OOT_L2
     allowed = {
-        "L3": not is_oot,
+        # L4 三分支：[93] 填修改標的、跳出填子型，其餘類是 n/a → 留空。
         # 認 L1_code 前綴、不比對全稱：全稱由 config SSOT 的 L1_code+L1_label 拼出
         # （現為「[93] 訂單申請修改」，2026-07-28 起碼名之間有一個空格），寫死全稱曾因多一個
         # 空格而讓 [93] 的 L4 全被清空——那次的空格後來真的加進來了，這行前綴比對是唯一沒被波及的原因
-        "L4": str(parsed.get("L1") or "").startswith("[93]"),
+        "L4": is_oot or str(parsed.get("L1") or "").startswith("[93]"),
     }
     row: dict[str, Any] = {columns[0]: item_id}
     for column in columns[1:]:
         value = parsed.get(column)
-        # 無分類統一「其他」（20260727 拍板）。L2 的哨兵映射已於 2026-07-30 隨契約值改名退役
-        # （模型現在直接輸出「其他」）；L3 的 `unclear` 仍是契約值，25/25 個 L2 類的 L3_options
-        # 都含它，故這層映射必須留著。
-        if column == "L3" and value == "unclear":
-            value = "其他"
         if column in allowed and (not allowed[column] or str(value).strip().lower() == "n/a"):
             value = None
         row[column] = _csv_cell(value)
@@ -362,7 +360,7 @@ def _new_snapshot(manifest: dict, *, total: int, resumed: int, pending: int) -> 
         # 本次 session 之前已累積的執行秒數（續跑時由 sessions.json 帶入）——「這批總共花了多久」
         # 要的是各段執行時間相加，不是首次啟動到最後完成的牆鐘（中間可能擱置了一整晚）。
         "elapsed_before_sec": 0.0,
-        "warnings": [],  # 相容端點降級等一次性警告
+        "warnings": [],  # 相容端點降級、Prompt 與分類 SSOT 跨表等一次性警告
         "recent": [],  # 最近完成明細環（前端即時回報）
         "failed_items": [],
         "failed_items_truncated": False,
@@ -951,6 +949,11 @@ def _launch(plan: _RunPlan, triggered_by: str) -> dict:
         plan.run_dir / "raw_results.jsonl"
     )
     snapshot["triggered_by"] = triggered_by
+    # 本批 Prompt 與契約 SSOT 不同表＝整批判定不可信（enum 硬塞，見 `taxonomy_drift_warning`），
+    # 開跑就先講。放 `_launch` 而非只放建立處：續跑／重跑走同一條，SSOT 中途改版也照樣警示
+    drift = prompt_debug.taxonomy_drift_warning(plan.system_prompt, plan.taxonomy)
+    if drift:
+        snapshot["warnings"].append(drift)
     # 開新執行段落並帶回「本段之前已累積多久」，讓續跑的耗時能累加而非從零重算
     snapshot["elapsed_before_sec"] = _open_session(plan.run_dir, snapshot["started_at"])
     _store.put(plan.run_id, snapshot)

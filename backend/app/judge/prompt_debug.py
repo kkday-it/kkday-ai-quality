@@ -4,15 +4,22 @@
 寫入 llm_usage，讓「AI 消耗」看板與本次畫面口徑一致。
 
 輸出契約只有一套（2026-07-27 起；舊 v2 契約＋前端契約切換已全棧清退——實測下來雙契約只會讓
-頁面調的是 A、跑批跑的是 B）：keywords 陣列＋urgency 1–5 整數＋no_actionable_content、
-全欄禁 null（n/a 哨兵）。預設 Prompt 取**當前正式版**（見 `prompt_debug_versions` 的草稿／正式版
-雙軌：草稿是實驗區、正式版才是線上口徑；全文快照、分類庫已內嵌含實測校準層），
-enum 受控值仍由分類 SSOT 派生（快照生成時已對齊）。
+頁面調的是 A、跑批跑的是 B）：keywords 陣列＋urgency 1–5 整數＋no_actionable_content＋
+redirected_to_cancel_flag、全欄禁 null（n/a 哨兵）。預設 Prompt 取**當前正式版**
+（見 `prompt_debug_versions` 的草稿／正式版雙軌：草稿是實驗區、正式版才是線上口徑；
+全文快照、分類庫已內嵌含實測校準層），enum 受控值仍由分類 SSOT 派生（快照生成時已對齊）。
+
+⚠️ **SSOT 與 Prompt 必須同批升版**：schema enum／級聯／校驗全由 `after_sales_root_cause.json`
+派生，Prompt 內嵌的是同一份表的快照。只升 Prompt 不升 SSOT 的後果是 **Structured Outputs 把新表
+答案硬塞回舊 enum**（2026-08-03 實測：prompt 升到 260803 表、SSOT 還是 260722，模型被迫輸出
+`L2=取消政策本身僵化`＋`L3=用戶自填錯` 這種跨類組合，且新欄位 `redirected_to_cancel_flag`
+因 `additionalProperties: false` 被靜默丟掉）——校驗訊息只會報「L3 不屬於該 L2」，看不出真因。
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from collections.abc import Iterator
@@ -32,15 +39,21 @@ _TAXONOMY_FILE = AI_JUDGE_DIR / "after_sales_root_cause.json"
 # 送 Structured Outputs 的 schema 標籤（非檔名，僅供 API 端回報用）
 _SCHEMA_NAME = "after_sales_root_cause"
 
-# 跳出分支的兩個受控值：L1、L2 皆為「其他」（兩層同值，對齊裁判表寫法與表格顯示口徑）。
-# 分成兩個常數而非共用一個：它們是不同欄位的受控值，分開命名讓校驗處讀得出在比哪一層，
+# 跳出分支的三個受控值：L1、L2、L3 皆為「其他」（三層同值，對齊裁判表寫法與表格顯示口徑；
+# L3 自 260803 表起由 `n/a` 改為「其他」——全表兜底值統一，`unclear` 一併退役）。
+# 分成三個常數而非共用一個：它們是不同欄位的受控值，分開命名讓校驗處讀得出在比哪一層，
 # 日後任一層改動也不必牽動另一層。
 # 收成模組常數而非散在 schema／級聯／校驗各處：這串是模型要逐字輸出的值，漏改一處就是靜默錯配。
 _OOT_L1 = "其他"
 _OOT_L2 = "其他"
+_OOT_L3 = "其他"
+
+# `no_actionable_content=true` 時 L4 的唯一合法值（`L4_options.oot_subtype` 的一員）：
+# 判準表的自檢規則①把「無實質內容」與這個子型綁死，收成常數免得校驗與文件各寫一份字面值。
+_OOT_L4_NO_CONTENT = "對話殘段/無實質"
 
 # 與裁判表首列的 AI 判定欄位同序：keywords 陣列全量填、urgency 1–5 整數、
-# no_actionable_content、全欄禁 null（不適用填 n/a）。
+# redirected_to_cancel_flag、no_actionable_content、全欄禁 null（不適用填 n/a）。
 OUTPUT_FIELDS = [
     {
         "key": "L1",
@@ -55,12 +68,12 @@ OUTPUT_FIELDS = [
     {
         "key": "L3",
         "label": "根因推論（AI 判定，L3）",
-        "hint": "該類受控選項；含糊填 unclear；OOT 為 n/a",
+        "hint": "該類受控選項；拿不準填 其他；跳出亦為 其他",
     },
     {
         "key": "L4",
-        "label": "修改標的（AI 判定，L4 條件式）",
-        "hint": "僅 [93] 四類填；其餘為 n/a",
+        "label": "修改標的／跳出子型（AI 判定，L4 條件式）",
+        "hint": "[93] 四類填修改標的；跳出填子型；其餘為 n/a",
     },
     {
         "key": "summary",
@@ -90,6 +103,11 @@ OUTPUT_FIELDS = [
         "hint": "TRUE / FALSE；需分別處理的訴求 ≥2",
     },
     {
+        "key": "redirected_to_cancel_flag",
+        "label": "被導向取消（AI 判定）",
+        "hint": "TRUE / FALSE；開口要改卻被告知只能取消重訂（僅 [93]）",
+    },
+    {
         "key": "no_actionable_content",
         "label": "無實質內容（AI 判定）",
         "hint": "TRUE ⇒ OOT＋keywords=[]",
@@ -110,14 +128,17 @@ def _l2_map(taxonomy: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def _l1_value(row: dict[str, Any]) -> str:
     """L1 代碼與名稱間留一個空格（`[119] 單據/發票`）——2026-07-28 起對齊裁判表寫法。
 
+    無代碼的主題（260803 表新增的「現場履約問題」）`L1_code` 為空字串，只回名稱——拼接後的
+    前導空格必須清掉：schema enum 與模型要逐字輸出的值都出自這裡，差一個字元就永遠對不上。
+
     ⚠️ 判斷「是不是 [93]」一律比對 `L1_code` 前綴、不要拿全稱去比（見 `prompt_debug_batch._csv_row`）：
     這個空格正是那裡踩過的坑。
     """
-    return f"{row['L1_code']} {row['L1_label']}"
+    return f"{row['L1_code']} {row['L1_label']}".strip()
 
 
 def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    """受控欄的上下層級聯關係（L1 → L2 → L3）。
+    """受控欄的上下層級聯關係（L1 → L2 → L3，以及條件式的 L2 → L4）。
 
     schema 的 enum 是**攤平**的全域值域（`output_schema` 刻意讓 L3 跨類 flat，
     免得 strict schema 在邊界類扭曲取樣），但人在調試台填正解時不該看到攤平清單——選了
@@ -135,35 +156,53 @@ def output_cascade(taxonomy: dict[str, Any] | None = None) -> dict[str, dict[str
     """
     taxonomy = taxonomy or load_taxonomy()
     l2_entries = taxonomy.get("L2_entries", [])
+    l4_options = taxonomy["L4_options"]
 
     l1_to_l2: dict[str, list[str]] = {}
     l2_to_l3: dict[str, list[str]] = {}
+    l2_to_l4: dict[str, list[str]] = {}
     for row in l2_entries:
         l1_to_l2.setdefault(_l1_value(row), []).append(str(row["name"]))
         l2_to_l3[str(row["name"])] = list(row.get("L3_options", []))
-    # OOT 分支不在 l2_entries 裡，但它同樣是一組合法的 L1→L2→L3 路徑（兩層都只有一個值）
+        # L4 是條件式欄：[93] 四類挑修改標的，其餘正式類的唯一合法值就是 n/a 哨兵
+        l2_to_l4[str(row["name"])] = (
+            list(l4_options["modify_target"]) if row["L1_code"] == "[93]" else ["n/a"]
+        )
+    # OOT 分支不在 l2_entries 裡，但它同樣是一組合法的 L1→L2→L3／L4 路徑：
+    # L1／L2／L3 三層都只有一個值，L4 則收跳出子型
     l1_to_l2[_OOT_L1] = [_OOT_L2]
-    l2_to_l3[_OOT_L2] = ["n/a"]
+    l2_to_l3[_OOT_L2] = [_OOT_L3]
+    l2_to_l4[_OOT_L2] = list(l4_options["oot_subtype"])
 
     return {
         "L2": {"parent": "L1", "options_by_parent": l1_to_l2},
         "L3": {"parent": "L2", "options_by_parent": l2_to_l3},
+        "L4": {"parent": "L2", "options_by_parent": l2_to_l4},
     }
 
 
 def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
-    """v3 契約 schema：全欄禁 null（n/a 哨兵）、keywords 陣列、urgency 1–5 整數、新增 no_actionable_content。
+    """契約 schema：全欄禁 null（n/a 哨兵）、keywords 陣列、urgency 1–5 整數、兩個連動旗標。
 
     L3 用跨類 flat enum、不按 L2 鎖死——受控歸屬交給 validate_result 做成校驗訊息，
-    避免 strict schema 在邊界類直接扭曲取樣；keywords 單項 2–6 字則由 schema 直接約束取樣。
+    避免 strict schema 在邊界類直接扭曲取樣（金標本身就有跨清單案例，鎖死會逼模型改判 L2）；
+    keywords 單項 2–6 字則由 schema 直接約束取樣。
+
+    L4 是**三分支條件式欄**，enum 為三者的聯集（`modify_target` ∪ `oot_subtype` ∪ `n/a`），
+    分支歸屬同樣交給 validate_result——理由與 L3 相同，且「其他」在兩個值域裡都合法。
     """
     taxonomy = taxonomy or load_taxonomy()
     l2_entries = taxonomy.get("L2_entries", [])
+    l4_options = taxonomy["L4_options"]
     l1_values = list(dict.fromkeys(_l1_value(row) for row in l2_entries)) + [_OOT_L1]
     l2_values = [row["name"] for row in l2_entries] + [_OOT_L2]
+    # 跳出的 L3 就是全表兜底值「其他」，已含在各類 L3_options 內，故不必另外補值
     l3_values = list(
         dict.fromkeys(cause for row in l2_entries for cause in row.get("L3_options", []))
-    ) + ["n/a"]
+    )
+    l4_values = list(
+        dict.fromkeys([*l4_options["modify_target"], *l4_options["oot_subtype"], "n/a"])
+    )
     return {
         "type": "object",
         "additionalProperties": False,
@@ -171,10 +210,7 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "L1": {"type": "string", "enum": l1_values},
             "L2": {"type": "string", "enum": l2_values},
             "L3": {"type": "string", "enum": l3_values},
-            "L4": {
-                "type": "string",
-                "enum": taxonomy["L4_options"] + ["n/a"],
-            },
+            "L4": {"type": "string", "enum": l4_values},
             "summary": {
                 "type": "string",
                 "minLength": 15,
@@ -197,6 +233,10 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "money_mention_flag": {"type": "boolean"},
             "fulfillment_mention_flag": {"type": "boolean"},
             "multi_issue_flag": {"type": "boolean"},
+            "redirected_to_cancel_flag": {
+                "type": "boolean",
+                "description": "開口要改、過程中被告知只能取消重訂；true 時 L1 必須是 [93]（R2「改與取消不互相吸收」）。",
+            },
             "no_actionable_content": {
                 "type": "boolean",
                 "description": "session 內無可判讀實質問題；true 連動 OOT＋keywords=[]。",
@@ -215,6 +255,7 @@ def output_schema(taxonomy: dict[str, Any] | None = None) -> dict[str, Any]:
             "money_mention_flag",
             "fulfillment_mention_flag",
             "multi_issue_flag",
+            "redirected_to_cancel_flag",
             "no_actionable_content",
             "confidence",
         ],
@@ -267,9 +308,82 @@ def defaults_payload() -> dict[str, Any]:
     }
 
 
-def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[str]:
-    """v3 契約校驗：JSON Schema ＋ n/a 哨兵紀律 ＋ 四條跨欄位一致性規則（欄位定義定案版 §3.1）。"""
+# Prompt 快照內嵌分類庫的區塊標記（`<taxonomy>` 內是一段 JSON）；快照生成與此處讀取是同一組約定。
+# 兩個細節都是踩過才這樣寫的：
+#   ① 開標籤後必須緊接 `{`——Prompt 正文會**行內提及**這個標籤名（「逐類比對 `<taxonomy>` 24 類」），
+#      不設這道門檻會從那句話一路吃到真區塊的收尾，抓出一坨散文當 JSON。
+#   ② 收尾抓到 `</taxonomy>` 就停、不要求 `}` 收口——要求收口的話，快照被截斷時會整條匹配失敗而
+#      **靜默放行**，而那正是最該講話的情形（見下方 JSONDecodeError 分支）。
+_TAXONOMY_BLOCK_RE = re.compile(r"<taxonomy>\s*(\{.*?)</taxonomy>", re.S)
+
+# 警示訊息只舉例，不整串列出——差異可能是整表換版（20+ 類），列全反而沒人讀。
+_DRIFT_EXAMPLES = 2
+
+
+def taxonomy_drift_warning(system_prompt: str, taxonomy: dict[str, Any] | None = None) -> str:
+    """比對「本次要送出的 Prompt」內嵌分類庫與契約 SSOT 是否同一版表；同表回空字串。
+
+    為什麼執行期還要比一次（repo 已有守門測試）：測試守的是**默認口徑那一份**，實際送出的可能是
+    任一歷史草稿、任一正式版、或頁面上臨時貼的全文。2026-08-03 的事故（Prompt 升 260803 表、
+    SSOT 還在 260722）在那些路徑上都會重演，而症狀偏偏**看不出真因**——Structured Outputs 會把
+    新表答案硬塞回舊 enum，畫面只報得出「L3 不屬於該 L2 的受控選項」。
+
+    無 `<taxonomy>` 區塊一律放行：不是每個 A/B 版本都會內嵌分類庫，硬警示等於對正常實驗吵鬧。
+    只在「有內嵌但對不上」時說話——那是唯一能斷定兩邊講不同表的情形。
+
+    Args:
+        system_prompt: 本次實際要送給模型的 system prompt 全文。
+        taxonomy: 分類 SSOT；省略時現讀。
+
+    Returns:
+        警示文字（可直接當 SSE `warning` 或跑批 `warnings` 的一條）；無漂移或無從判斷時為空字串。
+    """
+    block = _TAXONOMY_BLOCK_RE.search(system_prompt)
+    if not block:
+        return ""
+    head = f"本次 Prompt 內嵌的分類庫與契約 SSOT（{_TAXONOMY_FILE.name}，版本 "
     taxonomy = taxonomy or load_taxonomy()
+    head += f"{taxonomy['version']}）"
+    try:
+        embedded = json.loads(block.group(1))
+    except json.JSONDecodeError:
+        return f"{head}無法比對：Prompt 的 <taxonomy> 區塊不是合法 JSON，請確認快照沒被截斷或改寫。"
+
+    in_prompt = {str(e.get("name")): e for e in embedded.get("L2_entries", [])}
+    in_ssot = {str(row["name"]): row for row in taxonomy["L2_entries"]}
+    details: list[str] = []
+    for label, extra in (
+        ("Prompt 有、SSOT 沒有", in_prompt.keys() - in_ssot.keys()),
+        ("SSOT 有、Prompt 沒有", in_ssot.keys() - in_prompt.keys()),
+    ):
+        if extra:
+            sample = "、".join(sorted(extra)[:_DRIFT_EXAMPLES])
+            details.append(f"{len(extra)} 個 L2 {label}（如「{sample}」）")
+    shifted = [
+        name
+        for name in in_prompt.keys() & in_ssot.keys()
+        if list(in_prompt[name].get("L3_options") or []) != list(in_ssot[name]["L3_options"])
+    ]
+    if shifted:
+        sample = "、".join(sorted(shifted)[:_DRIFT_EXAMPLES])
+        details.append(f"{len(shifted)} 個同名 L2 的 L3 受控值不同（如「{sample}」）")
+    if not details:
+        return ""
+    return (
+        f"{head}不是同一版表：{'；'.join(details)}。"
+        "結構化輸出會把 Prompt 的答案硬塞回 SSOT 的 enum，本次判定不可信"
+        "——請把 Prompt 與 SSOT 升到同一版表再測。"
+    )
+
+
+def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[str]:
+    """契約校驗：JSON Schema ＋ n/a 哨兵紀律 ＋ 跨欄位一致性規則（260803 表的自檢六條）。
+
+    schema 擋得住「值不在值域」，擋不住「值域對但分支錯」——L3 的 flat enum 與 L4 的三分支聯集
+    都是刻意放寬的（見 `output_schema`），分支歸屬全靠這裡收口。
+    """
+    taxonomy = taxonomy or load_taxonomy()
+    l4_options = taxonomy["L4_options"]
     issues: list[str] = []
     try:
         jsonschema.Draft202012Validator(output_schema(taxonomy)).validate(value)
@@ -289,14 +403,19 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
     if value["L2"] == _OOT_L2:
         if value["L1"] != _OOT_L1:
             issues.append(f"跳出的 L1 必須是 {_OOT_L1}")
-        if value["L3"] != "n/a":
-            issues.append("OOT 的 L3 必須是 n/a")
-        if value["L4"] != "n/a":
-            issues.append("OOT 的 L4 必須是 n/a")
-        if value["no_actionable_content"] and keywords:
-            issues.append("no_actionable_content=true 時 keywords 必須為空陣列")
-        elif not value["no_actionable_content"] and not keywords:
-            issues.append("OOT 且非無實質內容時 keywords 至少 1 個")
+        if value["L3"] != _OOT_L3:
+            issues.append(f"跳出的 L3 必須是 {_OOT_L3}")
+        if value["L4"] not in l4_options["oot_subtype"]:
+            issues.append("跳出的 L4 必須是跳出子型之一")
+        if value["no_actionable_content"]:
+            if keywords:
+                issues.append("no_actionable_content=true 時 keywords 必須為空陣列")
+            if value["L4"] != _OOT_L4_NO_CONTENT:
+                issues.append(f"no_actionable_content=true 時 L4 必須是 {_OOT_L4_NO_CONTENT}")
+        elif not keywords:
+            issues.append("跳出且非無實質內容時 keywords 至少 1 個")
+        if value["redirected_to_cancel_flag"]:
+            issues.append("redirected_to_cancel_flag=true 時 L1 必須是 [93] 訂單申請修改")
         return issues
 
     row = _l2_map(taxonomy)[value["L2"]]
@@ -305,14 +424,16 @@ def validate_result(value: Any, taxonomy: dict[str, Any] | None = None) -> list[
     if value["L3"] not in row["L3_options"]:
         issues.append("L3 不屬於該 L2 的受控選項")
     is_modify = row["L1_code"] == "[93]"
-    if is_modify and value["L4"] == "n/a":
-        issues.append("[93] L2 必須填 L4（不可為 n/a）")
+    if is_modify and value["L4"] not in l4_options["modify_target"]:
+        issues.append("[93] L2 的 L4 必須是修改標的之一（不可為 n/a 或跳出子型）")
     if not is_modify and value["L4"] != "n/a":
-        issues.append("非 [93] L2 的 L4 必須是 n/a")
+        issues.append("非 [93]、非跳出的 L4 必須是 n/a")
     if value["no_actionable_content"]:
         issues.append(f"no_actionable_content=true 時 L2 必須是 {_OOT_L2}")
     if not keywords:
-        issues.append("非 OOT 的 keywords 至少 1 個")
+        issues.append("非跳出的 keywords 至少 1 個")
+    if value["redirected_to_cancel_flag"] and not is_modify:
+        issues.append("redirected_to_cancel_flag=true 時 L1 必須是 [93] 訂單申請修改")
     return issues
 
 
@@ -555,6 +676,11 @@ def stream_frames(
             "reasoning_effort": cfg["reasoning_effort"],
         },
     )
+
+    # 跨表警示先於請求發出：這條說的是「這次判定本身不可信」，讓它排在串流內容之前才看得到
+    drift = taxonomy_drift_warning(system_prompt, taxonomy)
+    if drift:
+        yield _sse("warning", {"message": drift})
 
     started = time.monotonic()
     stream = None

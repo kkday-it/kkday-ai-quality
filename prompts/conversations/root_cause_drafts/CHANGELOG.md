@@ -33,6 +33,68 @@
 > 同批對齊的還有 PM 的 `config/ai_judge/RootCauseLabelingFramework.json`（零 code 消費的參考文件，
 > 鍵名由 `l1*`/`l2`/`l3`/`l4` 改為 `L1*`/`L2`/`L3`/`L4`）。
 
+## 2026-08-03-120205 — 表 260803 全面改版（24 類重構）＋契約 SSOT 補齊
+
+**這一版分兩批落地，第一批只升了 Prompt。** 草稿 `2026-08-03-120205`（commit `73aa3d7`）把判準換成
+《根因標籤架構》表 260803 版，但 `config/ai_judge/after_sales_root_cause.json` 還留在 260722 表——
+契約層（Structured Outputs 的 enum／`output_cascade`／`validate_result`）全由該檔派生，於是線上出現：
+
+- 模型被迫把新表答案**硬塞回舊 enum**：實測輸出 `L2=取消政策本身僵化`（260803 已刪的類）＋
+  `L3=用戶自填錯`（[93] 的值），畫面只報得出「L3 不屬於該 L2 的受控選項」，看不出真因是跨表錯配
+- 新欄位 `redirected_to_cancel_flag` 因 `additionalProperties: false` 被**靜默丟掉**（模型連填的機會都沒有）
+- 同一筆對話的 confidence 0.61（硬塞）→ 補齊後 0.94（`[101] 用戶自身因素申請取消/部分取消` ＋
+  `取消可行性或後果詢問`，對上表的「取消家族四分流①問句型」）
+
+第二批（本條）把契約層補到同一版表：
+
+- **SSOT 重生成**：`after_sales_root_cause.json` 由 xlsx 的 `根因標籤架構(20260803)` 逐字轉錄，
+  並與 Prompt 內嵌 `<taxonomy>` 逐欄對驗後才寫入（唯一容許差異：表寫 `L4=售前_包車詢價與行程議定`、
+  Prompt 該句沿用舊欄名 `oot_subtype=`，同義，以表為準）。6 個 L1 × 24 個 L2、L3 攤平 97 個受控值
+- **新結構**：`L4_options` 由單一清單改為兩個值域（`modify_target` 7 值含新增「改上下車地點或體驗地點」／
+  `oot_subtype` 6 值）；`unclear_rule` → `fallback_cause_rule`（全表兜底值統一「其他」，`unclear` 退役）
+- **無代碼 L1**：新增的「現場履約問題」沒有 `[碼]`，`_l1_value()` 改為拼接後 `.strip()`——留下前導空格
+  就是 schema enum 與模型輸出永遠差一個字元（2026-07-28 那個半形空格事故的同型坑）
+- **契約碼**：`_OOT_L3`／`_OOT_L4_NO_CONTENT` 兩個常數上線；schema 的 L3 去掉 `n/a`、L4 改三分支聯集、
+  新增 `redirected_to_cancel_flag`（property＋required＋欄位卡，卡序對齊表首列）；`output_cascade`
+  新增 `L4`（parent=L2：[93]→修改標的／跳出→子型／其餘→`n/a`）——前端「填正解」控件全靠它收窄，
+  這正是那份 docstring 說的「未來新增條件式欄位不必兩邊同步改」
+- **校驗器**：改成表的自檢六條——跳出三層皆「其他」＋L4 須為子型、`no_actionable_content=true` ⇒
+  L4=`對話殘段/無實質`、[93] 的 L4 須落在修改標的（值域對但分支錯也擋，schema 聯集攔不住）、
+  `redirected_to_cancel_flag=true` ⇒ L1 必為 [93]（R2）
+- **落表層**：`_csv_row` 的 `L3` 不再是條件欄（全表恆有值），`unclear → 其他` 顯示層映射隨值退役；
+  `L4` 的落表條件補上跳出分支（否則跳出子型會被清空）
+- **退役即徹底**：SSOT 內 `id`（C01–C25）／`product_opportunity`／`vertical`／`calibration` 一併清掉——
+  前三者零 code 消費且 260803 的 action 對照表仍指向舊類名（硬映射＝編造），`calibration` 則已全數
+  存在 Prompt 快照內，兩處並存必 drift
+- **守門測試**：`test_default_prompt_taxonomy_matches_contract_ssot`——調試台默認口徑的 Prompt 內嵌
+  分類庫必須與 SSOT 同表（類名集合／各類 L3_options／兩個 L4 值域逐一比對）。這條若早存在，本次事故
+  在 CI 就會紅。另修 `test_defaults_carry_both_tracks_…`：舊斷言 `system_prompt == active_prompt()`
+  把「調試台載入最新草稿」誤當「載入正式版」，草稿一領先就誤紅（HEAD 當下已紅）
+- **執行期防漂移警示**：`taxonomy_drift_warning()`——送出的 Prompt 內嵌分類庫與 SSOT 不同表時，
+  單次調試回一條 SSE `warning`、跑批寫進 run 的 `warnings`（沿用既有通道，**不阻斷**）。守門測試只管
+  repo 內的默認口徑，實際送出的可能是任一歷史草稿／正式版／頁面臨時貼的全文——那些路徑同樣會踩，
+  且症狀看不出真因。無 `<taxonomy>` 區塊一律放行（不是每個 A/B 版本都內嵌分類庫）；區塊在但 JSON
+  壞掉則明說無法比對，不靜默放行。實測拿 v3 送出會直接點名「12 個 L2 Prompt 有 SSOT 沒有、11 個
+  反向、13 個同名 L2 的 L3 不同」
+  - ⚠️ 兩個正則細節都是踩過才這樣寫：開標籤後**必須緊接 `{`**（Prompt 正文會行內提及
+    `` `<taxonomy>` `` 這個標籤名，不設門檻會從那句話一路吃到真區塊收尾、抓出一坨散文當 JSON）；
+    收尾抓到 `</taxonomy>` 就停、**不要求 `}` 收口**（要求收口的話，快照被截斷時整條匹配失敗 →
+    靜默放行，而那正是最該講話的情形）
+
+**正式版軌已同批升上**：`2026-08-03-120205` → `release-v2`（active，`release-v1` 保留可回退）。
+契約已是 260803，若正式版軌還留在 v3 就會重現同型錯配（方向相反：舊表答案被塞進新 enum），故不留
+時間差。回退到 `release-v1` 需連 SSOT 一起退，否則上面那條警示會（正確地）叫。
+
+⚠️ **既有跑批 run 無法續跑**（schema enum 變動使 `schema_sha256` 失效，`_prepare_plan` 硬閘）。
+動手前已確認 10 個 run 全為終態：8 done、1 error（ok=0）、1 cancelled——且後兩者自 07-30 那次
+schema 變動起就已不可續跑，本次零損失。
+
+⚠️ **案例庫（`prompt_debug_reviews`）未做值遷移**：與前兩次單值改名（`c4e81b7a35d2`／`f3a81c6e5d92`）
+不同，260803 是**整表換版含拆併**（如「憑證/取票資訊未送達或不知如何使用」拆成交付側／使用側兩類），
+一對多的機械映射等於代替 PM 判案，故不做。舊案例回歸重跑會判 `still_wrong`，屬預期——案例庫需按新表
+重貼。dev 這 35 筆更早於 L1~L4 改名（JSONB 鍵還是 `theme`/`category`/`likely_cause`/`modify_target`），
+本就不可比：dev 的 `alembic_version=c4e81b7a35d2`，`d5f92c1a4b76`／`f3a81c6e5d92` 兩支從未套用。
+
 ## 2026-07-30-122039 — L2 跳出值由哨兵 `__OUT_OF_TAXONOMY__` 改為「其他」（L1／L2 兩層同值）
 
 改動動機＝**三處口徑不一致**：模型要逐字輸出的值是哨兵 `__OUT_OF_TAXONOMY__`，但 L1 早在

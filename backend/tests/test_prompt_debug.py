@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 
 from app.judge import prompt_debug
@@ -10,9 +11,9 @@ from app.judge import prompt_debug_versions as versions
 
 
 def _base_result(**overrides):
-    """一筆合法的非 OOT 判定（單一契約：全欄禁 null、keywords 陣列、urgency 1–5）。"""
+    """一筆合法的非跳出判定（單一契約：全欄禁 null、keywords 陣列、urgency 1–5）。"""
     value = {
-        "L2": "憑證/取票資訊未送達或不知如何使用",
+        "L2": "憑證/取票未送達或催件",
         "L1": "[104] 訂單確認問題",
         "L3": "憑證送達延遲",
         "L4": "n/a",
@@ -23,6 +24,7 @@ def _base_result(**overrides):
         "money_mention_flag": False,
         "fulfillment_mention_flag": True,
         "multi_issue_flag": False,
+        "redirected_to_cancel_flag": False,
         "no_actionable_content": False,
         "confidence": 0.93,
     }
@@ -30,17 +32,32 @@ def _base_result(**overrides):
     return value
 
 
-def test_defaults_carry_active_release_and_taxonomy_derived_schema() -> None:
-    """payload 只有一套契約：**當前正式版** Prompt ＋ 由分類 SSOT 派生的 schema/欄位卡。
+def _embedded_taxonomy(prompt: str) -> dict:
+    """抽 Prompt 快照內嵌的分類庫與兩個 L4 值域（`<taxonomy>`／`<L4_*>` 區塊）。"""
+    block = re.search(r"<taxonomy>\s*(\{.*?\})\s*</taxonomy>", prompt, re.S)
+    assert block, "Prompt 快照找不到 <taxonomy> 區塊：分類庫沒內嵌，模型會拿不到判準"
+    out = json.loads(block.group(1))
+    for tag in ("L4_modify_target", "L4_oot_subtype"):
+        values = re.search(rf"<{tag}>\s*(\[.*?\])\s*</{tag}>", prompt, re.S)
+        assert values, f"Prompt 快照找不到 <{tag}> 區塊"
+        out[tag] = json.loads(values.group(1))
+    return out
 
-    刻意不斷言「清單頭＝當前口徑」——那是舊的無指針設計。口徑只認 index 的 active_release，
-    草稿清單再新也不影響它。
+
+def test_defaults_carry_both_tracks_and_taxonomy_derived_schema() -> None:
+    """payload 只有一套契約：兩軌 Prompt 各就各位 ＋ 由分類 SSOT 派生的 schema/欄位卡。
+
+    調試台是**草稿工作台**，載入口徑＝最新草稿（`system_prompt`）；線上口徑另走
+    `release_prompt`／`active_release`。兩者刻意分開斷言——混成一條會在草稿領先正式版時
+    誤紅（2026-08-03 就是這樣：v4 草稿已存、正式版還在 v3，這條斷言先紅了）。
     """
     payload = prompt_debug.defaults_payload()
-    assert payload["L2_count"] == 25
-    assert payload["L1_count"] == 5
+    assert payload["L2_count"] == 24
+    assert payload["L1_count"] == 6
+    assert payload["latest_draft"] == versions.latest_draft()
+    assert payload["system_prompt"] == versions.read_draft(payload["latest_draft"])
     assert payload["active_release"] == versions.active_release()
-    assert payload["system_prompt"] == versions.active_prompt()
+    assert payload["release_prompt"] == versions.active_prompt()
     # 正式版清單裡恰有一個 active，且就是它
     actives = [r["name"] for r in payload["releases"] if r["is_active"]]
     assert actives == [payload["active_release"]]
@@ -64,10 +81,12 @@ def test_defaults_carry_active_release_and_taxonomy_derived_schema() -> None:
         "money_mention_flag",
         "fulfillment_mention_flag",
         "multi_issue_flag",
+        "redirected_to_cancel_flag",
         "no_actionable_content",
         "confidence",
     ]
-    # 已清退的欄位不得復活（tail_theme / urgency_flag＝v2 契約；oot_subtype＝2026-07-28 全棧退役）
+    # 已清退的欄位不得復活（tail_theme / urgency_flag＝v2 契約；oot_subtype 自 2026-07-28 起
+    # 不再是獨立欄位——260803 表把跳出子型收進 L4 的第三分支，值域名沿用但欄位不得回來）
     assert {"tail_theme", "urgency_flag", "oot_subtype"}.isdisjoint(
         {field["key"] for field in payload["output_fields"]}
     )
@@ -77,37 +96,68 @@ def test_defaults_carry_active_release_and_taxonomy_derived_schema() -> None:
 
 
 def test_output_cascade_narrows_each_level_to_its_parent_branch() -> None:
-    """L1→L2→L3 級聯由 SSOT 派生：下層清單必須是上層那一支底下的值，且與 schema enum 同源。"""
+    """L1→L2→L3 與條件式 L2→L4 級聯由 SSOT 派生：下層清單必須是上層那一支底下的值，且與 schema enum 同源。"""
     taxonomy = prompt_debug.load_taxonomy()
     cascade = prompt_debug.output_cascade(taxonomy)
     schema = prompt_debug.output_schema(taxonomy)
 
     assert cascade["L2"]["parent"] == "L1"
     assert cascade["L3"]["parent"] == "L2"
+    assert cascade["L4"]["parent"] == "L2"
 
     by_l1 = cascade["L2"]["options_by_parent"]
-    # 5 個主題 + OOT 分支；攤平後恰為 schema 的 category enum（不多不少，證明沒有漏掛的類）
-    assert len(by_l1) == 6
+    # 6 個主題（含無代碼的「現場履約問題」）+ 跳出分支；攤平後恰為 schema 的 L2 enum，
+    # 不多不少，證明沒有漏掛的類
+    assert len(by_l1) == 7
     assert sorted(c for opts in by_l1.values() for c in opts) == sorted(
         schema["properties"]["L2"]["enum"]
     )
     assert by_l1["其他"] == ["其他"]
+    # 無代碼主題的 L1 值就是名稱本身，不得留下拼接的前導空格
+    assert "現場履約問題" in by_l1 and " 現場履約問題" not in by_l1
 
-    # 每個 category 都掛在自己 theme 底下（抽一類驗證，避免只是形狀對但歸屬錯）
-    assert "取消政策揭露不清" in by_l1["[101] 訂單取消"]
-    assert "取消政策揭露不清" not in by_l1["[93] 訂單申請修改"]
+    # 每個 L2 都掛在自己 L1 底下（抽一類驗證，避免只是形狀對但歸屬錯）
+    assert "取消政策爭議（規則僵化或揭露不清）" in by_l1["[101] 訂單取消"]
+    assert "取消政策爭議（規則僵化或揭露不清）" not in by_l1["[93] 訂單申請修改"]
 
     by_l2 = cascade["L3"]["options_by_parent"]
-    assert by_l2["其他"] == ["n/a"]
+    assert by_l2["其他"] == ["其他"]
     for row in taxonomy["L2_entries"]:
         assert by_l2[row["name"]] == row["L3_options"]
 
+    # L4 三分支：[93] 挑修改標的、跳出挑子型、其餘只剩 n/a 哨兵
+    by_l2_l4 = cascade["L4"]["options_by_parent"]
+    assert by_l2_l4["旅客/聯絡人資料修正"] == taxonomy["L4_options"]["modify_target"]
+    assert by_l2_l4["其他"] == taxonomy["L4_options"]["oot_subtype"]
+    assert by_l2_l4["憑證/取票未送達或催件"] == ["n/a"]
+
 
 def test_defaults_payload_carries_cascade_for_review_controls() -> None:
-    """人工評判的下拉靠 payload 的 output_cascade 收窄，缺了它 L2 會退回攤平的 25 類。"""
+    """人工評判的下拉靠 payload 的 output_cascade 收窄，缺了它 L2 會退回攤平的 24 類。"""
     payload = prompt_debug.defaults_payload()
     assert payload["output_cascade"]["L2"]["parent"] == "L1"
     assert payload["output_cascade"]["L3"]["parent"] == "L2"
+    assert payload["output_cascade"]["L4"]["parent"] == "L2"
+
+
+def test_default_prompt_taxonomy_matches_contract_ssot() -> None:
+    """調試台默認口徑的 Prompt 內嵌分類庫，必須與契約 SSOT 是**同一版表**。
+
+    2026-08-03 的事故就是這條沒被守住：Prompt 升到 260803 表、`after_sales_root_cause.json`
+    還留在 260722，於是 Structured Outputs 把新表答案硬塞回舊 enum——模型被迫輸出
+    `L2=取消政策本身僵化`＋`L3=用戶自填錯` 這種跨類組合，新欄位 `redirected_to_cancel_flag`
+    還因 `additionalProperties: false` 被靜默丟掉。校驗只報得出「L3 不屬於該 L2」，看不出真因。
+    """
+    taxonomy = prompt_debug.load_taxonomy()
+    embedded = _embedded_taxonomy(prompt_debug.defaults_payload()["system_prompt"])
+
+    by_name = {entry["name"]: entry for entry in embedded["L2_entries"]}
+    assert set(by_name) == {row["name"] for row in taxonomy["L2_entries"]}
+    for row in taxonomy["L2_entries"]:
+        assert by_name[row["name"]]["L1"] == prompt_debug._l1_value(row)
+        assert by_name[row["name"]]["L3_options"] == row["L3_options"]
+    assert embedded["L4_modify_target"] == taxonomy["L4_options"]["modify_target"]
+    assert embedded["L4_oot_subtype"] == taxonomy["L4_options"]["oot_subtype"]
 
 
 def test_slashes_inside_controlled_causes_are_not_split() -> None:
@@ -117,6 +167,48 @@ def test_slashes_inside_controlled_causes_are_not_split() -> None:
     assert "代收轉付收據性質未於下單/商品頁說明" in causes
     assert "用戶對發票/收據/三聯式概念混淆" in causes
     assert "商品頁說明" not in causes
+
+
+def test_taxonomy_drift_warning_fires_only_on_cross_table_prompts() -> None:
+    """執行期防漂移：送出的 Prompt 內嵌分類庫與 SSOT 不同表就警示，同表與無內嵌區塊都放行。
+
+    守門測試只管 repo 內的默認口徑；實際送出的可能是任一歷史草稿／正式版／頁面臨時貼的全文，
+    這條是那些路徑的最後一道提示（不阻斷——判不判由人決定，但不能讓人以為結果可信）。
+    """
+    taxonomy = prompt_debug.load_taxonomy()
+    warn = prompt_debug.taxonomy_drift_warning
+
+    # 無內嵌區塊＝刻意的臨時實驗，不吵
+    assert warn("隨手貼的實驗版 Prompt，沒有內嵌分類庫", taxonomy) == ""
+    # 同表＝零警示（拿默認口徑那份真 Prompt 驗，不是自組的最小樣本）
+    assert warn(prompt_debug.defaults_payload()["system_prompt"], taxonomy) == ""
+
+    rows = taxonomy["L2_entries"]
+    same_table = {"L2_entries": [{"name": r["name"], "L3_options": r["L3_options"]} for r in rows]}
+
+    def wrap(payload: dict) -> str:
+        return f"<taxonomy>\n{json.dumps(payload, ensure_ascii=False)}\n</taxonomy>"
+
+    assert warn(wrap(same_table), taxonomy) == ""
+
+    # 舊表殘留的類名（260722 的「取消政策本身僵化」）→ 兩個方向的差集都要點出來
+    cross = {"L2_entries": [{"name": "取消政策本身僵化", "L3_options": ["其他"]}]}
+    message = warn(wrap(cross), taxonomy)
+    assert "不是同一版表" in message
+    assert "取消政策本身僵化" in message
+    assert "L2 SSOT 有、Prompt 沒有" in message.replace("個 ", "")
+
+    # 類名對得上、L3 受控值被改過（最陰的一種：schema 照舊放行，判準卻不同）
+    shifted = {
+        "L2_entries": [
+            {"name": r["name"], "L3_options": (["憑空多出來的值"] if i == 0 else r["L3_options"])}
+            for i, r in enumerate(rows)
+        ]
+    }
+    assert "L3 受控值不同" in warn(wrap(shifted), taxonomy)
+
+    # 區塊在但 JSON 壞掉（快照被截斷）→ 明說無法比對，不靜默放行
+    assert "不是合法 JSON" in warn('<taxonomy>\n{"L2_entries": [\n</taxonomy>', taxonomy)
 
 
 def test_validate_result_accepts_controlled_non_oot() -> None:
@@ -135,23 +227,40 @@ def test_validate_result_rejects_cross_l2_cause_and_l1() -> None:
 
 
 def test_validate_result_accepts_oot_contract() -> None:
-    value = _base_result(
-        L2="其他",
-        L1="其他",
-        L3="n/a",
-    )
+    """跳出：L1／L2／L3 三層皆「其他」，L4 改由跳出子型承接（260803 表起不再是 n/a）。"""
+    value = _base_result(L2="其他", L1="其他", L3="其他", L4="售前_商品資訊詢問")
     assert prompt_debug.validate_result(value) == []
+
+    assert "跳出的 L4 必須是跳出子型之一" in prompt_debug.validate_result(
+        _base_result(L2="其他", L1="其他", L3="其他", L4="n/a")
+    )
+    assert "跳出的 L3 必須是 其他" in prompt_debug.validate_result(
+        _base_result(L2="其他", L1="其他", L3="憑證送達延遲", L4="純技術操作")
+    )
 
 
 def test_validate_result_enforces_no_actionable_content_linkage() -> None:
-    """no_actionable_content=true 必須連動 OOT ＋ keywords 清空。"""
+    """no_actionable_content=true 必須連動跳出 ＋ keywords 清空 ＋ L4 為對話殘段子型。"""
     assert "no_actionable_content=true 時 L2 必須是 其他" in (
         prompt_debug.validate_result(_base_result(no_actionable_content=True))
+    )
+    assert "no_actionable_content=true 時 L4 必須是 對話殘段/無實質" in (
+        prompt_debug.validate_result(
+            _base_result(
+                L2="其他",
+                L1="其他",
+                L3="其他",
+                L4="純技術操作",
+                no_actionable_content=True,
+                keywords=[],
+            )
+        )
     )
     value = _base_result(
         L2="其他",
         L1="其他",
-        L3="n/a",
+        L3="其他",
+        L4="對話殘段/無實質",
         no_actionable_content=True,
         keywords=[],
     )
@@ -160,12 +269,40 @@ def test_validate_result_enforces_no_actionable_content_linkage() -> None:
 
 def test_validate_result_requires_l4_for_93() -> None:
     value = _base_result(
-        L2="修改受限（商品規則/供應商政策不允許改）",
+        L2="修改受限（規則不允許改）",
         L1="[93] 訂單申請修改",
-        L3="商品規則不允許改",
+        L3="規則不允許改",
     )
-    assert "[93] L2 必須填 L4（不可為 n/a）" in prompt_debug.validate_result(value)
+    assert "[93] L2 的 L4 必須是修改標的之一（不可為 n/a 或跳出子型）" in (
+        prompt_debug.validate_result(value)
+    )
+    # 值域對但分支錯（拿跳出子型當修改標的）同樣要擋——schema 的 L4 enum 是三分支聯集，攔不住這個
+    value["L4"] = "純技術操作"
+    assert "[93] L2 的 L4 必須是修改標的之一（不可為 n/a 或跳出子型）" in (
+        prompt_debug.validate_result(value)
+    )
     value["L4"] = "改日期/時段/班次"
+    assert prompt_debug.validate_result(value) == []
+
+
+def test_validate_result_binds_redirected_to_cancel_flag_to_93() -> None:
+    """R2「改與取消不互相吸收」的落地：被導向取消只可能發生在 [93]（自檢規則④）。"""
+    message = "redirected_to_cancel_flag=true 時 L1 必須是 [93] 訂單申請修改"
+    assert message in prompt_debug.validate_result(
+        _base_result(redirected_to_cancel_flag=True)  # [104] 類
+    )
+    assert message in prompt_debug.validate_result(
+        _base_result(
+            L2="其他", L1="其他", L3="其他", L4="純技術操作", redirected_to_cancel_flag=True
+        )
+    )
+    value = _base_result(
+        L2="修改受限（規則不允許改）",
+        L1="[93] 訂單申請修改",
+        L3="規則不允許改",
+        L4="改日期/時段/班次",
+        redirected_to_cancel_flag=True,
+    )
     assert prompt_debug.validate_result(value) == []
 
 

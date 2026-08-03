@@ -246,8 +246,9 @@ async function copyChangelog(): Promise<void> {
         />
       </div>
       <a-alert type="warning" class="mt-2">
-        改寫只動 Prompt。判準若同時寫在 <code>config/ai_judge/after_sales_root_cause.json</code>
-        的 calibration，仍要人工同步——這裡不會自動改 SSOT。
+        改寫只動 Prompt。若補丁動到受控值（L1~L4 的類名或選項），
+        <code>config/ai_judge/after_sales_root_cause.json</code>
+        仍要人工同步——這裡不會自動改 SSOT，兩邊不同表時判定會被 enum 硬塞。
       </a-alert>
     </section>
 
