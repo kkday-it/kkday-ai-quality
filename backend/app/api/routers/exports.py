@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
@@ -92,8 +93,13 @@ def export_download(
     if data is None:
         raise HTTPException(status_code=404, detail="結果已取走或不存在")
     name = filename or snap.get("filename") or "export.xlsx"
+    # HTTP header 只能是 latin-1，中文檔名（如「售前售後進線-20260803152512.xlsx」）直接塞會拋
+    # UnicodeEncodeError → 走 RFC 5987：filename* 帶 UTF-8 百分比編碼（現代瀏覽器取這個），
+    # filename= 保留 ASCII 退化名供舊客戶端使用。
+    ascii_name = name.encode("ascii", "ignore").decode() or "export.xlsx"
+    disposition = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
     return Response(
         content=data,
         media_type=_mime_for(name),
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers={"Content-Disposition": disposition},
     )

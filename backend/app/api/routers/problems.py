@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core import auth, db
+from app.core.judge_config import sources as _sources
 from app.core.permissions import permission_keys, require_permission
+
+# 導出檔名時間戳一律台北時間：容器時區為 UTC，直接 now() 會比使用者實際時間早 8 小時。
+_TPE = ZoneInfo("Asia/Taipei")
 
 router = APIRouter()
 
@@ -167,7 +173,10 @@ def export_problems(
     # 快照導出檔名帶模型（非法字元清洗同 _export_sheet_title；口徑細節在 xlsx「歸因統計」A2）
     safe_model = re.sub(r"[:\\/?*\[\]]", "", body.snapshot_model) if body.snapshot_model else ""
     snap_tag = f"_{safe_model}" if safe_model else ""
-    filename = f"problems_{body.source or 'all'}{snap_tag}.xlsx"
+    # 檔名＝來源中文 label（SSOT: config/global/sources.json）＋台北時間戳，
+    # 例：售前售後進線-20260803152512.xlsx；多批導出可依時間排序、不互相覆蓋。
+    label = _sources.label_for(body.source) if body.source else "全部來源"
+    filename = f"{label}{snap_tag}-{datetime.now(_TPE):%Y%m%d%H%M%S}.xlsx"
     job_id = export_jobs.start_export(_builder, filename)
     return {"job_id": job_id, "filename": filename}
 
