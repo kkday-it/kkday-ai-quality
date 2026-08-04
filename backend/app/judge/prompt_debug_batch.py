@@ -665,21 +665,23 @@ def _error_record(plan: _RunPlan, row: InputRow, exc: BaseException, latency_ms:
 
 
 def _usage_row(plan: _RunPlan, row: InputRow, record: dict) -> dict:
-    """單筆用量 → llm_usage 落庫列（stage 同單次調試，AI 消耗看板口徑一致；source 區分批量）。"""
-    from app.core import settings as app_settings
+    """單筆用量 → llm_usage 落庫列。
 
+    `stage='prompt_debug_batch'` 與單次調試的 `prompt_debug` 區分開——AI 消耗看板要分得出
+    「跑批燒掉的」與「零星試的」。`feedback_source_code` 留空：調試台拿任意文本試 Prompt，
+    不隸屬任何反饋來源。
+    """
     return {
-        "stage": "prompt_debug",
+        "stage": "prompt_debug_batch",
         "model": plan.cfg["model"],
-        "provider": app_settings.provider_id_for(plan.cfg["base_url"]),
         "prompt_tokens": record["input_tokens"],
         "completion_tokens": record["output_tokens"],
         "reasoning_tokens": record["reasoning_tokens"],
         "cached_tokens": record["cached_tokens"],
-        "total_tokens": record["input_tokens"] + record["output_tokens"],
         "cost_usd": record["cost_usd"],
-        "source": "prompt_debug_batch",
-        "source_id": row.item_id,
+        # feedback_source_code 是「反饋來源」（reviews / conversations…）——調試台的呼叫
+        # 不隸屬任何反饋來源，留空；「誰打的」由 stage 表達。
+        "source": None,
         "job_id": plan.run_id,
     }
 

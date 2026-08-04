@@ -259,14 +259,12 @@ def _record_usage_best_effort(cfg: dict[str, Any], payload: dict[str, Any], job_
             {
                 "stage": "prompt_revise",
                 "model": cfg["model"],
-                "provider": app_settings.provider_id_for(cfg.get("base_url") or ""),
                 "prompt_tokens": payload["prompt_tokens"],
                 "completion_tokens": payload["completion_tokens"],
                 "reasoning_tokens": payload["reasoning_tokens"],
                 "cached_tokens": payload["cached_tokens"],
-                "total_tokens": payload["total_tokens"],
                 "cost_usd": payload["cost_usd"],
-                "source": "prompt_revise",
+                "source": None,  # 非反饋來源驅動的呼叫；歸屬由 stage 表達
                 "source_id": None,
                 "job_id": job_id,
             }

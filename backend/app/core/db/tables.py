@@ -69,9 +69,12 @@ attributions = Table(
     ),
     # ── 歸因分類 L1→L2（code 與中文 label 同存＝SSOT 即資料本身）──
     Column("l1_code", Text, comment="L1 域代碼（如 content / supplier）"),
-    Column("l1_label", Text, comment="L1 域中文名"),
+    # label 與 code 雙射（實測 l1 7↔7↔7、l2 32↔32↔32），看起來冗餘但**刻意保留**：
+    # 這是判決當下的分類名快照。改成讀取時由分類體系推導的話，日後改寫措辭會回溯改變
+    # 6,242 列歷史歸因的顯示文字——匯出的舊報表與 DB 現值就對不上了。
+    Column("l1_label", Text, comment="L1 域中文名（判決當下的快照，非讀取時推導）"),
     Column("l2_code", Text, comment="L2 面向代碼（C-N-M）"),
-    Column("l2_label", Text, comment="L2 面向中文名"),
+    Column("l2_label", Text, comment="L2 面向中文名（判決當下的快照，理由同 l1_label）"),
     # ── 信心 ──
     Column("conf_value", Float, comment="最終信心值（校準後，0~1）"),
     Column("conf_raw", Float, comment="arbiter LLM 回報的原始信心值（未校準）"),
@@ -424,7 +427,14 @@ llm_usage = Table(
         key="id",
         comment="流水號主鍵（serial）",
     ),
-    Column("stage", Text, comment="呼叫階段：polarity / C-1~C-6 / prompt_debug / prompt_revise…"),
+    Column(
+        "stage",
+        Text,
+        comment=(
+            "呼叫階段／呼叫者：polarity / C-1~C-6 / attribute / pack_* / prompt_debug / "
+            "prompt_debug_batch / prompt_revise…（非反饋來源驅動的呼叫，歸屬由此欄表達）"
+        ),
+    ),
     Column("model", Text, nullable=False, comment="實際使用的模型（cfg.model）"),
     Column("prompt_tokens", Integer, comment="輸入 token 數"),
     Column(
@@ -447,7 +457,10 @@ llm_usage = Table(
         "feedback_source_code",
         Text,
         key="source",
-        comment="反饋來源 code（reviews…）；ad-hoc 呼叫為空",
+        comment=(
+            "反饋來源 code（reviews / conversations / freshdesk_tickets / app_feedback / "
+            "mixpanel_tracker）；非反饋來源驅動的呼叫（調試台、AI 改寫）為空"
+        ),
     ),
     Column("job_id", Text, comment="所屬批次任務 id；單次呼叫為空"),
     Column(
@@ -680,7 +693,10 @@ evidence_snapshot = Table(
     Column(
         "package_module_setting",
         JSONB,
-        comment="方案模組設定 list[{prod_module_type,…}]（來源 ors_prod_module_setting）",
+        comment=(
+            "方案模組設定 list[{prod_module_type, prod_module_setting}]"
+            "（來源 ors_prod_module_setting）"
+        ),
     ),
     # ── meta 群組（快取管理，非業務資料）──
     Column(

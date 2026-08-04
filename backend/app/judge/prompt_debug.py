@@ -477,9 +477,8 @@ def _record_usage_best_effort(cfg: dict[str, Any], payload: dict[str, Any], job_
                 "completion_tokens": payload["completion_tokens"],
                 "reasoning_tokens": payload["reasoning_tokens"],
                 "cached_tokens": payload["cached_tokens"],
-                "total_tokens": payload["total_tokens"],
                 "cost_usd": payload["cost_usd"],
-                "source": "prompt_debug",
+                "source": None,  # 非反饋來源驅動的呼叫；歸屬由 stage 表達
                 "source_id": None,
                 "job_id": job_id,
             }
