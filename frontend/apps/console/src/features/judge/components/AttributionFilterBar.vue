@@ -14,7 +14,6 @@ import {
   HAS_EXTERNAL_OPTS,
   POLARITY_FILTER_OPTS,
   STAGE_OPTS,
-  STATUS_OPTS,
   TIER_OPTS,
   type AttributionFilters,
   type FilterField,
@@ -58,7 +57,6 @@ const FIELD_FLEX: Record<FilterField, string> = {
   polarity: '190px',
   stage: '190px',
   tier: '190px',
-  status: '190px',
   model: '210px',
   taxonomy: '230px',
   hasExternal: '190px',
@@ -76,7 +74,6 @@ const SECONDARY_FIELDS: FilterField[] = [
   'polarity',
   'stage',
   'tier',
-  'status',
   'model',
   'taxonomy',
   'hasExternal',
@@ -245,18 +242,6 @@ function applyRecentDays(n: number): void {
           placeholder="信心分層"
           class="w-full"
           :options="TIER_OPTS"
-          @change="onChange"
-        />
-      </a-col>
-      <a-col v-if="has('status')" :flex="FIELD_FLEX.status">
-        <a-select
-          v-model="state.status"
-          multiple
-          :size="size"
-          :max-tag-count="1"
-          placeholder="判決狀態"
-          class="w-full"
-          :options="STATUS_OPTS"
           @change="onChange"
         />
       </a-col>

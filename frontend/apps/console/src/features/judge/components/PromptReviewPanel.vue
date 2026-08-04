@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
  * 人工評判區塊：把 AI 判定的每個欄位逐欄標「對／錯」，標錯就地填正解，最後連同整體修改建議
- * 存進案例庫（`prompt_debug_reviews`）。存下來的案例有兩個下游——餵給 AI 做定點改寫的證據，
- * 以及改完 Prompt 後的回歸重跑素材。
+ * 存進案例庫（**瀏覽器本地**，見 `stores/promptReviewCases.store`）。存下來的案例有兩個下游
+ * ——餵給 AI 做定點改寫的證據，以及改完 Prompt 後的回歸重跑素材。
  *
  * 填正解的控件不寫死，一律由後端 `output_schema` 反推（見 `reviewControl.util`）：受控 enum
  * 會隨分類 SSOT 演進，前端手抄一份必然 drift。
  */
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { createPromptDebugReview } from '@/api';
+import { usePromptReviewCasesStore } from '@/stores/promptReviewCases.store';
 import {
   controlForField,
   defaultCorrection,
@@ -52,6 +52,7 @@ const verdicts = ref<Record<string, 'ok' | 'bad'>>({});
 const corrections = ref<Record<string, any>>({});
 const comment = ref('');
 const saving = ref(false);
+const caseStore = usePromptReviewCasesStore();
 
 /**
  * 某欄「當前有效的值」＝標錯且填了正解就以正解為準，否則沿用 AI 原判。
@@ -191,7 +192,8 @@ function clearAll(): void {
  */
 const savedId = ref<number | null>(null);
 
-async function save(): Promise<void> {
+/** 存為案例。寫的是瀏覽器本地 store（同步），`saving` 仍保留——按鈕的 disabled 態共用它。 */
+function save(): void {
   if (!canSave.value || saving.value) return;
   if (missingKeys.value.length) {
     Message.warning(`這幾欄標了錯但沒填正解：${missingKeys.value.map((f) => f.label).join('、')}`);
@@ -199,7 +201,7 @@ async function save(): Promise<void> {
   }
   saving.value = true;
   try {
-    const { id } = await createPromptDebugReview({
+    const id = caseStore.add({
       conversation: props.conversation,
       ai_output: props.aiOutput,
       corrections: Object.fromEntries(badKeys.value.map((f) => [f.key, corrections.value[f.key]])),
@@ -216,6 +218,7 @@ async function save(): Promise<void> {
     savedId.value = id;
     emit('saved', id);
   } catch (error) {
+    // 目前唯一的失敗是撞到 MAX_CASES 上限——訊息由 store 給，不要吞掉
     Message.error(error instanceof Error ? error.message : '存為案例失敗');
   } finally {
     saving.value = false;

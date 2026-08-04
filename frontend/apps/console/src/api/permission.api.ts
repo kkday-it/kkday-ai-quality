@@ -31,7 +31,6 @@ export const PERM = {
   dataDatapackImport: 'data.datapack.import',
   dataDatapackExport: 'data.datapack.export',
   dataSourceUpload: 'data.source.upload',
-  findingReviewUpdate: 'finding.review.update',
   problemListExport: 'problem.list.export',
   prejudgeRun: 'prejudge.run',
   settingsLlmConfigManage: 'settings.llm-config.manage',

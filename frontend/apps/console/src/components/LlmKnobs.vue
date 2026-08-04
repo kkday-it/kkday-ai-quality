@@ -11,7 +11,7 @@ import { modelMeetsMin } from '@/features/settings/utils';
 import type { LlmKnobs, LlmReasoningEffort, LlmThinking } from '@/features/settings/types';
 
 /** LLM 旋鈕組（model / thinking / reasoning_effort / temperature）：canonical 共用元件，
- * 供設定面板「功能區默認」與各功能區（prejudge/prompt_debug/sandbox）本次執行覆寫共用同一組控件與
+ * 供設定面板「功能區默認」與各功能區（prejudge/prompt_debug/prompt_revise）本次執行覆寫共用同一組控件與
  * 正規化邏輯，不得各自重做一套（見 .claude/rules/frontend-vue.md「同語義控件跨頁一致」）。
  * 2026-07-23 依三供應商官方文件全面重寫：OpenAI/Gemini 沒有獨立 thinking 開關（reasoning_effort
  * 本身即完整控制面，`capabilities.thinkingControl==='effortOnly'`），ByteDance/Ark 才有真實原生三態

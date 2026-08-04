@@ -6,7 +6,7 @@
  *   點任一筆 → 右側以同一份 `PrejudgeLogTabs` 只渲染該筆條目（單筆密度的 流程＋polarity＋C-N
  *   tabs＝快速下鑽單筆執行日誌）；job 級事件（任務啟動參數等）收在「整體流程」偽列。
  * 串流時預設自動跟隨「最新有動靜」的評論，使用者手動點選即釘住不再跳。
- * 三個消費端（確認初判分類抽屜／PrejudgeLogDrawer／PromptSandboxDrawer）零改動自動升級。
+ * 兩個消費端（確認初判分類抽屜／PrejudgeLogDrawer）零改動自動升級。
  */
 import { computed, ref, watch } from 'vue';
 import {

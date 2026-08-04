@@ -4,14 +4,11 @@ import { computed, reactive, ref, toValue, watch, type MaybeRefOrGetter } from '
 import { useLocalStorage } from '@vueuse/core';
 import {
   startProblemsExport,
-  patchStatus,
-  batchPatchStatus,
   getProblems,
   getTaxonomyCascade,
   getPrejudgeModels,
   type CascadeNode,
 } from '@/api';
-import { Message } from '@arco-design/web-vue';
 import { useVerticalFilterStore } from '@/stores';
 import {
   cloneFilters,
@@ -19,7 +16,6 @@ import {
   emptyFilters,
   filtersToParams,
   schemaFor,
-  type Attribution,
   type AttributionFilters,
   type ProblemRow,
 } from '../constants';
@@ -192,7 +188,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     if (!filterTypes.has('polarity')) filters.polarity = [];
     if (!filterTypes.has('stage')) filters.stage = [];
     if (!filterTypes.has('tier')) filters.tier = '';
-    if (!filterTypes.has('status')) filters.status = [];
     if (!filterTypes.has('model')) filters.model = [];
     if (!filterTypes.has('taxonomy')) filters.taxonomy = [];
     if (!filterTypes.has('hasExternal')) filters.hasExternal = '';
@@ -292,7 +287,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
           polarity: p.polarity,
           stage: p.stage,
           confidence_tier: p.confidenceTier,
-          status: p.status,
           model: p.model,
           snapshot_model: exportSnapshotModel.value || undefined,
           compare_models: exportCompareModels.value.length ? exportCompareModels.value : undefined,
@@ -312,45 +306,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
 
   // ── 單列判決（操作欄；與批量 selectedKeys 解耦；單列重新初判已下沉 usePrejudgeJob.rejudgeRow）──
   /** 判決結果提示文案（confirmed/dismissed/new＝撤銷判決回待判決）。 */
-  const REVIEW_DONE_MSG: Record<string, string> = {
-    confirmed: '已確認',
-    dismissed: '已忽略',
-    new: '已撤銷判決',
-  };
-  /**
-   * 單條歸因判決：只改該 finding 的判決狀態（per-attribution；每條歸因分開操作）。
-   * optimistic 即時回寫（PATCH 秒級·無 loading）；只改人工 status 軸、不動 AI stage。
-   * 再點選中狀態＝撤銷判決（status='new'）；失敗回滾快照（避免 UI 與後端漂移）。
-   */
-  const reviewFinding = async (attr: Attribution, status: string) => {
-    if (!attr.finding_id) return;
-    const next = attr.status === status ? 'new' : status; // 再點選中態＝撤銷
-    const prev = attr.status;
-    attr.status = next; // optimistic：初判徽章即時反映
-    try {
-      await patchStatus(attr.finding_id, next);
-      Message.success(REVIEW_DONE_MSG[next] || next);
-    } catch (e: any) {
-      attr.status = prev; // 失敗回滾（樂觀值不留殘影）
-      Message.error('判決失敗：' + (e?.message || e));
-    }
-  };
-
-  /**
-   * 批量初判：對已勾選評論（selectedKeys＝source_id）的**全部**歸因設定 status；
-   * 後端單交易逐筆 diff（同值冪等跳過）並記入歸因歷史。完成後重載列表並清空勾選。
-   */
-  const batchReview = async (status: string) => {
-    if (!selectedKeys.value.length) return;
-    try {
-      const r = await batchPatchStatus(toValue(source), selectedKeys.value, status);
-      Message.success(`${REVIEW_DONE_MSG[status] || status}：更新 ${r.updated} 條歸因`);
-      selectedKeys.value = [];
-      await loadPage();
-    } catch (e: any) {
-      Message.error('批量初判失敗：' + (e?.message || e));
-    }
-  };
 
   return {
     schema,
@@ -387,8 +342,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     // 初判歸因批次 + 單列重新初判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
     ...job,
     // 單列判決 + 批量初判
-    reviewFinding,
-    batchReview,
     // 導出（彈窗草稿流程 + 型態選擇 + 背景 job + 實時進度 + 停止）
     exportOpen,
     exportFilters,

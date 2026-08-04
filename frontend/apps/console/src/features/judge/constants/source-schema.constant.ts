@@ -28,10 +28,6 @@ export interface TierFilterDef {
   type: 'tier';
 }
 
-/** 判決狀態篩選（多選；選項來自 STATUS_LABEL，值 new/auto_confirmed/confirmed/dismissed）。 */
-export interface StatusFilterDef {
-  type: 'status';
-}
 
 /** 初判模型篩選（多選；選項來自 /api/attribution-history/models，值 attributions.model 當前初判維度）。 */
 export interface ModelFilterDef {
@@ -60,7 +56,6 @@ export type SourceFilterDef =
   | PolarityFilterDef
   | StageFilterDef
   | TierFilterDef
-  | StatusFilterDef
   | ModelFilterDef
   | TaxonomyFilterDef
   | HasExternalFilterDef
@@ -135,7 +130,8 @@ export interface AttributionContent {
  * 一條形狀貫穿 DB(typed 欄)→API→前端；L1-L2/信心/內容各為分組物件。
  */
 export interface Attribution {
-  finding_id?: string;
+  /** 歸因流水號主鍵（serial）；同一則反饋的多條歸因靠它區分。 */
+  attribution_oid?: number;
   polarity?: string;
   /** 初判階段（judged/pending_review/pending_data）。 */
   stage?: string;
@@ -147,11 +143,10 @@ export interface Attribution {
   owner?: string;
   /** 初判模型（如 gpt-5-mini；stub＝假判）——初判溯源標籤用。 */
   model?: string;
-  /** 備註數（finding_notes fan-out 計數）——備註按鈕 badge 用。 */
-  notes_count?: number;
+  /** 多歸因中的主歸因旗標。 */
   is_primary?: boolean;
-  /** 處理 status（同後端 Literal：new / auto_confirmed(G1 自動確認) / confirmed / dismissed）——初判徽章用。 */
-  status?: string;
+  /** 系統是否自動採納（信心達 auto_accept 門檻）。 */
+  is_auto_accepted?: boolean;
 }
 
 /**
@@ -210,7 +205,6 @@ const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },
   { type: 'tier' },
-  { type: 'status' },
   { type: 'model' },
   { type: 'taxonomy' },
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },

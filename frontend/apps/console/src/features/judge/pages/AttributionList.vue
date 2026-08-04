@@ -16,17 +16,13 @@ import {
   ExportProgressBar,
   LlmConfigSelect,
   ScrollFadeArea,
-  StateGuard,
   TableLayout,
 } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { fmtPercent } from '@/utils';
 import {
-  IconCheck,
-  IconClose,
   IconDownload,
   IconHistory,
-  IconMessage,
 } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import {
@@ -34,11 +30,10 @@ import {
   AttributionFilterBar,
   ExternalReviewPanel,
   PrejudgeLogView,
-  PromptSandboxDrawer,
   PromptVersionPickerGroup,
   RecordContextPanel,
 } from '../components';
-import { useAttributionList, useFindingNotes, useRejudgeConfirm } from '../composables';
+import { useAttributionList, useRejudgeConfirm } from '../composables';
 import {
   CONF_TIER_CLASS,
   DIALOGUE_ROLE_COLORS,
@@ -51,8 +46,6 @@ import {
   SOURCES,
   STAGE_COLOR,
   STAGE_LABELS,
-  STATUS_COLOR,
-  STATUS_LABEL,
   TIER_LABELS,
   type FilterField,
   type ProblemRow,
@@ -64,7 +57,6 @@ const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
 // 按鈕級權限遮罩（後端 403 兜底；此處 disabled 讓無權者一眼可辨「功能存在但不可用」）
 const { can } = usePermission();
 const canPrejudge = computed(() => can(PERM.prejudgeRun));
-const canReview = computed(() => can(PERM.findingReviewUpdate));
 const canExport = computed(() => can(PERM.problemListExport));
 
 // 歸因歷史抽屜（點開才載；每次批量/選取/單筆重新初判的 LLM 使用紀錄）
@@ -104,8 +96,6 @@ const {
   modelOptions,
   verticalOptions,
   verticalGroups,
-  effVerticals,
-  listFilters,
   onVerticalChange,
   onSortChange,
   onFilterChange,
@@ -167,8 +157,6 @@ const {
   cancelExport,
   isRowBusy,
   rejudgeRow,
-  reviewFinding,
-  batchReview,
   init,
 } = useAttributionList(source);
 
@@ -221,30 +209,6 @@ const viewDetail = (record: ProblemRow) => {
   detailRow.value = record;
   detailOpen.value = true;
 };
-// Prompt 測試沙盒：單列（列操作區）/ 批量（工具列，內含依條件目標選取）共用同一 Drawer，靠
-// scope 分辨語意。scope='all' 時 Drawer 內部委派 usePromptSandboxTargets 比照初判分類做目標
-// 選取（含「已選內／全部資料」切換，勾選測試已是其子功能，不再另設獨立按鈕），此處需把
-// effVerticals/selectedRowKeys/listFilters/cascadeOptions 一併傳入供其取用。
-const sandboxVisible = ref(false);
-const sandboxScope = ref<'single' | 'all'>('single');
-const sandboxSourceIds = ref<string[]>([]);
-const sandboxRow = ref<ProblemRow | null>(null);
-/** 開單列 Prompt 測試沙盒。 */
-const openRowTest = (record: ProblemRow) => {
-  sandboxRow.value = record;
-  sandboxSourceIds.value = record.source_id ? [record.source_id] : [];
-  sandboxScope.value = 'single';
-  sandboxVisible.value = true;
-};
-/** 開批量 Prompt 測試沙盒（工具列唯一入口；比照初判分類，無勾選亦可開，預設測全部未初判；
- * 有勾選時 Drawer 內建「已選內」範圍可測勾選集合）。 */
-const openBatchTest = () => {
-  sandboxRow.value = null;
-  sandboxSourceIds.value = [];
-  sandboxScope.value = 'all';
-  sandboxVisible.value = true;
-};
-
 /** 信心數字按分層上色（CONF_TIER_CLASS 見 constants/pipeline.constant；未知 tier 回預設文字色）。 */
 const confClass = (tier?: string): string =>
   CONF_TIER_CLASS[tier || ''] || 'text-[var(--color-text-1)]';
@@ -267,24 +231,11 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
 /** 精確查詢 placeholder（隨來源切換：評論 rec_oid／進線 session_oid…，與後端 natural_key 篩選對齊）。 */
 const idPlaceholder = computed(() => idPlaceholderFor(source.value));
 
-// ── 歸因備註（append-only 歷史：備註人 / 時間 / 內容）下沉 useFindingNotes ──
-const {
-  noteOpen,
-  noteList,
-  noteDraft,
-  noteLoading,
-  noteSaving,
-  openNotes,
-  submitNote,
-  fmtNoteTime,
-} = useFindingNotes();
-
 /** schema filter type → AttributionFilters 欄位鍵（現皆同名，保留映射以隔離 schema 命名）。 */
 const SCHEMA_TO_FIELD: Record<string, FilterField> = {
   polarity: 'polarity',
   stage: 'stage',
   tier: 'tier',
-  status: 'status',
   model: 'model',
   taxonomy: 'taxonomy',
   hasExternal: 'hasExternal',
@@ -346,11 +297,10 @@ onMounted(init);
         :options="verticalOptions.map((g) => ({ value: g, label: g }))"
         @change="onVerticalChange"
       />
-      <!-- 歸因模型選擇已移進「確認初判分類」抽屜與 Prompt 測試抽屜（本次執行才需要選，見 LlmConfigSelect）-->
-      <!-- 統一操作區：四顆全填滿、靠色相分主次，聚合成一條 button-group（見 rules/frontend-vue.md「同類按鈕聚合」）。
-           順序＝三顆「初判*」相鄰成族、導出殿後：
-           初判分類 primary(藍·主行為) → 初判 Prompt 測試 primary+warning(橙·試驗/dry-run) →
-           初判歷史 secondary(灰·檢視) → 導出列表 primary+success(綠·導出)。 -->
+      <!-- 歸因模型選擇已移進「確認初判分類」抽屜（本次執行才需要選，見 LlmConfigSelect）-->
+      <!-- 統一操作區：三顆全填滿、靠色相分主次，聚合成一條 button-group（見 rules/frontend-vue.md「同類按鈕聚合」）。
+           順序＝兩顆「初判*」相鄰成族、導出殿後：
+           初判分類 primary(藍·主行為) → 初判歷史 secondary(灰·檢視) → 導出列表 primary+success(綠·導出)。 -->
       <a-button-group size="small">
         <a-button
           type="primary"
@@ -359,11 +309,6 @@ onMounted(init);
           @click="openBatchConfirm"
         >
           初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
-        </a-button>
-        <!-- 初判 Prompt 測試沙盒（批量）：比照初判分類 stage/篩選目標選取，內建「已選內／全部資料」切換，
-             無需先勾選即可開；dry-run 不落正式初判，group 內以 warning(橙) 填滿標示「非正式執行」 -->
-        <a-button type="primary" status="warning" @click="openBatchTest">
-          初判 Prompt 測試{{ runCount ? `（已選 ${runCount}）` : '' }}
         </a-button>
         <!-- 初判歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄）。
              在 button-group 內用 secondary（有底色）而非 text——text 無邊框會讓群組看起來不相連，
@@ -488,37 +433,6 @@ onMounted(init);
           <a-col flex="none">
             <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
             <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
-          </a-col>
-          <!-- 批量初判：作用於已勾選評論的**全部**歸因（同值列冪等跳過；轉移記入歸因歷史）-->
-          <a-col flex="none">
-            <a-button
-              size="small"
-              type="outline"
-              status="success"
-              :disabled="!runCount || !canReview"
-              @click="batchReview('confirmed')"
-            >
-              <template #icon><IconCheck /></template>
-              批量確認
-            </a-button>
-          </a-col>
-          <a-col flex="none">
-            <a-popconfirm
-              :content="`將把已選 ${runCount} 筆反饋的全部歸因標為「已忽略」。確定執行？`"
-              ok-text="批量忽略"
-              cancel-text="取消"
-              @ok="batchReview('dismissed')"
-            >
-              <a-button
-                size="small"
-                type="outline"
-                status="warning"
-                :disabled="!runCount || !canReview"
-              >
-                <template #icon><IconClose /></template>
-                批量忽略
-              </a-button>
-            </a-popconfirm>
           </a-col>
           <a-col flex="auto" class="flex items-center justify-end gap-2">
             <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
@@ -709,60 +623,6 @@ onMounted(init);
                 </a-tag>
               </div>
             </div>
-            <!-- 操作（判決徽章 + 確認採信(綠)/忽略駁回(紅)/備註；再點選中態＝撤銷判決）-->
-            <div class="flex gap-1.5">
-              <span :class="SECTION_LABEL_CLASS">操作</span>
-              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-                <a-tag
-                  v-if="a.status && a.status !== 'new'"
-                  size="small"
-                  :color="STATUS_COLOR[a.status]"
-                  bordered
-                >
-                  {{ STATUS_LABEL[a.status] || a.status }}
-                </a-tag>
-                <a-tooltip :content="a.status === 'confirmed' ? '再點一次撤銷判決' : '確認採信'">
-                  <a-button
-                    size="mini"
-                    type="text"
-                    status="success"
-                    :class="
-                      a.status === 'confirmed'
-                        ? 'rounded bg-[var(--color-fill-2)] font-semibold'
-                        : ''
-                    "
-                    :disabled="!canReview"
-                    @click="reviewFinding(a, 'confirmed')"
-                  >
-                    <template #icon><IconCheck /></template>
-                    確認
-                  </a-button>
-                </a-tooltip>
-                <a-tooltip :content="a.status === 'dismissed' ? '再點一次撤銷判決' : '忽略駁回'">
-                  <a-button
-                    size="mini"
-                    type="text"
-                    status="danger"
-                    :class="
-                      a.status === 'dismissed'
-                        ? 'rounded bg-[var(--color-fill-2)] font-semibold'
-                        : ''
-                    "
-                    :disabled="!canReview"
-                    @click="reviewFinding(a, 'dismissed')"
-                  >
-                    <template #icon><IconClose /></template>
-                    忽略
-                  </a-button>
-                </a-tooltip>
-                <a-badge v-if="a.finding_id" :count="a.notes_count || 0" :max-count="99">
-                  <a-button size="mini" type="text" @click="openNotes(a.finding_id)">
-                    <template #icon><IconMessage /></template>
-                    備註
-                  </a-button>
-                </a-badge>
-              </div>
-            </div>
           </div>
         </template>
         <span v-else class="text-gray-300">—</span>
@@ -773,7 +633,7 @@ onMounted(init);
       <template #context="{ record }">
         <RecordContextPanel :record="record" :sections="schema.contextSections" />
       </template>
-      <!-- 操作欄：整列級動作全展開（初判分類 + 測試 + 查看詳情）；per-歸因判決在判決歸因欄內。與批量選取解耦。
+      <!-- 操作欄：整列級動作全展開（初判分類 / 查看詳情 / 初判歷史）。與批量選取解耦。
            每列都會重複這組按鈕，統一用 type="text" 輕量呈現（不套用 rules/frontend-vue.md「視覺區分主次」的
            primary/outline/dashed 分級——那條規則鎖定 toolbar/卡片動作列/彈窗 footer 這種「該區只出現一次」
            的場景；per-row 操作欄會隨列數重複出現，用色塊反而視覺噪音，見該規則新增的例外說明）；橫向鋪開、
@@ -791,13 +651,9 @@ onMounted(init);
           >
             初判分類
           </a-button>
-          <!-- 初判 Prompt 測試沙盒（單列）：勾選 prompt 子集跑這一則,ungated、不落正式初判 -->
-          <a-button size="small" type="text" @click="openRowTest(record)">
-            初判 Prompt 測試
-          </a-button>
           <!-- 未初判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
           <a-button size="small" type="text" @click="viewDetail(record)"> 查看詳情 </a-button>
-          <!-- 初判歷史（評論級時間軸：歷次初判快照/判決轉移/備註）-->
+          <!-- 初判歷史（評論級時間軸：歷次初判快照／備註／初判失敗）-->
           <a-button size="small" type="text" @click="openJudgmentHistory(record)">
             初判歷史
           </a-button>
@@ -1129,85 +985,6 @@ onMounted(init);
 
     <!-- 操作欄：查看歸因詳情抽屜（完整展示原文/關聯資料/每條歸因全欄位；抽出為獨立元件）-->
     <AttributionDetailDrawer v-model:visible="detailOpen" :row="detailRow" :source="source" />
-
-    <!-- Prompt 測試沙盒：單列 / 批量（內建依條件目標選取）共用；跑選定 prompt 子集，ungated、
-         與正式初判分離落庫 -->
-    <PromptSandboxDrawer
-      v-model:visible="sandboxVisible"
-      :source="source"
-      :scope="sandboxScope"
-      :source-ids="sandboxSourceIds"
-      :row="sandboxRow"
-      :eff-verticals="effVerticals"
-      :selected-keys="selectedRowKeys as string[]"
-      :list-filters="listFilters"
-      :cascade-options="cascadeOptions"
-    />
-
-    <!-- 歸因備註抽屜：左右佈局 7:3——左＝時間軸歷史，右＝新增備註（與歸因歷史抽屜同比例）-->
-    <a-drawer
-      v-model:visible="noteOpen"
-      title="歸因備註"
-      :footer="false"
-      :width="680"
-      unmount-on-close
-      :body-style="{
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }"
-    >
-      <div class="flex min-h-0 flex-1 gap-5">
-        <!-- 左：append-only 歷史時間軸（舊到新，時間遞增；佔 7/10）-->
-        <div class="flex min-w-0 flex-[7] flex-col">
-          <StateGuard :loading="noteLoading" error="">
-            <!-- 滾動容器包在 a-timeline 外層（同 AttributionHistoryDrawer）：timeline 是 flex column、
-                 item min-height 78px，max-h+overflow 直掛 timeline 會被 flex-shrink 壓縮致內容堆疊。 -->
-            <ScrollFadeArea v-if="noteList.length" class="min-h-0 flex-1">
-              <a-timeline class="pl-1">
-                <a-timeline-item v-for="n in noteList" :key="n.id">
-                  <div
-                    class="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--color-text-3)]"
-                  >
-                    <span class="font-medium text-[var(--color-text-2)]">{{ n.author }}</span>
-                    <span>{{ fmtNoteTime(n.created_at) }}</span>
-                  </div>
-                  <div
-                    class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[var(--color-text-1)]"
-                  >
-                    {{ n.content }}
-                  </div>
-                </a-timeline-item>
-              </a-timeline>
-            </ScrollFadeArea>
-            <a-empty v-else description="尚無備註" />
-          </StateGuard>
-        </div>
-        <!-- 右：新增備註（flex-1 填滿剩餘寬）-->
-        <div
-          class="flex min-w-0 flex-[3] flex-col gap-2 border-l border-[var(--color-neutral-3)] pl-5"
-        >
-          <a-textarea
-            v-model="noteDraft"
-            :auto-size="{ minRows: 4 }"
-            :max-length="500"
-            show-word-limit
-            placeholder="輸入備註內容（供判決者間留言、追蹤同一問題）…"
-          />
-          <div class="flex justify-end">
-            <a-button
-              type="primary"
-              size="small"
-              :loading="noteSaving"
-              :disabled="!noteDraft.trim()"
-              @click="submitNote"
-            >
-              送出備註
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </a-drawer>
   </div>
 </template>
 

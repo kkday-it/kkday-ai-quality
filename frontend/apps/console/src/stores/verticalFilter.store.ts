@@ -1,9 +1,8 @@
 // 全局商品垂直分類篩選（跨頁共享，狀態持久化跨 session）：
 // ① 顯示順序＝直接採用後端 bd_tag_vertical 規則 verticals 選項池的陣列順序（get_verticals_resolved()
-//    保序回傳）；順序調整改在「商品垂直分類」設定頁的 Vertical 選項池編輯器拖曳，本 store 不再自管
-//    本地順序（2026-07-27 前舊機制：規則配置頁另開一份拖曳排序清單＋本地 order 持久化，已退役）。
+//    保序回傳）；順序調整在「商品垂直分類」設定頁的 Vertical 選項池編輯器拖曳，本 store 不自管順序。
 // ② 篩選 filter（歸因列表工具列選中）＝實際套用到 列表 / 縱覽 / 未判 / 初判 scope 的篩選；
-//    **預設空＝不篩選**（不像舊版自動全選），使用者需主動勾選才會收斂資料範圍。
+//    **預設空＝不篩選**，使用者需主動勾選才會收斂資料範圍。
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { useLocalStorage } from '@vueuse/core';

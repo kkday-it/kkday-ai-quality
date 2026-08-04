@@ -1,4 +1,4 @@
-// 商品垂直分類（bd_tag_vertical）獨立編輯態：抽屜專用。取代舊制 product_vertical（CATEGORY_xxx 分組）。
+// 商品垂直分類（bd_tag_vertical）獨立編輯態：抽屜專用。
 // **刻意不共用 useJudgeRulesStore**——那是 singleton，其 activeCode 被規則配置頁同時消費，
 // 抽屜若透過它 selectRule('bd_tag_vertical') 會改共用 activeCode，令規則頁背景誤渲染本規則。
 // 本 composable 持有自己的 local state，直接呼叫 rule 版本化 API（固定 code=bd_tag_vertical），

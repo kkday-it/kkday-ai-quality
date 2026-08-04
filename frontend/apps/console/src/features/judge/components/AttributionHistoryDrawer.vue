@@ -17,7 +17,7 @@ import {
   type AttributionHistoryEntry,
 } from '@/api';
 import { ScrollFadeArea, StateGuard } from '@/components';
-import { POLARITY_LABELS, STATUS_LABEL, type ProblemRow } from '../constants';
+import { POLARITY_LABELS, type ProblemRow } from '../constants';
 
 // 「查看 LLM 日誌」入口目標（點開才載；PrejudgeLogDrawer 為歷史快照回看專用）
 const PrejudgeLogDrawer = defineAsyncComponent(() => import('./PrejudgeLogDrawer.vue'));
@@ -92,16 +92,20 @@ const submitNote = async () => {
 /** 時間顯示（ISO → 'YYYY-MM-DD HH:mm:ss'；與備註彈窗 fmtNoteTime 同格式）。 */
 const fmtTime = (iso: string | null): string => (iso ? iso.replace('T', ' ').slice(0, 19) : '');
 
-/** 事件類型 → timeline 節點色（judgment 藍＝AI 初判 / status 橙＝人工判決 / note 灰＝備註）。 */
+/**
+ * 事件類型 → timeline 節點色。
+ *
+ * ⚠️ key 必須是後端實際寫入的 kind 值（`prejudge`/`note`/`failure`）。曾經誤用早已改掉的舊名
+ * `judgment`/`status`，結果整條時間軸的節點色都取到 undefined、靜默走預設灰。
+ */
 const DOT_COLOR: Record<string, string> = {
-  judgment: 'rgb(var(--primary-6))',
-  status: 'rgb(var(--warning-6))',
-  note: 'var(--color-neutral-6)',
+  prejudge: 'rgb(var(--primary-6))', // 藍＝AI 初判快照
+  note: 'var(--color-neutral-6)', // 灰＝備註
+  failure: 'rgb(var(--danger-6))', // 紅＝初判失敗
 };
 
 /** 初判快照單筆（後端 snapshot_of 形狀；寬鬆型別容忍回填/新版欄位差異）。 */
 type Snap = {
-  finding_id?: string;
   polarity?: string;
   sentiment_score?: number | null;
   l1?: { code?: string; label?: string };
@@ -160,13 +164,10 @@ const changesById = computed<Record<number, string[]>>(() => {
   return out;
 });
 
-/** 判決轉移事件文案：目標狀態 + 各 finding 原狀態（params={to, changes:[{finding_id, from}]}）。 */
-const statusText = (e: AttributionHistoryEntry): string => {
-  const p = (e.params ?? {}) as { to?: string; changes?: { from?: string }[] };
-  const to = STATUS_LABEL[p.to || ''] || p.to || '';
-  const n = p.changes?.length ?? 0;
-  const froms = [...new Set((p.changes ?? []).map((c) => STATUS_LABEL[c.from || ''] || c.from))];
-  return `${n} 條歸因 ${froms.join('/')} → ${to}`;
+/** 初判失敗事件文案：後端 `insert_failure_event` 寫入 `params={error}`。 */
+const failureText = (e: AttributionHistoryEntry): string => {
+  const p = (e.params ?? {}) as { error?: string };
+  return p.error || '初判失敗（未記錄原因）';
 };
 </script>
 
@@ -215,9 +216,9 @@ const statusText = (e: AttributionHistoryEntry): string => {
                       查看 LLM 日誌
                     </a-button>
                   </template>
-                  <template v-else-if="e.kind === 'verdict'">
-                    <a-tag size="small" color="orange">人工判決</a-tag>
-                    <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
+                  <template v-else-if="e.kind === 'failure'">
+                    <a-tag size="small" color="red">初判失敗</a-tag>
+                    <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
                   </template>
                   <template v-else>
                     <a-tag size="small" color="gray">備註</a-tag>
@@ -250,11 +251,13 @@ const statusText = (e: AttributionHistoryEntry): string => {
                     </div>
                   </div>
                 </div>
+                <!-- 初判失敗：後端 insert_failure_event 寫 params={error}；此分支缺席時這些事件
+                     會落到下方 v-else 被當成備註，渲染出 author/content 都空的灰色空白列 -->
                 <div
-                  v-else-if="e.kind === 'verdict'"
-                  class="mt-0.5 text-xs text-[var(--color-text-1)]"
+                  v-else-if="e.kind === 'failure'"
+                  class="mt-0.5 whitespace-pre-wrap text-xs leading-snug text-[rgb(var(--danger-6))]"
                 >
-                  {{ statusText(e) }}
+                  {{ failureText(e) }}
                 </div>
                 <div
                   v-else

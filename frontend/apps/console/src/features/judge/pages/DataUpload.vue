@@ -14,10 +14,10 @@ import {
   uploadInbound,
   uploadStreamUrl,
   getBatches,
-  getBatchItems,
   type SheetValidation,
   type UploadJobSnapshot,
 } from '@/api';
+import { IconExclamationCircleFill } from '@arco-design/web-vue/es/icon';
 import { StateGuard, CardSection } from '@/components';
 import { ALL_PAGINATION, SOURCE_LABEL, TABLE_DEFAULTS } from '../constants';
 
@@ -165,37 +165,6 @@ const batchCols = [
   { title: '上傳時間', dataIndex: 'uploaded_at', width: 190 },
   { title: '原始檔名', dataIndex: 'original_name', ellipsis: true, tooltip: true },
   { title: '備註', dataIndex: 'note', ellipsis: true, tooltip: true, width: 160 },
-  { title: '操作', slotName: 'op', width: 170, fixed: 'right' as const },
-];
-
-// ── 明細 drawer（點擊表格展示）─────────────────────────
-const detailVisible = ref(false);
-const detailBatch = ref<any>(null);
-const items = ref<any[]>([]);
-const itemsLoading = ref(false);
-const itemsError = ref('');
-
-const openDetail = async (batch: any) => {
-  detailBatch.value = batch;
-  detailVisible.value = true;
-  itemsLoading.value = true;
-  itemsError.value = '';
-  items.value = [];
-  try {
-    items.value = await getBatchItems(batch.batch_id);
-  } catch (e: any) {
-    itemsError.value = '載入明細失敗：' + (e?.message || e);
-  } finally {
-    itemsLoading.value = false;
-  }
-};
-
-const itemCols = [
-  { title: '商品', dataIndex: 'prod_oid', width: 110 },
-  { title: 'rating', dataIndex: 'rating', width: 80 },
-  { title: 'comment / 對話', dataIndex: 'comment', ellipsis: true, tooltip: true },
-  { title: '狀態', dataIndex: 'status', width: 90 },
-  { title: '錄入時間', dataIndex: 'created_at', width: 180 },
 ];
 </script>
 
@@ -260,11 +229,24 @@ const itemCols = [
             <a-table-column title="偵測反饋來源" :width="120">
               <template #cell="{ record }">{{ record.label || '—' }}</template>
             </a-table-column>
-            <a-table-column title="狀態" :width="100">
+            <a-table-column title="狀態" :width="150">
               <template #cell="{ record }">
-                <a-tag :color="STATUS_META[record.status]?.color">{{
-                  STATUS_META[record.status]?.text || record.status
-                }}</a-tag>
+                <div class="flex flex-col items-start gap-1">
+                  <a-tag :color="STATUS_META[record.status]?.color">{{
+                    STATUS_META[record.status]?.text || record.status
+                  }}</a-tag>
+                  <!-- 對不上任何欄位的表頭：不擋上傳（上游多給欄位是常態），但必須在匯入前就講清楚，
+                       否則那幾欄會安靜地不落庫，事後只看得到「匯入成功但該欄全空」 -->
+                  <a-tooltip
+                    v-if="record.unmapped_headers?.length"
+                    :content="`這些表頭對不上任何欄位，不會寫入資料庫：${record.unmapped_headers.join('、')}`"
+                  >
+                    <a-tag color="orange">
+                      <template #icon><IconExclamationCircleFill /></template>
+                      {{ record.unmapped_headers.length }} 欄未對應
+                    </a-tag>
+                  </a-tooltip>
+                </div>
               </template>
             </a-table-column>
             <a-table-column title="筆數" data-index="row_count" :width="80" />
@@ -332,7 +314,7 @@ const itemCols = [
       </template>
     </a-drawer>
 
-    <CardSection title="上傳批次" :hint="`共 ${batches.length} 批 · 新到舊 · 點「查看」展開明細`">
+    <CardSection title="上傳批次" :hint="`共 ${batches.length} 批 · 新到舊`">
       <StateGuard
         :loading="loading"
         :error="error"
@@ -353,36 +335,8 @@ const itemCols = [
           <template #src="{ record }"
             ><a-tag>{{ sourceLabel(record.source) }}</a-tag></template
           >
-          <template #op="{ record }">
-            <a-link @click="openDetail(record)">查看</a-link>
-          </template>
         </a-table>
       </StateGuard>
     </CardSection>
-
-    <a-drawer
-      v-model:visible="detailVisible"
-      :width="860"
-      :title="detailBatch ? `批次明細 · ${detailBatch.name}` : '批次明細'"
-      :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
-      unmount-on-close
-    >
-      <StateGuard
-        :loading="itemsLoading"
-        :error="itemsError"
-        :empty="!items.length"
-        empty-text="此批次無明細資料"
-      >
-        <a-table
-          v-bind="TABLE_DEFAULTS"
-          class="min-h-0 flex-1"
-          :columns="itemCols"
-          :data="items"
-          :pagination="ALL_PAGINATION"
-          :scroll="{ y: '100%' }"
-          row-key="item_id"
-        />
-      </StateGuard>
-    </a-drawer>
   </div>
 </template>

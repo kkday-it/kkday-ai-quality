@@ -155,8 +155,10 @@ describe('useLlmAreaConfig', () => {
     llmModelConfigs.value = [...defaults(), cfg()];
     useLlmAreaConfig('prejudge').configId.value = 'cfg-custom';
 
-    expect(llmAreaConfigs.value.sandbox).toBeUndefined();
-    expect(useLlmAreaConfig('sandbox').config.value?.id).toBe(LLM_AREA_DEFAULT_CONFIG_IDS.sandbox);
+    expect(llmAreaConfigs.value.prompt_revise).toBeUndefined();
+    expect(useLlmAreaConfig('prompt_revise').config.value?.id).toBe(
+      LLM_AREA_DEFAULT_CONFIG_IDS.prompt_revise,
+    );
   });
 
   it('綁定指向的配置被刪除 → 回落該區出廠起點，不是壞掉', () => {
@@ -205,12 +207,12 @@ describe('useLlmAreaConfig', () => {
 
 describe('areasUsingConfig', () => {
   it('回報跨使用者的真實引用（綁定在 DB，不是只看自己這台）', () => {
-    expect(areasUsingConfig({ prejudge: 'cfg-a', sandbox: 'cfg-b' }, 'cfg-a')).toEqual([
+    expect(areasUsingConfig({ prejudge: 'cfg-a', prompt_debug: 'cfg-b' }, 'cfg-a')).toEqual([
       'prejudge',
     ]);
-    expect(areasUsingConfig({ prejudge: 'cfg-a', sandbox: 'cfg-a' }, 'cfg-a')).toEqual([
+    expect(areasUsingConfig({ prejudge: 'cfg-a', prompt_debug: 'cfg-a' }, 'cfg-a')).toEqual([
       'prejudge',
-      'sandbox',
+      'prompt_debug',
     ]);
     expect(areasUsingConfig({ prejudge: 'cfg-a' }, 'cfg-zzz')).toEqual([]);
     expect(areasUsingConfig({ prejudge: 'cfg-a' }, '')).toEqual([]);

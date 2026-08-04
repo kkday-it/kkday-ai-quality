@@ -13,6 +13,7 @@ import {
   type PromptVersionSaved,
 } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
+import { usePromptReviewCasesStore } from '@/stores/promptReviewCases.store';
 
 /** usePromptRevise 的注入依賴。 */
 interface PromptReviseDeps {
@@ -80,7 +81,7 @@ export function usePromptRevise(deps: PromptReviseDeps) {
     try {
       await streamPromptRevise(
         {
-          review_ids: [...deps.reviewIds.value],
+          cases: usePromptReviewCasesStore().payloads(deps.reviewIds.value),
           system_prompt: deps.systemPrompt.value,
           overrides,
         },

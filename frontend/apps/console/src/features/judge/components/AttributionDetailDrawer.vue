@@ -2,7 +2,7 @@
 /**
  * 歸因詳情抽屜（原 AttributionList 內 modal 抽出）：完整展示單一反饋的
  * 原文 → 關聯資料 → 每條歸因全欄位（分類路徑/信心含原始值/階段/判決狀態/摘要多語系/
- * 逐字佐證/建議行動/負責單位/真值/finding_id）。純展示、資料取自列上 attributions，零額外請求；
+ * 逐字佐證/建議行動/負責單位/真值/歸因流水號）。純展示、資料取自列上 attributions，零額外請求；
  * 全部走 Arco 現成組件（a-drawer / a-descriptions / a-tag / a-rate / a-typography）。
  */
 import { computed, watch } from 'vue';
@@ -22,8 +22,6 @@ import {
   POLARITY_LABELS,
   schemaFor,
   STAGE_LABELS,
-  STATUS_COLOR,
-  STATUS_LABEL,
   TIER_LABELS,
   type Attribution,
   type ProblemRow,
@@ -216,7 +214,7 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
       <template v-if="row.attributions && row.attributions.length">
         <a-descriptions
           v-for="(a, ai) in row.attributions"
-          :key="a.finding_id || ai"
+          :key="a.attribution_oid ?? ai"
           :column="1"
           size="medium"
           bordered
@@ -228,9 +226,6 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
               <a-tag v-if="a.is_primary && row.attributions.length > 1" size="small" color="purple"
                 >主歸因</a-tag
               >
-              <a-tag v-if="a.status" size="small" :color="STATUS_COLOR[a.status]">
-                {{ STATUS_LABEL[a.status] || a.status }}
-              </a-tag>
             </div>
           </template>
           <a-descriptions-item label="歸因分類">
@@ -296,9 +291,9 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
             {{ a.content?.action ? ACTION_LABEL[a.content.action] || a.content.action : '—' }}
           </a-descriptions-item>
           <a-descriptions-item v-if="a.owner" label="負責單位">{{ a.owner }}</a-descriptions-item>
-          <a-descriptions-item label="finding">
+          <a-descriptions-item label="歸因 ID">
             <span class="break-all text-xs text-[var(--color-text-3)]">{{
-              a.finding_id || '—'
+              a.attribution_oid ?? '—'
             }}</span>
           </a-descriptions-item>
         </a-descriptions>

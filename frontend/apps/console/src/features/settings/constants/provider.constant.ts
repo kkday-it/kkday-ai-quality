@@ -67,13 +67,12 @@ export const REASONING: string[] = llm.reasoning;
 export const MODEL_MIN_VERSION: string = llm.modelMinVersion;
 
 /** LLM 消費功能區清單；資料源＝config/global/llm_model.json areas[]。 */
-export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'sandbox'];
+export const LLM_AREAS: string[] = llm.areas ?? ['prejudge', 'prompt_debug', 'prompt_revise'];
 
 /** 功能區的顯示名（設定面板「這筆配置被誰用著」等處顯示用；未登記的區退回原始 key）。 */
 export const LLM_AREA_LABELS: Record<string, string> = {
   prejudge: '初判分類',
   prompt_debug: 'Prompt 調試台',
-  sandbox: 'Prompt 測試沙盒',
   prompt_revise: 'AI 定點改寫',
 };
 

@@ -1,9 +1,10 @@
-// 回歸重跑的啟動 + 進度輪詢。走輪詢而非 SSE：後端是 in-mem job（比照 prompt_sandbox），
+// 回歸重跑的啟動 + 進度輪詢。走輪詢而非 SSE：後端是 in-mem job，
 // 前端只要每兩秒問一次進度即可，不需要為此另拉一條串流。
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { getPromptRegression, startPromptRegression, type PromptRegressionSnapshot } from '@/api';
 import type { LlmOverrides } from '@/features/settings/types';
+import { usePromptReviewCasesStore } from '@/stores/promptReviewCases.store';
 
 /** 進度輪詢間隔：單條重跑約數秒到數十秒，兩秒一次足夠即時又不會打爆後端。 */
 const POLL_MS = 2000;
@@ -73,7 +74,7 @@ export function usePromptRegression() {
     starting.value = true;
     try {
       const snap = await startPromptRegression({
-        review_ids: [...reviewIds],
+        cases: usePromptReviewCasesStore().payloads(reviewIds),
         system_prompt: systemPrompt,
         overrides,
       });

@@ -3,7 +3,7 @@
  * 「配置」抽屜 › 商品垂直分類 tab：BD 分工代碼 → PM/Vertical 對照的維護入口。
  *
  * 商品垂直分類屬全域配置（seed = config/global/bd_tag_vertical.json，源自 BD 分工表 Google Sheet），
- * 非歸因判準；由此抽屜**獨立維護**。取代舊制 product_vertical（CATEGORY_xxx→分組，2026-07-27 全棧退役）。
+ * 非歸因判準；由此抽屜**獨立維護**。
  * **不共用 judgeRules store**——那是 singleton，其 activeCode 被規則配置頁同時消費，共用會令規則頁背景
  * 誤渲染本規則。改用隔離的 useBdTagVerticalRule composable（自己的 local state），走同一後端版本化
  * 管線（存檔 / 歷史 / 恢復默認），與規則頁完全解耦。

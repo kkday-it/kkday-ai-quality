@@ -1,9 +1,7 @@
 // 歸因列表篩選狀態 SSOT：型別 + 空值 + 選項 + 計數 + → API 參數轉換。
 // 三處共用（工具列 / 導出彈窗 / 初判目標篩選）皆以此型別為單一真相，避免各寫一份而漂移。
-// ⚠️ 進線專屬「vertical」（conversations 直欄字面值精確比對）已於 2026-07-27 退役，統一併入全局
-// 商品垂直分類篩選（見 verticalFilter.store，bd_tag 維度、跨來源生效，不在此 per-field 型別內）。
+// ⚠️ 商品垂直分類篩選**不在**此型別內：它是全局跨來源篩選（bd_tag 維度），狀態在 verticalFilter.store。
 import { POLARITY_LABELS, STAGE_LABELS, TIER_LABELS } from './pipeline.constant';
-import { STATUS_LABEL } from './status.constant';
 import { BUCKET_LABELS } from './inbound.constant';
 
 /** 歸因列表可篩選欄位（值型別對齊各控制項 v-model）。 */
@@ -14,8 +12,6 @@ export interface AttributionFilters {
   stage: string[];
   /** 信心分層（單選）。 */
   tier: string;
-  /** 判決狀態（多選 new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。 */
-  status: string[];
   /** 初判模型（多選；attributions.model IN——當前初判維度，任一歸因命中即列出）。 */
   model: string[];
   /** 歸因分類（多選任意層級 code；L1/L2 皆可，後端子樹語義命中）。 */
@@ -42,7 +38,6 @@ export const emptyFilters = (): AttributionFilters => ({
   polarity: [],
   stage: [],
   tier: '',
-  status: [],
   model: [],
   taxonomy: [],
   hasExternal: '',
@@ -58,7 +53,6 @@ export const cloneFilters = (f: AttributionFilters): AttributionFilters => ({
   ...f,
   polarity: [...f.polarity],
   stage: [...f.stage],
-  status: [...f.status],
   model: [...f.model],
   taxonomy: [...f.taxonomy],
   dateRange: [...f.dateRange],
@@ -79,7 +73,6 @@ export const POLARITY_FILTER_OPTS = ['negative', 'neutral', 'positive'].map((val
 /** 階段 / 分層 / 判決狀態選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
-export const STATUS_OPTS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 /** 進線分桶篩選選項（conversations 專屬；label 衍生自 BUCKET_LABELS SSOT）。 */
 export const BUCKET_FILTER_OPTS = Object.entries(BUCKET_LABELS).map(([value, label]) => ({
   value,
@@ -91,7 +84,6 @@ export const countActiveFilters = (f: AttributionFilters): number =>
   (f.polarity.length ? 1 : 0) +
   (f.stage.length ? 1 : 0) +
   (f.tier ? 1 : 0) +
-  (f.status.length ? 1 : 0) +
   (f.model.length ? 1 : 0) +
   (f.taxonomy.length ? 1 : 0) +
   (f.hasExternal ? 1 : 0) +
@@ -108,7 +100,6 @@ export const filtersToParams = (f: AttributionFilters) => {
     polarity: f.polarity.length ? f.polarity : undefined,
     stage: f.stage.length ? f.stage : undefined,
     confidenceTier: f.tier || undefined,
-    status: f.status.length ? f.status : undefined,
     model: f.model.length ? f.model : undefined,
     taxonomy: f.taxonomy.length ? f.taxonomy : undefined,
     hasExternal: f.hasExternal || undefined,

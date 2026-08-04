@@ -8,6 +8,13 @@ export interface SheetValidation {
   label: string;
   status: 'ok' | 'fail' | 'unknown';
   missing_headers: string[];
+  /**
+   * 對不上任何 DB 欄位的表頭（不擋上傳，但這些欄不會落庫）。
+   *
+   * 存在的理由：寫入層以「表頭 → 欄名」映射落庫，對不上的表頭原本會被靜默丟棄——匯入顯示成功、
+   * 該欄卻整欄空白且無處可查。此欄位讓使用者在按下匯入「之前」就看得到。
+   */
+  unmapped_headers: string[];
   row_count: number;
   reason: string;
 }
@@ -98,6 +105,3 @@ export const uploadStreamUrl = (jobId: string): string =>
 export const getBatches = (): Promise<Record<string, unknown>[]> =>
   j<Record<string, unknown>[]>(`${BASE}/batches`);
 
-/** 某批次的錄入明細（點擊批次展開用）。 */
-export const getBatchItems = (batchId: string): Promise<Record<string, unknown>[]> =>
-  j<Record<string, unknown>[]>(`${BASE}/batches/${encodeURIComponent(batchId)}/items`);

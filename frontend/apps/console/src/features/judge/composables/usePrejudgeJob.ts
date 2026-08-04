@@ -138,7 +138,7 @@ export function usePrejudgeJob(deps: PrejudgeJobDeps) {
     });
 
   // ── 確認初判分類抽屜內嵌執行日誌（批量／單列共用）：抽屜不再另開獨立的 PrejudgeLogDrawer，
-  // 抽屜本身收合設定面板後直接顯示這份即時 log，SSE 生命週期比照 PromptSandboxDrawer._openLogStream。
+  // 抽屜本身收合設定面板後直接顯示這份即時 log。
   const logEntries = ref<LogEntry[]>([]);
   const logStreaming = ref(false);
   /** 後端明確終止日誌流的原因（如大批量任務不收集日誌）；空＝無錯誤。 */

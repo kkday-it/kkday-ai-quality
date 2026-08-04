@@ -22,7 +22,7 @@ import {
 } from '@arco-design/web-vue/es/icon';
 import { StickyTabs } from '@/components';
 // 相對路徑 import（非走 barrel）：本檔自身未進 components barrel，但同資料夾 PrejudgeLogDrawer /
-// PromptSandboxDrawer 皆以相對路徑消費本檔，此處延續同一慣例（避免同資料夾迴繞 import）。
+// 消費端皆以相對路徑引用本檔（避免同資料夾迴繞 barrel import）。
 import LlmCallTimeline from './LlmCallTimeline.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
 import {

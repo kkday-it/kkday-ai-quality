@@ -25,7 +25,7 @@ const _gdriveUploadUrl = async (): Promise<string> => {
 };
 
 /** SSE 終態集合（見到即停止串流）。 */
-const _TERMINAL = new Set(['done', 'error', 'cancelled']);
+const _TERMINAL = new Set(['done', 'error', 'cancelled', 'interrupted']);
 
 /**
  * 管理單一導出背景 job 的進度與停止（與初判歸因 job 同構，但無暫停/恢復）。
@@ -109,6 +109,10 @@ export function useExportJob() {
         Message.info('已停止導出');
       } else if (status.value === 'error') {
         Message.error('導出失敗，請稍後重試');
+      } else if (status.value === 'interrupted') {
+        // 後端行程重啟（dev 下存任一 backend .py 即觸發 uvicorn --reload）會殺掉組檔 thread。
+        // 講明原因，否則使用者只看到一個沒有理由的失敗。
+        Message.warning('導出被後端重啟打斷，請重新導出');
       } else {
         Message.warning('導出連線中斷，請重試'); // SSE 掉線且未達終態，避免靜默無反饋
       }

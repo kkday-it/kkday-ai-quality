@@ -1,6 +1,6 @@
 // 設定全域狀態（Pinia）：LLM 連線層（per-provider）+ 模型配置庫（全域具名配置）+ QC 連線層（per-env）。
 // 用 store 而非 composable：設定抽屜 unmount-on-close，composable 會隨卸載丟狀態；store 跨掛載週期持久，
-// 各功能區（prejudge/prompt_debug/sandbox/prompt_revise）與設定面板共讀同一份 llmModelConfigs/llmConnections。
+// 各功能區（prejudge/prompt_debug/prompt_revise）與設定面板共讀同一份 llmModelConfigs/llmConnections。
 // ⚠️ 本 store **不持有**「哪個功能區用哪一筆配置」——那是個人選擇（一個人切配置不該讓全團隊跟著變），
 // 綁定＝`llmAreaConfigs`（team 共用單一份，選了就存），見 composables/useLlmAreaConfig.ts。
 // 權限分層（呼應後端 settings.llm-config.manage/qc-config.manage/secret.read 僅 grants）：
@@ -113,7 +113,7 @@ export const useSettingsConfigsStore = defineStore('settingsConfigs', () => {
   /**
    * 整包替換使用者自訂的模型配置清單（新增／編輯／刪除都走這支）。
    *
-   * 刻意是整包而非逐筆 patch：前端本來就持有完整清單，增刪改都是對整份清單操作（同 overview_boards）。
+   * 刻意是整包而非逐筆 patch：前端本來就持有完整清單，增刪改都是對整份清單操作。
    *
    * @param configs 完整的配置清單（少送一筆＝刪除該筆；後端會同步剪除指向被刪配置的功能區綁定）。
    * @throws 後端校驗未過時 400（規格重複、供應商未登記、旋鈕值域外、清單為空…），訊息可直接顯示給使用者。

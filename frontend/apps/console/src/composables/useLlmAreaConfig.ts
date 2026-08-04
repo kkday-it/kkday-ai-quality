@@ -1,4 +1,4 @@
-// 某功能區（prejudge/prompt_debug/sandbox/prompt_revise）用哪一筆具名模型配置。
+// 某功能區（prejudge/prompt_debug/prompt_revise）用哪一筆具名模型配置。
 //
 // 配置**內容**與**綁定**都是團隊共享資產，同存 DB `settings`（配置內容在「設定 › LLM 設定」編輯）。
 //

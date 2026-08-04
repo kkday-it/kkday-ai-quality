@@ -202,56 +202,23 @@ export const activatePromptRelease = (
     headers: JSON_HEADERS,
   });
 
-// ── 人工評判案例庫（/prompt-debug/reviews）───────────────────────────────────
+// ── 人工評判案例（**存於前端本地**，見 stores/promptReviewCases.store）──────────
+//
+// 2026-08-04 起後端不再有 `prompt_debug_reviews` 表與其 CRUD 端點：案例是個人調試用的暫存語料，
+// 不是團隊共享資產。改寫／回歸端點改為由請求**整包帶上案例內容**，後端純運算不持久化。
 
-/** 案例庫列表列；對話原文只給前 200 字預覽，全文由後端改寫/回歸端點自行按 id 取。 */
-export interface PromptDebugReviewRow {
+/** 送給改寫／回歸端點的單則案例（形狀對齊後端 `PromptDebugCaseIn`）。 */
+export interface PromptDebugCasePayload {
+  /** 本地案例 id（僅供進度回報對應回列表）。 */
   id: number;
-  conversation_preview: string;
-  conversation_chars: number;
-  /** AI 當時判定的全部欄位。 */
+  conversation: string;
   ai_output: Record<string, unknown>;
   /** 人標的正解 `{欄名: 正解值}`；只含被標錯的欄，`{}`＝全欄皆對（正例）。 */
   corrections: Record<string, unknown>;
-  /** 人明確標「對」的欄名；回歸時這些欄不准變。兩者都沒出現的欄＝沒看過，不計分。 */
-  confirmed: string[];
-  comment: string;
-  /** 當時的線上 Prompt 版本；空＝送出前臨時編輯過。 */
-  prompt_version: string;
-  model: string;
-  reviewer: string;
-  created_at: string;
-}
-
-/** 新增案例的送出內容。 */
-export interface PromptDebugReviewPayload {
-  conversation: string;
-  ai_output: Record<string, unknown>;
-  corrections: Record<string, unknown>;
-  /** 人明確標「對」的欄名（不得與 corrections 重疊，後端會擋）。 */
+  /** 人明確標「對」的欄名；不得與 corrections 重疊（後端 validator 會擋）。 */
   confirmed: string[];
   comment?: string;
-  prompt_version?: string;
-  model?: string;
 }
-
-/** 案例庫列表（新→舊）。 */
-export const listPromptDebugReviews = (): Promise<{ reviews: PromptDebugReviewRow[] }> =>
-  j<{ reviews: PromptDebugReviewRow[] }>(`${BASE}/v1/prejudge/prompt-debug/reviews`);
-
-/** 存一則人工評判案例；回新案例 id。 */
-export const createPromptDebugReview = (
-  payload: PromptDebugReviewPayload,
-): Promise<{ id: number }> =>
-  j<{ id: number }>(`${BASE}/v1/prejudge/prompt-debug/reviews`, {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify(payload),
-  });
-
-/** 刪一則案例。 */
-export const deletePromptDebugReview = (id: number): Promise<{ ok: boolean }> =>
-  j<{ ok: boolean }>(`${BASE}/v1/prejudge/prompt-debug/reviews/${id}`, { method: 'DELETE' });
 
 // ── AI 定點改寫（/prompt-debug/revise[/apply]）─────────────────────────────
 
@@ -306,7 +273,7 @@ export interface PromptReviseHandlers {
 
 /** 依選中案例串流產出定點補丁；`systemPrompt` 留空＝用版本庫最新版。 */
 export const streamPromptRevise = (
-  body: { review_ids: number[]; system_prompt: string; overrides?: LlmOverrides },
+  body: { cases: PromptDebugCasePayload[]; system_prompt: string; overrides?: LlmOverrides },
   handlers: PromptReviseHandlers,
   signal?: AbortSignal,
 ): Promise<void> =>
@@ -391,7 +358,7 @@ export interface PromptRegressionSnapshot {
 
 /** 啟動回歸重跑；`systemPrompt` 留空＝用版本庫最新版。回初始快照（含 job_id）。 */
 export const startPromptRegression = (body: {
-  review_ids: number[];
+  cases: PromptDebugCasePayload[];
   system_prompt: string;
   overrides?: LlmOverrides;
 }): Promise<PromptRegressionSnapshot> =>
@@ -528,9 +495,8 @@ export interface PromptDebugBatchRunRow {
 /** run 產物下載類型：csv=結果表、jsonl=逐筆原始紀錄（斷點）、preds=成功判定彙總、input=原輸入檔。 */
 export type PromptDebugBatchFileKind = 'csv' | 'jsonl' | 'preds' | 'input';
 
-// 單模型啟動的前端封裝（`startPromptDebugBatch`）已於 2026-07-30 隨多模型並行改造退役：
-// 頁面統一改走 `startPromptDebugBatchGroup`（單選一個 model＝群組大小為 1），不再維護兩套
-// 啟動路徑。後端 `POST /batch/start` 端點本身保留（供腳本/外部呼叫），只是前端不再有呼叫端。
+// 前端跑批一律走 `startPromptDebugBatchGroup`（單選一個 model＝群組大小為 1），不維護第二條
+// 啟動路徑。後端 `POST /batch/start` 端點保留供腳本/外部呼叫，前端無呼叫端。
 
 /** 全部跑批 run 摘要（新→舊）。 */
 export const listPromptDebugBatchRuns = (): Promise<{ runs: PromptDebugBatchRunRow[] }> =>
