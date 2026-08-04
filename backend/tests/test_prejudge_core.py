@@ -194,7 +194,6 @@ def test_to_findings_pure_good_review_non_issue(stub_engine) -> None:
     f = out[0]
     assert f.polarity == "positive"
     assert f.prejudge_stage == "judged"
-    assert f.finding_id == "fd_reviews_R1"
 
 
 def test_to_findings_positive_non_issue(stub_engine) -> None:
@@ -204,14 +203,13 @@ def test_to_findings_positive_non_issue(stub_engine) -> None:
 
 
 def test_to_findings_negative_unattributed_pending_data(stub_engine) -> None:
-    """負向（stub 無法歸因）→ 單一未歸因 finding：pending_data + needs_review。"""
+    """負向（stub 無法歸因）→ 單一未歸因 finding：pending_data + needs_review 分層。"""
     out = prejudge.to_findings(_item(1, "服務很差要退款"), model="gpt-5-nano")
     assert len(out) == 1
     f = out[0]
     assert f.polarity == "negative"
     assert f.prejudge_stage == "pending_data"
     assert f.confidence_tier == "needs_review"
-    assert f.needs_review is True
 
 
 def test_to_findings_middling_review_neutral_judged(stub_engine) -> None:
@@ -412,34 +410,34 @@ def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> N
     assert len(out) == 2
 
 
-# ── G1 自動確認路由（_route_status / to_findings status）──────────────────────
-def test_route_status_auto_confirm(monkeypatch) -> None:
+# ── G1 自動確認路由（_route_auto_accept / to_findings status）──────────────────────
+def test_route_auto_accept_auto_confirm(monkeypatch) -> None:
     """auto_accept + judged → auto_confirmed（免人工佇列）；其餘 tier/stage → new。"""
     monkeypatch.setattr(
         prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05}
     )
     monkeypatch.setattr(prejudge.random, "random", lambda: 0.5)  # > rate → 不抽樣
-    assert prejudge._route_status("auto_accept", "judged") == "auto_confirmed"
-    assert prejudge._route_status("jury", "judged") == "new"
-    assert prejudge._route_status("auto_accept", "pending_review") == "new"
-    assert prejudge._route_status("needs_review", "pending_data") == "new"
+    assert prejudge._route_auto_accept("auto_accept", "judged") is True
+    assert prejudge._route_auto_accept("jury", "judged") is False
+    assert prejudge._route_auto_accept("auto_accept", "pending_review") is False
+    assert prejudge._route_auto_accept("needs_review", "pending_data") is False
 
 
-def test_route_status_sampled_back_to_new(monkeypatch) -> None:
+def test_route_auto_accept_sampled_back_to_new(monkeypatch) -> None:
     """auto_accept+judged 命中 audit_sample_rate 抽樣 → 回 new 交人工複核（防自動化偏誤）。"""
     monkeypatch.setattr(
         prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.05}
     )
     monkeypatch.setattr(prejudge.random, "random", lambda: 0.01)  # < rate → 抽樣
-    assert prejudge._route_status("auto_accept", "judged") == "new"
+    assert prejudge._route_auto_accept("auto_accept", "judged") is False
 
 
-def test_route_status_disabled_falls_back_to_new(monkeypatch) -> None:
+def test_route_auto_accept_disabled_falls_back_to_new(monkeypatch) -> None:
     """停用自動確認 → 一律 new（回退舊行為）。"""
     monkeypatch.setattr(
         prejudge, "_auto_confirm_cfg", lambda: {"enabled": False, "audit_sample_rate": 0.05}
     )
-    assert prejudge._route_status("auto_accept", "judged") == "new"
+    assert prejudge._route_auto_accept("auto_accept", "judged") is False
 
 
 def test_to_findings_positive_routed_auto_confirmed(stub_engine, monkeypatch) -> None:
@@ -448,12 +446,10 @@ def test_to_findings_positive_routed_auto_confirmed(stub_engine, monkeypatch) ->
         prejudge, "_auto_confirm_cfg", lambda: {"enabled": True, "audit_sample_rate": 0.0}
     )
     out = prejudge.to_findings(_item(5, "整體體驗很好值得推薦給朋友"), model="gpt-5-nano")
-    assert out[0].status == "auto_confirmed"
-    # 系統判決留痕：判決人＝system:auto_confirm、初判時間非空（可追溯）
-    assert out[0].verdict_by == "system:auto_confirm" and out[0].verdict_at
+    assert out[0].is_auto_accepted is True
 
 
 def test_to_findings_negative_pending_stays_new(stub_engine) -> None:
-    """負向未歸因（needs_review+pending_data）→ status=new（需人工）。"""
+    """負向未歸因（needs_review 分層 + pending_data）→ 不自動採納（需人工）。"""
     out = prejudge.to_findings(_item(1, "服務很差要退款"), model="gpt-5-nano")
-    assert out[0].status == "new"
+    assert out[0].is_auto_accepted is False

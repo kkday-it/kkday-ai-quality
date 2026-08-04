@@ -49,7 +49,7 @@ async def export_stream(job_id: str) -> StreamingResponse:
                 yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
                 return
             yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
-            if snap["status"] in ("done", "error", "cancelled"):
+            if export_jobs.is_terminal(snap["status"]):
                 return
             await asyncio.sleep(0.5)
 
@@ -85,6 +85,11 @@ def export_download(
     snap = export_jobs.get_job(job_id)
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job 不存在或已取走：{job_id}")
+    if snap["status"] == "interrupted":
+        raise HTTPException(
+            status_code=409,
+            detail="導出被後端重啟打斷（開發模式改動 backend 檔案會觸發），請重新導出",
+        )
     if snap["status"] != "done":
         raise HTTPException(
             status_code=409, detail=f"job 尚未完成（status={snap['status']}），無法下載"

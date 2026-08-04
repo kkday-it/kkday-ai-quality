@@ -29,7 +29,6 @@ def _seed_one(temp_db) -> None:
         "R1",
         [
             TicketFinding(
-                finding_id="fd_reviews_R1__content",
                 ticket_id="R1",
                 recommended_action="rewrite_field",
                 polarity="negative",
@@ -56,8 +55,6 @@ def test_export_problems_xlsx_happy_path(temp_db) -> None:
     wb = load_workbook(io.BytesIO(blob))
     ws = wb.active
     assert ws.max_row >= 3  # 雙層表頭（分類群組列 + 具體欄位列）+ 至少一列資料
-    headers = [c.value for c in ws[2]]  # 列 2＝具體欄位標題（列 1＝分類群組合併列）
-    assert "判決狀態" in headers  # 人工處置軸已入導出
     cells = [str(c) for row in ws.iter_rows(values_only=True) for c in row if c]
     assert any("描述與實際不符" in c for c in cells)  # 內容確實進了導出
 

@@ -148,17 +148,14 @@ def _record_usage(
     row = {
         "stage": stage,
         "model": model,
-        "provider": _settings.provider_id_for(cfg.get("base_url", "")),
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "reasoning_tokens": reasoning,
         "cached_tokens": cached,
-        "total_tokens": prompt + completion,
         "cost_usd": pricing.cost_usd(
             model, prompt, completion, cached, service_tier=cfg.get("service_tier")
         ),
         "source": ctx.get("source"),
-        "source_id": ctx.get("source_id"),
         "job_id": ctx.get("job_id"),
     }
     buf = _usage_buffer.get()

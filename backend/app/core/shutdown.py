@@ -13,7 +13,7 @@ _log = logging.getLogger(__name__)
 
 
 def mark_running_jobs_interrupted() -> dict[str, list[str]]:
-    """把 6 套 registry（export/import/prejudge/upload/prompt_sandbox/prompt_debug_batch）
+    """把 5 套 registry（export/import/prejudge/upload/prompt_debug_batch）
     仍在跑的 job 全標 interrupted。
 
     函式內 import：shutdown 僅在 process 結束時走一次，不讓 core 底層模組
@@ -23,7 +23,7 @@ def mark_running_jobs_interrupted() -> dict[str, list[str]]:
         registry 名 → 被標記的 job_id 清單（全空＝無進行中 job）。
     """
     from app.core import export_jobs, import_jobs
-    from app.judge import prejudge_batch, prompt_debug_batch, prompt_sandbox
+    from app.judge import prejudge_batch, prompt_debug_batch
     from app.judge.ingest import upload_batch
 
     marked = {
@@ -31,7 +31,6 @@ def mark_running_jobs_interrupted() -> dict[str, list[str]]:
         "import": import_jobs.mark_running_interrupted(),
         "prejudge": prejudge_batch.mark_running_interrupted(),
         "upload": upload_batch.mark_running_interrupted(),
-        "prompt_sandbox": prompt_sandbox.mark_running_interrupted(),
         "prompt_debug_batch": prompt_debug_batch.mark_running_interrupted(),
     }
     hit = {k: v for k, v in marked.items() if v}

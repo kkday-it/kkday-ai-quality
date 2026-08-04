@@ -91,13 +91,13 @@ def prejudge_target_ids(
     ids: set[str] = set()
     with T.get_engine().connect() as c:
         if want_unjudged:
-            s = _scope(select(nk).select_from(j).where(jg.c.finding_id.is_(None)))
+            s = _scope(select(nk).select_from(j).where(jg.c.attribution_oid.is_(None)))
             # 排除「最新成功後連續失敗 ≥ max_implicit_retries」的 source_id（防系統性失敗隱式無限重撈；
             # 顯式 item_ids 重新初判不經本函式、不受此限）。scope/within_ids 收斂後才過濾，capped 集合通常很小。
             capped = _capped_source_ids(c, source, _max_implicit_retries())
             ids.update(r[0] for r in c.execute(s) if r[0] not in capped)
         if judged_stages:
-            s = select(nk).select_from(j).where(jg.c.finding_id.isnot(None))
+            s = select(nk).select_from(j).where(jg.c.attribution_oid.isnot(None))
             s = s.where(jg.c.prejudge_stage.in_(judged_stages))
             if target_polarity:
                 s = s.where(jg.c.polarity.in_(target_polarity))
@@ -128,7 +128,7 @@ def _max_implicit_retries() -> int:
 def _capped_source_ids(c, source: str, max_retries: int) -> set[str]:
     """「最新一次成功初判後、連續失敗事件數 ≥ max_retries」的 source_id 集合（隱式重撈上限）。
 
-    失敗筆不落 attributions（仍 finding_id IS NULL），會被 unjudged 分支反覆撈到；本集合把系統性失敗
+    失敗筆不落 attributions（該來源列在 outer join 後仍為 NULL），會被 unjudged 分支反覆撈到；本集合把系統性失敗
     （壞 prompt / 失效 key）排除於隱式批次外——只能靠顯式 item_ids 重新初判（使用者明確意圖）。成功事件
     天然歸零計數（只算 last 'judgment' 之後的 'failure'；從未成功者算全部 failure）。max_retries<1＝停用。
     """

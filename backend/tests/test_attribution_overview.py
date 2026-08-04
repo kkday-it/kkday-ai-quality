@@ -25,7 +25,6 @@ def _finding(
     rec_oid: str, polarity: str, l1_code: str = "", l1_label: str = "", conf: float = 0.9
 ) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_reviews_{rec_oid}__{l1_code or 'none'}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity=polarity,
@@ -88,7 +87,6 @@ def test_attribution_overview_model_filter_source_branch(temp_db) -> None:
         "R3",
         [
             TicketFinding(
-                finding_id="fd_reviews_R3__supplier",
                 ticket_id="R3",
                 recommended_action="no_action",
                 polarity="negative",
@@ -116,7 +114,6 @@ def test_attribution_overview_model_filter_all_sources_branch(temp_db) -> None:
         "R1",
         [
             TicketFinding(
-                finding_id="fd_reviews_R1__content",
                 ticket_id="R1",
                 recommended_action="no_action",
                 polarity="negative",

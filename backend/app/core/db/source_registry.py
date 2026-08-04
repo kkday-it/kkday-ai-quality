@@ -8,7 +8,7 @@ freshdesk_tickets / app_feedback / mixpanel_tracker，各以特徵 id 為 natura
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import Table
 
@@ -25,6 +25,9 @@ class SourceSpec:
     score_col: str | None = None  # 星等/評分欄名（list_problems score 篩選用）
     bd_tag_col: str | None = None  # BD 分工代碼欄名（商品垂直分類篩選用，見 bd_tag_vertical）
     date_col: str = "occurred_at"  # 預設日期篩選欄（date_field='occurred_at' 對應）
+    # 上傳表頭 → DB 欄名的**例外**映射；未列者一律恆等（表頭即欄名）。
+    # 只放「表頭不可能等於欄名」的結構性別名（如 $ 開頭、大寫），業務可調的映射不放這裡。
+    header_aliases: dict[str, str] = field(default_factory=dict)
 
 
 # 5 反饋來源登記（value=source code → SourceSpec）。各表對齊源 schema、PK=特徵 id；
@@ -67,8 +70,37 @@ _REGISTRY: dict[str, SourceSpec] = {
         table=T.mixpanel_tracker,
         natural_key="insert_id",
         date_col="time",
+        # Mixpanel 匯出的表頭帶 $ 前綴 / 大寫，不是合法 SQL 識別字，落庫前必須改名。
+        # 原本寫死在 `judge/ingest/upload_batch.py`，只有上傳路徑看得到；移來此處後
+        # 校驗與寫入共用同一份宣告，不會再出現「校驗說可以、寫入卻對不上」。
+        header_aliases={
+            "$insert_id": "insert_id",
+            "$distinct_id": "distinct_id",
+            "$current_url": "current_url",
+            "$os": "os",
+            "Platform": "platform",
+        },
     ),
 }
+
+
+def header_column_map(source: str | None) -> dict[str, str]:
+    """該來源「上傳表頭 → DB 欄名」的完整映射；未知來源回空 dict。
+
+    ⚠️ **為什麼要有這個函式**：上傳寫入路徑原本以 `[c.name for c in tbl.columns]` 直接拿 DB 欄名
+    去 `row.get(欄名)`，等於默認「CSV 表頭逐字等於 DB 欄名」。一旦上游改表頭或我方改欄名，
+    對不上的欄會**靜默落 NULL**——不報錯、`inserted` 照樣計數，資料看起來匯進去了其實是空的。
+    把映射變成一份可被查詢的宣告後，校驗端才能在上傳前把「對不上的表頭」指出來。
+
+    當前為恆等映射 + `header_aliases` 例外；日後 DB 欄改名時，改的是這裡而非上游檔案格式。
+
+    Returns:
+        {表頭: DB 欄名}；含該表全部欄位的恆等項與宣告的別名項。
+    """
+    spec = spec_for(source)
+    if spec is None:
+        return {}
+    return {c.name: c.name for c in spec.table.columns} | dict(spec.header_aliases)
 
 
 def spec_for(source: str | None) -> SourceSpec | None:

@@ -2,7 +2,7 @@
 
 可編輯版本化：SSOT＝judge_rule_versions（rule_code='bd_tag_vertical'，走 db.get_rule_active），
 經「配置」抽屜（商品垂直分類 tab）編輯 / 歷史 / 恢復默認；預設 seed＝config/global/bd_tag_vertical.json，
-源自 BD 分工表 Google Sheet（14r0_oZShsX2MiXtwnrd8hAsSMmQJN8hwHqQsOpJ5xaw）。取代舊制 product_vertical
+源自 BD 分工表 Google Sheet（14r0_oZShsX2MiXtwnrd8hAsSMmQJN8hwHqQsOpJ5xaw）。
 （CATEGORY_xxx→Tour/Exp/Charter/Tix 分組，已於 2026-07-27 全棧退役）。
 
 內容形態 {"pms": [str,...], "verticals": [str,...], "items": {bd_tag_code: {"note": str, "pm": str,

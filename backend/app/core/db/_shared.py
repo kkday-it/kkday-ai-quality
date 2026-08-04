@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 
-from sqlalchemy import and_, exists
+from sqlalchemy import Table, and_, exists, select
+from sqlalchemy.sql import Select
 
 from app.core.db import source_registry
 from app.core.db import tables as T
@@ -22,22 +24,9 @@ from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 # 同步反映新值、無需改呼叫端。SSOT＝config/ai_judge/prejudge.json（+verdict.json）（專案靜態設定檔），改值＝改檔 + 重啟
 # （或呼叫 reload_pipeline_cfg 熱重載）。
 _DEFAULT_TIERS: dict = {"auto_accept": 0.8, "jury_low": 0.5, "jury_high": 0.7}
-# status_labels code-side fallback：prejudge.json/verdict.json 讀取失敗或未來版本缺此鍵時仍需有預設 label 可用
-# （現行 seed 檔已含此鍵）。
-_DEFAULT_STATUS_LABELS: dict[str, str] = {
-    "new": "待處理",
-    "auto_confirmed": "自動確認",
-    "confirmed": "已確認",
-    "dismissed": "已忽略",
-}
-# verdict_by 顯示 label：人工判決存操作者 email（原樣顯示，不在此表）；系統判決固定寫入
-# "system:auto_confirm"（prejudge.py `_route_status`），供匯出/前端顯示中文而非內部技術字串。
-_DEFAULT_VERDICT_BY_LABELS: dict[str, str] = {"system:auto_confirm": "系統自動確認"}
 _POLARITY_LABEL_ZH: dict[str, str] = {}
 _TIER_LABEL_ZH: dict[str, str] = {}
 _STAGE_LABEL_ZH: dict[str, str] = {}
-_STATUS_LABEL_ZH: dict[str, str] = {}
-_VERDICT_BY_LABEL_ZH: dict[str, str] = {}
 _CONFIDENCE_TIERS: dict = {}
 
 
@@ -49,10 +38,6 @@ def _apply_pipeline_cfg(cfg: dict) -> None:
     _TIER_LABEL_ZH.update(cfg.get("tier_labels", {}))
     _STAGE_LABEL_ZH.clear()
     _STAGE_LABEL_ZH.update(cfg.get("stage_labels", {}))
-    _STATUS_LABEL_ZH.clear()
-    _STATUS_LABEL_ZH.update(cfg.get("status_labels") or _DEFAULT_STATUS_LABELS)
-    _VERDICT_BY_LABEL_ZH.clear()
-    _VERDICT_BY_LABEL_ZH.update(cfg.get("verdict_by_labels") or _DEFAULT_VERDICT_BY_LABELS)
     _CONFIDENCE_TIERS.clear()
     _CONFIDENCE_TIERS.update(cfg.get("confidence_tiers", _DEFAULT_TIERS))
 
@@ -61,7 +46,7 @@ def _read_stage_files() -> dict:
     """讀兩階段設定檔並合併為單一 dict（import 期安全來源；DB 引擎未必就緒時用）。
 
     config/ai_judge/prejudge.json（初判層：極性閘門/證據政策/信心閾值/初判旋鈕/stage·tier·
-    polarity labels）＋ verdict.json（判決層：auto_confirm 路由/status labels）——兩檔鍵不重疊，
+    polarity labels）＋ verdict.json（G1 自動採納路由旋鈕）——兩檔鍵不重疊，
     合併後形狀與消費端既有預期一致（單一 dict）。
     """
     merged: dict = {}
@@ -123,20 +108,20 @@ def attribution_dto(r: dict) -> dict:
     """attributions 列（typed 欄 mapping）→ 一條歸因的乾淨巢狀 DTO（API/前端 SSOT）。
 
     r 為含初判欄的 mapping（fan-out 走 jg_ 前綴 → 呼叫端先 unwrap 成無前綴 dict 再傳入，
-    或直接傳 attributions 列 mapping）。人工判決軸（status）與 finding_id 亦在其中。
+    或直接傳 attributions 列 mapping）。
 
     Args:
-        r: 初判欄 mapping（finding_id/polarity/stage/l1_code…/conf_value/summary/status…）。
+        r: 初判欄 mapping（attribution_oid/polarity/prejudge_stage/l1_code…/conf_value/summary…）。
 
     Returns:
-        巢狀 DTO：{finding_id, polarity, stage, l1/l2/l3:{code,label},
+        巢狀 DTO：{attribution_oid, polarity, stage, l1/l2:{code,label},
         confidence:{value,raw,tier}, content:{summary,evidence,action},
-        owner, model, notes_count, is_primary, status}。
+        owner, model, is_primary, is_auto_accepted}。
     """
     l1_code = r.get("l1_code")
     summary_langs = _summary_langs(r.get("summary"))
     return {
-        "finding_id": r.get("finding_id"),
+        "attribution_oid": r.get("attribution_oid"),
         "polarity": r.get("polarity"),
         "sentiment_score": r.get(
             "sentiment_score"
@@ -159,11 +144,8 @@ def attribution_dto(r: dict) -> dict:
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
         "owner": _domain_owner(l1_code or ""),
         "model": r.get("model"),  # 初判模型（stub / ensemble 同 attributions.model 語意）
-        "notes_count": r.get("notes_count") or 0,  # 備註數（fan-out subquery；單列讀取無值時 0）
         "is_primary": r.get("is_primary"),
-        "status": r.get("verdict_status"),  # 判決狀態（徽章用；wire 鍵維持 status）
-        "verdict_by": r.get("verdict_by"),  # 判決人（人工＝email；系統＝system:auto_confirm）
-        "verdict_at": r.get("verdict_at"),  # 判決時間（ISO；未判決 None）
+        "is_auto_accepted": r.get("is_auto_accepted"),  # G1 系統自動採納旗標
     }
 
 
@@ -279,6 +261,51 @@ def apply_table_filters(
         )
         stmt = stmt.where(ext_cond if has_external else ~ext_cond)
     return stmt
+
+
+def _iso_if_dt(value):
+    """datetime/date → ISO 字串；其餘原樣返回（對齊專案時間欄以字串出 API 的慣例）。"""
+    return value.isoformat() if value is not None and hasattr(value, "isoformat") else value
+
+
+def select_wire(table: Table) -> Select:
+    """`select(表)` 的 wire 安全版：每欄 label 成 **Python key**，而非 DB 欄名。
+
+    為什麼需要：DDL 規範對齊後 34 個欄的 DB 名與 Python key 刻意不同
+    （`Column("feedback_source_code", key="source")`）。`key=` 只在**組查詢**時生效——
+    讀結果時 SQLAlchemy 的 result mapping 一律用 **DB 欄名**，於是 `select(表)` 全欄直出的
+    端點會把規範名直接洩到 wire 上（`source` 變成 `feedback_source_code`），前端當場斷。
+
+    本函式把「DB 用規範名、wire 用原名」這件事收斂成單一出口：全欄直出的讀取函式一律改用它，
+    契約由 `tests/test_wire_contract.py` 的凍結快照守住。
+    """
+    return select(*[c.label(c.key) for c in table.columns])
+
+
+def wire_row(row: Mapping, spec: Mapping[str, str]) -> dict:
+    """DB 列 mapping → wire dict（顯式白名單）。`spec` 為 {wire 鍵: DB 欄名}。
+
+    **存在的理由**：多處讀取函式以 `select(表)` 全欄直出，等於「DB 加一個欄」自動變成
+    「API 契約變更」——內部狀態（稽核欄、內部旗標）會無聲流到前端，且型別檢查與測試都攔不住。
+    改走白名單後，DB schema 演進與 wire 契約變更成為兩個各自顯式的動作；`spec` 本身即可被
+    快照測試凍結的契約宣告（見 `tests/test_wire_contract.py`）。
+
+    DB 欄名寫錯時**直接拋錯**而非靜默給 None——後者會讓該欄在前端變空白且無跡可循。
+
+    Args:
+        row: DB 列 mapping（須含 spec 右側的全部欄）。
+        spec: {wire 鍵: DB 欄名} 映射；wire 鍵即 API 回傳的 key。
+
+    Returns:
+        僅含 spec 所列鍵的 dict；時間欄已轉 ISO 字串。
+
+    Raises:
+        KeyError: spec 引用了 row 沒有的欄名。
+    """
+    missing = [col for col in spec.values() if col not in row]
+    if missing:
+        raise KeyError(f"wire_row spec 引用了列中不存在的欄：{missing}")
+    return {wire: _iso_if_dt(row[col]) for wire, col in spec.items()}
 
 
 def fmt_datetime(value, *, date_only: bool = False) -> str:

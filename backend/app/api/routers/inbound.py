@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.core import auth, db
 from app.core import source_mapping as srcmap
+from app.core.db import source_registry
 from app.core.permissions import permission_keys, require_permission
 from app.judge.ingest import entry, upload_batch
 
@@ -52,12 +53,23 @@ async def validate_inbound(
                     "label": "",
                     "status": "unknown",
                     "missing_headers": [],
+                    "unmapped_headers": [],
                     "row_count": len(sh["rows"]),
                     "reason": "表頭無法對應任何已知來源（非 5 反饋源，略過）",
                 }
             )
             continue
         missing = srcmap.validate_headers(src, headers)
+        # 對不上任何 DB 欄的表頭：不擋上傳（上游多給欄位很正常），但必須在上傳「前」講清楚
+        # ——否則那些欄會靜默不落庫，事後只看得到「匯入成功但該欄全空」。
+        column_map = source_registry.header_column_map(src)
+        unmapped = sorted(
+            {
+                str(h).strip()
+                for h in headers
+                if h is not None and str(h).strip() and str(h).strip() not in column_map
+            }
+        )
         report.append(
             {
                 "sheet_name": sh["sheet_name"],
@@ -65,6 +77,7 @@ async def validate_inbound(
                 "label": srcmap.source_label(src),
                 "status": "ok" if not missing else "fail",
                 "missing_headers": missing,
+                "unmapped_headers": unmapped,
                 "row_count": len(sh["rows"]),
                 "reason": "" if not missing else f"缺必備欄：{'、'.join(missing)}",
             }
@@ -129,9 +142,3 @@ async def upload_inbound_stream(job_id: str) -> StreamingResponse:
 def get_batches(_: dict = Depends(auth.get_current_user)) -> list[dict]:
     """上傳批次清單（新到舊）。"""
     return db.list_batches()
-
-
-@router.get("/api/batches/{batch_id}/items")
-def get_batch_items(batch_id: str, _: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """某批次錄入明細（5 來源拆表後源表不帶 batch_id，故不再逐批次列出，回空）。"""
-    return []

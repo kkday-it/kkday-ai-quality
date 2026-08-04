@@ -12,7 +12,6 @@ from app.core.schema import TicketFinding
 
 def _finding(sid: str, l1_code: str, created_at: str, suffix: str = "") -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_reviews_{sid}{('__' + suffix) if suffix else ''}",
         ticket_id=sid,
         recommended_action="no_action",
         polarity="negative" if l1_code else "positive",

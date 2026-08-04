@@ -120,7 +120,6 @@ def test_any_judged_detects_rejudge(temp_db) -> None:
     from app.core.schema import TicketFinding
 
     f = TicketFinding(
-        finding_id="fd_reviews_R9",
         ticket_id="R9",
         recommended_action="no_action",
         polarity="negative",

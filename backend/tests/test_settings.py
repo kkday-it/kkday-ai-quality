@@ -925,8 +925,8 @@ def test_deleting_a_config_prunes_bindings_pointing_at_it(temp_db):
     app_settings.save_settings(
         {
             "llm_model_configs": _with_required(keep, doomed),
-            "llm_area_configs": {"prejudge": "cfg-doomed", "sandbox": "cfg-keep"},
+            "llm_area_configs": {"prejudge": "cfg-doomed", "prompt_debug": "cfg-keep"},
         }
     )
     app_settings.save_settings({"llm_model_configs": _with_required(keep)})
-    assert app_settings.load_settings()["llm_area_configs"] == {"sandbox": "cfg-keep"}
+    assert app_settings.load_settings()["llm_area_configs"] == {"prompt_debug": "cfg-keep"}

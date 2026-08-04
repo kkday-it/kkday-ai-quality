@@ -11,6 +11,28 @@ from sqlalchemy import func, select, update
 from sqlalchemy import insert as sa_insert
 
 from app.core.db import tables as T
+from app.core.db._shared import select_wire, wire_row
+
+# run 出 API 的欄白名單 {wire 鍵: DB 欄名}（當前為恆等映射）。
+# 與 `tests/test_wire_contract.py` 的 `_PREJUDGE_RUN_WIRE` 成對，改一邊必改另一邊。
+_WIRE_COLS = {
+    "job_id": "job_id",
+    "kind": "kind",
+    "rejudge": "rejudge",
+    "source": "source",
+    "model": "model",
+    "params": "params",
+    "status": "status",
+    "total": "total",
+    "processed": "processed",
+    "ok": "ok",
+    "failed": "failed",
+    "total_tokens": "total_tokens",
+    "cost_usd": "cost_usd",
+    "triggered_by": "triggered_by",
+    "started_at": "started_at",
+    "finished_at": "finished_at",
+}
 
 # 建檔時允許寫入的欄（其餘由 DB default 補；終態統計走 finish_prejudge_run）。
 _INSERT_COLS = (
@@ -86,7 +108,7 @@ def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) 
     j = T.attributions
     with T.get_engine().connect() as c:
         row = c.execute(
-            select(j.c.finding_id).where(j.c.source == source, j.c.source_id.in_(ids)).limit(1)
+            select(j.c.attribution_oid).where(j.c.source == source, j.c.source_id.in_(ids)).limit(1)
         ).first()
     return row is not None
 
@@ -94,7 +116,7 @@ def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) 
 def list_prejudge_runs(limit: int = 20, offset: int = 0, source: str | None = None) -> dict:
     """歸因歷史列表（started_at 降冪分頁）→ {total, items}；datetime 轉 ISO 字串。"""
     r = T.prejudge_runs
-    stmt = select(r).order_by(r.c.started_at.desc())
+    stmt = select_wire(r).order_by(r.c.started_at.desc())
     cnt = select(func.count()).select_from(r)
     if source:
         stmt = stmt.where(r.c.source == source)
@@ -102,7 +124,7 @@ def list_prejudge_runs(limit: int = 20, offset: int = 0, source: str | None = No
     with T.get_engine().connect() as c:
         total = int(c.execute(cnt).scalar() or 0)
         rows = c.execute(stmt.limit(limit).offset(offset)).mappings().all()
-    return {"total": total, "items": [_serialize(dict(row)) for row in rows]}
+    return {"total": total, "items": [_serialize(row) for row in rows]}
 
 
 def prejudge_run_detail(job_id: str) -> dict | None:
@@ -110,7 +132,7 @@ def prejudge_run_detail(job_id: str) -> dict | None:
     r = T.prejudge_runs
     u = T.llm_usage
     with T.get_engine().connect() as c:
-        row = c.execute(select(r).where(r.c.job_id == job_id)).mappings().first()
+        row = c.execute(select_wire(r).where(r.c.job_id == job_id)).mappings().first()
         if row is None:
             return None
         stages = [
@@ -140,14 +162,13 @@ def prejudge_run_detail(job_id: str) -> dict | None:
             .mappings()
             .all()
         ]
-    return {**_serialize(dict(row)), "stages": stages}
+    return {**_serialize(row), "stages": stages}
 
 
-def _serialize(row: dict) -> dict:
-    """datetime 欄 → ISO 字串；剔除 log（潛在較大的快照，此處 run 摘要/詳情不需要，
-    專用 get_run_log 才讀）（對齊專案時間欄以字串出 API 的慣例）。"""
-    for k in ("started_at", "finished_at"):
-        v = row.get(k)
-        row[k] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
-    row.pop("log", None)
-    return row
+def _serialize(row) -> dict:
+    """run 列 → API dict（顯式白名單 + datetime 轉 ISO 字串）。
+
+    `log` 刻意不在白名單內：它是可觀的快照（既有資料平均約 70 KB/列），run 摘要/詳情不需要，
+    專用 `get_run_log` 才讀。白名單同時使 DB 新增欄不會自動流進 API（見 `_shared.wire_row`）。
+    """
+    return wire_row(row, _WIRE_COLS)

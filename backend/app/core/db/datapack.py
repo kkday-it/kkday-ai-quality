@@ -29,7 +29,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Table, text
+from sqlalchemy import DateTime, Integer, Table, text
 
 from app.core.db import tables as T
 
@@ -38,39 +38,70 @@ if TYPE_CHECKING:
 
 FORMAT_VERSION = "1.0"
 
-# INSERT 順序（軟關聯：帳號 → 5 來源 → 批次/規則 → 初判 → 依賴/日誌）；TRUNCATE 為反向。
+# INSERT 順序（軟關聯：設定 → 5 來源 → 批次/規則 → 初判 → 依賴/日誌）；TRUNCATE 為反向。
 # 本專案零 DB 級 ForeignKey（軟關聯），順序非硬性；仍固定一份 SSOT 供匯入/匯出共用、利審查。
-TABLE_LOAD_ORDER: tuple[str, ...] = (
-    "settings",
-    "reviews",
-    "conversations",
-    "freshdesk_tickets",
-    "app_feedback",
-    "mixpanel_tracker",
-    "batches",
-    "judge_rule_versions",
-    "prompt_drafts",
-    # 人工評判案例庫：手工累積的判準金標，跨環境搬遷時最該帶走的資產之一（與 prompt_sandbox_runs
-    # 那種「跑一次就過期的測試歷史」不同性質，故入包）。
-    "prompt_debug_reviews",
-    "attributions",
-    "finding_notes",
-    "llm_usage",
-    "prejudge_runs",
-    "attribution_history",
+#
+# ⚠️ **一律引用 Table 物件而非表名字串**：字串常數在改表名時不會被型別檢查或測試抓到，
+# 漏改的後果是匯入 `T.metadata.tables[name]` 直接 KeyError、匯出靜默漏表。引用物件後，
+# 表改名只需改 `tables.py` 一行，本處自動跟上（見 `tests/test_datapack_consistency.py`）。
+_LOAD_ORDER_TABLES: tuple[Table, ...] = (
+    T.settings,
+    T.reviews,
+    T.conversations,
+    T.freshdesk_tickets,
+    T.app_feedback,
+    T.mixpanel_tracker,
+    T.batches,
+    T.judge_rule_versions,
+    # 人工評判案例庫：手工累積的判準金標，跨環境搬遷時最該帶走的資產之一。
+    T.attributions,
+    T.llm_usage,
+    T.prejudge_runs,
+    T.attribution_history,
 )
+
+TABLE_LOAD_ORDER: tuple[str, ...] = tuple(t.name for t in _LOAD_ORDER_TABLES)
 
 # 敏感表：含加密機密（LLM token / QC 密碼），預設不匯入（避免跨環境金鑰不符靜默清空）。
-SENSITIVE_TABLES: frozenset[str] = frozenset({"settings"})
+SENSITIVE_TABLES: frozenset[str] = frozenset({T.settings.name})
 
-# 載入後需重置序列的 autoincrement PK 表：還原顯式 id 後，序列未同步會導致後續新增 PK 衝突。
-_SEQUENCE_TABLES: tuple[tuple[str, str], ...] = (
-    ("judge_rule_versions", "id"),
-    ("prompt_debug_reviews", "id"),
-    ("finding_notes", "id"),
-    ("llm_usage", "id"),
-    ("attribution_history", "id"),
-)
+
+def _sequence_columns() -> tuple[tuple[str, str], ...]:
+    """從 metadata 派生「帶序列的 PK 欄」→ ((表名, 欄名), ...)。
+
+    載入後需重置序列：truncate-then-load 還原顯式 id 後，序列未同步會讓後續新增撞主鍵衝突
+    （見 `.claude/rules/datapack-consistency.md` 的反向氣味）。原本是手寫清單，新表加 serial PK
+    卻忘了補是必然會發生的漏——改為派生後自動涵蓋。
+
+    判準（任一成立）：
+    ① 欄上掛了 `Identity()`（本專案 DDL 規範的 `名詞_oid` 主鍵一律走這條）
+    ② 明確宣告 `autoincrement=True`
+    ③ SQLAlchemy 預設 `"auto"` 下會被建成 SERIAL 的單欄整數 PK（無 server_default）
+
+    ⚠️ ① 不能靠 ③ 涵蓋：`Identity()` 會**同時**被 SQLAlchemy 設進 `Column.server_default`，
+    於是 `server_default is None` 這條判準反而把所有 identity 主鍵全部濾掉——12 張表在
+    改用 `Identity()` 之後一度全數漏檢（派生結果是空 tuple），必須顯式認 `col.identity`。
+    """
+    out: list[tuple[str, str]] = []
+    for tbl in _LOAD_ORDER_TABLES:
+        pk_cols = list(tbl.primary_key.columns)
+        for col in pk_cols:
+            is_serial = (
+                col.identity is not None
+                or col.autoincrement is True
+                or (
+                    col.autoincrement == "auto"
+                    and len(pk_cols) == 1
+                    and isinstance(col.type, Integer)
+                    and col.server_default is None
+                )
+            )
+            if is_serial:
+                out.append((tbl.name, col.name))
+    return tuple(out)
+
+
+_SEQUENCE_TABLES: tuple[tuple[str, str], ...] = _sequence_columns()
 
 _CHUNK = 2000  # 分塊 insert 大小（對齊 upload_batch 既有分塊量級）
 
@@ -104,12 +135,20 @@ def current_alembic_head(engine: Any | None = None) -> str | None:
 # head 變化不該進來——那些是真實 schema 變化，理應讓舊資料包重新驗證（per-table 欄位比對層
 # `unknown_cols` 仍會攔截真正不相容的結構差異，見 validate_datapack 迴圈）。
 LEGACY_COMPATIBLE_HEADS: dict[str, str] = {
+    # 2026-08-04 沙盒退役：drop 的兩張表（prompt_sandbox_runs / prompt_drafts）中，前者本就不入包、
+    # 後者是「編輯中的暫存草稿」（採納即刪、實測 0 列），舊資料包的實際內容形狀不受影響，故登記相容。
+    "c7a41e0d9b82": "e5b83c214f7d",
     # 2026-07-23 squash：bd77052f7222 起 53 個增量 migration 併為單一 baseline 4ac23d6d20b4，
     # schema 內容不變，僅 migration 歷史重寫。e2f4a8c91d37 為 squash 前最後一個已提交 head；
     # 另兩個為 squash 當下尚未提交的本機 WIP head，一併登記避免任何時點匯出的資料包被誤判失效。
     "e2f4a8c91d37": "4ac23d6d20b4",
     "b7f4e2a91c56": "4ac23d6d20b4",
     "d3a68f52c910": "4ac23d6d20b4",
+    # 2026-08-04 squash：4ac23d6d20b4 起 15 支 migration 併為 baseline v2（94e60400715b）。
+    # 動機不是「檔案太多」，而是舊 baseline 走 `metadata.create_all()`、產出隨 tables.py 漂移，
+    # 已實測導致 fresh DB 的 upgrade head 斷鏈；v2 改為凍結式顯式 DDL。schema 內容不變。
+    # 只登記 squash 前的最終 head：a1d7e3f92b64 是唯一能證明「schema 等同 v2」的版本。
+    "a1d7e3f92b64": "94e60400715b",
 }
 
 
@@ -282,13 +321,17 @@ def _coerce_row(table: Table, row: dict) -> dict:
     """
     out: dict[str, Any] = {}
     for col in table.columns:
-        if col.name not in row:
+        # ⚠️ 一律用 col.key（Python 名）不用 col.name（DB 名）：匯出端 `dict(row._mapping)` 與
+        # 驗證端 `table.columns.keys()` 都是 key，此處若用 name，一旦有欄宣告 `Column("db_name",
+        # key="py_name")`，資料包會通過驗證但匯入時每個鍵都 miss → **整表靜默寫入全 NULL**。
+        # 目前無任何欄用 key=，兩者相同；統一成 key 是為了拿掉這顆未爆彈。
+        if col.key not in row:
             continue  # 缺欄＝NULL（由 DB 預設 / nullable 處理）
-        val = row[col.name]
+        val = row[col.key]
         if isinstance(col.type, DateTime) and isinstance(val, str) and val:
             val = datetime.fromisoformat(val)
-        out[col.name] = val
-    if table.name == "settings":
+        out[col.key] = val
+    if table.name == T.settings.name:
         out = _repair_settings_payload(out)
     return out
 
@@ -412,7 +455,17 @@ def dump_table_ndjson(conn: Any, name: str) -> tuple[bytes, int]:
     n = 0
     result = conn.execution_options(stream_results=True).execute(tbl.select())
     for row in result:
-        buf.write(json.dumps(dict(row._mapping), ensure_ascii=False, default=_json_default))
+        # ⚠️ 以 `col.key`（Python 名）為鍵，**不可**直接用 `dict(row._mapping)`——後者是 DB 欄名。
+        # DDL 對齊後 34 個欄的 DB 名與 key 不同，匯入端 `_coerce_row` 查的是 key：兩端一旦分歧，
+        # 資料包會通過驗證卻**整表靜默匯入全 NULL**（P0.3 的註解預告過這顆未爆彈，此處拆除）。
+        m = row._mapping
+        buf.write(
+            json.dumps(
+                {c.key: m[c.name] for c in tbl.columns if c.name in m},
+                ensure_ascii=False,
+                default=_json_default,
+            )
+        )
         buf.write("\n")
         n += 1
     return buf.getvalue().encode("utf-8"), n

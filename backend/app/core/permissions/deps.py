@@ -61,7 +61,7 @@ def get_provider() -> PermissionProvider:
 def require_permission(permission: str):
     """FastAPI 依賴工廠：先過 get_current_user 認證，再檢 business-key 權限；無權限 / 判定失敗一律 403（fail-closed）。
 
-    用法：`user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE))`。
+    用法：`user: dict = Depends(require_permission(permission_keys.PROBLEM_LIST_EXPORT))`。
     回傳 user dict 供 handler 沿用（同 get_current_user）。
     """
 

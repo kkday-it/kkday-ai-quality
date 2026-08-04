@@ -13,24 +13,20 @@ from openpyxl import load_workbook
 
 from app.core import db
 from app.core.schema import TicketFinding
+from tests._factories import review_row
 
 
 def _pr_row(rec_oid: str) -> dict:
-    return {
-        "rec_oid": rec_oid,
-        "create_date": "2026-06-10 08:30:00",
-        "rec_desc": "描述與實際不符",
-        "rec_scores": "1",
-        "prod_oid": "P1",
-        "order_snap_json": "{}",
-    }
+    """導出測試用的 reviews 源列（負面評論，供歸因/導出斷言）。"""
+    return review_row(
+        rec_oid, create_date="2026-06-10 08:30:00", rec_desc="描述與實際不符", rec_scores="1"
+    )
 
 
 def _finding(
     rec_oid: str, l1_code: str, l1_label: str, l2_code: str = "", l2_label: str = ""
 ) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity="negative",
@@ -130,21 +126,3 @@ def test_prompts_sheet_version_is_release_timestamp(temp_db) -> None:
         assert next(r for r in rows if r[0] == "00_polarity")[2] == "檔案默認"  # 未發版者不受影響
     finally:
         prompt_source.reload()  # 還原快取（temp_db 結束後 DB 版消失，避免污染後續測試）
-
-
-def test_provenance_and_verdict_columns(temp_db) -> None:
-    """溯源欄：初判時間（review 級，已/未初判區分）＋判決組（狀態/時間/人）＋說明表存在。"""
-    db.insert_source_batch("reviews", [_pr_row("V1"), _pr_row("V2")])
-    db.replace_source_findings("reviews", "V1", [_finding("V1", "content", "商品內容")])
-    db.replace_source_findings("reviews", "V2", [_finding("V2", "content", "商品內容")])
-    # V1 人工判決（確認）→ 判決組三欄有值；V2 維持待判決
-    db.update_finding_status("fd_reviews_V1__content", "confirmed", actor="qa@kkday.com")
-    headers, rows, names = _sheet_cells(db.export_problems_xlsx(source="reviews"))
-    assert "說明" in names  # 第 4 張說明表
-    i = {h: idx for idx, h in enumerate(headers)}
-    v1 = next(r for r in rows if r[0] == "V1")
-    v2 = next(r for r in rows if r[0] == "V2")
-    assert v1[i["初判時間"]] and v2[i["初判時間"]]  # 初判事件時間，兩者皆有
-    assert v1[i["判決狀態"]] == "已確認"
-    assert v1[i["判決人"]] == "qa@kkday.com" and v1[i["判決時間"]]
-    assert v2[i["判決狀態"]] == "待判決" and not v2[i["判決人"]]

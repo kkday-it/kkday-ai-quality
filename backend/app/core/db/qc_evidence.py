@@ -38,6 +38,7 @@ from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any
 
 from app.core import paths
@@ -395,55 +396,71 @@ def assert_no_pii_keys(data: Any) -> None:
 # 真相源仍是 production snapshot——此表純快取（可整表清空重生）；TTL 懶清理：
 # 讀到過期＝miss 並刪列；寫入時順手清全表過期列（走 expires_at 索引，量小成本可忽略）。
 
-# 內容欄（不含 PK order_oid 與快取中繼 fetched_at/expires_at）——與 tables.py 欄位順序一致，
-# 供 `_cache_get`/`_cache_set`/`_fetch_full_snapshot` 三處共用同一份欄名，避免各自手key打錯。
-_SNAPSHOT_VALUE_COLUMNS: tuple[str, ...] = (
-    "order_mid",
-    "order_status",
-    "price_pay",
-    "lang_code",
-    "crt_dt",
-    "prod_oid",
-    "prod_version",
-    "pkg_oid",
-    "item_oid",
-    "supplier_oid",
-    "lst_dt_go",
-    "timezone",
-    "pkg_name",
-    "prod_desc",
-    "supplier_name",
-    "supplier_order_handler",
-    "supplier_msg_handler",
-    "product_summary",
-    "product_desc_module",
-    "item_lang",
-    "item_setting",
-    "package_lang",
-    "package_setting",
-    "package_policy",
-    "package_module_setting",
+# 快取中繼欄（非業務資料，僅供 TTL 管理）——內容欄＝全欄扣掉 PK 與這兩欄。
+_CACHE_META_COLUMNS: tuple[str, ...] = ("fetched_at", "expires_at")
+
+# 非快取酬載的欄：serial PK 由 DB 自產、order_oid 由 `_cache_set` 顯式帶入、審計四欄屬 DDL 規範
+# 的通用欄位而非佐證內容。三者都不該混進「內容欄」清單（否則會被當成 snapshot 欄位寫入/讀出）。
+# ⚠️ 不含 create_date——本表的 `create_date` 就是 `fetched_at` 那一欄（DB 名 create_date、
+# Python key fetched_at），已由 `_CACHE_META_COLUMNS` 涵蓋，重複列入會讓「表已無此欄」的護欄誤報。
+_NON_PAYLOAD_COLUMNS: frozenset[str] = frozenset(
+    {"order_oid", "create_user", "modify_user", "modify_date"}
 )
-_SNAPSHOT_ALL_COLUMNS: tuple[str, ...] = _SNAPSHOT_VALUE_COLUMNS + ("fetched_at", "expires_at")
+
+
+@lru_cache(maxsize=1)
+def _snapshot_value_columns() -> tuple[str, ...]:
+    """evidence_snapshot 的內容欄（全欄 − PK − 快取中繼欄；順序沿用 tables.py 宣告順序）。
+
+    供 `_cache_get` / `_cache_set` / `_fetch_full_snapshot` 三處共用同一份欄名。
+
+    ⚠️ **從 schema 派生而非手寫**：原本是一份 25 個欄名的手抄 tuple，與 `tables.py` 平行維護
+    且無測試守護 —— schema 改欄名時漏改這裡不會有任何紅燈，只會靜默少一個鍵（快取讀出的 dict
+    缺該欄 → 前端該區塊空白）。派生後 schema 是唯一真相源，這類漂移不可能發生。
+
+    lazy import + `lru_cache`：本模組刻意只在頂層 import `paths`（比照專案重庫 lazy import 慣例），
+    故 metadata 於首次呼叫時才取。
+    """
+    from app.core.db import tables as T
+
+    # ⚠️ 用 `c.key`（Python 名）不用 `c.name`（DB 名）：DDL 對齊後部分欄兩者不同
+    # （`fetched_at` 的 DB 名是 `create_date`），而本函式的回傳值是拿去對 row mapping
+    # 取值的鍵、也要與 `_CACHE_META_COLUMNS` 同軸——混用會讓快取讀出來的 dict 少鍵。
+    return tuple(
+        c.key
+        for c in T.evidence_snapshot.columns
+        if not c.primary_key
+        and c.key not in _CACHE_META_COLUMNS
+        and c.key not in _NON_PAYLOAD_COLUMNS
+    )
+
+
+@lru_cache(maxsize=1)
+def _snapshot_all_columns() -> tuple[str, ...]:
+    """內容欄 + 快取中繼欄（`_cache_get` 回傳的完整鍵集合）。"""
+    return _snapshot_value_columns() + _CACHE_META_COLUMNS
 
 
 def _cache_get(order_oid: int) -> dict | None:
     """PG 快取讀：命中且未過期回扁平欄位 dict（含 fetched_at/expires_at）；
     未命中/已過期回 None（過期列順手刪除）。
     """
-    from sqlalchemy import delete, select
+    from sqlalchemy import delete
 
     from app.core.db import tables as T
+    from app.core.db._shared import select_wire
 
     t = T.evidence_snapshot
     with T.get_engine().begin() as c:
-        row = c.execute(select(t).where(t.c.order_oid == order_oid)).mappings().first()
+        # select_wire（非裸 select）：本表有別名欄（create_date 的 key 是 fetched_at），
+        # 裸 select 的 result mapping 用 DB 名，下方以 key 取值會全部 miss → 快取恆不命中。
+        row = c.execute(select_wire(t).where(t.c.order_oid == order_oid)).mappings().first()
         if row is None:
             return None
         if row["expires_at"] is None or row["expires_at"] <= datetime.now(timezone.utc):
             c.execute(delete(t).where(t.c.order_oid == order_oid))
             return None
-        return {k: row[k] for k in _SNAPSHOT_ALL_COLUMNS}
+        return {k: row[k] for k in _snapshot_all_columns()}
 
 
 def _cache_set(order_oid: int, fields: dict, fetched_at: datetime, expires_at: datetime) -> None:
@@ -458,7 +475,7 @@ def _cache_set(order_oid: int, fields: dict, fetched_at: datetime, expires_at: d
         "order_oid": order_oid,
         "fetched_at": fetched_at,
         "expires_at": expires_at,
-        **{k: fields.get(k) for k in _SNAPSHOT_VALUE_COLUMNS},
+        **{k: fields.get(k) for k in _snapshot_value_columns()},
     }
     try:
         with T.get_engine().begin() as c:
@@ -567,7 +584,7 @@ class EvidenceResult:
 def _fetch_full_snapshot(creds: dict, oid: str) -> dict | None:
     """一訂單一列的完整佐證快照 DB 實查（order+商品+供應商；cache miss 時經 single-flight 呼叫）。
 
-    回傳扁平欄位 dict（鍵＝`_SNAPSHOT_VALUE_COLUMNS`，對應 evidence_snapshot 各欄），
+    回傳扁平欄位 dict（鍵＝`_snapshot_value_columns()`，對應 evidence_snapshot 各欄），
     商品版本語系依訂單 `order_tbl.lang_code`（缺則 config `lang_fallback`）。
 
     Returns:

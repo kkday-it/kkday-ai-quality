@@ -24,6 +24,7 @@ _store: JobStore = JobStore()
 _job_rows: dict[str, list[dict]] = {}
 
 _CHUNK = 1000  # 每塊列數：兼顧進度更新頻率與寫入效率
+_TERMINAL_TTL_SECONDS = 1800  # 終態快照保留 30 分鐘（對齊 import_jobs；前端輪詢完即無人再問）
 
 
 def _set_status(job_id: str, status: str) -> None:
@@ -58,30 +59,19 @@ def _append_errors(job_id: str, idx: int, errs: list[str]) -> None:
     _store.mutate(job_id, _apply)
 
 
-# mixpanel $ / 大寫欄名 → 淨化為合法 SQL 欄名（對齊來源表定義；其餘來源不需）
-_MIX_SANITIZE = {
-    "$insert_id": "insert_id",
-    "$distinct_id": "distinct_id",
-    "$current_url": "current_url",
-    "$os": "os",
-    "Platform": "platform",
-}
-
-
-def _sanitize_row(source: str, row: dict) -> dict:
-    """mixpanel_tracker：源列的 $ / 大寫 key 淨化為合法欄名；其餘來源原樣。"""
-    if source != "mixpanel_tracker":
-        return row
-    return {_MIX_SANITIZE.get(k, k): v for k, v in row.items()}
-
-
 def _process_source(job_id: str, idx: int, source: str, rows: list[dict]) -> int:
-    """5 來源統一：分塊把原始源列（$ 淨化）直接 upsert 各自來源表；逐塊回報進度。回 inserted 總數。"""
+    """5 來源統一：分塊把上傳列 upsert 進各自來源表；逐塊回報進度。回 inserted 總數。
+
+    表頭 → DB 欄名的轉換（含 mixpanel 的 `$insert_id` 等別名）已下沉到
+    `source_registry.header_column_map`，由 `db.insert_source_batch` 統一套用——原本在此層做的
+    `_sanitize_row` 只有上傳路徑看得到，校驗端看不到同一份規則，兩邊會漂移。
+    """
     total = 0
+    unmapped: set[str] = set()
     for start in range(0, len(rows), _CHUNK):
-        chunk = [_sanitize_row(source, r) for r in rows[start : start + _CHUNK]]
+        chunk = rows[start : start + _CHUNK]
         errs: list[str] = []
-        inserted = db.insert_source_batch(source, chunk, errors=errs)
+        inserted = db.insert_source_batch(source, chunk, errors=errs, unmapped=unmapped)
         total += inserted
         _bump_sheet(
             job_id,
@@ -89,6 +79,13 @@ def _process_source(job_id: str, idx: int, source: str, rows: list[dict]) -> int
             add={"processed": len(chunk), "inserted": inserted, "failed": len(chunk) - inserted},
         )
         _append_errors(job_id, idx, errs)
+    if unmapped:
+        # 非致命（上游多給欄位很正常），但一定要看得見：這是「該欄整欄空白」的唯一徵兆
+        _append_errors(
+            job_id,
+            idx,
+            [f"⚠️ 表頭「{h}」對不上任何欄位，該欄未落庫" for h in sorted(unmapped)],
+        )
     return total
 
 
@@ -100,13 +97,12 @@ def _run(job_id: str, filename: str, sheets_data: list[dict]) -> None:
             _bump_sheet(job_id, idx, set_={"status": "running"})
             try:
                 # 5 來源統一：原始源列（$ 淨化）直接 upsert 各自來源表（衝突鍵＝特徵 id）
-                inserted = _process_source(job_id, idx, source, rows)
+                _process_source(job_id, idx, source, rows)
                 batch = db.create_batch(
                     source,
                     label,
                     f"{filename}::{name}",
                     len(rows),
-                    inserted,
                     note=sd.get("note", ""),
                 )
                 _bump_sheet(job_id, idx, set_={"status": "done", "batch_id": batch["batch_id"]})
@@ -191,6 +187,11 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
                 "note": (sel.get("note") or "").strip(),
             }
         )
+
+    # 終態快照 TTL 回收（比照 export_jobs / import_jobs / prompt_debug_batch 的慣例，在 start 前掃一次）。
+    # 缺這行時進度快照只增不減——單筆雖小，但長跑行程沒有任何回收路徑。
+    # 註：整份上傳列（`_job_rows`）另有 `_run` 的 finally 清理，不在此列。
+    _store.sweep_terminal(_TERMINAL_TTL_SECONDS, terminal_statuses=("done", "error", "interrupted"))
 
     job_id = f"up_{uuid.uuid4().hex[:12]}"
     _store.put(

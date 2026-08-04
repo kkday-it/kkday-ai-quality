@@ -84,7 +84,11 @@ async def _no_active_release_handler(_request: Request, exc: NoActiveReleaseErro
     )
 
 
-db.init_db()  # 啟動即建表（冪等）
+# ⚠️ 這裡刻意**不建表**。schema 由 `docker-entrypoint.sh` → `core/db/schema_bootstrap.py`
+# 單一路徑負責（`alembic upgrade head`）。app 啟動時再跑一次 `metadata.create_all()` 會讓
+# 「app 認為的 schema」繞過 migration 直接落地——2026-08-04 實測：改完 tables.py 後 uvicorn
+# reload 就悄悄建出 9 張改名後的新表，其後的 rename migration 立刻撞 DuplicateTable。
+# 那正是 P1 要消滅的雙軌漂移，只是當時漏了這一處。`init_db()` 保留給測試夾具使用。
 
 # ── 掛載領域 router（各自帶完整 /api 路徑；v1 為新攝取架構 /api/v1）──
 from app.api.routers import admin_import as admin_import_router  # noqa: E402

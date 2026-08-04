@@ -1,31 +1,19 @@
 """評論級歸因歷史（attribution_history）回歸測試（隔離 PostgreSQL 測試庫，合成拋棄列）。
 
-覆蓋三類事件的寫入語義：
+覆蓋事件的寫入與可見性語義：
 - kind='prejudge'：replace_source_findings 同交易寫入 + 全欄位嚴格去重
   （同 model+params+結果 → skip；換 model / 改分類 / 改摘要措辭 → 各記一筆）。
-- kind='verdict'：update/batch_update_finding_status 轉移留痕（同值冪等不記；
-  批量按評論聚合、混合現值只記實際轉移）。
 - kind='note'：評論級備註 append-only。
+- 使用者時間軸的 kind 白名單：內部遙測事件（router_shadow）不得洩漏進 UI。
 """
 
 from __future__ import annotations
 
 from app.core import db
 from app.core.schema import TicketFinding
+from tests._factories import review_row
 
-
-def _pr_row(rec_oid: str, **overrides) -> dict:
-    """建一筆最小 reviews 源列（源欄名、值皆 Text）。"""
-    base = {
-        "rec_oid": rec_oid,
-        "create_date": "2026-06-01 10:00:00",
-        "rec_desc": "內容",
-        "rec_scores": "5",
-        "prod_oid": "P1",
-        "order_snap_json": "{}",
-    }
-    base.update(overrides)
-    return base
+_pr_row = review_row
 
 
 def _finding(
@@ -37,7 +25,6 @@ def _finding(
 ) -> TicketFinding:
     """建一筆對應 reviews 列的歸因（可調 model / 分類 / 摘要，供歷史去重比對用例）。"""
     return TicketFinding(
-        finding_id=f"fd_reviews_{rec_oid}__{domain}",
         ticket_id=rec_oid,  # source_id
         recommended_action="no_action",
         l1_domain_code=l1_code,
@@ -128,84 +115,6 @@ def test_attribution_count_change_records_history(temp_db) -> None:
     assert len(events[-1]["attributions"]) == 2  # 舊到新：最新一筆在最後
 
 
-def test_human_review_does_not_pollute_judgment_dedup(temp_db) -> None:
-    """人工確認後同結果重新初判：status 保留但不入初判快照 → 仍去重（不因覆核誤判為結果變化）。"""
-    db.insert_source_batch("reviews", [_pr_row("H7")])
-    _replace("H7", [_finding("H7")])
-    db.update_finding_status("fd_reviews_H7__content", "confirmed", actor="qa@kkday.com")
-    _replace("H7", [_finding("H7")])
-    assert len(_history("H7", "prejudge")) == 1
-
-
-# ── kind='verdict'：判決轉移留痕 ────────────────────────────────────────
-def test_status_transition_recorded(temp_db) -> None:
-    """確認 → 撤銷（new）各記一筆 kind='verdict'（params 含 from/to 與操作者）。"""
-    db.insert_source_batch("reviews", [_pr_row("S1")])
-    fid = "fd_reviews_S1__content"
-    _replace("S1", [_finding("S1")])
-    db.update_finding_status(fid, "confirmed", actor="qa@kkday.com")
-    db.update_finding_status(fid, "new", actor="qa@kkday.com")  # 撤銷覆核
-    events = _history("S1", "verdict")
-    assert len(events) == 2
-    assert events[-1]["params"]["to"] == "new"  # 舊到新：撤銷在最後
-    assert events[-1]["params"]["changes"] == [{"finding_id": fid, "from": "confirmed"}]
-    assert events[-1]["author"] == "qa@kkday.com"
-
-
-def test_status_same_value_idempotent_no_history(temp_db) -> None:
-    """同值重複覆核＝冪等 no-op：不重寫 audit、不記歷史。"""
-    db.insert_source_batch("reviews", [_pr_row("S2")])
-    fid = "fd_reviews_S2__content"
-    _replace("S2", [_finding("S2")])
-    assert db.update_finding_status(fid, "confirmed", actor="qa@kkday.com")
-    assert db.update_finding_status(fid, "confirmed", actor="qa@kkday.com")  # 重複點
-    assert len(_history("S2", "verdict")) == 1
-
-
-def test_batch_status_mixed_current_values(temp_db) -> None:
-    """批量初判混合現值：已是目標狀態者跳過；每評論聚合一筆事件、回報實際更新數。"""
-    db.insert_source_batch("reviews", [_pr_row("B1"), _pr_row("B2")])
-    _replace("B1", [_finding("B1")])
-    _replace("B2", [_finding("B2")])
-    db.update_finding_status("fd_reviews_B1__content", "confirmed", actor="qa@kkday.com")
-    r = db.batch_update_finding_status("reviews", ["B1", "B2"], "confirmed", actor="qa@kkday.com")
-    assert r["updated"] == 1  # B1 已 confirmed 跳過，只更新 B2
-    assert r["finding_ids"] == ["fd_reviews_B2__content"]
-    assert len(_history("B1", "verdict")) == 1  # 只有最初那筆單筆確認
-    assert len(_history("B2", "verdict")) == 1  # 批量寫入的聚合事件
-    assert _history("B2", "verdict")[0]["params"]["to"] == "confirmed"
-
-
-# ── kind='note'：評論級備註 ───────────────────────────────────────────
-def test_history_note_append_and_order(temp_db) -> None:
-    """評論級備註 append-only；時間軸舊到新、與初判事件混排。"""
-    db.insert_source_batch("reviews", [_pr_row("N1")])
-    _replace("N1", [_finding("N1")])
-    created = db.add_history_note("reviews", "N1", author="qa@kkday.com", content="已與供應商核對")
-    assert created["kind"] == "note" and created["id"]
-    rows = _history("N1")
-    assert [r["kind"] for r in rows] == ["prejudge", "note"]  # 舊到新：初判先發生
-    assert rows[-1]["content"] == "已與供應商核對"
-
-
-# ── latest_snapshots / list_prejudge_models（多模型對比導出）─────────────────
-def test_latest_snapshots_takes_newest_per_model(temp_db) -> None:
-    """DISTINCT ON 語意鎖定：每評論只取該模型**最新**一筆快照；跨模型互不干擾。"""
-    db.insert_source_batch("reviews", [_pr_row("LS1")])
-    _replace("LS1", [_finding("LS1", summary="第一版")])
-    _replace("LS1", [_finding("LS1", summary="第二版")])  # 同模型重新初判（結果變 → 新快照）
-    _replace(
-        "LS1", [_finding("LS1", model="seed-2-0-lite", summary="他模型版")], model="seed-2-0-lite"
-    )
-    snaps = db.latest_snapshots("reviews", "gpt-5-mini")
-    assert set(snaps) == {"LS1"}
-    summary = snaps["LS1"]["attributions"][0]["content"]["summary"]
-    assert summary == {"zh-tw": "第二版"}  # 取最新，非第一版
-    other = db.latest_snapshots("reviews", "seed-2-0-lite")
-    assert other["LS1"]["attributions"][0]["content"]["summary"] == {"zh-tw": "他模型版"}
-    assert db.latest_snapshots("reviews", "nonexistent") == {}
-
-
 def test_list_prejudge_models_union_and_stub_last(temp_db) -> None:
     """models 清單＝attributions ∪ 歷史快照 distinct；字母序、stub 排最後。"""
     db.insert_source_batch("reviews", [_pr_row("LM1"), _pr_row("LM2")])
@@ -216,3 +125,33 @@ def test_list_prejudge_models_union_and_stub_last(temp_db) -> None:
     _replace("LM2", [_finding("LM2", model="a-model")], model="a-model")
     models = db.list_prejudge_models()
     assert models == ["a-model", "gpt-5-mini", "stub"]  # 字母序 + stub 最後（union 含歷史快照）
+
+
+def test_internal_kinds_excluded_from_user_timeline(temp_db) -> None:
+    """內部遙測事件（router_shadow）不得出現在使用者時間軸。
+
+    ⚠️ 這條守的是**白名單本身**：`kind` 是自由 Text 欄，新增內部事件型別不需要 migration，
+    所以「忘了排除」是零成本就會發生的事。而前端時間軸對未知 kind 是 v-else 兜底渲染成
+    author/content 皆空的灰色「備註」——`failure` 就曾這樣假冒了 390 筆備註。
+    改成黑名單或拿掉過濾，本測試會紅。
+    """
+    from sqlalchemy import insert
+
+    from app.core.db import tables as T
+
+    db.insert_source_batch("reviews", [_pr_row("HK1")])
+    _replace("HK1", [_finding("HK1")])
+    db.add_history_note("reviews", "HK1", author="qa@kkday.com", content="人工備註")
+    with T.get_engine().begin() as c:
+        c.execute(
+            insert(T.attribution_history).values(
+                source="reviews",
+                source_id="HK1",
+                kind="router_shadow",
+                params={"candidates": ["content"], "hit": [], "missed": ["content"]},
+            )
+        )
+
+    kinds = [e["kind"] for e in db.list_attribution_history("reviews", "HK1")]
+    assert "router_shadow" not in kinds, "內部遙測事件洩漏進使用者時間軸"
+    assert sorted(set(kinds)) == ["note", "prejudge"]

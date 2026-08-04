@@ -22,7 +22,6 @@
   "areas": [
     "prejudge",
     "prompt_debug",
-    "sandbox",
     "prompt_revise"
   ],
   "_modelConfigs_comment": "全新環境的初始模型配置：由後端 settings._blank_settings() 種入 DB，之後就是一般配置、與使用者自建的零差別——**沒有出廠層**，不存在唯讀／複製／還原出廠。⚠️ 刻意不含 name：名稱由規格衍生（settings.derive_config_name ↔ 前端 deriveConfigName，兩端有黃金清單 parity 測試），落庫的只有五個旋鈕欄，名稱不落庫就不可能與規格漂移。唯一性判「規格重複」而非「名稱重複」（spec_key 會折掉該供應商實際不生效的旋鈕再比對）。⚠️ 本欄只對「llm_model_configs 這個 key 不存在」的 row 生效，既有 row 要補內容必須走 migration。thinking/reasoning_effort 的 \"default\" ＝不覆寫、交由執行層依該 model 能力表決定。",
@@ -64,7 +63,6 @@
   "areaDefaults": {
     "prejudge": "seed-openai-balanced",
     "prompt_debug": "seed-openai-balanced",
-    "sandbox": "seed-openai-balanced",
     "prompt_revise": "seed-openai-flagship"
   },
   "_modelCapabilities_comment": "per-model 可配參數能力覆寫（優先於所屬 provider 級預設）。⚠️ 2026-07-31 以 144 次真實 API 呼叫逐 model × 逐旋鈕實測校正（繞過 client 的自動降級直看原始回應）：reasoningEffortOptions 一律以實測可用值為準；temperatureAlwaysLocked＝送自訂溫度在任何狀態都被拒、temperatureLockedWhenThinking＝只有推理生效時被拒；thinkingModes 僅 nativeSwitch 供應商有意義。改任一欄前請重跑實測，勿憑官方文件字面推斷——實測與文件不符的案例已出現多次。",

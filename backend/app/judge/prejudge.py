@@ -107,29 +107,26 @@ def _auto_confirm_cfg() -> dict:
     return _cfg().get("auto_confirm", {"enabled": True, "audit_sample_rate": 0.05})
 
 
-def _route_status(tier: str, stage: str) -> str:
-    """自動確認路由（G1）：判決結果 → 人工佇列狀態。
+def _route_auto_accept(tier: str, stage: str) -> bool:
+    """自動確認路由（G1）：這條歸因要不要由系統自動採納。
 
-    auto_accept + judged（高信心已判定）→ `auto_confirmed`（自動採信、不進人工佇列）；每
-    audit_sample_rate 比例抽樣回 `new` 交人工複核（防自動化偏誤：研究指 LLM 高召回低精確，全自動易漏錯）。
-    其餘（jury / needs_review / 未定論階段）→ `new`（待人工判決）。停用時一律 new（回退舊行為）。
+    auto_accept + judged（高信心已判定）→ True（自動採信）；每 audit_sample_rate 比例抽樣回
+    False 交人工複核（防自動化偏誤：研究指 LLM 高召回低精確，全自動易漏錯）。
+    其餘（jury / needs_review / 未定論階段）→ False。停用時一律 False（回退舊行為）。
     """
     ac = _auto_confirm_cfg()
     if ac.get("enabled", True) and tier == "auto_accept" and stage == "judged":
         rate = float(ac.get("audit_sample_rate", 0.05) or 0.0)
         if rate > 0 and random.random() < rate:
-            return "new"  # 抽樣回人工審核
-        return "auto_confirmed"
-    return "new"
+            return False  # 抽樣回人工審核
+        return True
+    return False
 
 
 def _route(findings: list[TicketFinding]) -> list[TicketFinding]:
-    """對整組 finding 套用 G1 自動確認路由（依各自 tier+stage 設 status）。就地改並回傳同清單。"""
+    """對整組 finding 套用 G1 自動確認路由（依各自 tier+stage）。就地改並回傳同清單。"""
     for f in findings:
-        f.status = _route_status(f.confidence_tier, f.prejudge_stage)
-        if f.status == "auto_confirmed":  # 系統判決留痕（人工判決由判決端點寫入）
-            f.verdict_by = "system:auto_confirm"
-            f.verdict_at = _now_iso()
+        f.is_auto_accepted = _route_auto_accept(f.confidence_tier, f.prejudge_stage)
     return findings
 
 
@@ -319,14 +316,11 @@ def _as_float(v: Any, default: float = 0.0) -> float:
 
 # ── finding 組裝 ────────────────────────────────────────────────────────────
 def _base_kwargs(item: dict) -> dict:
-    """TicketFinding 共用簿記欄（id/來源/時間/oid）。ticket_id 存特徵 id（source_id），供 db 落 attributions.source_id。"""
-    source = item.get("source", "")
+    """TicketFinding 共用簿記欄（來源/時間/oid）。ticket_id 存特徵 id（source_id），供 db 落 attribution_tbl.source_id。"""
     source_id = item.get("source_id", "")
     now = _now_iso()
     return {
-        "finding_id": f"fd_{source}_{source_id}",  # 冪等：重新初判整組替換（見 db.replace_source_findings）
         "ticket_id": source_id,  # ＝特徵 id（reviews→rec_oid…）
-        "prod_oid": item.get("prod_oid", "") or "",
         "pkg_oid": item.get("pkg_oid", "") or "",
         "order_oid": item.get("order_oid", "") or "",
         "status": "new",
@@ -381,7 +375,6 @@ def _attributed_finding(
         raw_confidence=attr.get("raw_confidence", conf),
         confidence_tier=tier,
         prejudge_stage=stage,
-        needs_review=tier == "needs_review",
         is_enhanced=enhanced,
         enhance_model=model if enhanced else "",
         l1_domain_code=attr["l1_domain_code"],
@@ -532,7 +525,7 @@ def to_findings(
 ) -> list[TicketFinding]:
     """一條進線 → **多條獨立 TicketFinding**（1:N；一個問題可判出多條歸因分類，各自獨立一筆）。
 
-    全 5 來源統一入口。每條歸因＝一個 TicketFinding（獨立 finding_id、L1-L3、信心、分層、初判階段、
+    全 5 來源統一入口。每條歸因＝一個 TicketFinding（L1-L3、信心、分層、初判階段、
     action），落庫為 attributions 獨立列（見 db.replace_source_findings）。
     進歸因的傾向由 prejudge.json/verdict.json polarity_gate.attribute_when 決定（預設 negative+neutral——
     混合中性評論的具體問題點也要歸因，kiki 2026-07-06 反饋）：
@@ -542,7 +535,8 @@ def to_findings(
     - 負向但全無法歸類 → [單一負向未歸因 finding]（pending_data）。
     - 混合中性但找不到具體問題點 → [單一 non_issue finding]（judged，非 pending_data——整體無礙）。
 
-    finding_id：非負向/未歸因＝`fd_{item_id}`；多歸因每條＝`fd_{item_id}__{l1_domain}__{l2_code}`（面向級去重→唯一）。
+    列身分由 DB 的 `attribution_oid`（serial）承擔；面向級去重靠自然鍵
+    (feedback_source_code, source_id, l1_code, l2_code)，故同一 (域, 面向) 不會產出兩條。
 
     Args:
         item: 反饋列 dict（5 來源專表任一之欄；已 _normalize_raw）。
@@ -589,17 +583,12 @@ def to_findings(
         )  # 負向但全無法歸類 → 單筆未歸因（pending_data）
         f.prejudge_stage = "pending_data"
         f.confidence_tier = "needs_review"
-        f.needs_review = True
         f.evidence_quote = text[:200]
         return _route([f])
     findings: list[TicketFinding] = []
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同(域,面向)去重
         f = _attributed_finding(
             item, attr, used_model, enhanced=False, polarity=polarity, sentiment=sentiment
-        )
-        f.finding_id = (
-            # 每(域,面向)一筆獨立列（面向級唯一）——同 L1 下多個 L2 面向並列時 id 不撞、落庫不互相覆蓋。
-            f"fd_{src}_{source_id}__{attr['l1_domain_code']}__{attr['l2_code']}"
         )
         f.is_primary = i == 0  # 信心最高一條為主歸因
         findings.append(f)

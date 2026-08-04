@@ -15,7 +15,7 @@ class PermissionProvider(Protocol):
     """權限來源抽象：把「使用者 → 具備的 business-key 權限集合」與「單點檢查」標準化。"""
 
     def get_permissions(self, user: dict) -> set[str]:
-        """回傳該 user 具備的 business-key 權限集合（如 {'finding.review.update', ...}）。"""
+        """回傳該 user 具備的 business-key 權限集合（如 {'problem.list.export', ...}）。"""
         ...
 
     def check(self, user: dict, permission: str) -> bool:

@@ -72,7 +72,7 @@ LLM_THINKING_MODES: tuple[str, ...] = tuple(_LLM_DEFAULTS.get("thinkingModes", [
 LLM_REASONING_EFFORTS: tuple[str, ...] = tuple(_LLM_DEFAULTS.get("reasoning", []))
 # 功能區清單（LLM 消費點）：每個前端旋鈕配置槽一個，team 共用默認各一份。
 LLM_AREAS: tuple[str, ...] = tuple(
-    _LLM_DEFAULTS.get("areas", ["prejudge", "prompt_debug", "sandbox"])
+    _LLM_DEFAULTS.get("areas", ["prejudge", "prompt_debug", "prompt_revise"])
 )
 # 預設模型配置：**全新環境的初始內容**（由 `_blank_settings()` 種入 DB），之後就是一般配置，
 # 與使用者自建的零差別——沒有「出廠層」，故不存在唯讀、複製、還原出廠這些概念。
@@ -360,8 +360,6 @@ def _blank_settings() -> dict:
         "provider_models": {},
         "qc_connections": {},
         "qc_passwords": {},
-        "overview_boards": [],
-        "active_overview_board_id": None,
         "gdrive_upload_folder_url": None,
     }
 
@@ -388,8 +386,6 @@ def _migrate_legacy_configs(data: dict) -> dict:
     """
     new = _blank_settings()
     new["provider_models"] = dict(data.get("provider_models") or {})
-    new["overview_boards"] = [dict(b) for b in (data.get("overview_boards") or [])]
-    new["active_overview_board_id"] = data.get("active_overview_board_id")
     new["gdrive_upload_folder_url"] = data.get("gdrive_upload_folder_url")
 
     # ── LLM：llm_configs[] → llm_connections（per provider）+ llm_model_configs（active 套收成一筆）──
@@ -482,7 +478,6 @@ def load_settings() -> dict:
     cur["provider_models"] = dict(cur.get("provider_models") or {})
     cur["qc_connections"] = {k: dict(v) for k, v in (cur.get("qc_connections") or {}).items()}
     cur["qc_passwords"] = dict(cur.get("qc_passwords") or {})
-    cur["overview_boards"] = [dict(b) for b in (cur.get("overview_boards") or [])]
     _decrypt_secret_maps(cur)  # at-rest 密文 → 明文（下游模組永遠只見明文）
     return cur
 
@@ -615,11 +610,6 @@ def _sanitize(cur: dict) -> None:
     cur["qc_passwords"] = {
         e: pw for e, pw in (cur.get("qc_passwords") or {}).items() if e in qc_envs
     }
-    board_ids = {b.get("id") for b in cur.get("overview_boards") or []}
-    if cur.get("active_overview_board_id") not in board_ids:
-        cur["active_overview_board_id"] = (
-            cur["overview_boards"][0]["id"] if cur.get("overview_boards") else None
-        )
 
 
 def save_settings(patch: dict) -> dict:
@@ -649,7 +639,7 @@ def save_settings(patch: dict) -> dict:
         cur["provider_models"] = dict(patch.get("provider_models") or {})
 
     # ── LLM 模型配置庫（全域具名配置，整包替換 + 寫入邊界校驗）──
-    # 整包替換而非逐筆 merge：前端持有完整清單、增刪改都是對整份清單操作（同 overview_boards）。
+    # 整包替換而非逐筆 merge：前端持有完整清單、增刪改都是對整份清單操作。
     if "llm_model_configs" in patch:
         cur["llm_model_configs"] = _validate_model_configs(patch.get("llm_model_configs") or [])
 
@@ -681,12 +671,6 @@ def save_settings(patch: dict) -> dict:
                 merged_pw[env] = pw  # 空/遮罩不覆蓋該環境既有真值
         cur["qc_passwords"] = merged_pw
 
-    # ── 概覽自訂看板（非機密，整包替換 + 補 id）──
-    if "overview_boards" in patch:
-        cur["overview_boards"] = [_ensure_id(b) for b in (patch["overview_boards"] or [])]
-    if "active_overview_board_id" in patch:
-        cur["active_overview_board_id"] = patch["active_overview_board_id"]
-
     # ── 導出偏好（非機密）：空字串＝清除（存 None，前端退全域 config 預設）──
     if "gdrive_upload_folder_url" in patch:
         cur["gdrive_upload_folder_url"] = (patch["gdrive_upload_folder_url"] or "").strip() or None
@@ -694,13 +678,6 @@ def save_settings(patch: dict) -> dict:
     _sanitize(cur)
     _persist(cur)
     return masked()
-
-
-def _ensure_id(cfg: dict) -> dict:
-    """補 uuid id（前端新建留空時）；回新 dict，不就地改入參。目前僅 overview_boards 沿用此 id 語意。"""
-    if cfg.get("id"):
-        return dict(cfg)
-    return {**cfg, "id": str(uuid.uuid4())}
 
 
 def _validate_model_configs(configs: list) -> list[dict]:

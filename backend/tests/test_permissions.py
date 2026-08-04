@@ -31,7 +31,7 @@ def test_permissions_endpoint_shape_and_default_vs_grants(
 
         default_perms, grant_perms = set(default_body["value"]), set(grant_body["value"])
         # default 有質檢作業權限（含資料包導入導出）、無僅 grants 授權的敏感 key
-        assert "finding.review.update" in default_perms
+        assert "problem.list.export" in default_perms
         assert "data.source.upload" in default_perms
         assert "data.datapack.import" in default_perms
         assert "judge-rule.version.manage" not in default_perms
@@ -113,7 +113,7 @@ def test_be2_provider_transitional_delegation(temp_db, permissions_cfg) -> None:
     assert Be2PermissionProvider().get_permissions(
         user
     ) == LocalPermissionProvider().get_permissions(user)
-    assert Be2PermissionProvider().check(user, "finding.review.update") is True
+    assert Be2PermissionProvider().check(user, "problem.list.export") is True
     assert (
         Be2PermissionProvider().check(user, "judge-rule.version.manage") is False
     )  # default 無此 key

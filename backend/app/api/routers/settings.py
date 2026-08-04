@@ -82,9 +82,6 @@ class SettingsIn(BaseModel):
     # QC DB 連線層（每環境一條：sit/stage/production）
     qc_connections: dict[str, QcConnectionIn] | None = None
     qc_passwords: dict[str, str] | None = None  # { env_id: password } per-env 機密
-    # 概覽自訂看板（非機密）
-    overview_boards: list[dict] | None = None  # [{id,label,chartIds[]}]
-    active_overview_board_id: str | None = None
     # 導出偏好（非機密）：Google Drive 上傳資料夾 URL；傳空字串＝清除（endpoint exclude_none，None 不動）
     gdrive_upload_folder_url: str | None = None
 
@@ -123,7 +120,7 @@ def _check_patch_permissions(user: dict, patch: dict) -> None:
 def update_settings(body: SettingsIn, user: dict = Depends(load_user_context)) -> dict:
     """更新全項目共享設定（空/遮罩 token 不覆蓋既有）。
 
-    llm_model_configs（模型配置庫）/ overview_boards / gdrive_upload_folder_url 為日常操作
+    llm_model_configs（模型配置庫）/ gdrive_upload_folder_url 為日常操作
     （登入即可用）；llm_connections/llm_tokens/provider_models（改 LLM 連線）與
     qc_connections/qc_passwords（改 QC 連線）為敏感操作，僅 grants 授予者可用
     （見 _check_patch_permissions）。
@@ -236,7 +233,7 @@ def _qc_db_bootstrap_name(cfg: dict) -> str:
     """決定測試連線用的 bootstrap dbname。
 
     一律用 env 的預設起手庫（postgres——必存在、不受 QC 實例輪替影響）：實際抽取資料的具體
-    database 已不由此設定綁定（綁定資料庫功能已退役），測試連線僅做純連通性檢查。
+    database 不由此設定綁定，故測試連線只做純連通性檢查。
     """
     from app.core.settings import qc_db_env_name
 
@@ -247,7 +244,7 @@ def _try_qc_db_connect(cfg: dict) -> dict:
     """以 cfg 連 QC DB（5s timeout）測純連通性，回 {ok, error?}。
 
     僅連上 bootstrap 庫並 `SELECT 1`；不回傳含密碼的連線字串，不列舉 database/schema
-    （綁定資料庫功能已退役，測試連線降級為純連通性檢查）。
+    （連線設定不綁定具體 database，故測試只驗連通性）。
     """
     host = cfg.get("host") or ""
     if not host:

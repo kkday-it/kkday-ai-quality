@@ -16,15 +16,12 @@ _GRAN_FMT = {"year": "YYYY", "month": "YYYY-MM", "day": "YYYY-MM-DD"}
 _INSERT_COLS = (
     "stage",
     "model",
-    "provider",
     "prompt_tokens",
     "completion_tokens",
     "reasoning_tokens",
     "cached_tokens",
-    "total_tokens",
     "cost_usd",
     "source",
-    "source_id",
     "job_id",
 )
 
@@ -66,7 +63,8 @@ def llm_usage_overview(
     day = func.to_char(u.c.created_at, "YYYY-MM-DD")
     bucket = func.to_char(u.c.created_at, _GRAN_FMT.get(granularity, "YYYY-MM-DD"))
     cost = func.coalesce(func.sum(u.c.cost_usd), 0.0)
-    toks = func.coalesce(func.sum(u.c.total_tokens), 0)
+    # total_tokens 欄已退場（恆等於 prompt+completion，實測零反例）→ 聚合時即時相加
+    toks = func.coalesce(func.sum(u.c.prompt_tokens + u.c.completion_tokens), 0)
     cached = func.coalesce(func.sum(u.c.cached_tokens), 0)
     calls = func.count()
 

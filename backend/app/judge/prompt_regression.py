@@ -11,7 +11,7 @@
 - 兩者都沒出現的欄＝人沒看過，**不計分**。拿 AI 舊判當標準答案等於把當時的錯誤當正解，
   分數會憑空虛高。
 
-實作走輕量 in-mem job（比照 `prompt_sandbox`：小規模調適用途，不需要正式跑批那套斷點/自適應併發），
+實作走輕量 in-mem job（小規模調適用途，不需要正式跑批那套斷點/自適應併發），
 不用 `prompt_debug_batch`——那條是檔案上傳導向、有 run 目錄與續跑，回歸是 DB 來源、通常 <50 條、
 比對邏輯完全不同。行程重啟即清空，回歸本來就是「跑完當場看」的動作。
 """
@@ -34,7 +34,7 @@ _log = logging.getLogger(__name__)
 
 _store: JobStore = JobStore()
 
-# 案例間併發：回歸通常 10–50 條，固定小併發即可（同 prompt_sandbox 的立場，不做自適應治理）
+# 案例間併發：回歸通常 10–50 條，固定小併發即可（不做自適應治理）
 _MAX_WORKERS = 4
 
 # 單次回歸的案例數上限：超過就該走正式跑批而不是這條「當場看結果」的路徑
@@ -187,7 +187,7 @@ def _run(job_id: str, cases: list[dict[str, Any]], system_prompt: str, cfg: dict
     try:
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
             # 每筆各自 copy_context()：同一個 Context 物件不能被兩條 thread 同時 enter
-            # （會 RuntimeError: cannot enter context ... is already entered）。比照 prompt_sandbox。
+            # （會 RuntimeError: cannot enter context ... is already entered）。
             futures = [
                 pool.submit(ctx.run, one, case)
                 for ctx, case in ((copy_context(), c) for c in cases)
@@ -234,7 +234,7 @@ def start(
 
     token = app_settings.resolve_provider_token(effective)
     if not token:
-        # 與 prompt_sandbox 同立場：stub 假結果會讓人以為改寫沒問題，比直接失敗更糟
+        # stub 假結果會讓人以為改寫沒問題，比直接失敗更糟——寧可直接失敗
         raise ValueError("目前配置沒有可用 API token，拒絕以假結果執行回歸")
 
     cfg = {

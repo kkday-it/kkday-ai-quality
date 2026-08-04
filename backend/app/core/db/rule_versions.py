@@ -2,7 +2,6 @@
 
 檔案＝默認 seed（git 版控、不可變）；DB＝live + 完整歷史；一 rule_code 僅一 active。
 - bd_tag_vertical（BD 分工代碼→PM/Vertical，源自 BD 分工表 Google Sheet），seed 放 config/global。
-  取代舊制 product_vertical（CATEGORY_xxx→Tour/Exp/Charter/Tix 分組，已於 2026-07-27 全棧退役）。
 - source_mapping（上傳表頭校驗 + 欄位映射），seed 放 config/ai_judge，線上編輯即時生效於上傳校驗。
 - prompt_polarity + prompt_C-1~6（初判 Prompt，Prompt-as-Source 架構）：初判 prompt 唯一真相源＝
   prompts/*.md，default seed 讀 md 包成 {"_meta":..., "text": md}（見 default_rule_content），
@@ -85,10 +84,12 @@ def list_rule_meta() -> list[dict]:
     stmt = (
         select(
             j.c.rule_code,
-            j.c.version,
-            j.c.author,
+            # 別名欄（DB 名 ≠ Python key）投影一律 label 回 key：result mapping 用 DB 名，
+            # 不 label 的話呼叫端 row["version"] 會 KeyError。
+            j.c.version.label("version"),
+            j.c.author.label("author"),
             j.c.note,
-            j.c.created_at,
+            j.c.created_at.label("created_at"),
             j.c.content["_meta"]["label"].astext.label("label"),
         )
         .where(j.c.is_active.is_(True), j.c.rule_code.in_(RULE_CODES))

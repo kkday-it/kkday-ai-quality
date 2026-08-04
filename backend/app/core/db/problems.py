@@ -17,7 +17,7 @@ from app.core.db._shared import (
 
 # fan-out 需帶回的 attributions typed 初判欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
 _JG_COLS = (
-    "finding_id",
+    "attribution_oid",
     "polarity",
     "sentiment_score",
     "prejudge_stage",
@@ -33,9 +33,7 @@ _JG_COLS = (
     "action",
     "model",
     "is_primary",
-    "verdict_status",
-    "verdict_by",
-    "verdict_at",
+    "is_auto_accepted",
 )
 
 
@@ -191,15 +189,13 @@ def _enrich_problem(row: dict, source: str | None = None) -> dict:
         "ext_lst_oid": row.get("review_external_lst_oid"),
         "ext_sentiment": row.get("sentiment"),
         "ext_free_tag": _parse_free_tag(row.get("free_tag")),
-        "status": None,
         "created_at": None,
     }
 
     # review 級初判摘要欄（詳細 L1-L3/信心/摘要走 attributions[] nested DTO，此處僅留列渲染/篩選/導出用）
     base.update(
         {
-            "judged": bool(row.get("jg_finding_id")),
-            "needs_review": bool(row.get("jg_needs_review")),
+            "judged": bool(row.get("jg_attribution_oid")),
             "polarity": row.get(
                 "jg_polarity"
             ),  # 列級傾向（前端列樣式 record.polarity + 導出「傾向」欄）
@@ -230,9 +226,8 @@ def _derive_stage(dto: dict) -> str:
 def _attribution_of(r: dict) -> dict:
     """單筆 attributions fan-out 列（jg_ 前綴 typed 欄）→ 一條歸因的乾淨巢狀 DTO（供列表堆疊 / 導出）。"""
     unwrapped = _jg_unwrap(r)
-    unwrapped["notes_count"] = r.get("jg_notes_count")  # fan-out subquery 欄（不在 _JG_COLS）
     dto = attribution_dto(unwrapped)
-    if dto["finding_id"] and not dto["stage"]:  # legacy 空 stage 相容派生
+    if dto["attribution_oid"] and not dto["stage"]:  # legacy 空 stage 相容派生
         dto["stage"] = _derive_stage(dto)
     return dto
 
@@ -263,27 +258,14 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         item_ids = [r[0] for r in c.execute(id_sel)]
         if not item_ids:
             return {"rows": [], "total": total}
-        fn = T.finding_notes
-        # 備註數 correlated scalar subquery：外層已被當頁 item_ids 窄化（單頁 ≤ 200 列），
-        # 對每列走 idx_finding_notes_finding 索引查找——非全表 GROUP BY，成本可忽略。
-        notes_count = (
-            select(func.count())
-            .select_from(fn)
-            .where(fn.c.finding_id == jg.c.finding_id)
-            .correlate(jg)
-            .scalar_subquery()
-            .label("jg_notes_count")
-        )
         fan = (
             select(
                 tbl,
-                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 初判欄（含 status）
-                jg.c.needs_review.label("jg_needs_review"),
-                notes_count,
+                *[jg.c[k].label(f"jg_{k}") for k in _JG_COLS],  # typed 初判欄
             )
             .select_from(tbl.outerjoin(jg, _jg_join_cond(spec)))
             .where(nk.in_(item_ids))
-            .order_by(order_item, nk.asc(), jg.c.finding_id.asc().nullslast())
+            .order_by(order_item, nk.asc(), jg.c.attribution_oid.asc().nullslast())
         )
         raw = [dict(r) for r in c.execute(fan).mappings()]
     # 依連續相同特徵 id 分組 → 每 review 一列（review 級欄取首列）+ attributions 陣列（該 review 全部歸因）。
@@ -298,7 +280,7 @@ def _paged_fanout(spec, apply_filters, sort_expr, sort_dir: str, limit: int, off
         row = _enrich_problem(raw[i], src)  # review 級 + primary 歸因相容欄（取首列）
         row["_group"] = sid
         row["_seq"] = seq
-        row["attributions"] = [_attribution_of(r) for r in raw[i:k] if r.get("jg_finding_id")]
+        row["attributions"] = [_attribution_of(r) for r in raw[i:k] if r.get("jg_attribution_oid")]
         rows.append(row)
         i = k
     return {"rows": rows, "total": total}
@@ -345,7 +327,6 @@ def list_problems(
         date_field: 日期篩選欄名（'occurred_at' | 'go_date'；僅 source_registry 命中的表可用）。
         confidence_tier: 信心分層過濾（attributions.data.confidence_tier；auto_accept/jury/needs_review）。
         taxonomy: 歸因分類過濾（任意層級 code 多選；l1/l2_code 任一 IN 命中＝子樹語義）。
-        status: 判決狀態多選（new/auto_confirmed/confirmed/dismissed；任一歸因命中即列出）。
         model: 初判模型多選（attributions.model IN——當前初判維度；任一歸因命中即列出）。
         has_external: 有無外部評論融合資料（True=有 / False=無 / None=全部；僅 reviews 表有欄，其餘來源忽略）。
         bucket: 進線分桶多選（conversations 專屬直欄；transferred/chatbot_only/human_supplier/
@@ -443,7 +424,7 @@ def _list_problems_spec(
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
         if status:
             # 判決狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
-            stmt = stmt.where(_jg_exists(spec, jg.c.verdict_status.in_(status)))
+            stmt = stmt.where(_jg_exists(spec))
         if model:
             # 初判模型多選（當前初判維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))

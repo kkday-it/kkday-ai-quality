@@ -572,9 +572,19 @@ def get_job(job_id: str) -> dict | None:
 
 
 def mark_running_interrupted() -> list[str]:
-    """graceful shutdown 收尾：把仍在 running / paused 的初判 job 標 interrupted。
+    """graceful shutdown 收尾：把仍在 running / paused 的初判 job 標 interrupted（**含 DB**）。
 
-    已判 finding 已即時落庫保留；重啟後對「剩餘未判」重新發起（scope=all）即可續作——
-    與 judgment_runs 的 interrupted 語義一致（server 重啟後 in-mem 快照不在）。
+    已判 finding 已即時落庫保留；重啟後對「剩餘未判」重新發起（scope=all）即可續作。
+
+    ⚠️ **必須連 `prejudge_runs` 一起回寫**：只改 in-mem 的話，行程重啟後那一列永遠停在
+    `status='running'`——初判歷史畫面會顯示一筆永不結束的假執行中 run，而 dev 的
+    `uvicorn --reload` 每次存檔就製造一筆。DB 寫入為 best-effort：shutdown 路徑不能因為
+    DB 不可用而卡住，記憶體標記本身已完成。
     """
-    return _store.mark_interrupted(running_statuses=("running", "paused"), new_status="interrupted")
+    hit = _store.mark_interrupted(running_statuses=("running", "paused"), new_status="interrupted")
+    for job_id in hit:
+        try:
+            db.update_prejudge_run_status(job_id, "interrupted")
+        except Exception:  # noqa: BLE001  shutdown 收尾，DB 不可用不該阻斷關機
+            _log.warning("interrupted 狀態回寫 prejudge_runs 失敗 job=%s", job_id, exc_info=True)
+    return hit

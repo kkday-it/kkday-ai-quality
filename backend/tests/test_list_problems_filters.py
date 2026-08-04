@@ -11,29 +11,9 @@ from sqlalchemy import select
 from app.core import db
 from app.core.db import tables as T
 from app.core.schema import TicketFinding
+from tests._factories import review_row
 
-
-def _pr_row(rec_oid: str = "REC1", **overrides) -> dict:
-    """建一筆 reviews 源列（現行拆表 schema：源欄名、值皆 Text）。"""
-    base = {
-        "rec_oid": rec_oid,
-        "member_uuid": "U1",
-        "create_date": "2026-06-01 10:00:00",
-        "rec_title": "標題",
-        "rec_desc": "內容",
-        "rec_scores": "5",
-        "traveller_type": "solo",
-        "lang_code": "zh-tw",
-        "prod_oid": "P1",
-        "pkg_oid": "PKG1",
-        "order_oid": "O1",
-        "order_mid": "M1",
-        "supplier_oid": "S1",
-        "order_snap_json": "{}",
-        "go_date": "2026-07-01",
-    }
-    base.update(overrides)
-    return base
+_pr_row = review_row
 
 
 def _conv_row(session_oid: str = "SESS1", **overrides) -> dict:
@@ -108,7 +88,6 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
     # R1 判到 L2（l3 空）；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
             polarity="negative",
@@ -121,7 +100,6 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R2",
             ticket_id="R2",
             recommended_action="no_action",
             polarity="negative",
@@ -178,7 +156,6 @@ def test_list_problems_source_registry_judged_filter(temp_db) -> None:
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R1",
             ticket_id="R1",  # source_id（reviews→rec_oid）
             recommended_action="no_action",
         ),
@@ -199,7 +176,6 @@ def test_prejudge_target_ids_uses_registry_for_reviews(temp_db) -> None:
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
         ),
@@ -262,7 +238,6 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R1",
             ticket_id="R1",
             recommended_action="no_action",
             confidence=0.3,
@@ -271,7 +246,6 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R2",
             ticket_id="R2",
             recommended_action="no_action",
             confidence=0.9,
@@ -300,7 +274,6 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
     # R3 已初判（負向 · pending_review · jury · content）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R3",
             ticket_id="R3",
             recommended_action="no_action",
             polarity="negative",
@@ -343,7 +316,6 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
     # R3 已初判（judged）；R1/R2 未初判
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_R3",
             ticket_id="R3",
             recommended_action="no_action",
             prejudge_stage="judged",
@@ -368,7 +340,6 @@ def test_list_problems_model_filter(temp_db) -> None:
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_M1",
             ticket_id="M1",
             recommended_action="no_action",
             polarity="negative",
@@ -380,7 +351,6 @@ def test_list_problems_model_filter(temp_db) -> None:
     )
     db.insert_finding(
         TicketFinding(
-            finding_id="fd_reviews_M2",
             ticket_id="M2",
             recommended_action="no_action",
             polarity="negative",

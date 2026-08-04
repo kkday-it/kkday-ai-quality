@@ -8,7 +8,7 @@
     from app.core.permissions import require_permission, permission_keys
 
     @router.post("/...")
-    def handler(user: dict = Depends(require_permission(permission_keys.FINDING_REVIEW_UPDATE))):
+    def handler(user: dict = Depends(require_permission(permission_keys.PROBLEM_LIST_EXPORT))):
         ...
 """
 

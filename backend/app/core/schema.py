@@ -42,9 +42,7 @@ class AdequacyResult(BaseModel):
 class TicketFinding(BaseModel):
     """初判單元（SSOT）。"""
 
-    finding_id: str = ""
     ticket_id: str = ""
-    prod_oid: str = ""
     pkg_oid: str = ""
     # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
     summary: dict[str, str] = Field(default_factory=dict)
@@ -56,7 +54,6 @@ class TicketFinding(BaseModel):
     raw_confidence: float = 0.0  # arbiter LLM 原始信心（校準輸入；Cleanlab 離線擬合用）
     is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重新初判）
     enhance_model: str = ""  # 複判使用的模型（空＝未複判）
-    needs_review: bool = False  # 進人審佇列（校驗兜底 / 低信賴 < jury_low）
     adequacy_check: AdequacyResult | None = None
     # L4 行動
     recommended_action: RecommendedAction
@@ -67,13 +64,9 @@ class TicketFinding(BaseModel):
     hit_rule_id: str = (
         ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
     )
-    # new=待人工 / auto_confirmed=G1 自動確認(免佇列·系統設) / confirmed·dismissed=人工判決
-    status: Literal["new", "auto_confirmed", "confirmed", "dismissed"] = "new"
-    # 判決留痕（判決軸）：系統判決（G1 auto_confirmed）＝system:auto_confirm＋路由當下時間；
-    # 人工判決由 update/batch_update_finding_status 寫入，此處留空
-    verdict_by: str = ""
-    verdict_at: str = ""
-    created_at: str = ""
+    # G1 自動確認路由的結果：高信心且已判定 → true（系統自動採納，不進人工佇列）。
+    is_auto_accepted: bool = False
+    created_at: str = ""  # ISO 8601；落庫時空字串會被 _finding_values 轉為 None
     # 負責單位（owner_role）不存於 finding：改由 db._shared.attribution_dto 讀取時自 l1_code 派生
     # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。
     order_oid: str = ""  # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
@@ -104,8 +97,8 @@ class TicketFinding(BaseModel):
         """初判 payload → attributions typed 欄位 dict（落庫形狀 SSOT）。
 
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
-        殘留 / legacy 欄（verdict 軸、severity、evidence_level…）一律不入庫。finding_id / source /
-        source_id / prod_oid / status / created_at / needs_review
+        殘留 / legacy 欄（verdict 軸、severity、evidence_level…）一律不入庫。source /
+        source_id / created_at / is_auto_accepted
         由 db.findings._finding_values 補齊（來源關聯 + 人工判決軸）。
 
         Returns:

@@ -16,6 +16,7 @@ import time
 import uuid
 from collections.abc import Callable
 
+from app.core import paths
 from app.core.job_registry import JobStore
 
 _log = logging.getLogger(__name__)
@@ -23,9 +24,15 @@ _log = logging.getLogger(__name__)
 # 終態 job 快照的保留時窗（秒）：download pop 即清；使用者放棄下載時靠 start_export 的
 # 惰性清掃回收，避免 in-mem registry 無界成長。
 _TERMINAL_TTL_SECONDS = 3600
-_TERMINAL_STATUSES = ("done", "error", "cancelled")
+# interrupted＝行程重啟打斷（見 mark_running_interrupted）：對前端同樣是終態（停止串流），
+# 也同樣要被 TTL 回收，只是訊息不同——它不是「失敗」，是「沒跑完就被中斷了」。
+_TERMINAL_STATUSES = ("done", "error", "cancelled", "interrupted")
 
-_store: JobStore = JobStore()
+# persist_dir：只落「被行程重啟打斷」的快照，讓下個行程回答得出使用者的導出怎麼了。
+# 結果 bytes 刻意不落盤——done 到前端 download 的窗口是毫秒級（實測 0.5s 內），
+# 為那個窗口寫 20MB 檔並不划算，且 job 沒跑完時本來就沒有 bytes 可存。
+_store: JobStore = JobStore(persist_dir=paths.DATA_DIR / "export_jobs")
+_store.restore()  # 讀回上個行程留下的 interrupted 快照（讀完即刪檔）
 # job_id → 完成後的檔案位元組（不入快照，避免大 bytes 進 JSON 序列化）；pop_result 取後即清。
 _results: dict[str, bytes] = {}
 # job_id → cancel Event（協作式取消：builder 於迴圈輪詢 ctx.check()，set 時拋 Cancelled 收斂）。
@@ -169,6 +176,11 @@ def cancel_export(job_id: str) -> bool:
     return True
 
 
+def is_terminal(status: str) -> bool:
+    """該狀態是否為終態（SSE 據此停止串流）。供 router 判定，免其觸碰模組私有常數。"""
+    return status in _TERMINAL_STATUSES
+
+
 def get_job(job_id: str) -> dict | None:
     """取 job 進度快照複本（thread-safe）；不存在回 None（端點轉 404 / SSE 推 error）。"""
     return _store.get(job_id)
@@ -187,6 +199,16 @@ def mark_running_interrupted() -> list[str]:
     """graceful shutdown 收尾：把仍在 running 的導出 job 標 interrupted，回被標記的 job_id。
 
     SIGTERM 後 uvicorn drain 期間，輪詢進度的請求可拿到明確終態而非等連線被斷；
-    daemon thread 隨 process 消逝無法回收（單 worker in-mem registry 既定限制）。
+    daemon thread 隨 process 消逝無法回收（單 worker registry 既定限制）。
+
+    ⚠️ 標記完**必須落盤**：快照本身也在記憶體，行程一走就跟著沒了，下個行程只會回
+    「job 不存在」——使用者看到的就是一個沒有原因的 404。dev 的 uvicorn --reload 每次存檔
+    都會走這條路（存 backend 任一 .py 即觸發），實際踩過：全量導出跑到一半被 reload 打斷，
+    前端只拿到 404、無從得知原因。
     """
-    return _store.mark_interrupted(running_statuses=("running",), new_status="interrupted")
+    hit = _store.mark_interrupted(
+        running_statuses=("running", "cancelling"), new_status="interrupted"
+    )
+    if hit:
+        _store.persist(statuses=("interrupted",))
+    return hit

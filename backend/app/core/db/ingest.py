@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -10,6 +11,21 @@ from sqlalchemy.dialects.postgresql import insert as _pg_insert
 
 from app.core.db import source_registry
 from app.core.db import tables as T
+from app.core.db._shared import select_wire, wire_row
+
+_log = logging.getLogger(__name__)
+
+# 批次出 API 的欄白名單 {wire 鍵: DB 欄名}（當前為恆等映射）。
+# 與 `tests/test_wire_contract.py` 的 `_BATCH_WIRE` 成對，改一邊必改另一邊。
+_BATCH_WIRE_COLS = {
+    "batch_id": "batch_id",
+    "name": "name",
+    "source": "source",
+    "original_name": "original_name",
+    "row_count": "row_count",
+    "uploaded_at": "uploaded_at",
+    "note": "note",
+}
 
 
 def init_db() -> None:
@@ -60,7 +76,6 @@ def create_batch(
     source_label: str,
     original_name: str,
     row_count: int,
-    inserted_count: int,
     note: str = "",
 ) -> dict:
     """建立上傳批次記錄，自動命名「{來源} YYYYMMDD{當天序號:02d}」。
@@ -78,56 +93,31 @@ def create_batch(
                 .select_from(T.batches)
                 .where(
                     T.batches.c.source == source,
-                    func.substr(T.batches.c.uploaded_at, 1, 10) == date_iso,
+                    # create_date 已是 timestamptz（原 text）：用日期轉型比較，勿再 substr 字串
+                    func.date(T.batches.c.uploaded_at) == date_iso,
                 )
             ).scalar()
             + 1
         )
-        name = f"{source_label} {date_compact}{seq:02d}"
-        batch_id = f"{source}-{date_compact}-{seq:02d}"
-        c.execute(
-            T.upsert(
-                T.batches,
-                {
-                    "batch_id": batch_id,
-                    "name": name,
-                    "source": source,
-                    "original_name": original_name,
-                    "row_count": row_count,
-                    "inserted_count": inserted_count,
-                    "uploaded_at": uploaded_at,
-                    "note": note,
-                },
-                ["batch_id"],
-            )
-        )
-    return {
-        "batch_id": batch_id,
-        "name": name,
-        "source": source,
-        "original_name": original_name,
-        "row_count": row_count,
-        "inserted_count": inserted_count,
-        "uploaded_at": uploaded_at,
-        "note": note,
-    }
-
-
-def update_batch_inserted(batch_id: str, inserted_count: int) -> None:
-    """回填批次實際落庫筆數（背景上傳 job 逐塊處理完後更新，使批次記錄準確）。"""
-    with T.get_engine().begin() as c:
-        c.execute(
-            T.batches.update()
-            .where(T.batches.c.batch_id == batch_id)
-            .values(inserted_count=inserted_count)
-        )
+        # 落庫值與回傳 dict 共用同一份（原本兩處各寫一次 8 個鍵，改欄時必然漂移）
+        row = {
+            "batch_id": f"{source}-{date_compact}-{seq:02d}",
+            "name": f"{source_label} {date_compact}{seq:02d}",
+            "source": source,
+            "original_name": original_name,
+            "row_count": row_count,
+            "uploaded_at": uploaded_at,
+            "note": note,
+        }
+        c.execute(T.upsert(T.batches, row, ["batch_id"]))
+    return row
 
 
 def list_batches() -> list[dict]:
-    """列出上傳批次，新到舊。"""
-    stmt = select(T.batches).order_by(T.batches.c.uploaded_at.desc())
+    """列出上傳批次，新到舊（顯式白名單出 API，見 `_shared.wire_row`）。"""
+    stmt = select_wire(T.batches).order_by(T.batches.c.uploaded_at.desc())
     with T.get_engine().connect() as c:
-        return [dict(r) for r in c.execute(stmt).mappings()]
+        return [wire_row(r, _BATCH_WIRE_COLS) for r in c.execute(stmt).mappings()]
 
 
 def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
@@ -150,16 +140,25 @@ def get_items_by_ids(ids: list[str], source: str | None = None) -> list[dict]:
         return [dict(r) for r in c.execute(stmt).mappings()]
 
 
-def insert_source_batch(source: str, rows: list[dict], errors: list[str] | None = None) -> int:
+def insert_source_batch(
+    source: str,
+    rows: list[dict],
+    errors: list[str] | None = None,
+    unmapped: set[str] | None = None,
+) -> int:
     """批量 upsert 某來源表列（衝突鍵＝該表特徵 id；raw 源欄直存，覆蓋業務欄位）。
 
-    rows 為原始源列 dict（key＝源欄名；mixpanel $ 欄須已淨化為合法名）。分塊 executemany +
-    整塊失敗逐列隔離容錯；批內同特徵 id 去重（留最後一筆）。dict/list 值（巢狀 JSON）轉 JSON 字串存 Text。
+    rows 為原始源列 dict（key＝上傳表頭）。表頭 → DB 欄名一律經
+    `source_registry.header_column_map` 轉換（含 mixpanel 的 $ / 大寫別名），**不再假設表頭逐字
+    等於欄名**；對不上的表頭會記入 warning log 並回報給呼叫端（見 `unmapped` 參數），避免整欄
+    靜默落 NULL 卻仍計為成功。分塊 executemany + 整塊失敗逐列隔離容錯；批內同特徵 id 去重
+    （留最後一筆）。dict/list 值（巢狀 JSON）轉 JSON 字串存 Text。
 
     Args:
         source: 來源 code（須已登記 source_registry）。
-        rows: 源欄 dict 清單。
+        rows: 上傳列 dict 清單（key＝表頭）。
         errors: 選填；跳過列錯誤原因（最多 10 筆）。
+        unmapped: 選填；對不上任何 DB 欄的表頭會累加進此 set（呼叫端可據以提示使用者）。
 
     Returns:
         成功 upsert 筆數；未知來源 / 空 / 全無特徵 id 回 0。
@@ -169,14 +168,42 @@ def insert_source_batch(source: str, rows: list[dict], errors: list[str] | None 
         return 0
     tbl = spec.table
     nk = spec.natural_key
+    header_map = source_registry.header_column_map(source)
     cols = [c.name for c in tbl.columns]
     business_cols = [c for c in cols if c != nk]
+
+    seen_unmapped: set[str] = set()
+
+    def _to_columns(row: dict) -> dict:
+        """上傳列（表頭為 key）→ DB 欄位列；對不上的表頭記錄後略過，不靜默吞掉。"""
+        out: dict = {}
+        for raw_key, value in row.items():
+            if raw_key is None:
+                continue
+            key = str(raw_key).strip()
+            col = header_map.get(key)
+            if col is None:
+                seen_unmapped.add(key)
+                continue
+            out[col] = value
+        return out
+
     dedup: dict[str, dict] = {}
-    for row in rows:
+    for raw in rows:
+        row = _to_columns(raw)
         sid = row.get(nk)
         if sid is None or sid == "":
             continue  # 無特徵 id 者跳過（防禦：避免髒資料以 NULL 衝突鍵批量覆蓋彼此）
         dedup[str(sid)] = row
+    if seen_unmapped:
+        # 不是致命錯（上游多給欄位很正常），但必須留痕——這正是「靜默落 NULL」的唯一徵兆
+        _log.warning(
+            "上傳表頭對不上 DB 欄位 source=%s 表頭=%s（該欄不會落庫）",
+            source,
+            sorted(seen_unmapped),
+        )
+        if unmapped is not None:
+            unmapped.update(seen_unmapped)
     clean = list(dedup.values())
     if not clean:
         return 0

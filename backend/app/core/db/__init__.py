@@ -19,13 +19,8 @@ from app.core.db.attribution_history import (
 )
 from app.core.db.export import export_problems_xlsx
 from app.core.db.findings import (
-    add_finding_note,
-    batch_update_finding_status,
-    get_finding,
     insert_finding,
-    list_finding_notes,
     replace_source_findings,
-    update_finding_status,
 )
 from app.core.db.ingest import (
     create_batch,
@@ -33,7 +28,6 @@ from app.core.db.ingest import (
     init_db,
     insert_source_batch,
     list_batches,
-    update_batch_inserted,
 )
 from app.core.db.llm_usage import (
     insert_llm_usage_row,
@@ -52,23 +46,6 @@ from app.core.db.prejudge_runs import (
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
 from app.core.db.problems import list_problems
-from app.core.db.prompt_debug_reviews import (
-    delete_prompt_debug_review,
-    fetch_prompt_debug_reviews,
-    insert_prompt_debug_review,
-    list_prompt_debug_reviews,
-)
-from app.core.db.prompt_drafts import (
-    delete_prompt_draft,
-    get_prompt_draft,
-    list_prompt_drafts,
-    upsert_prompt_draft,
-)
-from app.core.db.prompt_sandbox_runs import (
-    insert_sandbox_run,
-    list_sandbox_runs,
-    sandbox_run_detail,
-)
 from app.core.db.rule_versions import (
     RULE_CODES,
     default_rule_content,
@@ -114,12 +91,8 @@ __all__ = [
     "save_rule_version",
     "save_settings_row",
     "seed_rules_from_files",
-    "get_finding",
-    "add_finding_note",
     "add_history_note",
-    "batch_update_finding_status",
     "latest_snapshots",
-    "list_finding_notes",
     "list_attribution_history",
     "list_prejudge_models",
     "insert_llm_usage_row",
@@ -133,17 +106,4 @@ __all__ = [
     "list_prejudge_runs",
     "save_run_log",
     "update_prejudge_run_status",
-    "insert_sandbox_run",
-    "list_sandbox_runs",
-    "sandbox_run_detail",
-    "delete_prompt_draft",
-    "get_prompt_draft",
-    "list_prompt_drafts",
-    "upsert_prompt_draft",
-    "delete_prompt_debug_review",
-    "fetch_prompt_debug_reviews",
-    "insert_prompt_debug_review",
-    "list_prompt_debug_reviews",
-    "update_batch_inserted",
-    "update_finding_status",
 ]

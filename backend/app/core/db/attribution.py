@@ -99,7 +99,7 @@ def attribution_overview(
             total_intake = c.execute(_src(select(cnt).select_from(tbl))).scalar() or 0
             judged = (
                 c.execute(
-                    _jgm(_src(select(cnt).select_from(j).where(jg.c.finding_id.isnot(None))))
+                    _jgm(_src(select(cnt).select_from(j).where(jg.c.attribution_oid.isnot(None))))
                 ).scalar()
                 or 0
             )
@@ -115,7 +115,7 @@ def attribution_overview(
                         _src(
                             select(pol.label("k"), cnt)
                             .select_from(j)
-                            .where(jg.c.finding_id.isnot(None))
+                            .where(jg.c.attribution_oid.isnot(None))
                             .group_by(pol)
                             .order_by(cnt.desc())
                         )
@@ -174,12 +174,14 @@ def attribution_overview(
                         _src(
                             select(
                                 ym,
-                                func.count(jg.c.finding_id).label("judged"),
+                                func.count(jg.c.attribution_oid).label("judged"),
                                 func.count().filter(pol == "negative").label("negative"),
                             )
                             .select_from(j)
                             .where(
-                                date_col.isnot(None), date_col != "", jg.c.finding_id.isnot(None)
+                                date_col.isnot(None),
+                                date_col != "",
+                                jg.c.attribution_oid.isnot(None),
                             )
                             .group_by(ym)
                             .order_by(ym.asc())
@@ -362,7 +364,8 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
 
     jg = T.attributions
     item = jg.c.source + ":" + jg.c.source_id  # distinct 進線鍵（1:N 多歸因去重）
-    ym = func.substr(jg.c.created_at, 1, 7).label("ym")
+    # create_date 是 timestamptz（非 text）：用 to_char 取 YYYY-MM，勿用 substr
+    ym = func.to_char(jg.c.created_at, "YYYY-MM").label("ym")
     with T.get_engine().connect() as c:
         rows = (
             c.execute(
@@ -373,7 +376,7 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
                     .filter(jg.c.l1_code == _HEADLINE_DOMAIN)
                     .label("content"),
                 )
-                .where(jg.c.created_at.isnot(None), jg.c.created_at != "")
+                .where(jg.c.created_at.isnot(None))
                 .group_by(ym)
                 .order_by(ym.asc())
             )

@@ -23,7 +23,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
     """從 attributions.data 撈負向 attributed finding（有 l2_code + raw_confidence）。
 
     Returns:
-        [{finding_id, ticket_id, l2_code, raw_confidence, candidates:{code:score}, l1_domain}]；
+        [{attribution_oid, ticket_id, l2_code, raw_confidence, candidates:{code:score}, l1_domain}]；
         DB 不可達 → None（報表標 skipped）。
     """
     try:
@@ -38,7 +38,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
             jg = T.attributions
             # 攤平後初判欄皆 typed 欄，直接 select（l2_code / conf_raw / 關聯鍵）
             rows = c.execute(
-                select(jg.c.finding_id, jg.c.source_id, jg.c.l2_code, jg.c.conf_raw).where(
+                select(jg.c.attribution_oid, jg.c.source_id, jg.c.l2_code, jg.c.conf_raw).where(
                     jg.c.l2_code.isnot(None), jg.c.l2_code != "", jg.c.conf_raw.isnot(None)
                 )
             )
@@ -46,7 +46,7 @@ def _load_attributed() -> list[dict[str, Any]] | None:
                 node = ai_judge.l2_by_code(code) or {}
                 out.append(
                     {
-                        "finding_id": fid or "",
+                        "attribution_oid": fid,
                         "ticket_id": sid or "",
                         "l2_code": code,
                         "raw_confidence": float(raw_conf),
@@ -159,7 +159,7 @@ def analyze(findings: list[dict[str, Any]]) -> dict[str, Any]:
     order = np.argsort(quality)
     low_quality = [
         {
-            "finding_id": findings[i]["finding_id"],
+            "attribution_oid": findings[i]["attribution_oid"],
             "ticket_id": findings[i]["ticket_id"],
             "l2_code": findings[i]["l2_code"],
             "raw_confidence": round(findings[i]["raw_confidence"], 3),
@@ -229,13 +229,13 @@ def _write_md(rep: dict[str, Any]) -> str:
         "",
         "## 低品質樣本人審清單（品質分最低 50 筆）",
         "",
-        "| finding_id | L3 code | 原始信心 | 品質分 | 疑問 |",
+        "| 歸因 ID | L3 code | 原始信心 | 品質分 | 疑問 |",
         "|---|---|---|---|---|",
     ]
     for r in rep["low_quality_samples"]:
         flag = "⚠️" if r["is_issue"] else ""
         lines.append(
-            f"| {r['finding_id']} | {r['l2_code']} | {r['raw_confidence']} | {r['quality']} | {flag} |"
+            f"| {r['attribution_oid']} | {r['l2_code']} | {r['raw_confidence']} | {r['quality']} | {flag} |"
         )
     lines.append("")
     return "\n".join(lines)

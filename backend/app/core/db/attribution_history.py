@@ -1,11 +1,9 @@
 """歸因歷史（attribution_history）：評論級 append-only 事件流（初判快照 / 判決轉移 / 備註）。
 
-一則評論 (source, source_id) 的時間軸由三類事件構成：
+一則評論 (source, source_id) 的時間軸由這些事件構成：
 - kind='prejudge'：一次初判的完整歸因快照（replace_source_findings 同交易寫入；
   model+params+result_digest 與最新一筆完全相同即 skip——全欄位嚴格去重）。
-- kind='verdict'：人工判決轉移（update/batch_update_finding_status 寫入；params 記
-  {to, changes:[{finding_id, from}]}，恆記錄不去重）。
-- kind='note'：評論級備註（與 finding 級 finding_notes 並存，兩個入口）。
+- kind='note'：評論級備註（綁 (source, source_id)，跨重新初判穩定）。
 
 prejudge_runs 是 run 級、llm_usage 是 call 級；本表補「單一評論初判演進」缺口，
 並以 model 維度為日後多模型對比鋪路。
@@ -21,19 +19,37 @@ from sqlalchemy import Connection, and_, select
 from sqlalchemy import insert as sa_insert
 
 from app.core.db import tables as T
+from app.core.db._shared import select_wire, wire_row
 
 _log = logging.getLogger(__name__)
+
+# 事件出 API 的欄白名單 {wire 鍵: DB 欄名}（當前為恆等映射）。
+# 與 `tests/test_wire_contract.py` 的 `_ATTRIBUTION_HISTORY_WIRE` 成對，改一邊必改另一邊。
+_WIRE_COLS = {
+    "id": "id",
+    "source": "source",
+    "source_id": "source_id",
+    "kind": "kind",
+    "model": "model",
+    "params": "params",
+    "attributions": "attributions",
+    # result_digest 刻意不出 wire：它是「快照全欄位正規化 sha256」的**內部去重鍵**，
+    # 前端從未消費（型別宣告過但零 template 使用），外露只是把實作細節推給消費端。
+    "job_id": "job_id",
+    "triggered_by": "triggered_by",
+    "author": "author",
+    "content": "content",
+    "created_at": "created_at",
+}
 
 
 def snapshot_of(values: dict) -> dict:
     """attributions 落庫欄位 dict（_finding_values 產出）→ 歷史快照單筆（與回填 migration 同形）。
 
-    只取初判本體欄；人工判決軸（status）不入快照——重新初判會保留人工判決結果，
-    若入快照，「初判相同但先前已被人工確認」會被誤判為結果變化；判決轉移由 kind='verdict'
-    事件獨立留痕。summary 存原始 JSONB 語系 map（zh-tw 顯示由前端取用）。
+    只取初判本體欄。summary 存原始 JSONB 語系 map
+    （zh-tw 顯示由前端取用）。
     """
     return {
-        "finding_id": values.get("finding_id"),
         "polarity": values.get("polarity"),
         "sentiment_score": values.get("sentiment_score"),
         "stage": values.get("prejudge_stage"),
@@ -57,7 +73,7 @@ def result_digest(attributions: list[dict]) -> str:
     """快照陣列 → 正規化 sha256（去重比對鍵）。
 
     全欄位嚴格比對（使用者拍板）：快照含摘要措辭/信心值，任一欄漂移即視為結果變化；
-    時間戳先天不入快照。排序鍵 (l1.code, l2.code, finding_id) 消除
+    時間戳先天不入快照。排序鍵 (l1.code, l2.code, attribution_oid) 消除
     多歸因列序差異；default=str 兜底非 JSON 原生型別（Decimal 等）。
     """
     ordered = sorted(
@@ -65,7 +81,7 @@ def result_digest(attributions: list[dict]) -> str:
         key=lambda a: (
             (a.get("l1") or {}).get("code") or "",
             (a.get("l2") or {}).get("code") or "",
-            a.get("finding_id") or "",
+            str(a.get("attribution_oid") or ""),
         ),
     )
     payload = json.dumps(ordered, sort_keys=True, ensure_ascii=False, default=str)
@@ -124,30 +140,6 @@ def insert_prejudge_event(
     return True
 
 
-def insert_verdict_event(
-    c: Connection,
-    source: str,
-    source_id: str,
-    *,
-    to_status: str,
-    changes: list[dict],
-    author: str | None,
-) -> None:
-    """寫入一筆 kind='verdict' 判決轉移事件（恆記錄不去重；同交易由呼叫端保證）。
-
-    changes：[{finding_id, from}]——單筆轉移一項、批量轉移多項；目標狀態統一存 params.to。
-    """
-    c.execute(
-        sa_insert(T.attribution_history).values(
-            source=source,
-            source_id=source_id,
-            kind="verdict",
-            params={"to": to_status, "changes": changes},
-            author=author or "",
-        )
-    )
-
-
 def insert_failure_event(
     source: str,
     source_id: str,
@@ -181,23 +173,40 @@ def insert_failure_event(
         )
 
 
-def _history_row(r: dict) -> dict:
-    """attribution_history 列 → API dict（created_at ISO 字串，比照 finding_notes/prejudge_runs 慣例）。"""
-    v = r.get("created_at")
-    r["created_at"] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
-    return r
+def _history_row(r) -> dict:
+    """attribution_history 列 → API dict（顯式白名單 + created_at 轉 ISO 字串）。
+
+    白名單使 DB 新增欄不會自動流進 API（見 `_shared.wire_row`）。
+    """
+    return wire_row(r, _WIRE_COLS)
+
+
+# 使用者時間軸可見的事件類型（**白名單**，非黑名單）：kind 是 Text 欄、新增內部事件型別免 migration，
+# 用黑名單的話每加一種內部 kind 都會靜默漏進 UI，被前端 v-else 兜底渲染成 author/content 皆空的
+# 灰色「備註」——`failure` 就這樣在時間軸上假冒了 390 筆備註。白名單讓「不在清單上就不顯示」成為預設。
+# 目前被擋在外的：`router_shadow`（域路由召回量測留痕，純內部遙測，對看評論歷史的人沒有意義）。
+_USER_VISIBLE_KINDS = ("prejudge", "note", "failure")
 
 
 def list_attribution_history(source: str, source_id: str) -> list[dict]:
-    """列某則評論的歸因歷史時間軸（舊到新，時間遞增；初判快照 / 判決轉移 / 備註三類事件混排）。"""
+    """列某則評論的歸因歷史時間軸（舊到新，時間遞增；初判快照 / 備註 / 初判失敗三類事件混排）。
+
+    只回 `_USER_VISIBLE_KINDS`——內部遙測事件不進使用者時間軸（原因見該常數註解）。
+    """
     h = T.attribution_history
     stmt = (
-        select(h)
-        .where(and_(h.c.source == source, h.c.source_id == source_id))
+        select_wire(h)
+        .where(
+            and_(
+                h.c.source == source,
+                h.c.source_id == source_id,
+                h.c.kind.in_(_USER_VISIBLE_KINDS),
+            )
+        )
         .order_by(h.c.created_at.asc(), h.c.id.asc())
     )
     with T.get_engine().connect() as c:
-        return [_history_row(dict(r)) for r in c.execute(stmt).mappings()]
+        return [_history_row(r) for r in c.execute(stmt).mappings()]
 
 
 def add_history_note(source: str, source_id: str, *, author: str, content: str) -> dict:
@@ -208,7 +217,7 @@ def add_history_note(source: str, source_id: str, *, author: str, content: str) 
         .returning(*T.attribution_history.c)
     )
     with T.get_engine().begin() as c:
-        return _history_row(dict(c.execute(ins).mappings().first()))
+        return _history_row(c.execute(ins).mappings().first())
 
 
 def latest_snapshots(source: str, model: str) -> dict[str, dict]:

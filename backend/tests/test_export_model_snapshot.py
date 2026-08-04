@@ -13,17 +13,14 @@ from openpyxl import load_workbook
 
 from app.core import db
 from app.core.schema import TicketFinding
+from tests._factories import review_row
 
 
 def _pr_row(rec_oid: str) -> dict:
-    return {
-        "rec_oid": rec_oid,
-        "create_date": "2026-06-10 08:30:00",
-        "rec_desc": "描述與實際不符",
-        "rec_scores": "1",
-        "prod_oid": "P1",
-        "order_snap_json": "{}",
-    }
+    """導出測試用的 reviews 源列（負面評論，供歸因/導出斷言）。"""
+    return review_row(
+        rec_oid, create_date="2026-06-10 08:30:00", rec_desc="描述與實際不符", rec_scores="1"
+    )
 
 
 def _finding(
@@ -35,7 +32,6 @@ def _finding(
     summary: str = "頁面資訊與現場不符",
 ) -> TicketFinding:
     return TicketFinding(
-        finding_id=f"fd_reviews_{rec_oid}__{l1_code}",
         ticket_id=rec_oid,
         recommended_action="no_action",
         polarity=polarity,
@@ -63,39 +59,11 @@ def _col(headers: list, name: str) -> int:
     return headers.index(name)
 
 
-def test_export_current_mode_status_and_model_columns(temp_db) -> None:
-    """當前初判模式：「初判模型」「判決狀態」欄有值（_attr_keys 缺 key 舊 bug 回歸鎖定）。"""
-    db.insert_source_batch("reviews", [_pr_row("E1")])
-    db.replace_source_findings("reviews", "E1", [_finding("E1", "gpt-5-mini")])
-    db.update_finding_status("fd_reviews_E1__content", "confirmed", actor="qa@kkday.com")
-    headers, rows = _cells(db.export_problems_xlsx(source="reviews"))
-    assert "初判模型" in headers and "判決狀態" in headers
-    r = rows[0]
-    assert r[_col(headers, "初判模型")] == "gpt-5-mini"
-    assert r[_col(headers, "判決狀態")] == "已確認"  # _STATUS_LABEL_ZH 中文化
-
-
-def test_export_system_verdict_by_is_localized(temp_db) -> None:
-    """系統判決（G1 自動確認）留痕 verdict_by='system:auto_confirm'：導出「判決人」欄需中文化為
-    「系統自動確認」（`_shared._VERDICT_BY_LABEL_ZH`），不得原樣輸出內部技術字串。人工判決仍原樣
-    顯示 email（見 test_export_current_mode_status_and_model_columns）。"""
-    db.insert_source_batch("reviews", [_pr_row("AC1")])
-    f = _finding("AC1", "gpt-5-mini")
-    f.status = "auto_confirmed"
-    f.verdict_by = "system:auto_confirm"
-    db.replace_source_findings("reviews", "AC1", [f])
-    headers, rows = _cells(db.export_problems_xlsx(source="reviews"))
-    r = rows[0]
-    assert r[_col(headers, "判決狀態")] == "自動確認"
-    assert r[_col(headers, "判決人")] == "系統自動確認"
-
-
 def test_export_snapshot_model_replaces_content(temp_db) -> None:
     """快照模式：內容/列傾向替換為所選模型快照；判決軸空白；無該模型快照的評論整列排除。"""
     db.insert_source_batch("reviews", [_pr_row("S1"), _pr_row("S2")])
     # S1：先 gpt-5-mini 判 content/負向 → 再 seed 重新初判 supplier/正向（當前初判＝seed）
     db.replace_source_findings("reviews", "S1", [_finding("S1", "gpt-5-mini")])
-    db.update_finding_status("fd_reviews_S1__content", "confirmed", actor="qa@kkday.com")
     db.replace_source_findings(
         "reviews",
         "S1",
@@ -116,7 +84,6 @@ def test_export_snapshot_model_replaces_content(temp_db) -> None:
     assert r[_col(headers, "初判模型")] == "seed-2-0-lite"
     assert r[_col(headers, "情緒傾向")] == "4"  # row 級 our_sentiment 同步為快照 primary
     # 判決軸屬「當前初判」語義，歷史快照不冒充 → 空白
-    assert not r[_col(headers, "判決狀態")]
 
 
 def test_export_snapshot_selects_that_models_view(temp_db) -> None:

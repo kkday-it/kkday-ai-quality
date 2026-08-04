@@ -75,7 +75,6 @@ def permissions_cfg(monkeypatch):
         lambda: {
             "no_auth_grant_all": False,
             "default": [
-                "finding.review.update",
                 "data.source.upload",
                 "data.datapack.export",
                 "data.datapack.import",

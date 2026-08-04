@@ -9,8 +9,8 @@ multipart 解析 + 設定注入 + job 轉發，進度走輪詢（同 prompt_sand
 `/batch/start-multi` 為多模型並行入口：同一份輸入/Prompt 在多個 model 上各自獨立起一個
 單模型 run，`/batch/groups/{group_id}` 供輪詢群組內各 model 的進度。
 
-人工評判案例庫（/prompt-debug/reviews）：把「AI 判錯了、正解是這個」逐案存進 `prompt_debug_reviews`，
-供 AI 定點改寫當證據、供改完 Prompt 後整批回歸重跑。
+人工評判案例**存於前端本地**（Pinia + localStorage），後端不落庫也不提供 CRUD——案例是個人調試用
+的暫存語料，非團隊共享資產。改寫與回歸端點改為由請求整包帶上案例內容（`PromptDebugCaseIn`）。
 
 AI 定點改寫（/prompt-debug/revise[/apply]）：拿選中案例餵旗艦模型（獨立的 `prompt_revise` 功能區，
 與跑批用的便宜模型分開），SSE 串流回「診斷 + 補丁清單 + CHANGELOG 草稿」；`apply` 把勾選的補丁
@@ -34,7 +34,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core import auth
 from app.core import settings as app_settings
@@ -192,74 +192,6 @@ def prompt_debug_activate_release(
     return {**result, "releases": prompt_debug_versions.list_releases()}
 
 
-# ── 人工評判案例庫（/prompt-debug/reviews）────────────────────────────────────
-
-
-class PromptDebugReviewIn(BaseModel):
-    """一則人工評判：AI 判了什麼、人認為哪幾欄錯、正解是什麼、有什麼修改建議。"""
-
-    conversation: str = Field(min_length=1, max_length=200_000)
-    ai_output: dict[str, Any]
-    # 只放被標錯的欄；全欄皆對＝ {}（仍值得存，回歸時當正例防過度矯正）
-    corrections: dict[str, Any] = Field(default_factory=dict)
-    # 人明確標「對」的欄名；回歸時這些欄不准變（兩者都沒出現的欄＝沒看過，不計分）
-    confirmed: list[str] = Field(default_factory=list)
-    comment: str = Field(default="", max_length=10_000)
-    prompt_version: str = Field(default="", max_length=64)
-    model: str = Field(default="", max_length=200)
-
-
-@router.get("/prompt-debug/reviews")
-def prompt_debug_reviews(user: dict = Depends(auth.get_current_user)) -> dict:
-    """案例庫列表（新→舊）；對話原文只回前 200 字預覽，全文由改寫/回歸端點按 id 取。"""
-    from app.core import db
-
-    return {"reviews": db.list_prompt_debug_reviews()}
-
-
-@router.post("/prompt-debug/reviews", status_code=201)
-def prompt_debug_review_create(
-    body: PromptDebugReviewIn,
-    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
-) -> dict:
-    """存一則人工評判案例。"""
-    from app.core import db
-    from app.judge import prompt_debug
-
-    valid_keys = {field["key"] for field in prompt_debug.OUTPUT_FIELDS}
-    unknown = sorted((set(body.corrections) | set(body.confirmed)) - valid_keys)
-    if unknown:
-        raise HTTPException(status_code=400, detail=f"不認得的欄位：{'、'.join(unknown)}")
-    overlap = sorted(set(body.corrections) & set(body.confirmed))
-    if overlap:
-        raise HTTPException(status_code=400, detail=f"同一欄不能既標對又標錯：{'、'.join(overlap)}")
-
-    review_id = db.insert_prompt_debug_review(
-        conversation=body.conversation,
-        ai_output=body.ai_output,
-        corrections=body.corrections,
-        confirmed=body.confirmed,
-        comment=body.comment,
-        prompt_version=body.prompt_version,
-        model=body.model,
-        reviewer=user.get("email", ""),
-    )
-    return {"id": review_id}
-
-
-@router.delete("/prompt-debug/reviews/{review_id}")
-def prompt_debug_review_delete(
-    review_id: int,
-    user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
-) -> dict:
-    """刪一則案例。"""
-    from app.core import db
-
-    if not db.delete_prompt_debug_review(review_id):
-        raise HTTPException(status_code=404, detail=f"案例不存在：{review_id}")
-    return {"ok": True}
-
-
 def _effective_or_400(overrides: dict | None, area: str = "prompt_debug") -> dict:
     """解析指定功能區的 effective LLM dict；缺 token / model 即 400。
 
@@ -309,10 +241,50 @@ def prompt_debug_stream(
 # ── AI 定點改寫（案例 × 現行 Prompt → 補丁清單 → 套用）─────────────────────────
 
 
+class PromptDebugCaseIn(BaseModel):
+    """一則人工評判案例（由前端本地案例庫整包送上，不落庫）。
+
+    2026-08-04 起案例改存瀏覽器本地（Pinia + localStorage），`prompt_debug_reviews` 表退場：
+    案例是個人調試用的暫存語料而非團隊共享資產，落庫只是多一張表與一套 CRUD。
+    後端純運算不持久化，故改寫／回歸的請求改為整包帶上案例內容。
+
+    `corrections`＝人標的正解（只含被標錯的欄）；`confirmed`＝人明確標「對」的欄名。
+    兩者都沒出現的欄＝人沒看過，回歸不計分（拿 AI 原判當標準答案會讓分數憑空虛高）。
+    """
+
+    id: int = Field(description="前端本地案例 id（僅供進度回報時對應回列表）")
+    conversation: str = Field(min_length=1, max_length=200_000)
+    ai_output: dict[str, Any] = Field(default_factory=dict)
+    corrections: dict[str, Any] = Field(default_factory=dict)
+    confirmed: list[str] = Field(default_factory=list)
+    comment: str = Field(default="", max_length=10_000)
+
+    @model_validator(mode="after")
+    def _check_field_keys(self) -> PromptDebugCaseIn:
+        """守住兩條回歸判準的不變式（原本在已退場的 POST /reviews 端點上）。
+
+        案例改存前端後，這裡是它進入後端的唯一入口——驗證必須跟著搬過來，否則
+        前端 store 若寫壞（改版、手動編輯 localStorage），錯誤資料會直接餵進回歸計分。
+
+        ① 欄名必須是契約內的（`prompt_debug.OUTPUT_FIELDS`）——不認得的欄無從比對
+        ② 同一欄不能既在 corrections（標錯）又在 confirmed（標對）——語義自相矛盾
+        """
+        from app.judge import prompt_debug  # lazy：本模組重，比照專案慣例
+
+        valid = {f["key"] for f in prompt_debug.OUTPUT_FIELDS}
+        unknown = sorted((set(self.corrections) | set(self.confirmed)) - valid)
+        if unknown:
+            raise ValueError(f"不認得的欄位：{'、'.join(unknown)}")
+        overlap = sorted(set(self.corrections) & set(self.confirmed))
+        if overlap:
+            raise ValueError(f"同一欄不能既標對又標錯：{'、'.join(overlap)}")
+        return self
+
+
 class PromptReviseIn(BaseModel):
     """依選中案例改寫 Prompt：system_prompt 留空＝用當前正式版。"""
 
-    review_ids: list[int] = Field(min_length=1, max_length=50)
+    cases: list[PromptDebugCaseIn] = Field(min_length=1, max_length=50)
     system_prompt: str = Field(default="", max_length=300_000)
     overrides: LlmOverridesIn | None = None  # 缺省沿用 prompt_revise 功能區默認（旗艦模型）
 
@@ -337,12 +309,9 @@ def prompt_debug_revise(
     user: dict = Depends(require_permission(permission_keys.PREJUDGE_RUN)),
 ) -> StreamingResponse:
     """以 SSE 串流旗艦模型產出的定點補丁（含 anchor 命中狀態）、診斷與 CHANGELOG 草稿。"""
-    from app.core import db
     from app.judge import prompt_debug_versions, prompt_reviser
 
-    cases = db.fetch_prompt_debug_reviews(body.review_ids)
-    if not cases:
-        raise HTTPException(status_code=404, detail="選中的案例都不存在（可能已被刪除）")
+    cases = [c.model_dump() for c in body.cases]
 
     overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
     effective = _effective_or_400(overrides, area="prompt_revise")
@@ -388,7 +357,7 @@ def prompt_debug_revise_apply(
 class PromptRegressionIn(BaseModel):
     """拿案例庫回歸驗證候選 Prompt；system_prompt 留空＝用當前正式版。"""
 
-    review_ids: list[int] = Field(min_length=1, max_length=100)
+    cases: list[PromptDebugCaseIn] = Field(min_length=1, max_length=100)
     system_prompt: str = Field(default="", max_length=300_000)
     overrides: LlmOverridesIn | None = None  # 缺省沿用 prompt_debug 功能區默認（＝實際跑批的模型）
 
@@ -403,12 +372,9 @@ def prompt_debug_regression_start(
     模型走 `prompt_debug` 區而非改寫用的旗艦區——回歸要驗的是「這份 Prompt 在**實際跑批用的
     模型**上表現如何」，用更強的模型跑會得到偏樂觀、對不上線上的結論。
     """
-    from app.core import db
     from app.judge import prompt_debug_versions, prompt_regression
 
-    cases = db.fetch_prompt_debug_reviews(body.review_ids)
-    if not cases:
-        raise HTTPException(status_code=404, detail="選中的案例都不存在（可能已被刪除）")
+    cases = [c.model_dump() for c in body.cases]
 
     overrides = body.overrides.model_dump(exclude_unset=True) if body.overrides else None
     effective = _effective_or_400(overrides)

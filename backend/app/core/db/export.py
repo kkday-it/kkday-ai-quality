@@ -1,7 +1,7 @@
 """問題列表導出：美化 xlsx（1:N fan-out：每條歸因一列 + review 級欄合併儲存格）。
 
 資料表雙層表頭（見 `_style_header_grouped`）：第一列＝分類群組合併儲存格＋各群組配色
-（原始反饋/訂單商品資料/AI 初判結果/人工判決/每個對比模型各自一色，見
+（原始反饋/訂單商品資料/AI 初判結果/每個對比模型各自一色，見
 `_grouped_header_spans`），第二列＝實際欄位名稱；資料改自第三列起。整列底色依 polarity
 （正綠/中灰/負紅）；行高顯式鎖定為「排除評論內容/商品名稱/方案名稱長文欄」後各欄所需高度
 （長文欄超出截斷顯示、不撐爆列高）。另附「分類統計」圖表工作表（本次導出的情緒傾向/
@@ -21,9 +21,7 @@ from unicodedata import east_asian_width
 from app.core.db._shared import (
     _POLARITY_LABEL_ZH,
     _STAGE_LABEL_ZH,
-    _STATUS_LABEL_ZH,
     _TIER_LABEL_ZH,
-    _VERDICT_BY_LABEL_ZH,
     _csv_ids,
     _domain_owner,
     _summary_langs,
@@ -75,14 +73,6 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     # 初判時間（review 級·合併）：該評論最新初判事件時間（attribution_history created_at，
     # _attach_prejudge_provenance 注入；未初判空白）
     ("初判時間", "prejudged_at", 20),
-    # ── 判決組（判決軸：對初判結果的裁決；快照模式歷史切片無判決軸，三欄空白屬預期）──
-    ("判決狀態", "status", 10),  # 待判決/自動確認/已確認/已駁回（attr 級）
-    ("判決時間", "verdict_at", 20),  # attr 級；系統判決＝路由當下、人工判決＝操作當下
-    (
-        "判決人",
-        "verdict_by",
-        20,
-    ),  # 人工＝email 原樣；系統＝system:auto_confirm 中文化為「系統自動確認」（見 _VERDICT_BY_LABEL_ZH）
 ]
 
 # 雙層表頭第一列的分類群組（key → 群組標題）：涵蓋 _EXPORT_XLSX_COLS 全部 26 欄，按語義分四組。
@@ -110,9 +100,6 @@ _COL_GROUPS: dict[str, str] = {
     "prejudge_stage": "AI 初判結果",
     "model": "AI 初判結果",
     "prejudged_at": "AI 初判結果",
-    "status": "人工判決",
-    "verdict_at": "人工判決",
-    "verdict_by": "人工判決",
 }
 
 
@@ -170,9 +157,6 @@ _REVIEW_EXPORT_COLS: list[tuple[str, str, int]] = [
         "prejudge_stage",
         "model",
         "prejudged_at",
-        "status",
-        "verdict_at",
-        "verdict_by",
     }
 ]
 
@@ -216,9 +200,6 @@ _REVIEW_COL_GROUPS: dict[str, str] = {
     "prejudge_stage": "AI 判決結果",
     "model": "AI 判決結果",
     "prejudged_at": "AI 判決結果",
-    "status": "AI 判決結果",
-    "verdict_at": "AI 判決結果",
-    "verdict_by": "AI 判決結果",
 }
 
 
@@ -298,9 +279,6 @@ _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
         "prejudge_stage",
         "model",
         "prejudged_at",
-        "status",
-        "verdict_at",
-        "verdict_by",
     }
 ]
 
@@ -345,9 +323,6 @@ _CONV_COL_GROUPS: dict[str, str] = {
     "prejudge_stage": "AI 判決結果",
     "model": "AI 判決結果",
     "prejudged_at": "AI 判決結果",
-    "status": "AI 判決結果",
-    "verdict_at": "AI 判決結果",
-    "verdict_by": "AI 判決結果",
 }
 
 # 各來源的導出版面：(欄定義, 分組映射, 凍結欄數)。凍結涵蓋「主鍵 + 首個資訊分組」整段，
@@ -369,7 +344,7 @@ def _export_cell(key: str, value) -> str:
     """導出單格：時間欄正規化、傾向/分層/初判階段 code→繁中、情緒分數字化，其餘原樣。"""
     if value is None or value == "":
         return ""
-    if key in ("occurred_at", "prejudged_at", "verdict_at", "order_create_time"):
+    if key in ("occurred_at", "prejudged_at", "order_create_time"):
         return fmt_datetime(value)
     if key == "go_date":
         return fmt_datetime(value, date_only=True)
@@ -381,10 +356,6 @@ def _export_cell(key: str, value) -> str:
         return _TIER_LABEL_ZH.get(value, value)
     if key == "prejudge_stage":
         return _STAGE_LABEL_ZH.get(value, value)
-    if key == "status":
-        return _STATUS_LABEL_ZH.get(value, value)
-    if key == "verdict_by":
-        return _VERDICT_BY_LABEL_ZH.get(value, value)  # 系統判決固定值中文化；人工 email 原樣
     return value
 
 
@@ -437,9 +408,6 @@ def _flat_attr(a: dict) -> dict:
         "prejudge_stage": a.get("stage"),
         "summary": (a.get("content") or {}).get("summary"),
         "model": a.get("model"),
-        "status": a.get("status"),
-        "verdict_at": a.get("verdict_at"),
-        "verdict_by": a.get("verdict_by"),
     }
 
 
@@ -488,10 +456,7 @@ def _adapt_snapshot(a: dict, model: str) -> dict:
     - content.summary：快照存原始語系 map → 複用 `_summary_langs` 重算 {summary zh-tw 字串,
       summary_langs}，與當前初判導出完全同形。
     - owner：純函式 `_domain_owner(l1.code)` 讀取時派生（與 attribution_dto 同源）。
-    - notes_count＝0：快照 finding_id 是歷史值，重新初判後與現行 finding_notes 的對應不可靠，
-      且那些備註語義上屬「當時那次初判」——不 join、不冒充。
-    - status＝None：人工判決軸綁「當前初判」可變狀態，歷史快照是不可變切片，
-      硬塞會產生假象（xlsx 該欄輸出空白屬預期）。
+    - is_auto_accepted＝快照當下的值：不回查現行 attributions（那是另一次初判的結果）。
     """
     content = a.get("content") or {}
     langs = _summary_langs(content.get("summary"))
@@ -506,8 +471,6 @@ def _adapt_snapshot(a: dict, model: str) -> dict:
         },
         "owner": _domain_owner(l1_code or ""),
         "model": model,
-        "notes_count": 0,
-        "status": None,
     }
 
 
@@ -704,9 +667,6 @@ def export_problems_xlsx(
         "prejudge_stage",
         "summary",
         "model",
-        "status",
-        "verdict_at",
-        "verdict_by",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
     # 長文/長識別碼欄不參與行高計算：超出部分交給截斷顯示，否則一則長評論就把整列撐爆。
@@ -935,8 +895,8 @@ def _append_legend_sheet(wb, has_compare: bool) -> None:
     ws.append(["項目", "說明"])
     rows = [
         (
-            "兩階段模型",
-            "初判分類（AI 管線：極性閘門→六域並行歸因→信心閘門）產出候選歸因；判決歸因（判決軸）對初判結果裁決——系統判決（高信心自動確認）或人工判決（確認/駁回）",
+            "初判管線",
+            "極性閘門→六域並行歸因→信心閘門，產出每條反饋的歸因；信心達自動採信門檻者由系統自動採納，其餘留待複審",
         ),
         (
             "工作表結構",
@@ -944,12 +904,12 @@ def _append_legend_sheet(wb, has_compare: bool) -> None:
         ),
         (
             "資料表雙層表頭",
-            "第一列＝分類群組（合併儲存格＋配色：原始反饋/訂單商品資料/AI 初判結果/人工判決；並排對比模型時每個模型各自一色）；第二列＝實際欄位名稱，篩選箭頭掛在此列，逐欄可用",
+            "第一列＝分類群組（合併儲存格＋配色：原始反饋/訂單商品資料/AI 初判結果；並排對比模型時每個模型各自一色）；第二列＝實際欄位名稱，篩選箭頭掛在此列，逐欄可用",
         ),
         ("整列底色", "依評論情緒傾向：正向＝淡綠、中立＝淡灰、負向＝淡紅；未初判不上色"),
         (
             "評論級 vs 歸因級",
-            "編號～方案名稱、情緒傾向、初判時間為評論級（多歸因時合併儲存格）；問題摘要、歸因分類、信心度、信心分層、初判階段、初判模型、判決狀態/時間/人為歸因級（逐列各自有值）",
+            "編號～方案名稱、情緒傾向、初判時間為評論級（多歸因時合併儲存格）；問題摘要、歸因分類、信心度、信心分層、初判階段、初判模型為歸因級（逐列各自有值）",
         ),
         (
             "情緒傾向",
@@ -961,11 +921,6 @@ def _append_legend_sheet(wb, has_compare: bool) -> None:
         (
             "歸因分類",
             "該條歸因的 L1／L2 兩層分類，同一格內換行呈現（上行＝L1「C-N 域名」、下行＝L2「C-N-M 細項」）；只判到 L1 時僅一行",
-        ),
-        ("判決狀態", "判決軸：待判決／自動確認（系統判決）／已確認／已駁回（人工判決）"),
-        (
-            "判決時間/判決人",
-            "該歸因被裁決的時間與主體：系統判決＝「系統自動確認」＋路由當下；人工判決＝操作者 email＋操作當下；待判決＝空白",
         ),
         (
             "Prompts 工作表",

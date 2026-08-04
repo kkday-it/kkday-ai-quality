@@ -3,8 +3,7 @@
 契約逐欄對齊 frontend/apps/console/src/api/judgment.api.ts（startPrejudge / getPrejudgeStatus）。
 初判本體在 app/judge/prejudge_batch（背景 ThreadPool），本層只負責標的解析 + 設定注入 + job 轉發。
 
-`LlmOverridesIn`/`PrejudgeIn`/`_resolve_target_ids` 為三領域（prejudge/prompt_debug/prompt_sandbox）
-共用契約與標的解析邏輯，由 prompt_sandbox.py 直接 import 重用（同 prompt_eval 重用
+`LlmOverridesIn`/`PrejudgeIn`/`_resolve_target_ids` 為初判標的解析的共用契約（同 prompt_eval 重用
 prejudge._gate_attrs 的既有慣例，不另立第三個共用模組）；prompt_debug.py 只需 LlmOverridesIn。
 """
 
