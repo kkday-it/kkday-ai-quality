@@ -16,6 +16,7 @@ import re
 from datetime import timezone
 from functools import lru_cache
 from typing import TYPE_CHECKING
+from unicodedata import east_asian_width
 
 from app.core.db._shared import (
     _POLARITY_LABEL_ZH,
@@ -23,6 +24,7 @@ from app.core.db._shared import (
     _STATUS_LABEL_ZH,
     _TIER_LABEL_ZH,
     _VERDICT_BY_LABEL_ZH,
+    _csv_ids,
     _domain_owner,
     _summary_langs,
     fmt_datetime,
@@ -252,15 +254,15 @@ def _grouped_header_spans(
 _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
     ("session_oid", "source_id", 16),
     # ── 進線資訊 ──
-    ("bucket", "bucket", 14),
-    ("inbound_time", "occurred_at", 18),
-    ("trip_stage", "trip_stage", 14),
-    ("godate_diff", "godate_diff", 10),
-    ("msg_handler_bucket", "msg_handler_bucket", 12),
-    ("member_uuid", "member_uuid", 18),  # ⚠️ 個資
-    ("cs_tag_oid", "cs_tag_oid", 12),
-    ("cs_tag_name", "cs_tag_name", 14),
-    ("user_message_count", "user_message_count", 10),
+    ("bucket", "bucket", 11),
+    ("inbound_time", "occurred_at", 11),  # 11 寬＝日期一行、時間一行，比擠成一長行好讀
+    ("trip_stage", "trip_stage", 10),
+    ("godate_diff", "godate_diff", 7),
+    ("msg_handler_bucket", "msg_handler_bucket", 10),
+    ("member_uuid", "member_uuid", 12),  # ⚠️ 個資；36 字元 UUID 恆換行，故列入 _height_exempt
+    ("cs_tag_oid", "cs_tag_oid", 8),
+    ("cs_tag_name", "cs_tag_name", 12),
+    ("user_message_count", "user_message_count", 7),
     ("conversation_full", "content", 40),
     # ── 訂單資訊 ──
     ("order_oid", "order_oid", 16),
@@ -593,6 +595,17 @@ def export_problems_xlsx(
 
     from app.core.judge_config.rule_export import _style_header_grouped
 
+    # item_ids（前端勾選）下推到 SQL：natural_key IN (...)。不下推的話「選 20 筆導出」也得先把
+    # 全表撈進記憶體再逐列比對 _group——39,649 筆要 48 秒，而那 48 秒全落在「準備中」階段
+    # （進度條此時無事可報，畫面就是不動的 0.00%），使用者會以為卡住。
+    # rec_oid 本身已支援逗號多值（見 _shared.apply_table_filters → _csv_ids），直接複用；
+    # 兩者並存時取交集＝兩個條件都要滿足，語義與原本「先查再過濾」一致。
+    scoped_rec_oid = rec_oid
+    if item_ids:
+        ids = set(item_ids)
+        if rec_oid:
+            ids &= set(_csv_ids(rec_oid))
+        scoped_rec_oid = ",".join(sorted(ids))
     data = list_problems(
         source=source,
         polarity=polarity,
@@ -607,7 +620,7 @@ def export_problems_xlsx(
         status=status,
         model=model,
         has_external=has_external,
-        rec_oid=rec_oid,
+        rec_oid=scoped_rec_oid,
         prod_oid=prod_oid,
         order_oid=order_oid,
         bucket=bucket,
@@ -615,6 +628,8 @@ def export_problems_xlsx(
     )
     rows = data["rows"]
     if item_ids:
+        # 已由 scoped_rec_oid 在 SQL 層濾過，此處為保險：natural_key 不在該來源表時
+        # （spec.natural_key not in tbl.c）下推會靜默失效，仍需記憶體比對兜住。
         idset = set(item_ids)
         rows = [r for r in rows if r.get("_group") in idset]
     stats_note: str | None = None
@@ -694,7 +709,23 @@ def export_problems_xlsx(
         "verdict_by",
     }
     review_col_idx = [ci for ci, (_t, key, _w) in enumerate(cols, start=1) if key not in _attr_keys]
+    # 長文/長識別碼欄不參與行高計算：超出部分交給截斷顯示，否則一則長評論就把整列撐爆。
+    _height_exempt = {
+        "content",
+        "prod_name",
+        "package_name",
+        "member_uuid",  # 36 字元 UUID：任何合理欄寬都會斷 3 行，不該由它決定整表列高
+    }
+    # 行高計算只碰這些欄（(欄索引, 欄寬) 預先算好，免得每列重掃全部欄位）
+    _attr_hcols = [
+        (i, cols[i - 1][2]) for i in range(1, len(cols) + 1) if cols[i - 1][1] in _attr_keys
+    ]
+    _rev_hcols = [
+        (i, cols[i - 1][2]) for i in review_col_idx if cols[i - 1][1] not in _height_exempt
+    ]
     merges: list[tuple[int, int]] = []  # (起始 Excel 列, 該 review 歸因數 N)
+    # 每個 review 的行高（就地算，見下方寫入迴圈）：review 級平攤行數 + 各歸因列自己的行數
+    row_heights: list[tuple[int, list[int]]] = []
     r_excel = 3  # 資料起始列（雙層表頭：列 1 分類群組、列 2 具體欄位）
     for ri, r in enumerate(rows):
         # 每 _PROGRESS_STEP 筆回報進度並檢查取消（取消時 ctx.check 拋 Cancelled 中止組檔）
@@ -703,6 +734,8 @@ def export_problems_xlsx(
             ctx.report(ri, total)
         attrs = r.get("attributions") or []
         n = max(1, len(attrs))
+        base = 1  # review 級欄（合併區塊整體）平攤到每列的行數
+        attr_lines: list[int] = []  # 各歸因列自身的行數
         for j in range(n):
             a = _flat_attr(attrs[j]) if j < len(attrs) else {}
             line = []
@@ -710,7 +743,16 @@ def export_problems_xlsx(
                 src_val = a.get(key, "") if key in _attr_keys else r.get(key, "")
                 line.append(_xlsx_safe(_export_cell(key, src_val)))
             ws.append(line)
+            # 行高就地算：值此刻在 line 裡。事後回讀 ws.cell()／ws[rr] 會為了取值把儲存格
+            # 重新 materialize（39,649 列 × 數十欄），那是組檔耗時的主因。
+            attr_lines.append(
+                max((_wrapped_lines(line[i - 1], w) for i, w in _attr_hcols), default=1)
+            )
+            if j == 0:  # review 級欄的值只在首列，其所需行數平攤到 n 列
+                for i, w in _rev_hcols:
+                    base = max(base, -(-_wrapped_lines(line[i - 1], w) // n))  # ceil
         merges.append((r_excel, n))
+        row_heights.append((base, attr_lines))
         r_excel += n
     # 凍結雙層表頭（列1分類群組＋列2具體欄位）+ 各版面指定的凍結欄數；篩選箭頭掛列 2。
     _style_header_grouped(ws, group_spans, [c[2] for c in cols], freeze_cols=freeze_cols)
@@ -735,35 +777,23 @@ def export_problems_xlsx(
         if fill is None:
             continue
         for rr in range(sr, sr + n):
-            for cell in ws[rr]:
-                cell.fill = fill
+            # ⚠️ 逐欄 ws.cell() 而非 `for cell in ws[rr]`：ws[int] 會取 max_column，而該 property
+            # 是 `max(c[1] for c in self._cells)`——每叫一次就掃過全表已建立的儲存格。整表逐列叫
+            # 一次，複雜度就成了 O(列數 × 全表格數)。profile 實測這一行佔掉組檔近半時間
+            # （8.98 億次 genexpr / max 累計 130s）。欄數本來就在手，不必回頭問 openpyxl。
+            for ci in range(1, len(cols) + 1):
+                ws.cell(row=rr, column=ci).fill = fill
     # style + 上色後再合併同一 review 的 review 級欄（避免 MergedCell 樣式設定問題）
     for sr, n in merges:
         if n > 1:
             for ci in review_col_idx:
                 ws.merge_cells(start_row=sr, start_column=ci, end_row=sr + n - 1, end_column=ci)
-    # 顯式行高＝排除長文欄後各欄所需換行行數之最大值：超長的評論內容/商品名稱不再把整列
-    # 撐爆，其餘欄位仍完整可見（wrap_text 下 Excel 只對「未設高」的列 auto-fit，設高即鎖定）。
-    # review 級合併欄的值在合併首列（sr），其所需行數平攤到 n 列。
-    _height_exempt = {
-        "content",
-        "prod_name",
-        "package_name",
-    }  # 長文欄：不參與行高計算，超出交給截斷顯示
-    for sr, n in merges:
-        base = 1  # review 級欄（合併區塊整體）平攤後的每列行數
-        for ci in review_col_idx:
-            _t, key, w = cols[ci - 1]
-            if key in _height_exempt:
-                continue
-            need = -(-_wrapped_lines(ws.cell(row=sr, column=ci).value, w) // n)  # ceil
-            base = max(base, need)
-        for rr in range(sr, sr + n):
-            lines = base
-            for ci, (_t, key, w) in enumerate(cols, start=1):
-                if key in _attr_keys:  # 歸因級欄逐列有值、不合併
-                    lines = max(lines, _wrapped_lines(ws.cell(row=rr, column=ci).value, w))
-            ws.row_dimensions[rr].height = lines * _LINE_HEIGHT_PT
+    # 顯式行高：wrap_text 下 Excel 只對「未設高」的列 auto-fit，設高即鎖定——鎖定後超長的
+    # 評論內容/商品名稱只會被截斷顯示，不再把整列撐爆，其餘欄位仍完整可見。
+    # 值在上方寫入迴圈就地算完（row_heights），此處僅套用。
+    for (sr, _n), (base, attr_lines) in zip(merges, row_heights, strict=True):
+        for k, al in enumerate(attr_lines):
+            ws.row_dimensions[sr + k].height = max(base, al) * _LINE_HEIGHT_PT
     # 緊接資料表後附「分類統計」圖表工作表（本次導出資料的情緒傾向/L1/L2/分層/階段/模型分佈；
     # 所見即所得——快照模式下 rows 已替換為所選模型內容，統計自動跟隨；note 揭露輸出版本口徑）
     from app.core.db.export_stats import append_stats_sheet
@@ -780,6 +810,20 @@ def export_problems_xlsx(
     return buf.getvalue()
 
 
+@lru_cache(maxsize=16384)
+def _display_width(text: str) -> int:
+    """字串在 Excel 欄寬單位下的顯示寬度（CJK/全形以 2 計，其餘 1）。
+
+    全表行高計算會對每個儲存格呼叫，39,649 列 × 數十欄＝百萬次量級，是組檔的主要熱點。
+    兩層加速：① `str.isascii()` 是 C 層 O(n) 檢查，時間戳／UUID／代碼／數字／英文狀態值
+    全數命中，直接回 len() 而完全不進 unicodedata；② lru_cache 吃下枚舉欄（bucket／
+    trip_stage／判決狀態…）的高重複率。兩者皆不改變結果，只避開重算。
+    """
+    if text.isascii():
+        return len(text)
+    return sum(2 if east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
 def _wrapped_lines(value, col_width: int) -> int:
     """估算儲存格值在指定欄寬（Excel 字元單位）wrap 後的顯示行數。
 
@@ -793,15 +837,12 @@ def _wrapped_lines(value, col_width: int) -> int:
     Returns:
         至少 1 的行數估計。
     """
-    import unicodedata
-
     if value is None or value == "":
         return 1
     usable = max(col_width - 1, 1)  # 扣約 1 字元 cell 內距
     lines = 0
     for seg in str(value).split("\n"):
-        width = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in seg)
-        lines += max(1, -(-width // usable))  # ceil
+        lines += max(1, -(-_display_width(seg) // usable))  # ceil
     return lines
 
 

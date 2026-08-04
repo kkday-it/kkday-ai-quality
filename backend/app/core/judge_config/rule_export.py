@@ -132,10 +132,14 @@ def _style_header_grouped(
         head_w = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in head)
         ws.column_dimensions[get_column_letter(i)].width = max(w, head_w + 3)
 
-    # 資料列自第三列起；斑馬紋起點對齊 `_style_header`（首列資料上底色）
-    for r, row in enumerate(ws.iter_rows(min_row=3), start=3):
+    # 資料列自第三列起；斑馬紋起點對齊 `_style_header`（首列資料上底色）。
+    # ⚠️ Alignment 建在迴圈外共用一個實例：openpyxl 的樣式是不可變值物件，每格各建一個會讓
+    # 內部樣式表對每個實例重算 hash（profile：serialisable.__hash__ 2,235 萬次 / 41.8s）。
+    # iter_rows 帶 max_col 避免它為了推邊界再掃一次全表。
+    body_align = Alignment(wrap_text=True, vertical="top")
+    for r, row in enumerate(ws.iter_rows(min_row=3, max_col=len(widths)), start=3):
         for c in row:
-            c.alignment = Alignment(wrap_text=True, vertical="top")
+            c.alignment = body_align
             c.border = border
             if (r - 3) % 2 == 0:
                 c.fill = zebra
