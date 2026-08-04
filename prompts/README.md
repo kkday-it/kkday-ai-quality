@@ -29,19 +29,14 @@
 - **初判引擎**：`prejudge.py` 的 `_attrs_pack`——極性閘門（`00_polarity`）→ 六域 prompt **並行**
   各自判斷是否命中該域 → 合流去重排序 + 信心閘門（`prejudge._gate_attrs`）。
 
-## 調適閉環操作手冊（編 → 測 → 歷史 → 修 → 存版）
+## 調適閉環操作手冊（編 → 測 → 修 → 存版）
 
 ```
 RuleManager「初判 Prompt」md 編輯 ──存檔（validate 自洽驗證）──▶ 新版本（append-only）
         │                                                              │
         ▼                                                              │
-   歸因列表「Prompt 測試」沙盒抽屜（PromptSandboxDrawer，走診斷理由 overlay：命中附 reason，
-   棄權附 abstain_reason）：對單列 / 勾選多筆 / 依條件批量選取，跑勾選的 prompt 子集，ungated
-        │
-        ▼
-   測試歷史（獨立 `prompt_sandbox_runs` 表，抽屜「測試歷史」分頁）
-   ——與正式初判歷史完全分離，捕捉完整 LLM log 供事後回看；CLI `eval_prompt_single.py --compare`
-     另供逐案 improvements/regressions diff
+   離線試跑：CLI `scripts/tools/eval_prompt_single.py`（單支 prompt 逐案指標，`--compare`
+   出 improvements/regressions diff）／`eval_equivalence.py`（改動前後等價性閘門）
         │
         ▼
    依分歧理由定位問題：加/改類別（改 `## Taxonomy`）／邊界寫糊（改 `<domain_boundary>`）／例句缺（補 `<facet_catalog>` 正反例）／

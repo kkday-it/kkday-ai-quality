@@ -11,8 +11,7 @@
 | `backend` | :8100 · uvicorn `--reload`（掛 `backend/app`+`alembic`）· APP_ENV=development | :8100(內部) · 單 worker · 嚴格 secret（缺 `AIQ_SECRET_KEY` 拒啟動）|
 | `frontend` | :5273 · vite HMR（掛 `frontend/`，node_modules 走容器內匿名 volume）| :8080 · nginx 靜態 + `/api` 反代 |
 
-兩形態共用**智慧 entrypoint**（`backend/docker-entrypoint.sh`）：**空庫**→`init_db`（create_all+stamp head）／
-**既有庫**→`alembic upgrade head`——新增 migration 後**重啟容器即自動套用**，不需手動跑。
+兩形態共用 **entrypoint**（`backend/docker-entrypoint.sh` → `app/core/db/schema_bootstrap.py`）：**一律 `alembic upgrade head`**（單一路徑，2026-08-04 起取代舊的空庫/既有庫雙軌）——新增 migration 後**重啟容器即自動套用**，不需手動跑。squash 相容、「有表卻無版本紀錄」等特殊狀態由 `schema_bootstrap` 自動判定；認不得的版本會**擋下啟動**並印出原因，而不是誤判成最新。
 
 ## 命令大全
 

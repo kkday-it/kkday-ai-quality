@@ -86,7 +86,7 @@ sake（PHP-FPM）掛 fpm-exporter(:9147)+nginx-exporter(:9145) sidecar；本專�
 （`app/core/db/qc_evidence.py`）新增兩個**同類單 replica 假設**，遷多 replica 時缺一不可：
 
 1. **llm diskcache（per-pod 檔案系統）**：N replica 各自一份互不同步 → 命中率崩。
-   遷移：Redis / 共享存儲（佐證快取已落 PG evidence_snapshot 表，天然跨 replica 共享，不在此列）。
+   遷移：Redis / 共享存儲（佐證快取已落 PG evidence_snapshot_tbl 表，天然跨 replica 共享，不在此列）。
 2. **佐證 DB 併發治理（`BoundedSemaphore` per-process）**：N replica 各自 2~4 併發 →
    總併發 N×4 **靜默突破**與共享 snapshot 庫談定的配額。遷移：跨 pod 協調（DB 端連線池
    上限或分散式限流），且 in-process single-flight 需同步改分散式（否則跨 pod 重複取數）。

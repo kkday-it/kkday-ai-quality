@@ -29,7 +29,7 @@ backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
   app/
     core/                    # 領域基礎層（見 core/README.md）
       db/                    # 資料存取（tables/source_registry + 8 職責模組 + barrel）
-      judge_config/          # 6 判準 config loader（ai_judge/product_vertical/source_mapping/…）
+      judge_config/          # 判準 config loader（ai_judge/bd_tag_vertical/source_mapping/…）
       auth · config · paths · schema · settings
     judge/                   # 初判引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
     api/                     # FastAPI gateway（main.py + routers/v1）
@@ -61,7 +61,7 @@ backend/Dockerfile · frontend/Dockerfile · frontend/Dockerfile.dev   # 各服�
 - 全服務在容器內：**PostgreSQL + 後端 http://localhost:8100（Swagger `/docs`）+ 前端 http://localhost:5273 + 所有依賴**。
 - **就緒後自動開啟前端網頁**（http://localhost:5273；Swagger /docs 只印 URL 不開）——start.sh 背景起服務、輪詢就緒、自動 `open`。**停止**：`./stop.sh`（只停止，資料一律保留）。
 - **改碼即生效**（後端 `uvicorn --reload`、前端 vite HMR，掛 source volume）；首次會 build image（較久），之後秒起。
-- **schema 自動對齊**：容器啟動 entrypoint 分流——空庫 create_all+stamp、既有庫 `alembic upgrade head`；**新增 migration 後 `restart backend` 即自動套用**。
+- **schema 自動對齊**：容器啟動一律 `alembic upgrade head`（單一路徑；squash 相容與「有表無版本紀錄」等狀態由 `app/core/db/schema_bootstrap.py` 判定，認不得的版本會擋下啟動而非誤判）；**新增 migration 後 `restart backend` 即自動套用**。
 
 > **容器引擎全自動**：start.sh 偵測不到容器工具時會**自動安裝 [colima](https://github.com/abiosoft/colima)（免費開源，大公司免授權）並啟動**——macOS 只需先有 [Homebrew](https://brew.sh)，Linux 走 Docker 官方安裝腳本（`get.docker.com`·跨 distro）。已有 OrbStack / Docker Desktop 者直接沿用，不強制切換。真正零手動：clone → `./start.sh`。
 
@@ -112,24 +112,22 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET | `/api/status` | 健康檢查（公司契約：回 `{"status":"0000","message":"success"}`·免認證·k8s probe 用）|
 | POST | `/api/inbound/validate`·`/upload` | 上傳乾跑校驗 → 背景落各來源專表 |
 | GET | `/api/evidence/{order_oid}` | 訂單佐證唯讀查詢（production 下單當時商品快照投影；一訂單一列拆欄快取+single-flight+熔斷，回傳樹狀分組物件 order_summary/supplier_info/product_info/item_info/package_info/meta，失敗回 status 降級不走 5xx）；詳情抽屜 lazy fetch 用。需登入 |
-| GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/初判階段(多選)/信心分層/判決狀態(status 多選)/初判模型(model 多選·當前初判維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
+| GET | `/api/problems` | 統一問題列表（source 專表 + 歸因，伺服器端分頁，需登入）；篩選：傾向/初判階段(多選)/信心分層/初判模型(model 多選·當前初判維度)/歸因分類(taxonomy 多選·任意層級 code 子樹語義)/日期區間/prod·order_oid |
 | GET | `/api/problems/attribution_overview`·`/attribution_breakdown` | 歸因概覽聚合 + L2 下鑽；可選 model（CSV 多選）篩初判模型——當前初判維度，僅套初判級指標（total_intake 不受影響）。需登入 |
 | GET | `/api/overview/ai-judge` | 質檢概覽首頁 AI 法官真實指標（內容類占比月趨勢·distinct 進線；外部指標維持示意）。需登入 |
-| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格；初判組欄含初判時間、歸因分類〔L1/L2 同格換行〕、判決組欄含判決狀態/時間/人；另附「分類統計」「Prompts」〔導出當下 active 版本快照〕「說明」〔欄位語義字典〕工作表）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 attribution_history 最新快照（該模型未初判過的評論保留列、判定欄留白，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
+| POST | `/api/problems/export` | 啟動問題列表 xlsx 導出背景 job（1:N 多歸因合併儲存格；初判組欄含初判時間、歸因分類〔L1/L2 同格換行〕；另附「分類統計」「Prompts」〔導出當下 active 版本快照〕「說明」〔欄位語義字典〕工作表）→ {job_id}；`snapshot_model` 可選「輸出結果版本」＝該模型的 attribution_history 最新快照（該模型未初判過的評論保留列、判定欄留白，口徑寫入統計表附註）；`compare_models` 可選「並排對比模型」多選＝基準右側每模型附一組情緒/L1/L2 對比欄（值取該模型最新快照）|
 | POST | `/api/judge-rules/export` | 啟動初判 Prompt 包 zip 導出背景 job（打包 prompts/ 目錄）→ {job_id} |
 | GET/POST | `/api/exports/{stream,download,cancel}` | 通用導出 job：SSE 實時進度 / 取檔 / 停止（跨導出共用）|
 | POST/GET | `/api/v1/prejudge/*` | 初判歸因批次（啟動/筆數預覽 count/SSE 進度/暫停/恢復/停止；目標選取可 within_ids 交集勾選範圍）。啟動/暫停/恢復/停止需 `prejudge.run` 權限；正式環境無 LLM token 拒啟動（stub 硬閘）|
 | GET/POST | `/api/v1/prejudge/prompt-debug/defaults` · `/prompt-debug/stream` · `/prompt-debug/drafts` · `/prompt-debug/releases` · `/releases/{name}/activate` | 售後根因 Prompt 調試台（**草稿工作台**）：載入口徑＝**最新草稿**（草稿區 `prompts/conversations/root_cause_drafts/`＋正式版區 `versions/`；線上口徑＝active release，正式版全空不影響草稿編輯與測試），任意 IM session 以 SSE 串流裁決，完成後回傳交叉欄位校驗、token 與單次 USD 估算。POST `drafts` 存為新草稿（`prejudge.run`，**不改線上口徑**）；POST `releases` 把某草稿升為正式版、POST `releases/{name}/activate` 回退到既有正式版（皆需 `judge-rule.version.manage`）；不寫正式 attributions |
 | POST/GET | `/api/v1/prejudge/prompt-debug/batch/*` | 調試台批量跑批：multipart `start`（單 model）/ **`start-multi`（多**配置**並行：同一份輸入×Prompt 在多筆**具名模型配置**上各自獨立起一個完整 run，各自 run 目錄與 `ThreadPoolExecutor`、互不影響；每筆自帶完整 provider+旋鈕，故可比「同一個 model 的不同 effort」；未登記的 model 名整批 400 不啟動任何 run）** / `groups/{group_id}` 群組進度 / `runs` 列表 / `runs/{run_id}` 進度輪詢 / `cancel` 停止 / `resume` 斷點續跑（只補未成功筆；`rerun` 全部重打；manifest 鎖輸入/Prompt/schema/model）/ `files/{kind}` 下載（csv/jsonl/preds/input）。`system_prompt` 留空＝用當前正式版；**草稿亦可跑**，manifest 以 `prompt_kind` 標明本批是 release/draft/臨時編輯。啟動/停止/續跑需 `prejudge.run` 權限。`start-multi` 回傳的每個成員帶 **`started`**（有沒有成功啟動，布林）而非 `ok`；進度一律走 `groups/{group_id}` 輪詢，成員本身不帶快照。ID 欄名撞跑批輸出欄位（`summary`/`L1`/`model`…）整批 400。**輸入二選一**：上傳 `file`，或改送 `source`+`item_ids`（貼一串該來源自然鍵，如 session_oid）由後端從來源表撈對話——撈完當場落成 CSV 快照存進 run 目錄，之後路徑與上傳完全同構（續跑重放的是同一份文字，不受來源表被 upsert 覆蓋影響）；回傳多帶 `db_stats`（要求/撈到/查無/內容為空筆數）。**併發已全自動**：`workers` 改為選填覆寫（0＝自動），ceiling 由 per-model 查表∩製程天花板算出，執行期再由 AIMD governor 依 429 升降（見 `core/concurrency.py`）。run 摘要多回 `elapsed_sec`/`elapsed_total_sec`/`session_count`（累計執行耗時，非牆鐘）|
 | GET | `/api/v1/prejudge/prompt-debug/source-item` | 調試台「從 DB 撈單筆」：帶 `source`+`item_id`（該來源自然鍵，如 session_oid）回該筆 canonical 對話原文，前端直接填進調試文本框——跑批 DB 取數的單筆版，走同一條解析路徑（來源註冊表決定表與自然鍵、`source_mapping` 決定內容源欄），差別在**單筆即時、不落快照**（調試台要看的就是當前 DB 文字）。查無此列或內容為空一律 404。需 `prejudge.run` |
-| GET/POST/DELETE | `/api/v1/prejudge/prompt-debug/reviews` · `/reviews/{id}` | 調試台人工評判案例庫（`prompt_debug_reviews`）：逐欄標對錯 + 填正解 + 修改建議存為案例，供 AI 定點改寫當證據與改完 Prompt 後回歸重跑。GET 列表只回對話前 200 字預覽（全文由改寫/回歸端點按 id 取）；`corrections` 的鍵須是輸出契約真有的欄位（否則 400）；寫入/刪除需 `prejudge.run` 權限 |
+| GET/POST/DELETE | `/api/v1/prejudge/prompt-debug/reviews` · `/reviews/{id}` | 調試台人工評判案例庫（`prompt_debug_review_tbl`）：逐欄標對錯 + 填正解 + 修改建議存為案例，供 AI 定點改寫當證據與改完 Prompt 後回歸重跑。GET 列表只回對話前 200 字預覽（全文由改寫/回歸端點按 id 取）；`corrections` 的鍵須是輸出契約真有的欄位（否則 400）；寫入/刪除需 `prejudge.run` 權限 |
 | POST | `/api/v1/prejudge/prompt-debug/revise` · `/revise/apply` | AI 定點改寫：把選中案例餵旗艦模型（獨立 `prompt_revise` 功能區，預設 gpt-5.5），SSE 串流回「診斷 + 補丁清單（每條含 anchor 命中狀態）+ CHANGELOG 草稿」；**不做整篇重寫**，每條補丁的 anchor 須在 Prompt 全文中逐字唯一命中才可套用。`apply` 把勾選補丁由後往前套進全文回新內容（不落檔，成為線上口徑仍走 `prompt-versions`）。需 `prejudge.run` |
 | POST/GET | `/api/v1/prejudge/prompt-debug/regression` · `/regression/{job_id}` | 回歸重跑：拿案例庫重跑候選 Prompt（可為未存版的草稿），逐欄比對回「修好 / 改壞 / 還是不對 / 守住」四類；人沒評判過的欄不計分。輕量 in-mem job（後端重啟即清空），進度輪詢。啟動需 `prejudge.run` |
 | GET | `/api/v1/prejudge/runs` · `/runs/{job_id}` | 初判紀錄（run 級 LLM 使用紀錄：批量/選取/單筆重新初判；詳情含 per-stage token/費用明細）|
-| POST/GET | `/api/v1/prejudge/prompt-sandbox/*` | 歸因列表「Prompt 測試」沙盒（ungated·不落正式初判）：啟動（可帶 `versions` 選版本、`drafts` 草稿全文快照、`compare` 雙跑對比）/ count 筆數預覽 / status 輪詢 / runs 測試歷史（詳情含 LLM log 快照；雙跑 run 另附 drafts 快照＋等價性 metrics）/ `runs/compare?a=&b=` 兩筆 run 結果對齊對比 |
-| GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照/判決轉移/備註三類事件；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
-| CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯/歷史/恢復默認/導出）+ Prompt 草稿暫存（`/drafts`·`/{code}/draft`，沙盒送測/雙跑對比用）+ `/{code}/validate` dry-run 驗證（不落庫）|
-| PATCH | `/api/findings/{id}/verdict` · `/batch/verdict` | 單筆/批量歸因人工判決（確認/駁回/new＝撤銷回待判決；同值冪等、轉移記入歸因歷史）。需權限，記判決人/判決時間 audit |
+| GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照／備註／初判失敗三類事件，內部遙測事件由後端白名單擋在外；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
+| CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯 / 歷史 / 恢復默認 / 導出 Prompt 包 zip）|
 | GET | `/api/auth/me`·`/permissions` | 當前身分（本地固定身分，無登入系統）+ 當前 user 權限清單（身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`；be2 `auth.business-list` 形狀 `{value,ttl}`，供前端 usePermission()/選單過濾）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 settings（機密設定表）。需 `data.datapack.export` 權限 |
 | POST/GET | `/api/admin/import{,/validate,/stream}` | 全庫資料包安全匯入（只灌白名單表·不執行 SQL）：乾跑校驗 → 確認匯入背景 job → SSE 進度。現行 `data.datapack.import` 在 `default`（人人可用）+ `AIQ_ALLOW_DATA_IMPORT` 環境閘保險 |
@@ -139,10 +137,10 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 ## 架構要點
 - **5 來源各自獨立表**（對齊源 schema、以特徵 id 為鍵），attributions 以 `(source, source_id)` 關聯回來源表；canonical 顯示欄由 `config/ai_judge/source_mapping.json` 統一還原。
 - **1:N 多歸因**：一則負向評論可判出多條獨立歸因（各自 finding_id、L1-L2、信心、初判階段），列表右側堆疊呈現、導出 fan-out。
-- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_versions` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
+- **判準 SSOT**＝`prompts/*.md`（Prompt-as-Source：7 支完整 prompt md，RuleManager「初判 Prompt」md 編輯 + DB `judge_rule_version_lst` append-only 版本化 + 檔案 fallback）；分類結構（域/L2 面向）由 `app.judge.prompt_source.structure()` 從 prompt 派生，初判引擎六域並行判斷（`prompt_pack`）。
 - **配置化 SSOT**：機密 → `backend/.env`；前後端共用非機密 → `config/`（業務可調）/ `constants/`（固定字典）。
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；無角色，email 直接授予 `config/global/permissions.json` 的 `default ∪ grants[email]`，`no_auth_grant_all=true` 時無條件全通過）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（原 pilot：auth login + AUTH.* error code，已隨去帳戶系統退役，下個 pilot 待選），詳見 `frontend/apps/console/src/i18n/README.md`。
 - **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，prejudge 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重新初判時規則未變動部分零 token 重用，顯式單筆重新初判不吃快取）。
-- **設定全項目共享**：`settings` 表固定讀寫 `__global__` 單例 row（`app/core/settings.py::GLOBAL_SETTINGS_KEY`）；LLM 連線層 `llm_connections`（每供應商一條 base_url，openai/gemini/bytedance）+ `llm_tokens`（per-provider 機密）與模型配置庫 `llm_model_configs`（全域具名配置扁平陣列；生效清單＝`config/global/llm_model.json` 出廠種子 ++ 本欄自訂，見 `all_model_configs()`）分離，`effective_llm_dict(s, area=, overrides=)` 為唯一收斂點且**只吃 flat 旋鈕、不認識「配置」抽象**。⚠️「哪個功能區用哪一筆配置」＝ `llm_area_configs`（area → config id），**同在 DB、團隊共用單一份**：功能區下拉選了就即時落庫（無儲存按鈕），一個人換配置同事下次進頁面也會是新的——這是 2026-07-31 拍板的取捨（換來「你調好的安排同事與新裝置能直接用到」），不是 bug。刪配置時同步剪除指向它的綁定；讀取端仍有「綁定 → 出廠 areaDefaults → 清單第一筆」三級回落。；QC DB 同構 `qc_connections`（每環境一條，sit/stage/production）+ `qc_passwords`。
+- **設定全項目共享**：`setting_master` 表固定讀寫 `__global__` 單例 row（`app/core/settings.py::GLOBAL_SETTINGS_KEY`）；LLM 連線層 `llm_connections`（每供應商一條 base_url，openai/gemini/bytedance）+ `llm_tokens`（per-provider 機密）與模型配置庫 `llm_model_configs`（全域具名配置扁平陣列；生效清單＝`config/global/llm_model.json` 出廠種子 ++ 本欄自訂，見 `all_model_configs()`）分離，`effective_llm_dict(s, area=, overrides=)` 為唯一收斂點且**只吃 flat 旋鈕、不認識「配置」抽象**。⚠️「哪個功能區用哪一筆配置」＝ `llm_area_configs`（area → config id），**同在 DB、團隊共用單一份**：功能區下拉選了就即時落庫（無儲存按鈕），一個人換配置同事下次進頁面也會是新的——這是 2026-07-31 拍板的取捨（換來「你調好的安排同事與新裝置能直接用到」），不是 bug。刪配置時同步剪除指向它的綁定；讀取端仍有「綁定 → 出廠 areaDefaults → 清單第一筆」三級回落。；QC DB 同構 `qc_connections`（每環境一條，sit/stage/production）+ `qc_passwords`。
 - **機密 at-rest 加密**：`llm_tokens` / `qc_passwords` 以 Fernet 加密落庫（`app/core/crypto.py`，key＝env `AIQ_SECRET_KEY`；既有明文列遷移用 `scripts/tools/encrypt_user_secrets.py`）。**正式環境（`APP_ENV≠development`）缺 `AIQ_SECRET_KEY` 拒啟動**（避免機密明文落庫）；dev 未設則明文直通並告警。`/api/settings/raw` 明文回顯全項目共享設定，屬**單機內網環境的有意識權衡**，部署公網前必須移除或補權限 gating（見 `settings.secret.read`）。
