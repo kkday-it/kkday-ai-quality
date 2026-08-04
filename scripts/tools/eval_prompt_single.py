@@ -72,7 +72,7 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
         rows = c.execute(
             text(
                 "SELECT rec_oid::text AS sid, coalesce(rec_title,'') AS t, coalesce(rec_desc,'') AS d "
-                "FROM reviews WHERE rec_oid::text = ANY(:ids)"
+                "FROM review_tbl WHERE rec_oid::text = ANY(:ids)"
             ),
             {"ids": ids},
         ).all()

@@ -51,7 +51,7 @@ from app.core.db import tables as T  # noqa: E402
 from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
 from app.judge import prejudge  # noqa: E402
 from app.judge.llm import client  # noqa: E402
-from app.judge.prompt_eval import _build_sandbox_item, compute_equivalence_metrics  # noqa: E402
+from app.judge.prompt_eval import _build_eval_item, compute_equivalence_metrics  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 EVAL_DIR = DATA_DIR / "eval"
@@ -136,7 +136,7 @@ def run_once(tag: str, workers: int) -> None:
     def _one(entry: dict) -> tuple[str, dict | None]:
         key = f"{entry['source']}:{entry['source_id']}"
         try:
-            item = _build_sandbox_item(entry["source"], entry["source_id"])
+            item = _build_eval_item(entry["source"], entry["source_id"])
             fs = prejudge.to_findings(item, model=model)
             return key, _summarize(fs)
         except Exception as e:  # noqa: BLE001  單筆失敗不毀整 run（報告記 null，比對時剔除）

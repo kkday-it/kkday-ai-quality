@@ -81,7 +81,7 @@ def _pick_target_order_oids(limit: int) -> list[str]:
     sql = text(
         """
         SELECT pr.order_oid, a.polarity
-        FROM reviews pr
+        FROM review_tbl pr
         JOIN attributions a
           ON a.source = 'reviews' AND a.source_id = pr.rec_oid AND a.is_primary = true
         WHERE a.polarity IN ('negative', 'neutral')

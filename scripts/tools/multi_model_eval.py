@@ -57,7 +57,7 @@ def _build_evalset(date_from: str, date_to: str, judged_only: bool) -> list[dict
     )
     q = (
         "SELECT DISTINCT pr.rec_oid, pr.rec_scores, pr.sentiment, pr.free_tag "
-        f"FROM reviews pr {join} "
+        f"FROM review_tbl pr {join} "
         "WHERE pr.free_tag IS NOT NULL AND pr.free_tag NOT IN ('','[]','null') "
         "AND pr.create_date >= :df AND pr.create_date < :dt "
         "ORDER BY pr.rec_oid"

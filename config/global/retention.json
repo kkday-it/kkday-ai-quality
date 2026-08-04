@@ -1,0 +1,24 @@
+{
+  "_comment": "資料保留期政策（維運可調，改此檔即生效，無需改碼）。由 scripts/ops/retention.py 消費，預設 dry-run 只報不刪。各項的判準見下方 _rationale——訂閾值前先想清楚『這份資料在什麼時間點之後不再有人讀』，而非憑感覺設天數。",
+
+  "llm_usage_lst": {
+    "_rationale": "per-call 用量明細只被聚合消費（成本 dashboard 按日/月彙總），沒有任何 per-call 的 UI。半年前的單筆呼叫紀錄無人查詢，但保留期要夠長以覆蓋『上季成本回溯』這種需求。",
+    "delete_older_than_days": 180
+  },
+
+  "prejudge_run_tbl": {
+    "_rationale": "run 的統計列（筆數/成功失敗/token/費用）要長期保留供成本回溯；但 run_log 是逐筆 LLM 對話快照，平均數十 KB/列、佔該表絕大部分體積，實際回看窗只有『跑完當下看一眼』。故只清 log 欄、保留統計列——端點對 log 為空已有 404 分支。",
+    "null_log_older_than_days": 30
+  },
+
+  "attribution_event_lst": {
+    "_rationale": "failure 事件的查詢條件是『該 source_id 最近一次成功初判之後的失敗』，一旦成功初判過，舊的 failure 永遠讀不到。prejudge 快照則是多模型對比與匯出的資料源，但兩者都只取 DISTINCT ON 最新一筆——保留數筆供人工回溯演進即足夠。note 為人工輸入，永久保留。",
+    "delete_superseded_failures": true,
+    "keep_prejudge_snapshots_per_model": 3
+  },
+
+  "prompt_debug_batch_artifacts": {
+    "_rationale": "跑批產物（輸入原檔 + jsonl + csv）落在 data/prompt_debug_batch/<run_id>/，目前零清理、永久堆積。三個月後的跑批產物已無人下載。",
+    "delete_dirs_older_than_days": 90
+  }
+}

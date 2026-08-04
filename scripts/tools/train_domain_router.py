@@ -39,7 +39,7 @@ from app.core.db import tables as T  # noqa: E402
 from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
 from app.judge import prejudge, prompt_source  # noqa: E402
 from app.judge.llm import client  # noqa: E402
-from app.judge.prompt_eval import _build_sandbox_item  # noqa: E402
+from app.judge.prompt_eval import _build_eval_item  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 WEIGHTS_PATH = DATA_DIR / "router" / "weights.json"
@@ -126,7 +126,7 @@ def main() -> None:
     print(f"▶ 訓練資料 {len(cases)} 案（負/中立已初判）· embedding={embed_model}")
     texts = []
     for cs in cases:
-        item = _build_sandbox_item(cs["source"], cs["source_id"])
+        item = _build_eval_item(cs["source"], cs["source_id"])
         texts.append(prejudge._text_of(item))
     vecs = _embed_texts(texts, embed_model)
     dim = len(vecs[0])
