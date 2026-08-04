@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -272,8 +271,7 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
         "retry_attempts": sum(max(0, (r.get("attempts") or 0) - 1) for r in all_results),
         "started_at": started_at,
         "finished_at": finished_at,
-        "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        "workspace_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
+        **common.git_provenance(),
         "total_input_tokens": sum(r.get("input_tokens") or 0 for r in all_results),
         "total_output_tokens": sum(r.get("output_tokens") or 0 for r in all_results),
         "total_latency_ms": sum(r.get("latency_ms") or 0 for r in all_results),

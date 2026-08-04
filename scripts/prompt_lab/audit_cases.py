@@ -16,7 +16,6 @@ import math
 import os
 import random
 import json
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -387,8 +386,7 @@ def main(argv: list[str] | None = None, *, gateway: Gateway | None = None) -> in
         "total_input_tokens": sum(a.get("input_tokens") or 0 for a in audits.values()),
         "total_output_tokens": sum(a.get("output_tokens") or 0 for a in audits.values()),
         "total_latency_ms": sum(a.get("latency_ms") or 0 for a in audits.values()),
-        "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        "workspace_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
+        **common.git_provenance(),
     }
     manifest_path = Path(args.out).with_name(Path(args.out).stem + "-manifest.json")
     manifest_path.write_text(json.dumps(audit_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

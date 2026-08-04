@@ -66,6 +66,12 @@ services:
       - ./config:/app/config                 # 前後端共用配置（熱編）
       - ./constants:/app/constants           # 固定參照字典（image 未含，此處補上）
       - ./prompts:/app/prompts               # 判決 Prompt 唯一真相源（prompts/*.md；熱編即生效，image 未含此處補上）
+      # 維運/評測腳本（image 未含）：scripts/README.md 的 `docker exec … python /app/scripts/…`
+      # 範例依賴此掛載；未掛時那些指令全數 No such file（曾長期斷鏈）。
+      - ./scripts:/app/scripts
+      # prompt_lab 評測資產（prompts_manifest.json / plans / schemas）：backend/tests/prompt_lab
+      # 的 23 個測試直接讀這些檔，未掛時整組 FileNotFoundError——是靜默的驗證缺口，不是測試壞了。
+      - ./evals:/app/evals:ro
       # runtime 派生產物（llm_cache / reports）：掛 host 免重建容器即清空——
       # 佐證/LLM 快取單筆重建成本 2.5~8.8s，重啟歸零會反覆打 production（訂單佐證閉環一併補此既有缺口）
       - ./data:/app/data

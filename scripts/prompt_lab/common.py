@@ -8,12 +8,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-
 
 _ENV_PATH = Path(__file__).resolve().parents[2] / "evals" / "prompt_lab" / ".env"
 
@@ -107,3 +107,26 @@ def confirm_cost_or_exit(
         )
         sys.exit(2)
     return n_calls
+
+
+def git_provenance() -> dict[str, Any]:
+    """跑批 manifest 的版本溯源欄（`git_commit` / `workspace_dirty`）。
+
+    容器內**沒有裝 git**（image 只放執行期所需，見專案環境鐵律），而溯源只是輔助欄位——
+    為了它讓整場評測在寫 manifest 時炸掉是本末倒置。取不到就記成 `unknown` / `None`，
+    讓報表看得出「這次沒有版本資訊」，而不是靜默寫個假的 commit。
+
+    Returns:
+        `{"git_commit": str, "workspace_dirty": bool | None}`；取不到時分別為
+        `"unknown"` 與 `None`。
+    """
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"git_commit": "unknown", "workspace_dirty": None}
+    return {"git_commit": commit, "workspace_dirty": dirty}
