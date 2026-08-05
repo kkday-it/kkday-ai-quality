@@ -324,7 +324,8 @@ def _coerce_row(table: Table, row: dict) -> dict:
         # ⚠️ 一律用 col.key（Python 名）不用 col.name（DB 名）：匯出端 `dict(row._mapping)` 與
         # 驗證端 `table.columns.keys()` 都是 key，此處若用 name，一旦有欄宣告 `Column("db_name",
         # key="py_name")`，資料包會通過驗證但匯入時每個鍵都 miss → **整表靜默寫入全 NULL**。
-        # 目前無任何欄用 key=，兩者相同；統一成 key 是為了拿掉這顆未爆彈。
+        # DDL 規範對齊後實際有 31 個欄用 key= 別名，兩者已不同——這顆未爆彈已經是活的，
+        # 由 test_datapack_round_trip_preserves_aliased_columns 以真往返守住。
         if col.key not in row:
             continue  # 缺欄＝NULL（由 DB 預設 / nullable 處理）
         val = row[col.key]
@@ -456,7 +457,7 @@ def dump_table_ndjson(conn: Any, name: str) -> tuple[bytes, int]:
     result = conn.execution_options(stream_results=True).execute(tbl.select())
     for row in result:
         # ⚠️ 以 `col.key`（Python 名）為鍵，**不可**直接用 `dict(row._mapping)`——後者是 DB 欄名。
-        # DDL 對齊後 34 個欄的 DB 名與 key 不同，匯入端 `_coerce_row` 查的是 key：兩端一旦分歧，
+        # DDL 對齊後 31 個欄的 DB 名與 key 不同，匯入端 `_coerce_row` 查的是 key：兩端一旦分歧，
         # 資料包會通過驗證卻**整表靜默匯入全 NULL**（P0.3 的註解預告過這顆未爆彈，此處拆除）。
         m = row._mapping
         buf.write(

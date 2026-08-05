@@ -10,8 +10,10 @@ autoincrement PK 表要進 `_SEQUENCE_TABLES`）目前**完全靠人工遵守**�
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from app.core import db
+from app.core.db import datapack
 from app.core.db import tables as T
 from app.core.db.datapack import (
     _LOAD_ORDER_TABLES,
@@ -92,32 +94,64 @@ def test_sensitive_tables_are_packed():
     assert not orphan, f"SENSITIVE_TABLES 含不在 TABLE_LOAD_ORDER 的表：{orphan}"
 
 
-def test_datapack_uses_column_key_consistently():
-    """datapack 的匯出／驗證／匯入三處必須一致以 `col.key`（Python 名）為鍵。
+def test_datapack_round_trip_preserves_aliased_columns(temp_db):
+    """有 `key=` 別名的欄位必須撐過 export → validate → import 的完整往返而不變 NULL。
 
-    DDL 規範對齊（2026-08-04）後，34 個欄位的 DB 名與 Python 鍵刻意不同
-    （`Column("feedback_source_code", key="source")` 之類）——DB 用規範名、Python 與 wire 維持原名。
-    這讓「三處取用不對稱」從理論風險變成**即時會炸的真風險**：匯出端 `dict(row._mapping)` 與驗證端
-    `table.columns.keys()` 都是 key，匯入端若改回 `col.name`，資料包會通過驗證卻**整表靜默匯入全 NULL**。
+    **這條不變式為什麼要用真的往返來測**：DDL 規範對齊後，31 個欄位的 DB 名與 Python 鍵
+    刻意不同（`Column("feedback_source_code", key="source")` 之類）。匯出端 `dict(row._mapping)`
+    與驗證端 `table.columns.keys()` 都是 **key**；匯入端若哪天改回 `col.name`，資料包會
+    **通過驗證卻整表靜默匯入全 NULL**——不報錯、不掉列數，只是內容沒了。
 
-    本測試鎖的是那個不變式本身（而非禁用 key= 別名）：拿真的有別名的表，確認
-    「匯出鍵集合 ＝ 驗證鍵集合 ＝ 匯入端查找的鍵集合」。
-
-    ⚠️ `_SEQUENCE_TABLES` 是刻意的例外，用 `col.name`——它餵給 `pg_get_serial_sequence()`，
-    那是 DB 層函式、只認 DB 欄名。
+    ⚠️ 本測試的前一版是**純套套邏輯**（2026-08-05 稽核抓到）：它拿
+    `tbl.columns.keys()`、`{c.key for c in tbl.columns}`、`{c.key for c in tbl.columns}`
+    三個**同一個 metadata 運算式**互相比對，完全沒碰 `datapack.py`，結構上不可能失敗。
+    斷言的依據不能是被測對象自己——要問一個獨立的事實源，這裡的事實源就是「資料真的還在嗎」。
     """
-    aliased_tables = [t for t in _LOAD_ORDER_TABLES if any(c.name != c.key for c in t.columns)]
-    assert aliased_tables, "預期至少一張入包的表有 key= 別名（DDL 對齊後）；若已無別名可刪除本測試"
+    # 挑一張有別名欄、且能用公開 API 落一列真資料的表：upload_batch_tbl
+    # （`batch_name` key=`name`、`feedback_source_code` key=`source`）
+    tbl = T.metadata.tables["upload_batch_tbl"]
+    aliased = {c.key: c.name for c in tbl.columns if c.key != c.name}
+    assert aliased, "upload_batch_tbl 已無別名欄——請改挑另一張有別名的表，或刪除本測試"
 
-    for tbl in aliased_tables:
-        validate_keys = set(tbl.columns.keys())  # 驗證端
-        export_keys = {c.key for c in tbl.columns}  # 匯出端（row._mapping 以 key 為鍵）
-        import_keys = {c.key for c in tbl.columns}  # 匯入端 _coerce_row
-        assert validate_keys == export_keys == import_keys, (
-            f"{tbl.name} 的三處鍵集合不一致——"
-            f"驗證 {sorted(validate_keys)} / 匯出 {sorted(export_keys)} / 匯入 {sorted(import_keys)}"
+    db.create_batch(
+        source="reviews",
+        source_label="評論",
+        original_name="roundtrip.xlsx",
+        row_count=7,
+        note="往返護欄",
+    )
+    before = {
+        r["batch_id"]: dict(r) for r in (db.list_batches() if hasattr(db, "list_batches") else [])
+    }
+
+    blob = datapack.build_datapack(include_sensitive=True, only=["upload_batch_tbl"])
+    report = datapack.validate_datapack(blob, include_sensitive=True)
+    assert report["ok"], f"資料包驗證未過：{report.get('errors')}"
+    datapack.load_datapack(blob, include_sensitive=True)
+
+    with T.get_engine().connect() as c:
+        rows = c.execute(select(tbl)).mappings().all()
+    assert rows, "往返後整表空了"
+    row = rows[0]
+    # 關鍵斷言：別名欄不能變 NULL——那正是「匯入端改用 DB 名」時會出現的靜默症狀
+    for key in aliased:
+        assert row[key] is not None, (
+            f"別名欄 {key}（DB 名 {aliased[key]}）往返後變成 NULL——"
+            f"匯出/驗證/匯入三處對 key vs name 的取用不一致"
         )
+    # 值也要對得上（不只是非 NULL）：`source` 是別名欄（DB 名 feedback_source_code），
+    # `original_name` / `note` 無別名，兩者並列可區分「別名欄壞了」與「整個往返壞了」。
+    assert (row["source"], row["original_name"], row["note"]) == (
+        "reviews",
+        "roundtrip.xlsx",
+        "往返護欄",
+    ), f"往返後值被改動：{dict(row)}"
+    if before:
+        assert set(before) <= {r["batch_id"] for r in rows}, "往返後掉了列"
 
+
+def test_sequence_tables_use_db_column_names():
+    """`_SEQUENCE_TABLES` 存的必須是 DB 欄名（它餵給 `pg_get_serial_sequence()`）。"""
     # 序列重置刻意用 DB 名（pg_get_serial_sequence 只認 DB 欄名）
     db_names = {(t.name, c.name) for t in _LOAD_ORDER_TABLES for c in t.columns}
     for tbl_name, col_name in _SEQUENCE_TABLES:
