@@ -133,7 +133,7 @@ attributions = Table(
         "create_date",
         DateTime(timezone=True),
         key="created_at",
-        comment="初判落庫時間（ISO 8601 字串）＝本列唯一時間源",
+        comment="初判落庫時間（timestamptz，UTC）＝本列唯一時間源",
     ),
     # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件。
     # 單獨的 source 述詞也吃這條（前綴欄），故不另開 source 單欄索引。
@@ -355,7 +355,7 @@ batches = Table(
         "create_date",
         DateTime(timezone=True),
         key="uploaded_at",
-        comment="上傳時間（ISO 8601 字串，含時區偏移）",
+        comment="上傳時間（timestamptz，UTC）",
     ),
     Column("note", Text, comment="使用者上傳時輸入的備註（每工作表一則，隨批次保存）"),
     Index("idx_upload_batch_tbl_unique01", "batch_id", unique=True),
@@ -382,7 +382,7 @@ settings = Table(
         "modify_date",
         DateTime(timezone=True),
         key="updated_at",
-        comment="最後更新時間（ISO 8601 字串）",
+        comment="最後更新時間（timestamptz，UTC）",
     ),
     Index("idx_setting_master_unique01", "key", unique=True),
     Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),

@@ -36,6 +36,18 @@ ORDER BY 1, 2
 # 欄位**順序**單獨比一次：上面那條 ORDER BY 欄名，天生看不到 ordinal_position 差異。
 # 實際踩過——`ADD COLUMN` 一律把欄位加在最後，於是「跑 migration 鏈的庫」與「create_all 的新庫」
 # 欄序不同（attribution_oid 在前者是第 21 欄、後者是第 1 欄），而原本的比對完全沒紅。
+# 註解也要比：本輪的主要交付物就是 13 表 + 126 欄的 COMMENT，而原本的比對 SQL 結構上
+# 看不到它——實測 tables.py 與 DB 曾漂移 2 欄（migration 與宣告寫了不同文字），沒有任何紅燈。
+_COMMENT_SQL = """
+SELECT c.relname, a.attname, d.description
+  FROM pg_description d
+  JOIN pg_class c ON c.oid = d.objoid
+  JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.objsubid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = 'public' AND d.objsubid > 0
+ ORDER BY 1, 2
+"""
+
 _COLUMN_ORDER_SQL = """
 SELECT table_name, ordinal_position, column_name
 FROM information_schema.columns
@@ -140,6 +152,7 @@ def _snapshot(url: str) -> dict[str, list[tuple]]:
             return {
                 "columns": [tuple(r) for r in c.execute(text(_COLUMNS_SQL))],
                 "column_order": [tuple(r) for r in c.execute(text(_COLUMN_ORDER_SQL))],
+                "comments": [tuple(r) for r in c.execute(text(_COMMENT_SQL))],
                 "indexes": [tuple(r) for r in c.execute(text(_INDEXES_SQL))],
                 "constraints": [tuple(r) for r in c.execute(text(_CONSTRAINTS_SQL))],
             }
@@ -166,7 +179,7 @@ def test_alembic_chain_matches_metadata(scratch_dbs):
         eng_b.dispose()
 
     snap_a, snap_b = _snapshot(url_a), _snapshot(url_b)
-    for label in ("columns", "column_order", "indexes", "constraints"):
+    for label in ("columns", "column_order", "comments", "indexes", "constraints"):
         only_alembic = sorted(set(snap_a[label]) - set(snap_b[label]))
         only_metadata = sorted(set(snap_b[label]) - set(snap_a[label]))
         assert not (only_alembic or only_metadata), (
