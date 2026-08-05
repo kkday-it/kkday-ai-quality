@@ -1,5 +1,9 @@
 # 任务 Prompt：C-1 判官 Prompt v2 设计与回归验证
 
+> 📌 **性质：2026-07-13 的一次性任务書，非系統現況說明。** 內容記錄的是當時交付給編碼 AI 的指令與
+> 當時的 baseline 實測結論；離線實驗室 `scripts/prompt_lab/` 至今仍在，但線上初判引擎的現況一律以
+> 根 `README.md`、`prompts/README.md` 與 code 為準。
+
 > 交给编码 AI 直接执行。上一阶段（Prompt Lab Phase 0–4 + baseline 实测）已完成，见
 > [`docs/C1-PROMPT-LAB-DEV-REPORT.md`](./C1-PROMPT-LAB-DEV-REPORT.md) 与 [`docs/PRD-C1-PROMPT-MOCK-EVAL.md`](./PRD-C1-PROMPT-MOCK-EVAL.md)。
 > 本任务只做「设计候选 prompt v2 + 用现成工具回归对比」，**不重建工具、不碰生产**。

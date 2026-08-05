@@ -13,14 +13,14 @@
 | `settings_store.py` | 全項目共享設定（`setting_master` 表·單例 `__global__` row）讀寫（`load_settings_row`/`save_settings_row`）。 |
 | `rule_versions.py` | 初判規則版本化（`judge_rule_version_lst`；active/歷史/恢復默認/seed）。`RULE_CODES`＝bd_tag_vertical + source_mapping + prompt_polarity + prompt_C-1~6（僅涵蓋商品分類/上傳表頭校驗/初判 Prompt 三類，不含 judgment 靜態設定）。 |
 | `ingest.py` | 批次（`upload_batch_tbl`）+ 來源表批量寫入/讀取（`insert_source_batch`/`get_items_by_ids`）+ `init_db`（**僅測試夾具用**：app 啟動與容器啟動都不再 create_all，schema 單一走 alembic）。 |
-| `findings.py` | `attribution_tbl` CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕/`get_finding`）。整組替換是**無承接**的：歸因列沒有人工可改欄位，故刪除前不撈舊值回填。 |
-| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、**拆欄快照快取**落本地 PG `evidence_snapshot_tbl` 表（PK=order_oid、一訂單一列、order 6h TTL 懶清理；ID/純量各自成欄、商品/規格/方案內容各自獨立 jsonb 欄，可直接對 DB grid 核對；不入 datapack）、讀出後在 `_assemble_tree()` 組裝成樹狀分組物件（order_summary/supplier_info/product_info/item_info/package_info/meta）供 API 消費、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials_any()`（env 服務帳號→當前 user→**全庫任一 production** 三層 fallback：佐證團隊共享唯讀不綁個人設定）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
+| `findings.py` | `attribution_tbl` CRUD（`insert_finding`/`replace_source_findings`〔重新初判整組替換，keyword-only `params`/`job_id`/`triggered_by` 供同交易寫入歸因歷史〕）。整組替換是**無承接**的：歸因列沒有人工可改欄位，故刪除前不撈舊值回填。 |
+| `qc_evidence.py` | **production 訂單佐證唯讀查詢層**（訂單佐證閉環）：7 表 allow-list JSONB 投影點查（PII 欄位永不投影＋tests 斷言鎖定）、**拆欄快照快取**落本地 PG `evidence_snapshot_tbl` 表（PK=`evidence_snapshot_oid` serial、一訂單一列由唯一鍵 `order_oid`〔`idx_evidence_snapshot_tbl_unique01`〕保證、order 6h TTL 懶清理；ID/純量各自成欄、商品/規格/方案內容各自獨立 jsonb 欄，可直接對 DB grid 核對；不入 datapack）、讀出後在 `_assemble_tree()` 組裝成樹狀分組物件（order_summary/supplier_info/product_info/item_info/package_info/meta）供 API 消費、in-process single-flight、熔斷器（連續失敗整批降級）、`resolve_credentials_any()`（env 服務帳號→當前 user→**全庫任一 production** 三層 fallback：佐證團隊共享唯讀不綁個人設定）。⚠️ 過渡管道＝QC 共用 snapshot；終態＝SA/SD 專用 replica+服務帳號（切 env 即換，零改碼）。 |
 | `problems.py` | 統一問題列表（`_enrich_problem` + `_paged_fanout` 多歸因 fan-out + `list_problems`）。 |
 | `prejudge_targets.py` | 初判/再判目標選取（`prejudge_target_ids`，stage 驅動 + 列表全維度篩選。表級（兩分支皆套）：星等/日期/關聯 oid/有無外部評論，SSOT＝`_shared.apply_table_filters`；初判級（僅已初判分支）：傾向/信心分層/L1。與 list_problems 同一份語義）。 |
 | `attribution.py` | 歸因概覽聚合（`attribution_overview` + `attribution_breakdown`）。 |
-| `export.py` | 問題列表美化 xlsx 導出（⚠️ `item_ids`〔前端勾選〕下推至 SQL `natural_key IN (…)`——不下推的話選 20 筆也得先撈全表再記憶體過濾，實測 57s→0.4s；`review_tbl`/`conversation_tbl` 各有專屬版面 `_EXPORT_LAYOUTS`〔欄定義/分組/凍結欄數〕，欄寬於 `_style_header_grouped` 後覆寫回指定值、讓長表頭改用換行，否則會被撐到「表頭單行放得下」而凍結區近 200 字元寬）（1:N fan-out + review 級欄合併儲存格；資料表雙層表頭〔`_grouped_header_spans`/`_style_header_grouped`：列 1＝分類群組合併儲存格＋配色（原始反饋/訂單商品資料/AI 初判結果/人工判決，每個 `compare_models` 對比模型各自一色）、列 2＝具體欄位＋篩選箭頭，資料改自列 3〕；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；L1/L2 合併為單一「歸因分類」欄〔`_taxonomy_text`·同格換行：上行 C-N 域名、下行 C-N-M 細項·只判到 L1 時單行；L1 的 C-N 由 `_domain_cn_map` 從 prompt id 派生，因 `l1_code` 只存機器值〕；另附「分類統計」圖表表（見 `export_stats.py`）與「**Prompts**」工作表〔`_append_prompts_sheet`：7 支初判 prompt active 版本快照·版本 meta 取 `list_rule_meta`·全文 DB active 優先/檔案回退·初判溯源〕；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 `attribution_event_lst` 最新快照〔`_adapt_snapshot`·判決軸留空·**該模型未初判過的評論保留資料列、判定欄留白**（不整列排除，導出筆數與列表總數一致）·口徑寫統計表 A2〕；`compare_models`＝並排對比模型多選：基準右側每模型附一組 review 級欄「情緒·M/L1·M/L2·M」〔`_compare_cols`/`_compare_values`·值取該模型 `latest_snapshots`·鍵前綴 `cmp__{model}__*` 不撞 attr 級鍵故自動合併儲存格·未初判/判為無問題該欄空白〕）。 |
+| `export.py` | 問題列表美化 xlsx 導出（⚠️ `item_ids`〔前端勾選〕下推至 SQL `natural_key IN (…)`——不下推的話選 20 筆也得先撈全表再記憶體過濾，實測 57s→0.4s；`reviews`/`conversations` 兩來源各有專屬版面 `_EXPORT_LAYOUTS`〔欄定義/分組/凍結欄數＝11〕，欄寬於 `_style_header_grouped` 後覆寫回指定值、讓長表頭改用換行，否則會被撐到「表頭單行放得下」而凍結區近 200 字元寬）（1:N fan-out + review 級欄合併儲存格；資料表雙層表頭〔`_grouped_header_spans`/`_style_header_grouped`：列 1＝分類群組合併儲存格＋配色（評論資訊〔進線版＝進線資訊〕/訂單資訊/商品資訊/供應商資訊/AI 判決結果，每個 `compare_models` 對比模型各自一色）、列 2＝具體欄位＋篩選箭頭，資料改自列 3〕；polarity 整列底色正綠/中灰/負紅；行高顯式鎖定為排除長文欄（評論內容/商品名稱/方案名稱）後各欄所需高度；L1/L2 合併為單一「歸因分類」欄〔`_taxonomy_text`·同格換行：上行 C-N 域名、下行 C-N-M 細項·只判到 L1 時單行；L1 的 C-N 由 `_domain_cn_map` 從 prompt id 派生，因 `l1_code` 只存機器值〕；另附「分類統計」圖表表（見 `export_stats.py`）與「**Prompts**」工作表〔`_append_prompts_sheet`：7 支初判 prompt active 版本快照·版本 meta 取 `list_rule_meta`·全文 DB active 優先/檔案回退·初判溯源〕；`snapshot_model`＝輸出結果版本：內容/列傾向替換為該模型 `attribution_event_lst` 最新快照〔`_adapt_snapshot`·判決軸留空·**該模型未初判過的評論保留資料列、判定欄留白**（不整列排除，導出筆數與列表總數一致）·口徑寫統計表 A2〕；`compare_models`＝並排對比模型多選：基準右側每模型附一組 review 級欄「情緒·M/L1·M/L2·M」〔`_compare_cols`/`_compare_values`·值取該模型 `latest_snapshots`·鍵前綴 `cmp__{model}__*` 不撞 attr 級鍵故自動合併儲存格·未初判/判為無問題該欄空白〕）。 |
 | `export_stats.py` | 導出分類統計（由 in-memory rows 直接算情緒傾向/L1/L2/信心分層/初判階段分佈，附「分類統計」表；≤6 類圓餅、>6 類橫向長條）。所見即所得。 |
-| `llm_usage.py` | AI 使用紀錄（`llm_usage_lst`：per-call 寫入 + 消耗 dashboard 聚合 `llm_usage_overview`）。⚠️ `stage` 才是「這次呼叫由誰驅動」（polarity / C-1~C-6 / pack_* / prompt_debug / prompt_debug_batch / prompt_revise…）；`feedback_source_code`（wire 名 `source`）只放 5 個反饋來源 code，調試台與 AI 改寫等非來源驅動的呼叫留空。 |
+| `llm_usage.py` | AI 使用紀錄（`llm_usage_lst`：per-call 寫入 + 消耗 dashboard 聚合 `llm_usage_overview`）。⚠️ `stage` 才是「這次呼叫由誰驅動」（polarity / `attribute:<域>` / pack_C-N / eval_* / prompt_debug / prompt_debug_batch / prompt_revise / prompt_regression…；查實際落庫值：`SELECT DISTINCT stage FROM llm_usage_lst ORDER BY 1`）；`feedback_source_code`（wire 名 `source`）只放 5 個反饋來源 code，調試台與 AI 改寫等非來源驅動的呼叫留空。 |
 | `prejudge_runs.py` | 歸因歷史（`prejudge_run_tbl`：run 級——每次批量/選取/單筆重新初判一列；建檔/狀態回寫/終態統計 + 列表分頁 + `prejudge_run_detail` 聚合 `llm_usage_lst` per-stage 明細 + `any_judged` 重新初判判定）。 |
 | `attribution_history.py` | 歸因歷史（`attribution_event_lst`：**評論級** append-only 事件流——kind=`prejudge` 初判快照〔`insert_prejudge_event` 於 replace_source_findings 同交易寫入 + FOR UPDATE 防並發；model+params+result_digest 全欄位嚴格去重〕/ `note` 評論級備註 / `failure` 初判失敗留痕〔`insert_failure_event` best-effort 獨立交易·params.error·失敗筆不落 `attribution_tbl` 的唯一痕跡·供前端查因 + prejudge_targets 隱式重撈上限 max_implicit_retries〕/ `router_shadow` 域路由影子比對留痕〔domain_router.report_shadow best-effort·params 記 {candidates, hit, missed, probs}·供持續量測路由召回；**不進使用者時間軸**，`list_attribution_history` 以 `_USER_VISIBLE_KINDS` 白名單擋下〕。補 `attribution_tbl`「刪+插」重新初判不留痕缺口，model 維度供多模型對比；建表、回填既有已初判評論初始快照〔params.backfilled〕與其 partial index 原本各為獨立 revision，**已併入 baseline v2 `94e60400715b`**，script 目錄查不到那些 id 是正常的；`latest_snapshots(source, model)`＝每評論該模型最新快照〔PG DISTINCT ON·快照導出用·走 partial index〕+ `list_prejudge_models()`＝歷來判過的模型清單〔`attribution_tbl` ∪ 快照 distinct·stub 排最後〕）。 |
 | `datapack.py` | 全庫資料包導出/匯入核心（`TABLE_LOAD_ORDER` 12 表 SSOT / `SENSITIVE_TABLES` / `current_alembic_head` / `validate_datapack` 乾跑白名單校驗 / `load_datapack` 單交易 truncate-load+序列重置 / `build_datapack` 匯出 zip）。匯入只灌白名單表·`table.insert()` 綁定參數·零 SQL 拼接；CLI `scripts/tools/dump_datapack.py` 與匯出端點共用打包邏輯。⚠️ `evidence_snapshot_tbl` 是可重建的快取，刻意不入包（故 12 表 ≠ metadata 的 13 張表）。 |
@@ -34,7 +34,7 @@
 - **squash 對既有環境的處理**：`schema_bootstrap.SQUASHED_REVISIONS` 登記 `a1d7e3f92b64 → 94e60400715b`；既有環境的 `alembic_version` 認不得已刪除的 revision 時，據此 `command.stamp(..., purge=True)` 重新蓋章再增量升級（`purge` 必要，否則 alembic 仍會嘗試解析那個已不存在的當前版本）。
   ⚠️ **此表刻意不與 `datapack.LEGACY_COMPATIBLE_HEADS` 共用**：後者回答「舊資料包欄位形狀還相容嗎」，目標即使後來又被 squash 掉仍有意義；前者的目標**必須是 script 目錄裡現存的 revision**，否則 stamp 直接拋 `Can't locate revision`。共用曾實際踩到這個坑，現由 `test_squash_targets_all_exist_in_script_directory` 守住。
   ⚠️ **只登記 squash 前的最終 head**，不登記中間版本——停在中間 revision 的環境 schema 其實落後，自動 stamp 會謊稱最新並永久漏掉 DDL。
-- **兩條護欄**（`backend/tests/`）：`test_schema_parity.py` 實際建兩個空庫、分別跑 alembic 鏈與 `metadata.create_all`，逐欄逐索引比對（這是真正的防漂移護欄）；`test_all_tables_have_create_migration.py` 為字面掃描，是前者的子集，待其穩定後可整支退役。
+- **兩條護欄**（`backend/tests/`）：`test_schema_parity.py` 實際建兩個空庫、分別跑 alembic 鏈與 `metadata.create_all`，比對五個面向：欄位／欄序／註解（`_COMMENT_SQL`）／索引／約束（這是真正的防漂移護欄）；`test_all_tables_have_create_migration.py` 為字面掃描，是前者的子集，待其穩定後可整支退役。
 - **新增表時**：務必在對應 migration 寫真實 `create_table`；baseline 只涵蓋 squash 當下已存在的表。
 - **下次 squash 的時機**：table 結構變化收斂穩定時才做；**平常一律照常開新 revision 檔**——每次 squash 都要重做整套收尾（`SQUASHED_REVISIONS` 登記＋回頭檢查舊條目目標是否還活著、`LEGACY_COMPATIBLE_HEADS` 登記、`seed.sql.gz` 重產、測試調整），頻繁做的成本遠高於讓檔案數量正常累加。
 
@@ -83,15 +83,20 @@ Python 與 wire 維持原名（`source`）。宣告方式：`Column("feedback_so
 
 **datapack 三處必須同軸**（皆用 `col.key`）：匯出 `dump_table_ndjson`、驗證 `columns.keys()`、
 匯入 `_coerce_row`。唯一例外是 `_SEQUENCE_TABLES` 用 `col.name`——它餵給 `pg_get_serial_sequence()`，
-那是 DB 層函式只認 DB 名。不變式由 `test_datapack_uses_column_key_consistently` 守住；
+那是 DB 層函式只認 DB 名。不變式由 `test_datapack_round_trip_preserves_aliased_columns`（實跑一次
+匯出→匯入往返，比對別名欄的值有無走失）＋ `test_sequence_tables_use_db_column_names`（守 `col.name`
+那個例外）守住；
 三處一旦分歧，資料包會**通過驗證卻整表靜默匯入全 NULL**。
 
 ## 欄位註解（COMMENT ON · DDL 規範）
 
 **13 張表的表註解與 126 個欄位註解的唯一真相源＝`tables.py` 的 `Table(comment=)` / `Column(comment=)`**，
-由四支 migration 依序落到 PG catalog（`pg_description`）：`f3d92a7c48be`（當時 9 張自建表 + 118 欄）
-→ `a8e5c31d0f62`（改名；comment 綁 attnum，改名不會弄丟）→ `b6f04a2e7d31`（補改名時新增的 serial PK
-與審計欄）→ `d9c173be5f8a`（5 張來源鏡像表的表註解）。
+由多支 migration 陸續落到 PG catalog（`pg_description`）。主線：`f3d92a7c48be`（起手，當時 9 張自建表
++ 118 欄）→ `a8e5c31d0f62`（純改名、本身不含 `COMMENT ON`；comment 綁 attnum，改名不會弄丟）
+→ `b6f04a2e7d31`（補改名時新增的 serial PK 與審計欄）→ `d9c173be5f8a`（5 張來源鏡像表的表註解）
+→ `f1b78d3a95c2`（重建欄序時整批重下）→ `c8a3e71f0b64` / `a3f6520ce8d1` / `c2d70b9e4f81`（逐次校正
+措辭與型別描述漂移）。當前實際帶 `COMMENT ON` 的 revision 以
+`grep -l "COMMENT ON" backend/alembic/versions/*.py` 為準（現為 7 支）。
 改註解＝改 `tables.py` + 開新 revision，**不回頭改既有 migration**——那支的 SQL 是
 產生當下的凍結快照，理由同 baseline v2（migration 一旦讀執行期的 code，「這支 revision 做了什麼」
 就不再可重現）。

@@ -19,7 +19,7 @@ paths:
 | **機密**（token / 密碼 / private key）| `backend/.env`（Pydantic `Settings`）| `config.py`，同名大寫 env var 覆蓋 |
 | **跨環境會變的非機密**（DB URL / CORS origins / port / project id / timeout / 並發數）| `backend/.env`（有 dev default）| `config.py` |
 | **前後端共用「業務可調」非機密**（模型清單 / provider 目錄 / QC 連線預設 / 顯示 label / 定價）| `config/global/*.json` | 後端 `settings.py`、前端 `@config/global/*` **同讀一份**（SSOT）|
-| **初判領域**（verdict / L1-L2 判準 / 來源欄位映射 / 信心分層閾值）| `config/ai_judge/*.json` | 後端 lazy load、前端 import 同一 JSON |
+| **初判領域**（極性閘門 / 證據政策 / 來源欄位映射 / 信心分層閾值 / 管線顯示 label / 自動採納路由）| `config/ai_judge/*.json` | 後端 lazy load、前端 import 同一 JSON |
 | **前後端共用「固定參照」常數**（enum / 代碼字典，如 traveller_type 代碼→文案、狀態碼→中文，非業務可調）| `constants/<維度>/*.json`（repo 根，按維度分子資料夾）| 後端 `paths.CONSTANTS_DIR`、前端 `@constants/<維度>/*` **同讀一份**（SSOT）|
 | **純前端 UI**（Arco 色 token / 分頁大小 / 輪詢間隔 / 元件私有常數）| `frontend/.../features/*/constants/*.constant.ts` | barrel `index.ts` 出口 |
 
@@ -28,7 +28,7 @@ paths:
 > - `constants/`＝**固定參照**常數（enum、代碼→文案字典、對照表）——工程師維護、變動低頻、通常來自外部權威來源（如 kkday-member-ci）。按**維度**分子資料夾（如 `constants/labels/`）。
 > - 兩者皆前後端同讀同一份 JSON：前端 `@config` / `@constants` alias，後端 `paths.CONFIG_DIR` / `paths.CONSTANTS_DIR`。
 
-> **SSOT 鐵律**：同一語義的值（如 verdict 中文 label、來源清單、模型名、代碼字典）**只准有一份真相源**。前端顯示 verdict label → 讀 `config/ai_judge/verdicts.json`；顯示 traveller_type 文案 → 讀 `constants/labels/*.json`，**禁止**在前端另寫一份翻譯。前後端都用到 → 進 `config/` 或 `constants/`，禁各寫一份。
+> **SSOT 鐵律**：同一語義的值（如初判階段/信心分層/傾向的中文 label、來源清單、模型名、代碼字典）**只准有一份真相源**。前端顯示初判階段 / 信心分層 / 傾向 label → 讀 `config/ai_judge/prejudge.json` 的 `stage_labels` / `tier_labels` / `polarity_labels`；顯示 traveller_type 文案 → 讀 `constants/labels/*.json`，**禁止**在前端另寫一份翻譯。前後端都用到 → 進 `config/` 或 `constants/`，禁各寫一份。
 
 ## 一鍵啟動引導鐵律（start.sh 零配置）
 

@@ -6,10 +6,10 @@ UI 文案外部化框架。設計目標同權限框架：**現只 zh-TW 單語�
 
 | 檔                        | 職責                                                                                                                                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loader.ts`               | **唯一可替換接縫** `loadLocaleMessages(locale)`：預設 Vite `import.meta.glob` 靜態讀 `locales/<locale>/*.json`；**be2 挖字分支已備**——auth.config.json `be2.langPlatform` 註冊後自動改走 `GET {apiLangUrl}/api/v1/uiLangList?lang[]=&platform=`（Bearer·攤平 map 直餵 vue-i18n·失敗降級靜態）；**Klingon 模式** `localStorage['locale.klingon-active']='1'` 譯文前置 `(key) ` 供 QA 核對挖字。i18n instance / `$t` / 元件全不動。 |
+| `loader.ts`               | **唯一可替換接縫** `loadLocaleMessages(locale)`：預設 Vite `import.meta.glob` 靜態讀 `src/locales/<locale>/*.json`；**be2 挖字分支已備**——auth.config.json `be2.langPlatform` 註冊後自動改走 `GET {apiLangUrl}/api/v1/uiLangList?lang[]=&platform=`（Bearer·攤平 map 直餵 vue-i18n·失敗降級靜態）；**Klingon 模式** `localStorage['locale.klingon-active']='1'` 譯文前置 `(key) ` 供 QA 核對挖字。i18n instance / `$t` / 元件全不動。 |
 | `index.ts`                | vue-i18n（`legacy:false` Composition API + `globalInjection`）instance + `setupI18n(locale)`（mount 前 `.then` 載入）。                                                                                                      |
 | `apiError.util.ts`        | 後端錯誤 code → i18n 翻譯橋接：`errorCodeToI18nKey(code)`（唯一轉換點·`errors.<CODE>`）+ `translateApiError(err)`（有 code 且有對映則翻譯，否則回退後端 message）。                                                          |
-| `locales/<locale>/*.json` | 分 namespace 訊息（現僅 common，其餘按需新建）；key＝`<namespace>.<page>.<語意>`。                                                                                                                                          |
+| `../locales/<locale>/*.json` | 訊息本體**不在本夾**，在 `src/locales/`（loader 的 glob 是 `../locales/*/*.json`，filename＝namespace）；現僅 `zh-TW/common.json`，其餘按需新建。key＝`<namespace>.<page>.<語意>`。                                                                                                                                          |
 
 ## 用法
 

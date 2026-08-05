@@ -1,5 +1,10 @@
 # C3／C4／C5／C6 Mock 生成与 GPT-5.4-mini Judge 跑批：主执行 Prompt
 
+> 📌 **性质：2026-07-15 交付給外部執行 AI 的主 Prompt 逐字存檔，非系統現況說明。**
+> 內文（含下方 `text` 區塊）維持交付當下的原樣，其中工作區路徑寫的是當時執行者的機器
+> （`/Users/jason/Project/kkday-ai-quality`，共 11 處）——**重複使用本 Prompt 前務必整批換成自己的
+> repo 路徑**。線上初判引擎的現況一律以根 `README.md`、`prompts/README.md` 與 code 為準。
+
 > 用法：把本文「可直接复制的完整 Prompt」整段交给另一个具备本项目文件系统、终端和网络权限的 AI。它的任务不是再写方案，而是完成实现、真实跑批、报告和验证。
 
 ---

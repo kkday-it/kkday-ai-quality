@@ -1,6 +1,7 @@
 # 上游參考 repo 追蹤（Upstream References）
 
-AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5 自建，但
+AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，歸因鏈自建（六域初判 L1 域／L2 面向；
+售後根因另有 L1～L4 四層），但
 **唯一沿用**以下審品/撰寫專案已驗證的 prompt / 規則作為判斷依據。本檔記錄上游 repo 角色、
 **追蹤基線提交**與沿用狀態，供持續跟進上游最新提交、同步法典/prompt 變更。
 
@@ -13,7 +14,7 @@ AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5
 |---|---|---|
 | `ProductContentAIChecker` | 審品(tour_flow_v1 G1/G3) + 撰寫(writer) + 過期(general_v1 GEN-1)。最早的規則-as-prompt 工具。 | ⚠️ **待重新確認**：原沿用深度 prompt + machine_checks + rules.json → `backend/app/judge/vendored/`，但該目錄已在 commit `4c8a8fb`（判決引擎 teardown）中移除，此列引用的路徑已不存在，待重新確認現行沿用路徑 |
 | `ai_review_system` | **審品系統 review_v1（最新）**：逐欄位審品 12 欄 Pass/Failed，Rule1~Rule8（P0 平台禁止，含多模態圖片）+ Rule4 類目匹配（40 類目 per-category prompt）+ 乾淨 per-field 規則引擎。零相依 ProductContentAIChecker。 | **待評估沿用**：Rule1-8 / rule4_leaves 類目 prompt 可作欄位級/類目級判決參考；尚未 vendored |
-| `kkday-ai-quality` | **AI 法官**（本專案）：事後內容爭議裁決，L1-L5 判決鏈、法典配置、dashboard。 | 主體 |
+| `kkday-ai-quality` | **AI 法官**（本專案）：事後內容爭議裁決，歸因鏈（六域 L1/L2）、法典配置、dashboard。 | 主體 |
 
 ## 追蹤基線（baseline，截至 2026-06-24 盤點）
 
@@ -39,4 +40,4 @@ AI 法官（本專案 `kkday-ai-quality`）為**獨立項目**，判決鏈 L1-L5
 1. 定期（或啟動相關工作前）跑跟進指令，看上游基線後新提交。
 2. 若新提交動到 prompt / 規則 / 機檢邏輯 → 評估是否影響本專案 vendored 或法典配置。
 3. 需同步者：重新 vendor 對應檔（ProductContentAIChecker）或新 vendor（ai_review_system），更新 `vendored/MANIFEST.md` 與本檔基線 hash。
-4. 法典變更現直接反映在 `prompts/*.md`（judge prompt 唯一真相源）——可由開發者直接編輯該檔案（作為 default seed），或透過 RuleManager 介面線上熱編輯（寫入 DB `judge_rule_versions` 存為 active 版，即時生效），兩者皆不經獨立 ETL 腳本。
+4. 法典變更現直接反映在 `prompts/*.md`（judge prompt 唯一真相源）——可由開發者直接編輯該檔案（作為 default seed），或透過 RuleManager 介面線上熱編輯（寫入 DB `judge_rule_version_lst` 存為 `is_active` 版，即時生效），兩者皆不經獨立 ETL 腳本。

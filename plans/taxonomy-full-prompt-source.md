@@ -22,7 +22,7 @@
 - **prompt `<facet_catalog>`**：可變深度——code 段數表層級（`C-1-1`＝2 層、`C-1-1-1`＝3 層…），parser 由 code prefix 建 parent；label 隨行。
 - **prompt `<domain_meta>`**（新區塊）：`label` / `action` / `owner` / `evidence_gated`（bool）。
 - **prompt `## Schema`**：`attributions[].code` enum＝facet_catalog 全 code（leaf 或任一層，看判準）；path 由樹派生，不由 LLM 輸出。
-- **DB attributions**：去 `l1_code/l1_label/l2_code/l2_label`（+idx）；加 `category_path`（JSONB `[{code,label}...]`）+ `category_code`/`category_label`（leaf，索引/篩選熱路徑）；保留 `domain`（引擎切分，內部）。
+- **DB attribution_tbl**：去 `l1_code/l1_label/l2_code/l2_label`（+idx）；加 `category_path`（JSONB `[{code,label}...]`）+ `category_code`/`category_label`（leaf，索引/篩選熱路徑）；保留 `domain`（引擎切分，內部）。
 - **DTO**：`{category_path:[{code,label}], category:{code,label}(leaf), stage, confidence, content, ...}`（去 l1/l2）。
 
 ## Phases（每階段獨立 commit + 驗證 + 分批推送）

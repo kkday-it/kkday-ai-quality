@@ -7,8 +7,9 @@
 兩者皆禁在前後端各寫一份（見 `.claude/rules/config-and-hardcode.md`）。
 
 ## labels/
-代碼 → 中文文案字典（如 `guide_lang` 導覽語系、`traveller_type` 旅客類型），源自 kkday-member-ci。
-檔名 `<name>.constant.json`。
+代碼 → 中文文案字典，源自 kkday-member-ci。檔名 `<name>.constant.json`。
+現有一支：`traveller_type.constant.json`（旅客類型 01~05，源自 member-ci `TravellerType.php`；
+前端經 `features/judge/constants/labels.constant.ts` 以 `@constants` alias 讀入）。
 
 > `labels/` 檔案少屬**刻意設計**（固定字典本就低頻新增）——勿因檔少把本目錄
 > 併進 `config/`；新維度比照既有慣例加子資料夾即可。

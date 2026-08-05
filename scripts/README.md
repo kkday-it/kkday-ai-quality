@@ -1,10 +1,11 @@
 # scripts/ — 開發腳本（按職責分層）
 
-**開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed）、
-`ops/`（生產維運：backup-db/restore-db/retention）、`audit/`（分析審計：accuracy_audit）、`tools/`（產生器/批次：multi_model_eval/persist_multimodel_history/taxonomy_health/eval_prompt_single/eval_equivalence/train_domain_router/dump_datapack）。
+**開發腳本收攏於此，按職責分子夾**：`dev/`（日常工作流：doctor/format/lint/test/seed + dump-seed/fetch-seed + evidence_probe/evidence_reconstruct_sql）、
+`ops/`（生產維運：backup-db/restore-db/retention/migrate_batch_summary_keys）、`audit/`（分析審計：accuracy_audit）、`tools/`（產生器/批次：multi_model_eval/persist_multimodel_history/taxonomy_health/eval_prompt_single/eval_equivalence/train_domain_router/dump_datapack）、
+`prompt_lab/`（單域 Prompt Mock 評測實驗室，見下方表格末列）。
 **例外：`start.sh` / `stop.sh` 放 repo 根**（與 docker-compose 同級·onboarding 入口，clone 後一眼可見免翻子夾）。
 新腳本依職責放對應子夾；要跑什麼先看本表。與 backend 套件耦合的腳本（需 venv + import `app.*`）實體仍在
-`backend/`（`run.sh` / `seed_mock.py` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
+`backend/`（`run.sh` / `smoke_test.py`），這裡用**薄 wrapper** 委派，使「怎麼做 X」永遠在一處可查。
 
 | 腳本 | 用途 | 等價手動指令 |
 |---|---|---|
@@ -13,11 +14,12 @@
 | `./scripts/dev/dump-seed.sh` | 產全庫 seed（容器化 pg_dump plain+gzip → `docker/seed/seed.sql.gz`；`--sha` 印 checksum；免本機裝 PG client） | `docker compose exec -T db pg_dump --clean --if-exists -Fp kkdb_ai_quality \| gzip` |
 | `./scripts/ops/backup-db.sh` | 生產庫備份（容器化 pg_dump+gzip → `backups/db/`；`--keep N` 保留份數預設 7；crontab 排程範例見檔頭） | `docker compose exec -T db pg_dump --clean ... \| gzip` |
 | `./scripts/ops/migrate_batch_summary_keys.py` | **一次性**遷移跑批落盤 `summary.json` 的舊鍵名（`ok`→`ok_count`、`recent[].ok`→`succeeded`，2026-07-31 命名收斂的配套）；冪等、原子寫入，預設預覽、`--apply` 才寫。不跑的話歷史 run 在列表上全顯示「成功 0」 | `python3 scripts/ops/migrate_batch_summary_keys.py --apply` |
-| `./scripts/ops/retention.py` | **資料保留期清理**（維運週期性）：依 `config/global/retention.json` 清掉過期的觀測型資料——`llm_usage_lst` 逾期列 / `prejudge_run_tbl.log` 置 NULL（保留統計列）/ `attribution_event_lst` 已被取代的 failure 與每組超額的 prejudge 快照 / 逾期跑批產物目錄。**預設 dry-run 只報不刪**，`--apply` 才執行；`--only` 可挑項目。不碰 note 事件、當前初判、人工評判金標、版本庫與 5 張來源鏡像表 | `docker compose -f docker-compose.dev.yml exec backend python /app/scripts/ops/retention.py` |
+| `./scripts/ops/retention.py` | **資料保留期清理**（維運週期性）：依 `config/global/retention.json` 清掉過期的觀測型資料——`llm_usage_lst` 逾期列 / `prejudge_run_tbl.log` 置 NULL（保留統計列）/ `attribution_event_lst` 已被取代的 failure 與每組超額的 prejudge 快照 / 逾期跑批產物目錄。**預設 dry-run 只報不刪**，`--apply` 才執行；`--only` 可挑項目。不碰 note 事件、當前初判（`attribution_tbl`）、版本庫（`judge_rule_version_lst`）與 5 張來源鏡像表 | `docker compose -f docker-compose.dev.yml exec backend python /app/scripts/ops/retention.py` |
 | `./scripts/ops/restore-db.sh <file>` | 還原備份（**破壞性**·type-to-confirm；還原後 restart backend 自動補 migration） | `gunzip -c file \| docker compose exec -T db psql` |
 | `./scripts/dev/fetch-seed.sh` | 取得 seed（`SEED_URL` 下載/本地/LFS/`--sample`）；`--restore-if-empty` 空庫時還原（容器化 psql，免本機裝 PG client） | `gunzip -c docker/seed/seed.sql.gz \| docker compose exec -T db psql kkdb_ai_quality` |
 | `./scripts/tools/dump_datapack.py` | 導出全庫**資料包 zip**（ndjson+manifest，供前台安全匯入；`--include-sensitive`/`--tables`/`--out`） | `cd backend && .venv/bin/python ../scripts/tools/dump_datapack.py` |
-| `./scripts/dev/seed.sh` | 重置 mock 初判資料（20 筆全場景） | `cd backend && .venv/bin/python seed_mock.py` |
+| `./scripts/dev/seed.sh` | ⚠️ **目前不可用**：委派的 `backend/seed_mock.py` 已隨判決引擎 teardown 移除，執行必失敗。灌測試資料改走 `./scripts/dev/fetch-seed.sh --restore-if-empty`（真實 seed）| — |
+| `./scripts/dev/doctor.sh` | 環境自檢閘門（start.sh / 部署前置，冪等可重跑）：工具鏈 + 依賴 + DB + migration；預設檢測**並冪等自動修復**（cp .env / 裝依賴 / alembic upgrade），`--check` 為唯讀模式（CI / prod，有問題回非零）。系統級工具（python/node/pnpm/PostgreSQL）缺失只報告不擅自安裝 | `./scripts/dev/doctor.sh --check` |
 | `./scripts/dev/test.sh` | 後端 smoke test（零 key stub） | `cd backend && ./run.sh test` |
 | `./scripts/dev/lint.sh` | Lint 前後端（ruff + eslint） | `cd backend && .venv/bin/ruff check .` ＋ `cd frontend && pnpm lint` |
 | `./scripts/dev/format.sh` | 格式化前後端（Prettier + ruff format，鏈式/長行自動換行） | `cd frontend && pnpm format` ＋ `cd backend && .venv/bin/ruff format .` |
@@ -26,9 +28,11 @@
 | `./scripts/tools/eval_equivalence.py` | **管線等價性閘門**（升級計畫 P0）：`--build-golden` 建金標集（`attribution_tbl` 分層 md5 穩定抽樣）／`--run <tag>` 金標集全量走 production `to_findings`（不落庫·強制關 exact-cache 讀取）／`--compare A B` 出等價指標報告（噪音地板法：基線雙跑＝地板，改動 run 各指標 ≥ 地板 −1pp 才過閘） | `docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_equivalence.py --help` |
 | `./scripts/tools/train_domain_router.py` | **域路由器離線訓練**（升級計畫 P3）：歷史初判當標註 → embedding + per-domain LogisticRegression → holdout recall ≥0.995 選閾值（不達標/正樣本不足 → always_on）；產 `data/router/weights.json` + 訓練報告 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/train_domain_router.py` |
 | `scripts/prompt_lab/`（模組）| **C1–C6 單域 Prompt Mock 評測實驗室**（隔離·OpenAI Responses/Gemini API·**不碰生產 prejudge/DB/前端**）：`build_*_plans`/`build_manifest` → `generate_cases` → `audit_cases` → `build_dataset` → `evaluate_prompt`（+`metrics`/`report`）→ `compare_runs`，即「生成→獨立審核→人工複核→凍結 Dev/Holdout→跑 baseline→逐條除錯→換候選 Prompt→diff」。另附 `run_judge_debug_workbook.py`（**C-1～C-6 通用**）：對人工除錯工作簿自動偵測資料 Sheet 跑該域判官，裁決寫回新欄（欄名/格式**自動對齊該表**：C-1/C-2 style A `AI審核器·建議_V1_RESULT`＝`true/面向·status`；C3-C6 多域合併檔 style B `Auditor建議_V1_RESULT`＝`true｜code`）＋判官面向/信心/證據 companion；**多域合併檔**每 Sheet 依「受測域」自動路由各域 prompt（`--prompt-dir`），單域檔用 `--prompt`。支援 `--per-sheet-limit`／resume／OpenAI+Gemini 路由。用獨立 venv `.venv-promptlab`。完整說明見 [`evals/prompt_lab/README.md`](../evals/prompt_lab/README.md) | `.venv-promptlab/bin/python scripts/prompt_lab/evaluate_prompt.py --help`；測試 `.venv-promptlab/bin/python -m pytest backend/tests/prompt_lab` |
-| `./scripts/tools/taxonomy_health.py` | **歸因分類體系健檢**（多模型交叉診斷·零 LLM 成本）：不依賴人工真值，用 `attribution_event_lst` 現成多模型初判快照的一致率/分歧結構反推分類體系品質——L1/L2 成對集合 F1＋完全一致率 vs 隨機基準（合理性）、純 L1 邊界爭議混淆對（邊界模糊）、L2 使用分佈（粒度失衡）、層級效度（各域 L2 清晰度）；產 markdown 報告，改規則後重跑對比。⚠️封閉式侷限：能診斷「現有類好不好用」，「缺什麼類」需開放式歸因另探 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/taxonomy_health.py --out /tmp/taxonomy_health.md`（容器需先 `docker cp` 腳本，scripts/ 非掛載）|
+| `./scripts/audit/accuracy_audit.sh` | 初判歸因 **label-free 準確度報表**（純讀取不改資料）：薄 wrapper 委派 `accuracy_audit.py` → `app.judge.accuracy.run()`（Cleanlab confident-learning，含循環論證侷限聲明），輸出 `data/reports/accuracy.{md,json}`；DB / cleanlab 不可用時優雅降級為 skipped。需 backend venv 且已裝 `backend[accuracy]` extras | `cd backend && .venv/bin/python ../scripts/audit/accuracy_audit.py` |
+| `./scripts/tools/taxonomy_health.py` | **歸因分類體系健檢**（多模型交叉診斷·零 LLM 成本）：不依賴人工真值，用 `attribution_event_lst` 現成多模型初判快照的一致率/分歧結構反推分類體系品質——L1/L2 成對集合 F1＋完全一致率 vs 隨機基準（合理性）、純 L1 邊界爭議混淆對（邊界模糊）、L2 使用分佈（粒度失衡）、層級效度（各域 L2 清晰度）；產 markdown 報告，改規則後重跑對比。⚠️封閉式侷限：能診斷「現有類好不好用」，「缺什麼類」需開放式歸因另探 | `docker compose -f docker-compose.dev.yml exec -T backend python /app/scripts/tools/taxonomy_health.py --out /tmp/taxonomy_health.md` |
 | `./scripts/tools/eval_prompt_single.py` | **單支 Prompt 評測 harness**（調適閉環驗證端，Prompt-as-Source）：對 7 支 `prompts/*.md` 逐支獨立驗證——prompt 由 `prompt_source.load()` 即時解析（DB active 優先→檔案 fallback，天然不過期），對 N 則已初判評論（md5 穩定排序＝跨 run 可比）與 production `attribution_tbl` 比對。域 prompt 指標：primary 一致率/棄權正確率/命中率/多報率；polarity：極性＋sentiment 一致率。token 走全項目共享設定（stub 拒跑）、關 exact-cache 讀。調適閉環：規則配置頁「初判 Prompt」編輯對應域 md → `--prompt C-3 --n 20` 驗證 → 達標後存檔 | `docker exec kkday-ai-quality-backend python /app/scripts/tools/eval_prompt_single.py --prompt C-3 --n 20 --out /app/tmp/eval_C-3.json` |
-| `./scripts/dev/evidence_probe.py` | **訂單佐證取數驗證**（S1 單筆核對 `--single <order_oid>`／S2 批量壓測 `--batch --limit N --concurrency M`）：走 `qc_evidence` 正式投影路徑打 production snapshot——單筆逐欄核對＋PII 掃描；批量出延遲分佈（p50/p95/max）＋964 筆外推閘門判定，報告落 `data/reports/`。憑證取全項目共享設定（`setting_master` 表）的 production QC 連線 | `docker cp scripts/dev/evidence_probe.py kkday-ai-quality-backend:/tmp/ && docker exec -w /app/backend kkday-ai-quality-backend python /tmp/evidence_probe.py --single 47406070` |
+| `./scripts/dev/evidence_probe.py` | **訂單佐證取數驗證**（S1 單筆核對 `--single <order_oid>`／S2 批量壓測 `--batch --limit N --concurrency M`）：走 `qc_evidence` 正式投影路徑打 production snapshot——單筆逐欄核對＋PII 掃描；批量出延遲分佈（p50/p95/max）＋964 筆外推閘門判定，報告落 `data/reports/`。憑證取全項目共享設定（`setting_master` 表）的 production QC 連線 | `docker compose -f docker-compose.dev.yml exec -T backend python /app/scripts/dev/evidence_probe.py --single 47406070` |
+| `./scripts/dev/evidence_reconstruct_sql.sql` | 訂單佐證「拆欄版」重建 SQL（**非可執行腳本·對照用查詢**）：每一欄對應 `evidence_snapshot_tbl` 的一個真實欄位，可逐欄與快取列直接核對；對 production snapshot（kkdb）執行 | 於 psql `\set oid 49446327` 後貼入本檔內容（或字面替換 `:oid`）|
 
 ## 統一格式化 / Lint 規則（ready-made，零調校）
 
@@ -44,4 +48,4 @@
 
 埠：後端 8100（Swagger `/docs`）｜前端 5273。需 `pnpm`（`brew install pnpm`）；首次自動建 venv + 裝依賴。
 
-> 為何不全搬進 scripts/：`backend/run.sh` 用 `cd "$(dirname "$0")"` 假定自己在 `backend/`，`seed_mock.py`/`smoke_test.py` 需 backend venv 與 `app.*` import → 搬出會破壞路徑/import。原則：**腳本跟著它跑的東西放，跨域編排才進 scripts/**。
+> 為何不全搬進 scripts/：`backend/run.sh` 用 `cd "$(dirname "$0")"` 假定自己在 `backend/`，`smoke_test.py` 需 backend venv 與 `app.*` import → 搬出會破壞路徑/import。原則：**腳本跟著它跑的東西放，跨域編排才進 scripts/**。

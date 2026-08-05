@@ -43,7 +43,7 @@ docker compose -f docker-compose.dev.yml up -d --build backend
 ### Migration / 資料
 
 ```bash
-docker compose -f docker-compose.dev.yml restart backend      # 新 migration 自動套用（entrypoint 分流）
+docker compose -f docker-compose.dev.yml restart backend      # 新 migration 自動套用（entrypoint 一律 alembic upgrade head）
 docker compose -f docker-compose.dev.yml exec backend python -m alembic current    # 看當前版本
 docker compose -f docker-compose.dev.yml exec backend python -m alembic upgrade head   # 手動升（通常不需要）
 ./scripts/dev/dump-seed.sh                                    # 產全庫 seed（docker/seed/seed.sql.gz）
@@ -100,9 +100,9 @@ docker compose logs -f backend
 `config/global/permissions.json` 的 `no_auth_grant_all=true` 全通過（單機內網環境天然無存取控制）。
 若要限縮特定操作（如改 LLM 連線）給特定人，把 `no_auth_grant_all` 改 `false` 並在 `grants[email]`
 授予對應 business-key（見 `backend/app/core/permissions/README.md`）。
-**be2 接通後（`auth.config.json` `authProvider=be2`）**：登入走 be2 SSO，首登以 claims email 自動
-provision users row；權限改由 `permissions.json` 的 `default ∪ grants[email]` 判斷（同時把
-`no_auth_grant_all` 改 `false`）。
+**be2 接通後（`auth.config.json` `authProvider=be2`）**：登入走 be2 SSO，身分直接取自驗簽後的 token
+claims（`core/auth_verifiers.py`；**不落任何使用者表**）；權限改由 `permissions.json` 的
+`default ∪ grants[email]` 判斷（同時把 `no_auth_grant_all` 改 `false`）。
 ⚠️ production 設 `authProvider=be2` 需先完成 be2 token 驗簽（auth team server-to-server 契約）——未完成前後端啟動即拒（防未驗簽 token 上線）。
 
 **TLS**：`frontend/nginx.conf` 僅 `listen 80`——由外部 LB / 反向代理 / Ingress 終止 TLS 後轉發 8080，本檔不需改。
@@ -110,8 +110,10 @@ provision users row；權限改由 `permissions.json` 的 `default ∪ grants[em
 **備份 / 還原**：`./scripts/ops/backup-db.sh`（容器化 pg_dump + 保留策略，建議 crontab 每日跑）、
 `./scripts/ops/restore-db.sh <備份檔>`（破壞性，須輸入 yes 確認）。詳見 `scripts/README.md`。
 
-**be2 權限接入（上線時）**：實作 `backend/app/core/permissions/be2_provider.py` → `config/global/auth.config.json`
-`provider` 改 `"be2"` → 前端 `permission.api.ts::fetchPermissions` 換來源。僅此 3 檔，其餘零改動。
+**be2 權限接入（上線時）**：`backend/app/core/permissions/be2_provider.py` 已在（過渡實作＝委派
+LocalProvider，行為與 local 安全等價），補上正式 Auth SVC business-list 契約即可 → `config/global/auth.config.json`
+`provider` 改 `"be2"`（與 `authProvider` 兩鍵獨立，可先切登入後切權限）→ 前端
+`api/permission.api.ts::fetchPermissions` 換來源。僅此 3 檔，其餘零改動。
 
 > ⚠️ dev / prod 同專案名同服務名：**image 已分 tag（`:dev`/`:prod`）、容器名已分（`-prod` 後綴·皆無 `-1` 尾碼）**，
 > 但 compose 依 project+service label 識別，同一台機**仍不要同時跑兩形態**（up 會把對方容器換掉）；切換前先 down 另一邊。

@@ -6,7 +6,7 @@
 
 ## 0. 為什麼要做
 
-`prompts/conversations/root_cause_drafts/CHANGELOG.md` 現有四條版本記錄，每條的形狀都一樣：
+`prompts/conversations/root_cause_drafts/CHANGELOG.md` 的每條版本記錄，形狀都一樣：
 
 1. PM 給一個誤判案（AI 判 X、正解是 Y）
 2. 人逐段讀 2.7 萬字 Prompt，找出是哪幾句話把模型帶偏（「洞在哪」）
@@ -66,21 +66,23 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 皆無）。只有 corrections 的話，非 corrections 的欄要嘛全當正解（把當時判錯但沒被標到的欄也當成
 標準答案，分數虛高）、要嘛全部忽略（過度矯正就抓不到）——兩種都不對。後端擋同一欄同時出現在兩邊。
 
-**刻意不存的**：Prompt 全文快照。案例只記版本名，全文靠 `prompt_debug_versions.read_version()` 回查
-（版本檔 append-only 不改不刪，回查一定拿得到）；臨時編輯過的（`prompt_version=''`）就是回查不到，
-這種案例回歸時以「當時基準未知」標示，不阻斷。
+**刻意不存的**：Prompt 全文快照。案例只記版本名，全文靠 `prompt_debug_versions` 的
+`read_draft()` / `read_release()` 回查（版本檔 append-only 不改不刪，回查一定拿得到）；臨時編輯過的
+（`prompt_version=''`）就是回查不到，這種案例回歸時以「當時基準未知」標示，不阻斷。
 
 ## 3. 人工評判（頁內區塊）
 
-落點：`PromptDebugger.vue` 第三欄「AI 流式輸出」的結果卡區域。
+落點：`PromptDebugger.vue` 第三欄「AI 流式輸出」的結果卡區域，區塊本體抽為
+`components/PromptReviewPanel.vue`。
 
-- 現有 14 張結果卡（`displayedResults`）每張加「✓ 對 / ✗ 錯」二選一
-- 標錯 → 就地展開正解輸入。**控件依欄位型別自動決定，選項一律從後端 `output_schema` 派生，不手抄枚舉**：
+- 14 張結果卡（`displayedResults`，欄位清單來自後端 `prompt_debug.OUTPUT_FIELDS`）每張加「✓ 對 / ✗ 錯」二選一
+- 標錯 → 就地展開正解輸入。**控件依欄位型別自動決定，選項一律從後端 `output_schema` 派生，不手抄枚舉**
+  （推導邏輯在 `features/judge/utils/reviewControl.util.ts`）：
 
   | 欄位型別 | 控件 |
   |---|---|
   | enum（L1 / L2 / L3 / L4 / sentiment） | `a-select`（可搜尋；選項＝schema enum） |
-  | boolean（三個 flag + no_actionable_content） | `a-switch` |
+  | boolean（四個 flag：money_mention / fulfillment_mention / multi_issue / redirected_to_cancel，＋ no_actionable_content） | `a-switch` |
   | urgency（integer 1–5） | `a-radio-group type="button"` |
   | keywords（array） | `a-input-tag` |
   | summary / confidence | `a-textarea` / `a-input-number` |
@@ -128,18 +130,25 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 
 ### 4.3 套用
 
-`apply_patches(prompt, patches, selected_indices) -> str`：依 anchor 在全文中的位置**由後往前**替換
+`apply_patches(system_prompt, patches) -> str`（只收已被勾選的補丁）：依 anchor 在全文中的位置**由後往前**替換
 （先替換靠後的，前面的 offset 才不會位移）。套用在後端而非前端：唯一性驗證與替換順序是正確性核心，
 兩邊各寫一份必然 drift，且套完的全文要直接餵給既有的「存為新版本」。
 
 ### 4.4 UI
 
-新抽屜 `PromptReviseDrawer.vue`（右側，寬 1040，`defineAsyncComponent` 懶載）：
+抽屜 `PromptReviseDrawer.vue`（右側，寬 1240）。實作收斂為單一流水線導引（`a-steps type="navigation"`，
+未達前置條件的步號不可點），各步面板以 `defineAsyncComponent` 懶載：
 
-- **左**：案例清單（勾選要餵給 AI 的）＋ 本次 LLM 配置（`LlmConfigPicker` + `LlmKnobs`，area=`prompt_revise`）
-- **右**：AI 診斷 → 補丁清單（每條：原文片段 / 替換後 / 理由 / 風險 / 命中狀態 / 勾選框）
-- **套用後**：`MdTextDiff`（既有公共元件）左右對照 → 「存為新版本」（既有 `savePromptDraft`）
-  ＋ CHANGELOG 條目草稿可一鍵複製
+| 步 | 面板 | 內容 |
+|---|---|---|
+| 1 選案例 | 抽屜內建表格 | 本地案例清單（勾選要餵給 AI 的） |
+| 2 AI 改寫 | `PromptRevisePanel.vue` | 本次 LLM 配置（`LlmConfigSelect` + `useLlmAreaConfig('prompt_revise')`）→ AI 診斷 → 補丁清單（每條：原文片段 / 替換後 / 理由 / 風險 / 命中狀態 / 勾選框）→ 套用後 `MdTextDiff`（既有公共元件）左右對照；CHANGELOG 條目草稿可一鍵複製 |
+| 3 回歸驗證 | `PromptRegressionPanel.vue` | 見 §5。候選 Prompt 或勾選案例集合一變動即判回歸結果失效（`stale`），步號標紅、④重新鎖上——否則會拿補丁 A 的綠燈發布補丁 B |
+| 4 定案發布 | `PromptReleaseStep.vue` | 存為新草稿 → 就地升為正式版，與當前正式版 `MdTextDiff` 對照 |
+
+三個狀態 composable（`usePromptReviewCases` / `usePromptRevise` / `usePromptRegression`）都由抽屜持有、
+props 下傳，面板只讀不寫：④的閘門要同時看「候選版＋回歸結果＋草稿名」，狀態散在面板裡會變成雙份真相。
+閘門判斷抽成純函式 `features/judge/utils/pipelineGate.util.ts`（有單測）。
 
 ## 5. 回歸重跑
 
@@ -153,46 +162,51 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 彙總回四格計分 ＋ 逐案例列出改壞/未修好的欄（欄名、應為、實得）。有任何「改壞」即在頁面上紅字
 攔阻：這版不該直接上線。
 
-實作走輕量 in-mem job（比照 `prompt_sandbox.py` 的 `JobStore` pattern，該檔 docstring 已明說這是
-「小規模調適用途、不需要正式批量管線的控制項」的既有輪子），**不用** `prompt_debug_batch`——
-那條是檔案上傳導向、有 run 目錄與斷點續跑，回歸是 DB 來源、通常 <50 條、比對邏輯完全不同。
+本體 `backend/app/judge/prompt_regression.py`，走輕量 in-mem job（共用 `app.core.job_registry.JobStore`），
+**不用** `prompt_debug_batch`——那條是檔案上傳導向、有 run 目錄與斷點續跑；回歸案例由請求整包帶上
+（單次上限 50 條）、比對邏輯完全不同，且行程重啟即清空（回歸本來就是「跑完當場看」的動作）。
 
 **這段不是加分項**：沒有它，AI 改完 Prompt 只能確認「那一條修好了」，不知道有沒有順手弄壞另外二十條。
-CHANGELOG 四條版本記錄每一條都做了回歸，就是因為這事真的會發生（2026-07-27-225310 那條就攔下一次
+CHANGELOG 每一條版本記錄都做了回歸，就是因為這事真的會發生（2026-07-27-225310 那條就攔下一次
 過度矯正：初版把「商品規格」寫進判準，把配備詢問案吸走，靠回歸才發現）。
 
 ## 6. 配置與權限
 
-- `config/global/llm_model.json` 的 `areas` 新增 `"prompt_revise"`，預設模型 gpt-5.5（最新旗艦）。
-  與裁決用的功能區分開：裁決要便宜（跑批 gpt-5.4-mini），改 Prompt 要聰明。
-- 權限沿用既有：存案例 / 跑 AI 改寫 / 回歸重跑 → `PREJUDGE_RUN`；存為新版本 → `JUDGE_RULE_MANAGE`。
+- `config/global/llm_model.json` 的 `areas` 新增 `"prompt_revise"`，`areaDefaults` 綁到具名配置
+  `seed-openai-flagship`（gpt-5.5，`reasoning_effort: high`）。與裁決用的功能區分開：裁決要便宜，
+  改 Prompt 要聰明。
+- 權限沿用既有：跑 AI 改寫 / 回歸重跑 / 存為新草稿 → `PREJUDGE_RUN`；升為正式版（`/releases`、
+  `/releases/{name}/activate`）→ `JUDGE_RULE_MANAGE`。存案例只寫瀏覽器本地，不經後端、無權限檢查。
 
 ## 7. API
 
+案例存在瀏覽器本地（見 §2），故**沒有** `/prompt-debug/reviews` 這組 CRUD；下列四個端點都由請求
+整包帶上 `cases[]`（`PromptDebugCaseIn`，單次上限 50 條），後端純運算不持久化。權限見 §6。
+
 | 方法 | 路徑（前綴 `/api/v1/prejudge`） | 用途 |
 |---|---|---|
-| POST | `/prompt-debug/reviews` | 存一則評判案例 |
-| GET | `/prompt-debug/reviews` | 案例列表（新→舊） |
-| DELETE | `/prompt-debug/reviews/{id}` | 刪案例 |
-| POST | `/prompt-debug/revise` | 依選中案例產出補丁清單（含 anchor 命中狀態） |
+| POST | `/prompt-debug/revise` | 依選中案例產出補丁清單（含 anchor 命中狀態），SSE 串流 |
 | POST | `/prompt-debug/revise/apply` | 套用選中補丁，回新全文 |
 | POST | `/prompt-debug/regression` | 啟動回歸重跑，回 job_id |
 | GET | `/prompt-debug/regression/{job_id}` | 回歸進度 / 結果輪詢 |
+
+原掛在 POST `/reviews` 上的兩條契約驗證（欄名須屬 `prompt_debug.OUTPUT_FIELDS`、同一欄不得既標對又標錯）
+已搬進 `PromptDebugCaseIn` 的 validator——那是案例進入後端的唯一入口。
 
 ## 8. 交付批次
 
 | 批 | 內容 | 完成後可用 |
 |---|---|---|
-| 1 | 表 + migration + CRUD + 頁內評判區塊 | 能標、能存、能看案例 |
+| 1 | 案例庫（原設計為 DB 表，實作後改為前端本地 store，見 §2）+ 頁內評判區塊 | 能標、能存、能看案例 |
 | 2 | `prompt_reviser` + revise/apply 端點 + `PromptReviseDrawer` | 閉環可用：評判 → AI 改 → diff → 存版 |
-| 3 | 回歸 job + 結果比對 + 抽屜分頁 | 安全網：改完能驗有沒有改壞 |
+| 3 | 回歸 job + 結果比對 + 抽屜對應步驟 | 安全網：改完能驗有沒有改壞 |
 
 每批各自可跑、各自 commit。
 
 ## 9. 文檔同步清單（依 `.claude/rules/docs-sync.md`）
 
-- 根 `README.md` API 一覽表（7 個新端點）
-- `backend/app/api/README.md`、`backend/app/judge/README.md`、`backend/app/core/db/README.md`
+- 根 `README.md` API 一覽表（4 個新端點，見 §7）
+- `backend/app/api/README.md`、`backend/app/judge/README.md`
 - `config/README.md`（新 area）
 - `frontend/apps/console/src/features/README.md`
 - `docs/README.md`（本檔進索引）

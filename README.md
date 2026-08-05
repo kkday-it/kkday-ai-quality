@@ -9,7 +9,7 @@
 ## 技術棧
 - **後端**：Python 3.10+ / FastAPI + SQLAlchemy Core + **PostgreSQL**（Alembic 遷移）+ OpenAI SDK（Structured Outputs）+ Pydantic
 - **前端**：Vue3 + Vite + **Arco Design Vue** + Pinia + vue-echarts + vue-i18n（可替換 i18n 框架）
-- **LLM**：OpenAI gpt-5 系列（無 key 時走 stub 啟發式，可零 key 走通閉環）
+- **LLM**：三供應商可選（openai gpt-5 系列 / gemini / bytedance seed；統一經 OpenAI SDK ＋ per-provider `base_url`，見 `config/global/llm_model.json`）。無 key 時走 stub 啟發式，可零 key 走通閉環
 - **啟動 / 部署**：**Docker Compose**——一鍵 `./start.sh`（dev·hot reload）／生產 `docker compose up`（nginx 靜態 + 後端單 worker）。**macOS 只需先有 Homebrew**（start.sh 自動裝並啟動 colima 引擎），PG 與所有依賴皆在容器內。
 - 文檔地圖見 [docs/README.md](./docs/README.md)（歷史選型與早期 spec 已封存於 `docs/archive/`，僅供追溯非現行契約）
 
@@ -35,12 +35,12 @@ backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
     api/                     # FastAPI gateway（main.py + routers/v1）
   alembic/                   # schema 遷移
   tests/ · fixtures/
-config/                      # 前後端共用非機密配置 SSOT（global/ + ai_judge/）
+config/                      # 前後端共用非機密配置 SSOT（global/ + ai_judge/ + overview/）
 constants/                   # 固定參照常數字典 SSOT（labels/）
 frontend/                    # pnpm workspace（Vue3+Arco+ECharts）
-  apps/console/src/features/ # judge / settings / overview / auth（feature-based）
+  apps/console/src/features/ # judge / settings / overview / usage / auth（feature-based）
   packages/types
-scripts/                     # 開發腳本（dev/ · audit/ · tools/，見 scripts/README.md）
+scripts/                     # 腳本（dev/ · ops/ · audit/ · tools/ · prompt_lab/，見 scripts/README.md）
 docs/                        # 文檔地圖（README）· archive/（過時 spec 封存）
 start.sh · stop.sh           # 一鍵啟動 / 停止（repo 根·onboarding 入口；stop 只停止·資料一律保留）
 docker-compose.yml           # 生產編排（PG + backend 單worker + frontend nginx）
@@ -87,7 +87,7 @@ docker compose -f docker-compose.dev.yml down -v              # ⚠️ 毀滅性
 # 或手動注入（CI / secret manager）：兩者皆必填（缺/弱即拒啟動），生成：python -c "import secrets;print(secrets.token_urlsafe(32))"
 POSTGRES_PASSWORD=<pg-pass> AIQ_SECRET_KEY=<enc-key> docker compose up -d --build
 ```
-> 後端目前單 worker：4 套背景 job registry（導出/導入/初判/上傳）為 in-mem，多 worker 會使 job/SSE/下載落到不同 process；job 狀態遷共享儲存（Redis/PG）後恢復多 worker。容器啟動時自動對齊 schema：**一律 `alembic upgrade head`**（單一路徑，空庫也從 baseline 跑完整條鏈；狀態判定見 `backend/docker-entrypoint.sh` → `app/core/db/schema_bootstrap.py`）。
+> 後端目前單 worker：6 套背景 job registry（導出/導入/初判/上傳/調試跑批/回歸）為 in-mem，多 worker 會使 job/SSE/下載落到不同 process；job 狀態遷共享儲存（Redis/PG）後恢復多 worker。容器啟動時自動對齊 schema：**一律 `alembic upgrade head`**（單一路徑，空庫也從 baseline 跑完整條鏈；狀態判定見 `backend/docker-entrypoint.sh` → `app/core/db/schema_bootstrap.py`）。
 
 **常用腳本**（見 [`scripts/README.md`](./scripts/README.md)）：`./start.sh` 一鍵 Docker 啟動 · `python scripts/tools/dump_datapack.py` 產資料包 · `./scripts/dev/dump-seed.sh` 產 seed · `./scripts/dev/lint.sh` lint · `./scripts/dev/format.sh` format。
 
@@ -141,5 +141,5 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 - **可替換權限框架**：後端 `PermissionProvider` 抽象 + `require_permission(key)` 守衛破壞性端點（business-key 為 be2 風格 `module.sub-function.action`；無角色，email 直接授予 `config/global/permissions.json` 的 `default ∪ grants[email]`，`no_auth_grant_all=true` 時無條件全通過）；前端唯一替換點 `api/permission.api.ts::fetchPermissions` → `permission.store` → `usePermission` / 選單過濾。換 be2 中央 Auth SVC 僅改 `auth.config.json['provider']` + `be2_provider.py` + 前端 `fetchPermissions`，其餘零改。
 - **可替換 i18n 框架**：前端 `src/i18n/loader.ts::loadLocaleMessages` 為唯一翻譯來源接縫（現靜態 `locales/zh-TW/*.json`·日後接 TMS 只改此函式）；vue-i18n Composition API + `$t`。後端錯誤走 `raise_api_error(code, message)`（`DOMAIN.REASON`），前端 `errorCodeToI18nKey` 唯一轉換點對映翻譯、無對映回退中文。挖字漸進（原 pilot：auth login + AUTH.* error code，已隨去帳戶系統退役，下個 pilot 待選），詳見 `frontend/apps/console/src/i18n/README.md`。
 - **LLM 成本三重防線**：OpenAI prompt caching（靜態判準前綴）+ flex serving tier（批次 -50%，prejudge 配置可關）+ **exact-match 結果快取**（`data/llm_cache`；重新初判時規則未變動部分零 token 重用，顯式單筆重新初判不吃快取）。
-- **設定全項目共享**：`setting_master` 表固定讀寫 `__global__` 單例 row（`app/core/settings.py::GLOBAL_SETTINGS_KEY`）；LLM 連線層 `llm_connections`（每供應商一條 base_url，openai/gemini/bytedance）+ `llm_tokens`（per-provider 機密）與模型配置庫 `llm_model_configs`（全域具名配置扁平陣列；生效清單＝`config/global/llm_model.json` 出廠種子 ++ 本欄自訂，見 `all_model_configs()`）分離，`effective_llm_dict(s, area=, overrides=)` 為唯一收斂點且**只吃 flat 旋鈕、不認識「配置」抽象**。⚠️「哪個功能區用哪一筆配置」＝ `llm_area_configs`（area → config id），**同在 DB、團隊共用單一份**：功能區下拉選了就即時落庫（無儲存按鈕），一個人換配置同事下次進頁面也會是新的——這是 2026-07-31 拍板的取捨（換來「你調好的安排同事與新裝置能直接用到」），不是 bug。刪配置時同步剪除指向它的綁定；讀取端仍有「綁定 → 出廠 areaDefaults → 清單第一筆」三級回落。；QC DB 同構 `qc_connections`（每環境一條，sit/stage/production）+ `qc_passwords`。
-- **機密 at-rest 加密**：`llm_tokens` / `qc_passwords` 以 Fernet 加密落庫（`app/core/crypto.py`，key＝env `AIQ_SECRET_KEY`；既有明文列遷移用 `scripts/tools/encrypt_user_secrets.py`）。**正式環境（`APP_ENV≠development`）缺 `AIQ_SECRET_KEY` 拒啟動**（避免機密明文落庫）；dev 未設則明文直通並告警。`/api/settings/raw` 明文回顯全項目共享設定，屬**單機內網環境的有意識權衡**，部署公網前必須移除或補權限 gating（見 `settings.secret.read`）。
+- **設定全項目共享**：`setting_master` 表固定讀寫 `__global__` 單例 row（`app/core/settings.py::GLOBAL_SETTINGS_KEY`）；LLM 連線層 `llm_connections`（每供應商一條 base_url，openai/gemini/bytedance）+ `llm_tokens`（per-provider 機密）與模型配置庫 `llm_model_configs`（全域具名配置扁平陣列；**生效清單單層＝本欄本身**，`config/global/llm_model.json` 的 `modelConfigs` 只在該 key 不存在時由 `_blank_settings()` 種入一次，之後與自建配置零差別、無出廠唯讀層；`name` 不落庫，由 `derive_config_name()` 從五個旋鈕欄衍生，見 `all_model_configs()`）分離，`effective_llm_dict(s, area=, overrides=)` 為唯一收斂點且**只吃 flat 旋鈕、不認識「配置」抽象**。⚠️「哪個功能區用哪一筆配置」＝ `llm_area_configs`（area → config id），**同在 DB、團隊共用單一份**：功能區下拉選了就即時落庫（無儲存按鈕），一個人換配置同事下次進頁面也會是新的——這是 2026-07-31 拍板的取捨（換來「你調好的安排同事與新裝置能直接用到」），不是 bug。刪配置時同步剪除指向它的綁定；讀取端仍有「綁定 → 出廠 areaDefaults → 清單第一筆」三級回落。；QC DB 同構 `qc_connections`（每環境一條，sit/stage/production）+ `qc_passwords`。
+- **機密 at-rest 加密**：`llm_tokens` / `qc_passwords` 以 Fernet 加密落庫（`app/core/crypto.py`，key＝env `AIQ_SECRET_KEY`）。**正式環境（`APP_ENV≠development`）缺 `AIQ_SECRET_KEY` 拒啟動**（避免機密明文落庫）；dev 未設則明文直通並告警。`/api/settings/raw` 明文回顯全項目共享設定，屬**單機內網環境的有意識權衡**，部署公網前必須移除或補權限 gating（見 `settings.secret.read`）。

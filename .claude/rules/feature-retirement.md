@@ -22,7 +22,7 @@ grep 該 feature 的所有 symbol（函式 / 欄位 / 端點 / 元件 / 型別 /
 2. **DB schema**（有落庫才需要）：
    - `tables.py` 移除 `Column` / `Index`
    - alembic drop migration：`DROP ... IF EXISTS`（冪等）；**drop 前 `pg_dump` 備份**（`~/kkday-backups/`）；downgrade 加回 nullable（不還原資料）
-   - 連帶清：DTO（`attribution_dto`）/ 寫入端（`findings._finding_values`、`to_columns`）/ 讀取端（select 欄清單、`_PROBLEM_COLS`）/ 去重 digest / 索引，皆去該欄
+   - 連帶清：DTO（`attribution_dto`）/ 寫入端（`findings._finding_values`、`to_columns`）/ 讀取端（select 欄清單、`problems._JG_COLS`）/ 去重 digest / 索引，皆去該欄
    - ⚠️ 容器內 `alembic revision` 生成的檔用**容器時區 mtime**（比 host 早數小時，`ls -t` 會誤排）；檔仍落 host（bind mount）
 3. **barrel**：`__init__.py` / `index.ts` 移除 re-export（**import 段 + `__all__` 兩處都要**）
 4. **配置**：移除死 config key（**grep 確認 0 consumer 才刪**；初判領域改值需重啟後端）

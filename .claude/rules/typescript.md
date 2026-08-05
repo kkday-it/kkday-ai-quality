@@ -33,9 +33,9 @@ paths:
 
 | 類型後綴 | 用途 | 例 |
 |---|---|---|
-| `.constant.ts` / `.constant.json` | 常數 / 代碼字典（`.json` 用於前後端共用的 `constants/` SSOT） | `pagination.constant.ts`、`constants/labels/guide_lang.constant.json` |
+| `.constant.ts` / `.constant.json` | 常數 / 代碼字典（`.json` 用於前後端共用的 `constants/` SSOT） | `pagination.constant.ts`、`constants/labels/traveller_type.constant.json` |
 | `.config.ts` / `.config.json` | 配置（業務可調） | `vite.config.ts`、`config/global/llm_model.json`(既有可不追改) |
-| `.util.ts` | 純函式工具（無副作用） | `format.util.ts` |
+| `.util.ts` | 純函式工具（無副作用） | `percent.util.ts` |
 | `.api.ts` | API 請求層 | `prejudge.api.ts` |
 | `.store.ts` | Pinia store | `auth.store.ts` |
 | `.composable.ts` / `use*.ts` | composable（既有慣例 `useXxx.ts` 亦可） | `useAttributionList.ts` |

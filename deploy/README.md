@@ -9,7 +9,7 @@
 
 ```
 base/                      # Deployment×2（backend Recreate·frontend RollingUpdate）+ Service×2 + Ingress + ConfigMap/Secret 範例
-overlays/prod/             # namespace/host 環境差異（SIT/STAGE 屆時比照增設）
+overlays/prod/             # namespace/host/image tag 差異 + frontend HPA(2~6)/PodDisruptionBudget/podAntiAffinity（SIT/STAGE 屆時比照增設）
 ../.woodpecker.yml         # CI 草稿（tag → build → ECR；與 GH Actions 分工待確認）
 ```
 
@@ -17,7 +17,7 @@ overlays/prod/             # namespace/host 環境差異（SIT/STAGE 屆時比�
 
 ## 設計要點（與 repo 內三處數值互鎖）
 
-- **backend `Recreate` + `replicas: 1`**：4 套 job registry 為 in-mem（backend/Dockerfile CMD 註解），多 replica 會分裂 job 狀態。
+- **backend `Recreate` + `replicas: 1`**：6 套 job registry 為 in-mem（見 `core/job_registry.py` 的 `JobStore` 實例），多 replica 會分裂 job 狀態。
 - **timeout 鏈遞增**：uvicorn `--timeout-graceful-shutdown 30`（Dockerfile）< compose `stop_grace_period 35s` < k8s `terminationGracePeriodSeconds 40`（backend-deployment.yaml）——改任一須同步三處。
 - **probe**：startupProbe `/api/status` 5 分鐘預算（涵蓋 entrypoint alembic upgrade）→ readiness HTTP → liveness TCP（公司慣例）。
 - **secret**：`aiq-backend-config` / `-secret` / `-cloud-secret` 三物件（config-manager 平台維護實值＋Reloader 自動滾動重啟）；repo 內僅 key 名。
@@ -82,7 +82,7 @@ sake（PHP-FPM）掛 fpm-exporter(:9147)+nginx-exporter(:9145) sidecar；本專�
 
 ## 多 replica 前置遷移清單（replicas>1 前必辦；與 in-mem job registry 同批）
 
-現行 `Recreate + replicas: 1` 除既有「4 套 job registry in-mem」限制外，訂單佐證閉環
+現行 `Recreate + replicas: 1` 除既有「6 套 job registry in-mem」限制外，訂單佐證閉環
 （`app/core/db/qc_evidence.py`）新增兩個**同類單 replica 假設**，遷多 replica 時缺一不可：
 
 1. **llm diskcache（per-pod 檔案系統）**：N replica 各自一份互不同步 → 命中率崩。
