@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 from app.core import db
 from app.core.db import tables as T
 from app.core.db._shared import attribution_dto
+from app.core.schema import TicketFinding
 
 # ── 凍結的 wire 形狀（dotted path；巢狀 dict 展開，list 不展開）──────────────────
 # 值＝該 key 允許的 Python 型別名；None 表示不約束型別（僅約束 key 存在）。
@@ -231,6 +232,17 @@ def seeded(temp_db):
         row_count=1,
         note="契約夾具",
     )
+    # attribution_tbl 的探針要打真實端點，就必須有真資料：來源列 + 該列的歸因。
+    # 少了這兩步，`/api/problems` 回 0 列，探針斷言變成 vacuous（對抗式覆審抓到的正是這點）。
+    db.insert_source_batch(
+        "reviews",
+        [{"rec_oid": "R-wire-1", "create_date": "2026-06-01 10:00:00", "prod_oid": "P-wire-1"}],
+    )
+    db.replace_source_findings(
+        "reviews",
+        "R-wire-1",
+        [TicketFinding(ticket_id="R-wire-1", recommended_action="no_action")],
+    )
 
 
 @pytest.fixture
@@ -340,8 +352,13 @@ def _keys_deep(obj) -> set[str]:
 
 
 def _probe_attribution(client: TestClient) -> list:
-    """`attribution_tbl`：經 `attribution_dto` 出 wire（問題列表 items[].attributions[]）。"""
-    return [client.get("/api/problems").json(), attribution_dto(_ATTRIBUTION_ROW_SAMPLE)]
+    """`attribution_tbl`：經 `attribution_dto` 出 wire（問題列表 rows[].attributions[]）。
+
+    ⚠️ **必須帶 `source=reviews`**：`/api/problems` 不指定來源時恆回 0 列（既有行為），
+    探針會變成打了個空的 → marker 靠合成 dto 提供 → 斷言 vacuous 卻永遠綠。
+    合成 dto 的覆蓋由 `test_attribution_dto_wire` 負責，這裡只認真實端點的輸出。
+    """
+    return [client.get("/api/problems?source=reviews").json()]
 
 
 def _probe_attribution_event(client: TestClient) -> list:
@@ -450,16 +467,22 @@ _SCAN_SKIP_MARKERS = ("stream", "/download", "/files/")
 # 路徑參數 → 掃描用值（對齊 `seeded` 夾具）。含未列參數的路徑一律跳過。
 _SCAN_PATH_PARAMS = {"code": "prompt_C-1", "job_id": "pj_wire0001", "version": "1"}
 
+# 反向掃描實際能取到 200 的端點數下限（凍結，防護欄無聲縮水；見該測試尾端註釋）。
+_MIN_PROBED_ENDPOINTS = 23
+
 
 def _forbidden_db_names() -> set[str]:
     """不得出現在任何 wire 回傳上的 DB 規範名（自 metadata 派生）。
 
     兩處排除：
-    - `*_oid`：serial PK 的 DB 名即 wire 名（`attribution_oid`），本來就該出現在 wire 上。
+    - **沒有別名的** `*_oid`：serial PK 的 DB 名即 wire 名（`attribution_oid`），本來就該
+      出現在 wire 上。⚠️ 不能無條件排除所有 `*_oid`——實算有 3 個是有別名的
+      （`attribution_event_oid` / `judge_rule_version_oid` / `llm_usage_oid`，key 皆為 `id`），
+      那樣排除等於在反向網上開一個洞。
     - 在**別的表**是正常欄名者（`create_user` / `create_date` / `modify_date`）：稽核四欄與
       來源鏡像表的原生欄名撞名，列入會誤報。這些欄的漏名由上方 per-table 探針負責兜。
     """
-    aliased = {n for cols in _aliased_columns().values() for n in cols if not n.endswith("_oid")}
+    aliased = {n for cols in _aliased_columns().values() for n in cols}
     genuine = {c.name for t in T.metadata.sorted_tables for c in t.columns if c.key == c.name}
     return aliased - genuine
 
@@ -474,6 +497,8 @@ def test_no_db_canonical_name_on_any_get_endpoint(client):
     assert forbidden, "派生不到任何 DB 規範名，護欄等於沒開"
 
     scanned: list[str] = []
+    probed: list[str] = []
+    unreachable: list[str] = []
     leaks: dict[str, list[str]] = {}
     for path, ops in client.app.openapi()["paths"].items():
         if "get" not in ops or any(m in path for m in _SCAN_SKIP_MARKERS):
@@ -487,13 +512,21 @@ def test_no_db_canonical_name_on_any_get_endpoint(client):
         scanned.append(path)
         r = client.get(url)
         if r.status_code != 200:
+            unreachable.append(f"{path} → {r.status_code}")
             continue
+        probed.append(path)
         if hit := sorted(forbidden & _keys_deep(r.json())):
             leaks[path] = hit
 
     # 帶路徑參數的端點必須進得了掃描範圍——本次事故（規則版本歷史）正是這種端點，
     # 護欄若只掃無參數路徑就會跟事故擦身而過。
     assert "/api/judge-rules/{code}/history" in scanned, "掃描漏了帶路徑參數的端點"
+    # 非 200 的端點會被跳過。凍結「實際掃到幾條」，端點日後退化成 4xx 時護欄的縮水看得見，
+    # 而不是無聲少掃一片（覆審實測當時有 6 條從未被掃過）。
+    assert len(probed) >= _MIN_PROBED_ENDPOINTS, (
+        f"反向護欄實際只掃到 {len(probed)} 條端點（下限 {_MIN_PROBED_ENDPOINTS}）——"
+        f"有端點退化成非 200 使護欄縮水：{unreachable}"
+    )
     assert not leaks, (
         f"以下端點把 DB 規範名漏到 wire：{leaks}。"
         f"改用 `_shared.select_wire()`，自訂欄位投影則逐欄 `.label()`。"
