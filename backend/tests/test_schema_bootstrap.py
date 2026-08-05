@@ -14,6 +14,8 @@ schema 靜默落後）。抽成 Python 模組後才有辦法把五種狀態逐�
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -25,23 +27,27 @@ from tests.conftest import TEST_DATABASE_URL
 
 @pytest.fixture
 def scratch_db():
-    """一個全新空庫，測完刪除；yield 期間把 tables 的 engine 指向它。"""
+    """一個全新空庫，測完刪除；yield 期間把 tables 的 engine 指向它。
+
+    dbname 帶 pid：多個 pytest 行程同時跑（多 agent / CI 並行）時，共用同一個固定 dbname 會
+    在 DROP↔CREATE 之間互相插隊，症狀是 `duplicate key ... pg_database_datname_index` 與
+    `database ... does not exist`（實測 HEAD 版 12 次跑有 4 次紅）。
+    """
     u = make_url(TEST_DATABASE_URL)
-    url = str(u.set(database=f"{u.database}_bootstrap"))
+    url = str(u.set(database=f"{u.database}_bootstrap_{os.getpid()}"))
     target = make_url(url).database
 
     admin = create_engine(u.set(database="postgres"), isolation_level="AUTOCOMMIT")
 
-    def _recreate() -> None:
+    # WITH (FORCE)（PG13+）＝踢連線與 DROP 同一個原子動作；分兩步（先 pg_terminate_backend
+    # 再 DROP）中間有窗口讓新連線擠進來，DROP 就會以 "is being accessed by other users" 失敗。
+    def _drop() -> None:
         with admin.connect() as c:
-            c.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :n AND pid <> pg_backend_pid()"
-                ),
-                {"n": target},
-            )
-            c.execute(text(f'DROP DATABASE IF EXISTS "{target}"'))
+            c.execute(text(f'DROP DATABASE IF EXISTS "{target}" WITH (FORCE)'))
+
+    def _recreate() -> None:
+        _drop()
+        with admin.connect() as c:
             c.execute(text(f'CREATE DATABASE "{target}"'))
 
     _recreate()
@@ -52,7 +58,7 @@ def scratch_db():
     finally:
         T._engine = saved
         try:
-            _recreate()  # 清乾淨（留一個空庫比留髒資料好）
+            _drop()  # 直接刪掉不重建：dbname 綁 pid，留空庫等於每個行程漏一個庫
         finally:
             admin.dispose()
 

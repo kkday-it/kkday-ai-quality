@@ -64,15 +64,9 @@ def _drop_and_create(url: str) -> None:
     admin = create_engine(u.set(database="postgres"), isolation_level="AUTOCOMMIT")
     try:
         with admin.connect() as c:
-            # 先踢掉殘留連線，否則 DROP DATABASE 會被 "is being accessed by other users" 擋下
-            c.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :n AND pid <> pg_backend_pid()"
-                ),
-                {"n": u.database},
-            )
-            c.execute(text(f'DROP DATABASE IF EXISTS "{u.database}"'))
+            # WITH (FORCE)（PG13+）＝踢連線與 DROP 同一個原子動作；分兩步（先 pg_terminate_backend
+            # 再 DROP）中間有窗口讓新連線擠進來，DROP 就會以 "is being accessed by other users" 失敗。
+            c.execute(text(f'DROP DATABASE IF EXISTS "{u.database}" WITH (FORCE)'))
             c.execute(text(f'CREATE DATABASE "{u.database}"'))
     finally:
         admin.dispose()
@@ -84,14 +78,7 @@ def _drop(url: str) -> None:
     admin = create_engine(u.set(database="postgres"), isolation_level="AUTOCOMMIT")
     try:
         with admin.connect() as c:
-            c.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :n AND pid <> pg_backend_pid()"
-                ),
-                {"n": u.database},
-            )
-            c.execute(text(f'DROP DATABASE IF EXISTS "{u.database}"'))
+            c.execute(text(f'DROP DATABASE IF EXISTS "{u.database}" WITH (FORCE)'))
     except Exception:  # noqa: BLE001  清理失敗不該讓測試變紅
         pass
     finally:
@@ -99,9 +86,13 @@ def _drop(url: str) -> None:
 
 
 def _scratch_url(suffix: str) -> str:
-    """以測試庫 URL 為模板，換一個獨立 dbname（與 temp_db 隔離，互不干擾）。"""
+    """以測試庫 URL 為模板，換一個獨立 dbname（與 temp_db 隔離，互不干擾）。
+
+    dbname 帶 pid：多個 pytest 行程同時跑（多 agent / CI 並行）時，共用同一個固定 dbname 會在
+    DROP↔CREATE 之間互相插隊，症狀是 `duplicate key ... pg_database_datname_index`。
+    """
     u = make_url(TEST_DATABASE_URL)
-    return str(u.set(database=f"{u.database}_{suffix}"))
+    return str(u.set(database=f"{u.database}_{suffix}_{os.getpid()}"))
 
 
 @pytest.fixture
