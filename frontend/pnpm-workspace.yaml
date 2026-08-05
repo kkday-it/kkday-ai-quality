@@ -6,8 +6,18 @@ overrides:
   # ⚠️ brace-expansion 不可用版本區間限定選擇器（@2/@5）：pnpm 對 unbounded ">=" range
   # 會跨大版重新解析，導致部分 edge 仍卡在舊小版（實測 minimatch@9 路徑卡在 5.0.6 未生效），
   # 改單一無條件覆寫全樹統一版本，pnpm install 後靜態檢查（vue-tsc/eslint）驗證過相容。
-  'brace-expansion': '>=5.0.8' # GHSA-3jxr-9vmj-r5cp + GHSA-mh99-v99m-4gvg（ReDoS/OOM）
-  'fast-uri': '>=3.1.4' # GHSA-v2hh-gcrm-f6hx + GHSA-4c8g-83qw-93j6（host confusion）
+  #
+  # ⚠️ 無上界的 `>=` 只設下限，**新公告出來時舊下限往往已經擋不住**：
+  # `fast-uri: '>=3.1.4'` 曾讓 pnpm 解到 4.1.1，而 GHSA-45m7-x6j6-j6r7 的漏洞範圍是
+  # `>=4.0.0 <4.1.2`——下限沒抬，覆寫等於沒設。每次收到新 alert 要回頭確認下限夠不夠高，
+  # 而不是看到「這個套件已經在 overrides 裡」就以為修過了。
+  'brace-expansion': '>=5.0.9' # GHSA-3jxr-9vmj-r5cp + GHSA-mh99-v99m-4gvg（ReDoS/OOM）
+  'fast-uri': '>=4.1.2' # GHSA-v2hh-gcrm-f6hx + GHSA-4c8g-83qw-93j6 + host confusion（backslash authority）
+  # ⚠️ undici **必須帶上界**：無上界時 pnpm 直接解到 8.10.0，而唯一的消費者 jsdom@29 宣告的是
+  # `^7.25.0`——等於硬推一個它沒背書的 major。7.29.0 已含全部五個修補，留在同 major 內最省風險。
+  'undici': '>=7.29.0 <8' # 五連發：GHSA-4cwx-7wf7-3272（快取跨用戶洩漏·High）+ CRLF 注入
+                          # + cookie 屬性注入 + Cache-Control 空白解析
+                          # + retry interceptor 回應去同步（GHSA-8xcm-r25x-g524）
   'dompurify': '>=3.4.12' # GHSA-c2j3-45gr-mqc4（CUSTOM_ELEMENT_HANDLING bypass）
   'postcss': '>=8.5.18' # GHSA-r28c-9q8g-f849（sourcemap 路徑穿越）
 allowBuilds:
