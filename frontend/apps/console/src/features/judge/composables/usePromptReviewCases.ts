@@ -6,7 +6,10 @@
 // 讓消費端的三態渲染零改動（日後若要換回遠端，介面不必再改一次）。
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
-import { usePromptReviewCasesStore, type PromptReviewCase } from '@/stores/promptReviewCases.store';
+import {
+  usePromptReviewCasesStore,
+  type PromptReviewCaseRow,
+} from '@/stores/promptReviewCases.store';
 
 /**
  * 案例庫狀態機（三態 + 勾選）。
@@ -19,13 +22,13 @@ export function usePromptReviewCases() {
   const error = ref('');
   const selectedIds = ref<number[]>([]);
 
-  const cases = computed<PromptReviewCase[]>(() => store.sorted);
+  const cases = computed<PromptReviewCaseRow[]>(() => store.sorted);
 
   const selectedCases = computed(() =>
     cases.value.filter((row) => selectedIds.value.includes(row.id)),
   );
   /** 有標錯欄位的案例才是「誤判證據」；全對的是回歸正例，AI 改寫時價值不同。 */
-  const badCount = (row: PromptReviewCase): number => Object.keys(row.corrections ?? {}).length;
+  const badCount = (row: PromptReviewCaseRow): number => Object.keys(row.corrections ?? {}).length;
 
   /** 對齊已不存在的勾選（本地刪除後）。資料本身即時響應，不需重新取數。 */
   function load(): void {

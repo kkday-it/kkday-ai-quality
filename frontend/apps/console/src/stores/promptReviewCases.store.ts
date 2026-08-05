@@ -36,14 +36,47 @@ export type PromptReviewCase = {
   created_at: string;
 };
 
+/**
+ * 列表列＝案例本體 + 兩個**衍生顯示欄**。
+ *
+ * 這兩欄原本由後端算好再回傳（列表端點只給前 200 字預覽 + 全文字數，避免整份對話上 wire）。
+ * 案例改存本地後全文本來就在手上，衍生就搬到這裡——但**必須真的補上**：表格展開列直接讀
+ * `record.conversation_chars` / `record.conversation_preview`，少了就是
+ * `undefined.toLocaleString()` 執行期爆掉、整個抽屜渲染失敗（2026-08-05 實際發生）。
+ *
+ * ⚠️ vue-tsc 抓不到這類漏欄：Arco 表格 slot 的 `record` 型別是 `TableData`，帶
+ * `[name: string]: any` 索引簽名，任何欄位存取都合法。防線只能靠這個具名型別 + 單測。
+ */
+export type PromptReviewCaseRow = PromptReviewCase & {
+  /** 對話全文字數。 */
+  conversation_chars: number;
+  /** 對話原文前 `PREVIEW_CHARS` 字（展開列用；塞全文會把表撐爆）。 */
+  conversation_preview: string;
+};
+
 /** 本地案例數上限——localStorage ~5MB，對話全文動輒上萬字，超過會寫入失敗。 */
 export const MAX_CASES = 200;
+
+/** 展開列的對話預覽長度（與原後端列表端點同口徑）。 */
+export const PREVIEW_CHARS = 200;
 
 export const usePromptReviewCasesStore = defineStore('promptReviewCases', () => {
   const cases = useLocalStorage<PromptReviewCase[]>('aiq.promptReviewCases', []);
 
   /** 新→舊（與原本後端列表順序一致，消費端零改動）。 */
-  const sorted = computed(() => [...cases.value].sort((a, b) => b.id - a.id));
+  const sorted = computed<PromptReviewCaseRow[]>(() =>
+    [...cases.value]
+      .sort((a, b) => b.id - a.id)
+      .map((c) => {
+        const text = c.conversation ?? '';
+        return {
+          ...c,
+          conversation_chars: text.length,
+          conversation_preview:
+            text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS)}…` : text,
+        };
+      }),
+  );
 
   /** 下一個本地 id（取現有最大值 +1，刪除後不重用避免與勾選狀態撞號）。 */
   function nextId(): number {

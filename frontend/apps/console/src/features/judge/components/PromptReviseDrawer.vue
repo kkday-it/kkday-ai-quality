@@ -221,7 +221,6 @@ const COLUMNS = [
   { title: '判錯的欄位', slotName: 'badFields', width: 240, ellipsis: true, tooltip: true },
   { title: '修改建議', slotName: 'comment', minWidth: 220, ellipsis: true, tooltip: true },
   { title: 'Prompt 版本', slotName: 'version', width: 160 },
-  { title: '評判人', dataIndex: 'reviewer', width: 150, ellipsis: true, tooltip: true },
   { title: '操作', slotName: 'actions', width: 76, align: 'center' as const },
 ];
 
@@ -386,7 +385,7 @@ function confirmRemove(id: number): void {
               <div class="mb-1 flex flex-wrap items-baseline gap-2">
                 <span class="text-xs font-semibold text-[#1d2129]">對話原文（前 200 字）</span>
                 <span class="text-[11px] text-[#86909c]">
-                  共 {{ record.conversation_chars.toLocaleString() }} 字 · 判定模型
+                  共 {{ (record.conversation_chars ?? 0).toLocaleString() }} 字 · 判定模型
                   {{ record.model || '—' }}
                 </span>
               </div>
