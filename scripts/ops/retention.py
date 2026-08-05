@@ -14,8 +14,11 @@
 4. `data/prompt_debug_batch/<run_id>/` — 刪除超過保留期的跑批產物目錄
 
 刻意**不碰**的：`note` 事件（人工輸入）、`attribution_tbl`（當前初判結果）、
-`prompt_debug_review_tbl`（人工評判金標）、`judge_rule_version_lst`（版本庫 append-only）、
-5 張來源鏡像表（原始反饋資料）。
+`judge_rule_version_lst`（版本庫 append-only）、5 張來源鏡像表（原始反饋資料）。
+
+本檔的 DDL 級操作（window function 排名、相關子查詢 EXISTS）走原生 SQL 而非 Table 物件：
+清理條件是集合運算而非 CRUD，Core 表達反而更難讀。⚠️ 代價是表名／欄名改動不會自動跟上，
+改 schema 時務必回頭核對此處字串（欄名一律用 DB 規範名，不是 tables.py 的 Python key）。
 
 用法（一律在容器內跑，見專案環境鐵律）：
     docker compose -f docker-compose.dev.yml exec backend \\

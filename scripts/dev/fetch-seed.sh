@@ -90,10 +90,11 @@ _ensure_seed_present() {
 }
 
 _db_is_empty() {
-  # 以 reviews 是否存在為「空庫」判準（seed 還原後即存在）
+  # 以 review_tbl 是否存在為「空庫」判準（seed 還原後即存在）
+  # 這裡走 psql 而非 ORM：本腳本在容器外、backend 未起時就要判斷，取不到 Python 環境。
   local reg
   reg="$(docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" \
-    psql -U postgres -tAqc "SELECT to_regclass('public.reviews')" -d "$DB_NAME" 2>/dev/null | tr -d '[:space:]')"
+    psql -U postgres -tAqc "SELECT to_regclass('public.review_tbl')" -d "$DB_NAME" 2>/dev/null | tr -d '[:space:]')"
   [ -z "$reg" ] || [ "$reg" = "" ]
 }
 

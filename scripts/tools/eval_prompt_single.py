@@ -33,7 +33,7 @@ _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 
 from app.core import settings as app_settings  # noqa: E402
 from app.core.db import tables as T  # noqa: E402
@@ -68,14 +68,15 @@ def _review_texts(ids: list[str]) -> dict[str, str]:
     """rec_oid → 評論文字（title + desc，對齊初判輸入）。"""
     if not ids:
         return {}
+    # rec_oid 本身即 text（見 tables.py），故不需原 SQL 的 `::text` 轉型。
+    r = T.reviews
+    stmt = select(
+        r.c.rec_oid,
+        func.coalesce(r.c.rec_title, ""),
+        func.coalesce(r.c.rec_desc, ""),
+    ).where(r.c.rec_oid.in_(ids))
     with T.get_engine().connect() as c:
-        rows = c.execute(
-            text(
-                "SELECT rec_oid::text AS sid, coalesce(rec_title,'') AS t, coalesce(rec_desc,'') AS d "
-                "FROM review_tbl WHERE rec_oid::text = ANY(:ids)"
-            ),
-            {"ids": ids},
-        ).all()
+        rows = c.execute(stmt).all()
     return {sid: (f"{t}\n{d}".strip()) for sid, t, d in rows}
 
 
@@ -86,32 +87,50 @@ def _sample_domain(dom_machine: str, n: int) -> list[dict]:
     回統一參照記錄：{id, text, polarity, ref_l2s, ref_primary}。
     """
     half = n // 2
+    # 走 Table 物件而非 SQL 字串：DB 表名／欄名已與 Python key 脫鉤（`Column(規範名, key=原名)`），
+    # 手寫字串會在下次改名時再度失效；由 metadata 產 SQL 才能自動跟上。
+    a = T.attributions
+    x = a.alias("x")  # 相關子查詢的自連接別名（判過本域者要從「他域樣本」剔除）
+    pos_stmt = (
+        select(a.c.source_id, func.min(a.c.polarity))
+        .where(
+            a.c.source == _SOURCE,
+            a.c.l1_code == dom_machine,
+            a.c.polarity.in_(("negative", "neutral")),
+        )
+        .group_by(a.c.source_id)
+        .order_by(func.md5(a.c.source_id))
+        .limit(n - half)
+    )
+    neg_stmt = (
+        select(a.c.source_id, func.min(a.c.polarity))
+        .where(
+            a.c.source == _SOURCE,
+            a.c.polarity.in_(("negative", "neutral")),
+            a.c.l1_code.is_not(None),
+            a.c.l1_code != "",
+            a.c.l1_code != dom_machine,
+            ~select(1)
+            .where(
+                x.c.source == _SOURCE,
+                x.c.source_id == a.c.source_id,
+                x.c.l1_code == dom_machine,
+            )
+            .exists(),
+        )
+        .group_by(a.c.source_id)
+        .order_by(func.md5(a.c.source_id))
+        .limit(half)
+    )
     with T.get_engine().connect() as c:
-        pos = c.execute(
-            text(
-                "SELECT source_id, min(polarity) AS polarity FROM attributions "
-                "WHERE source=:s AND l1_code=:d AND polarity IN ('negative','neutral') "
-                "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "k": n - half},
-        ).all()
-        neg = c.execute(
-            text(
-                "SELECT j.source_id, min(j.polarity) AS polarity FROM attributions j "
-                "WHERE j.source=:s AND j.polarity IN ('negative','neutral') "
-                "AND j.l1_code IS NOT NULL AND j.l1_code <> '' AND j.l1_code <> :d "
-                "AND NOT EXISTS (SELECT 1 FROM attributions x WHERE x.source=:s "
-                "  AND x.source_id=j.source_id AND x.l1_code=:d) "
-                "GROUP BY j.source_id ORDER BY md5(j.source_id) LIMIT :k"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "k": half},
-        ).all()
+        pos = c.execute(pos_stmt).all()
+        neg = c.execute(neg_stmt).all()
         prod = c.execute(
-            text(
-                "SELECT source_id, l2_code, coalesce(is_primary,false) AS is_primary "
-                "FROM attributions WHERE source=:s AND l1_code=:d AND source_id = ANY(:ids)"
-            ),
-            {"s": _SOURCE, "d": dom_machine, "ids": [r[0] for r in pos] + [r[0] for r in neg]},
+            select(a.c.source_id, a.c.l2_code, func.coalesce(a.c.is_primary, False)).where(
+                a.c.source == _SOURCE,
+                a.c.l1_code == dom_machine,
+                a.c.source_id.in_([r[0] for r in pos] + [r[0] for r in neg]),
+            )
         ).all()
     by_rec: dict[str, dict] = {}
     for sid, pol in list(pos) + list(neg):
@@ -128,15 +147,19 @@ def _sample_polarity(n: int) -> list[dict]:
     """極性參照集：三態各 n/3（md5 穩定），帶 production polarity/sentiment 真值。"""
     per = max(1, n // 3)
     out: list[dict] = []
+    a = T.attributions
     with T.get_engine().connect() as c:
         for pol in ("negative", "neutral", "positive"):
             rows = c.execute(
-                text(
-                    "SELECT source_id, min(polarity) AS polarity, min(sentiment_score) AS sentiment "
-                    "FROM attributions WHERE source=:s AND polarity=:p AND sentiment_score IS NOT NULL "
-                    "GROUP BY source_id ORDER BY md5(source_id) LIMIT :k"
-                ),
-                {"s": _SOURCE, "p": pol, "k": per},
+                select(a.c.source_id, func.min(a.c.polarity), func.min(a.c.sentiment_score))
+                .where(
+                    a.c.source == _SOURCE,
+                    a.c.polarity == pol,
+                    a.c.sentiment_score.is_not(None),
+                )
+                .group_by(a.c.source_id)
+                .order_by(func.md5(a.c.source_id))
+                .limit(per)
             ).all()
             out += [{"id": sid, "polarity": p, "sentiment": s} for sid, p, s in rows]
     texts = _review_texts([r["id"] for r in out])

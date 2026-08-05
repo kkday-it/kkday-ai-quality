@@ -1,5 +1,5 @@
--- 訂單佐證「拆欄版」重建 SQL——輸出的每一欄對應 evidence_snapshot 的一個真實欄位
--- （非單一 payload jsonb），可逐欄與 evidence_snapshot 存的列直接核對。
+-- 訂單佐證「拆欄版」重建 SQL——輸出的每一欄對應 evidence_snapshot_tbl 的一個真實欄位
+-- （非單一 payload jsonb），可逐欄與 evidence_snapshot_tbl 存的列直接核對。
 -- 對 production snapshot（kkdb）執行；把 :oid 換成 order_oid（psql 用 \set oid 49446327，或字面替換）。
 WITH ot AS (
   SELECT order_mid, order_status, price_pay, lang_code, crt_dt

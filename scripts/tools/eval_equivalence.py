@@ -52,7 +52,7 @@ from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
 from app.judge import prejudge  # noqa: E402
 from app.judge.llm import client  # noqa: E402
 from app.judge.prompt_eval import _build_eval_item, compute_equivalence_metrics  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 
 EVAL_DIR = DATA_DIR / "eval"
 GOLDEN_PATH = EVAL_DIR / "golden_set.json"
@@ -66,13 +66,16 @@ def _md5(s: str) -> str:
 # ─────────────────────────── 金標集 ───────────────────────────
 def build_golden(n: int) -> None:
     """分層抽樣建金標集：strata＝(source, polarity)，比例配額、md5 穩定排序取前 k。"""
+    # 走 Table 物件而非 SQL 字串：DB 表名／欄名已與 Python key 脫鉤（`Column(規範名, key=原名)`），
+    # 手寫字串會在下次改名時再度失效；由 metadata 產 SQL 才能自動跟上。
+    attr = T.attributions
+    stmt = (
+        select(attr.c.source, attr.c.source_id, func.max(attr.c.polarity).label("polarity"))
+        .where(attr.c.polarity.is_not(None))
+        .group_by(attr.c.source, attr.c.source_id)
+    )
     with T.get_engine().connect() as c:
-        rows = c.execute(
-            text(
-                "SELECT source, source_id, max(polarity) AS polarity "
-                "FROM attributions WHERE polarity IS NOT NULL GROUP BY source, source_id"
-            )
-        ).all()
+        rows = c.execute(stmt).all()
     strata: dict[tuple[str, str], list[tuple[str, str]]] = {}
     for src, sid, pol in rows:
         strata.setdefault((src, pol), []).append((src, str(sid)))

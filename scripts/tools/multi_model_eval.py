@@ -32,7 +32,7 @@ _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from app.core import db  # noqa: E402
 from app.core import settings as app_settings  # noqa: E402
@@ -50,20 +50,21 @@ def _build_evalset(date_from: str, date_to: str, judged_only: bool) -> list[dict
     每則收集對比所需 ground truth：星等（rec_scores，用戶真實評分）、外部 sentiment、外部 free_tag。
     完整源列於 run 階段以 get_items_by_ids 依 rec_oid 取回（供 to_findings normalize）。
     """
-    join = (
-        "JOIN attributions j ON j.source='reviews' AND j.source_id=pr.rec_oid"
-        if judged_only
-        else ""
-    )
-    q = (
-        "SELECT DISTINCT pr.rec_oid, pr.rec_scores, pr.sentiment, pr.free_tag "
-        f"FROM review_tbl pr {join} "
-        "WHERE pr.free_tag IS NOT NULL AND pr.free_tag NOT IN ('','[]','null') "
-        "AND pr.create_date >= :df AND pr.create_date < :dt "
-        "ORDER BY pr.rec_oid"
-    )
+    # 走 Table 物件而非 SQL 字串：DB 表名／欄名已與 Python key 脫鉤（`Column(規範名, key=原名)`），
+    # 手寫字串會在下次改名時再度失效；由 metadata 產 SQL 才能自動跟上。
+    r = T.reviews
+    a = T.attributions
+    stmt = select(r.c.rec_oid, r.c.rec_scores, r.c.sentiment, r.c.free_tag).distinct()
+    if judged_only:
+        stmt = stmt.join(a, (a.c.source == _SOURCE) & (a.c.source_id == r.c.rec_oid))
+    stmt = stmt.where(
+        r.c.free_tag.is_not(None),
+        r.c.free_tag.not_in(("", "[]", "null")),
+        r.c.create_date >= date_from,
+        r.c.create_date < date_to,
+    ).order_by(r.c.rec_oid)
     with T.get_engine().connect() as c:
-        rows = c.execute(text(q), {"df": date_from, "dt": date_to}).all()
+        rows = c.execute(stmt).all()
     return [
         {
             "rec_oid": str(rec_oid),

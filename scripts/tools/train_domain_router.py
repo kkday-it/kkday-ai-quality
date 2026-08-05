@@ -40,7 +40,7 @@ from app.core.paths import DATA_DIR, REPORTS_DIR  # noqa: E402
 from app.judge import prejudge, prompt_source  # noqa: E402
 from app.judge.llm import client  # noqa: E402
 from app.judge.prompt_eval import _build_eval_item  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import distinct, func, select  # noqa: E402
 
 WEIGHTS_PATH = DATA_DIR / "router" / "weights.json"
 _EMBED_BATCH = 128  # embeddings API 單批筆數（上限 2048；保守分批）
@@ -54,18 +54,23 @@ def _md5pct(key: str) -> int:
 def _load_cases() -> list[dict]:
     """負/中立已初判案 → [{source, source_id, domains: set[str]}]（零域案＝全域負樣本）。"""
     when = tuple(prejudge._attribute_when())
+    # 走 Table 物件而非 SQL 字串：DB 表名／欄名已與 Python key 脫鉤（`Column(規範名, key=原名)`），
+    # 手寫字串會在下次改名時再度失效；由 metadata 產 SQL 才能自動跟上。
+    a = T.attributions
+    stmt = (
+        select(
+            a.c.source,
+            a.c.source_id,
+            func.array_agg(distinct(a.c.l1_code))
+            .filter(a.c.l1_code.is_not(None), a.c.l1_code != "")
+            .label("doms"),
+        )
+        .where(a.c.polarity.in_(when))
+        .group_by(a.c.source, a.c.source_id)
+    )
     with T.get_engine().connect() as c:
-        rows = c.execute(
-            text(
-                "SELECT source, source_id, "
-                "array_agg(DISTINCT l1_code) FILTER (WHERE l1_code IS NOT NULL AND l1_code<>'') AS doms "
-                "FROM attributions WHERE polarity = ANY(:when) GROUP BY source, source_id"
-            ),
-            {"when": list(when)},
-        ).all()
-    return [
-        {"source": s, "source_id": str(i), "domains": set(d or [])} for s, i, d in rows
-    ]
+        rows = c.execute(stmt).all()
+    return [{"source": s, "source_id": str(i), "domains": set(d or [])} for s, i, d in rows]
 
 
 def _embed_texts(texts: list[str], model: str) -> list[list[float]]:

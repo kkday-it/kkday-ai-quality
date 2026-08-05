@@ -74,24 +74,31 @@ def _pick_target_order_oids(limit: int) -> list[str]:
     與歸因列表同源條件（attributions.is_primary × reviews），確保壓測母體＝
     真實判決會取佐證的訂單集合。
     """
-    from sqlalchemy import text
+    from sqlalchemy import desc, select
 
-    from app.core.db.tables import get_engine
+    from app.core.db.tables import attributions, get_engine, reviews
 
-    sql = text(
-        """
-        SELECT pr.order_oid, a.polarity
-        FROM review_tbl pr
-        JOIN attributions a
-          ON a.source = 'reviews' AND a.source_id = pr.rec_oid AND a.is_primary = true
-        WHERE a.polarity IN ('negative', 'neutral')
-          AND pr.order_oid IS NOT NULL AND pr.order_oid <> ''
-        ORDER BY (a.polarity = 'negative') DESC, pr.create_date DESC
-        LIMIT :n
-        """
+    # 走 Table 物件而非 SQL 字串：DB 表名／欄名已與 Python key 脫鉤（`Column(規範名, key=原名)`），
+    # 手寫字串會在下次改名時再度失效；由 metadata 產 SQL 才能自動跟上。
+    stmt = (
+        select(reviews.c.order_oid, attributions.c.polarity)
+        .join(
+            attributions,
+            (attributions.c.source == "reviews")
+            & (attributions.c.source_id == reviews.c.rec_oid)
+            & (attributions.c.is_primary.is_(True)),
+        )
+        .where(
+            attributions.c.polarity.in_(("negative", "neutral")),
+            reviews.c.order_oid.is_not(None),
+            reviews.c.order_oid != "",
+        )
+        # 負向優先、其次近期：布林 DESC 讓 true（負向）排前
+        .order_by(desc(attributions.c.polarity == "negative"), desc(reviews.c.create_date))
+        .limit(limit)
     )
     with get_engine().connect() as conn:
-        return [str(r[0]) for r in conn.execute(sql, {"n": limit})]
+        return [str(r[0]) for r in conn.execute(stmt)]
 
 
 def run_batch(limit: int, concurrency: int) -> int:
