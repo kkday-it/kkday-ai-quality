@@ -22,6 +22,10 @@ COPY constants/ constants/
 # prompts/：判決 Prompt 唯一真相源（頂層 SSOT 目錄）。根目錄扁平 9 支＝初判歸因（prompt_source 檔案
 # fallback 讀 /app/prompts/*.md）；conversations/＝售後根因調試台版本庫（整目錄遞迴 COPY，勿改為扁平）。
 COPY prompts/ prompts/
+# scripts/ops/：維運操作腳本（保留期清理 retention.py、備份/還原）。**只帶 ops**——
+# dev/ tools/ prompt_lab/ 是開發期用的，不該進 prod image。少了這層，Phase 6 的保留期
+# 機制在生產環境根本沒有執行路徑（2026-08-05 稽核抓到：功能交付了但 prod 跑不起來）。
+COPY scripts/ops/ scripts/ops/
 COPY backend/ backend/
 
 # editable 安裝（與 dev 一致；app 指向 source）。--no-deps：依賴已於上方快取層裝好，此步秒級。
