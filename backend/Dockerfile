@@ -34,9 +34,10 @@ RUN pip install --no-cache-dir --no-deps -e ./backend
 WORKDIR /app/backend
 EXPOSE 8100
 
-# entrypoint 先對齊 schema（空庫 create_all+stamp / 既有庫 alembic upgrade），再交棒給 CMD。
+# entrypoint 先對齊 schema（一律 `alembic upgrade head`，單一路徑），再交棒給 CMD。
 ENTRYPOINT ["./docker-entrypoint.sh"]
-# ⚠️ 單 worker：4 套 job registry（export/import/prejudge/upload）為 module 級 in-mem dict，
+# ⚠️ 單 worker：6 套 job registry（export/import/prejudge/upload/prompt_debug_batch/prompt_regression）
+# 為 module 級 in-mem dict，
 # 多 worker（獨立 process 無共享記憶體）下 job 啟動 / SSE 進度 / 下載會落到不同 worker → 「job 不存在」/
 # 下載 404，且 prejudge Semaphore 併發上限被 ×worker 數放大。P1 將 job 狀態遷共享儲存（Redis/PG）後恢復多 worker。
 # --timeout-graceful-shutdown 30：SIGTERM 後 drain in-flight 請求的上限秒數。

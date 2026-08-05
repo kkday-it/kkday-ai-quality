@@ -20,8 +20,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 注意：生產不掛 ./docker/seed 進 initdb.d（dev 專屬；官方鏡像空卷首啟會無條件灌入
-      # 開發 seed，誤入正式庫）。schema 由 backend entrypoint 建立（空庫 init_db / 既有庫 alembic
-      # upgrade）；資料以 datapack 匯入或 scripts/ops/restore-db.sh 還原。
+      # 開發 seed，誤入正式庫）。schema 由 backend entrypoint 建立（一律 `alembic upgrade head`，
+      # 空庫也從 baseline 跑完整條鏈）；資料以 datapack 匯入或 scripts/ops/restore-db.sh 還原。
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
