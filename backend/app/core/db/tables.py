@@ -5,6 +5,34 @@ app 操作庫一律 PostgreSQL（對齊 QC DB）；連線取自 `config.env.data
 db 子模組的函式皆走本模組的 engine + Table metadata；schema 演進由 Alembic 管（見 alembic/）。
 
 時間欄位沿用 ISO 字串（Text，與既有 API 回傳形態一致）。
+
+## 字串欄一律 `Text`，只有審計欄用 `String(255)`（刻意，勿再「補上長度」）
+
+DDL 規範的「email 255／短代碼 20~50／長文不限長」長度分級**只套用在審計欄**，其餘 46 個字串欄
+維持 `Text`。理由：PG 的 `varchar(n)` 底層與 `text` 同為 varlena，長度上限**不影響儲存 / 索引 /
+效能**，唯一效果是一個長度 CHECK——而本表族的字串內容幾乎都不由我們決定：
+
+- LLM 產出：`evidence`（實測已 300 字元，逐字擷取原文，天然無上界）、`recommended_action`、`model`
+  （供應商模型名逐代變長）
+- 使用者輸入：`upload_batch_tbl.original_name`（實測 121，「檔名::工作表名」全由上傳者決定）、
+  `note` / `note_content`
+- 上游 production 投影：`evidence_snapshot_tbl` 的 `prod_desc` / `pkg_name` / `supplier_name`
+  （dev 快取僅 2 列，樣本不足以推論上界）
+
+超長的下場是寫入時 `StringDataRightTruncation` → HTTP 500，換來的只有一個沒有效能收益的 CHECK。
+封閉值域的代碼欄（`polarity` / `conf_tier` / `l1_code` / `l2_code`…）另有一層考量：值域由業務可改的
+`config/ai_judge/*.json` 決定，釘死長度等於把改分類體系綁上一次 migration。
+
+審計欄（`create_user` / `modify_user` / `author`）是例外，取 `String(255)`：它的值域**確實**封閉在
+email 與 `system:*` 標記，255 對齊 RFC 5321 的 email 位址上限 254。曾短暫收成 36，但當時的最長值
+本身就是 36（`system:conversations-30col-migration`）、邊際為零，且寫入端無截斷守衛。
+
+## `setting_master.setting_value` 維持 `Text`（存 JSON 字串），不轉 `jsonb`
+
+jsonb 會把物件的 key 正規化重排（實測本列：`qc_connections, qc_passwords` 會被換成
+`qc_passwords, qc_connections`），本專案在設定分組排序上已為此吃過虧。而收益是零——該表
+單例一列、永遠整包讀出交給 Python `json.loads` 解析，從不以 JSON path 查詢或索引；欄內還含機密
+欄位的 at-rest 密文，語義上就是一團不透明字串。
 """
 
 from __future__ import annotations
@@ -107,10 +135,18 @@ attributions = Table(
         key="created_at",
         comment="初判落庫時間（ISO 8601 字串）＝本列唯一時間源",
     ),
-    Index("idx_attribution_tbl_feedback_source_code", "source"),
-    # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件
+    # (source, source_id) 複合索引：所有歸因查詢的 join / EXISTS 走此複合條件。
+    # 單獨的 source 述詞也吃這條（前綴欄），故不另開 source 單欄索引。
     Index("idx_attribution_tbl_mix01", "source", "source_id"),
-    # 列表深化篩選熱路徑（typed 欄直接 btree 索引，取代舊 JSONB expression 索引）
+    # 列表深化篩選熱路徑（typed 欄直接 btree 索引，取代舊 JSONB expression 索引）。
+    # 下面這 6 條曾被提議以「低選擇度」為由刪除，實測後**確定保留**：提議的依據是各欄
+    # 最高頻值佔比 0.70~0.92，但列表 UI 篩的是**少數值**——conf_tier='needs_review' 佔
+    # 2.1%、prejudge_stage='pending_data' 佔 0.08%、polarity='negative' 佔 4.3%，選擇度很高。
+    # EXPLAIN ANALYZE 實測 planner 全部採用：等值/IN 篩選走 Index Only Scan（Heap Fetches 0），
+    # GROUP BY 聚合也走 Index Only Scan，而 EXISTS 相關子查詢是由
+    # `Bitmap Index Scan on idx_attribution_tbl_polarity` 當驅動節點——與「EXISTS 不走
+    # index path」的說法相反。本表還會隨初判推進成長約一個數量級（來源表 7.4 萬列僅 8% 已初判），
+    # 屆時 Seq Scan 成本線性上升而索引不變。
     Index("idx_attribution_tbl_polarity", "polarity"),
     Index("idx_attribution_tbl_prejudge_stage", "prejudge_stage"),
     Index("idx_attribution_tbl_l1_code", "l1_code"),
@@ -128,8 +164,8 @@ attributions = Table(
         "l2_code",
         unique=True,
     ),
-    Column("create_user", String(36), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(36), comment="最後修改者（user email 或 system:* 標記）"),
+    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
+    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="初判歸因結果（一列＝一條歸因，同一則反饋可有多列）。全 typed scalar 欄無 JSONB blob——"
     "本表是查詢／聚合／篩選密集的分析核心，typed 欄可直接 btree 索引且 SQL 乾淨；巢狀物件屬呈現層，"
@@ -323,8 +359,8 @@ batches = Table(
     ),
     Column("note", Text, comment="使用者上傳時輸入的備註（每工作表一則，隨批次保存）"),
     Index("idx_upload_batch_tbl_unique01", "batch_id", unique=True),
-    Column("create_user", String(36), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(36), comment="最後修改者（user email 或 system:* 標記）"),
+    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
+    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="上傳批次審計流水：一列＝一次上傳中的一張工作表，供資料上傳頁回溯來源檔與筆數",
 )
@@ -349,9 +385,9 @@ settings = Table(
         comment="最後更新時間（ISO 8601 字串）",
     ),
     Index("idx_setting_master_unique01", "key", unique=True),
-    Column("create_user", String(36), comment="建立者（user email 或 system:* 標記）"),
+    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
     Column("create_date", DateTime(timezone=True), comment="建立時間"),
-    Column("modify_user", String(36), comment="最後修改者（user email 或 system:* 標記）"),
+    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
     comment="全項目共享設定（單例 row，見 core/settings.py）：LLM 連線與模型配置庫、QC DB 連線、"
     "功能區綁定、導出偏好。機密欄位加密後才落此表",
 )
@@ -388,7 +424,7 @@ judge_rule_versions = Table(
         comment="該版本完整內容；prompt_* 為 {_meta, text(md 全文)}",
     ),
     Column("note", Text, comment="存檔備註（使用者輸入，說明本次改了什麼）"),
-    Column("create_user", String(36), key="author", comment="存檔人（user email）"),
+    Column("create_user", String(255), key="author", comment="存檔人（user email）"),
     Column(
         "is_active",
         Boolean,
@@ -473,7 +509,7 @@ llm_usage = Table(
     Index("idx_llm_usage_lst_create_date", "created_at"),
     Index("idx_llm_usage_lst_model", "model"),
     Index("idx_llm_usage_lst_stage", "stage"),
-    Column("create_user", String(36), comment="建立者（user email 或 system:* 標記）"),
+    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
     comment="AI 使用紀錄（per-call：每次真實 LLM 呼叫落一列），供成本 dashboard 多維度聚合。"
     "唯一寫入點＝llm.client 的 usage recorder（批次走 buffer 批量寫、單次即時寫）",
 )
@@ -525,7 +561,7 @@ prejudge_runs = Table(
     Column("failed", Integer, comment="失敗筆數"),
     Column("total_tokens", BigInteger, comment="本 run 累計 token（usage sink 加總）"),
     Column("cost_usd", Float, comment="本 run 累計費用（pricing 換算）"),
-    Column("create_user", String(36), key="triggered_by", comment="觸發人（user email）"),
+    Column("create_user", String(255), key="triggered_by", comment="觸發人（user email）"),
     Column(
         "create_date",
         DateTime(timezone=True),
@@ -542,7 +578,7 @@ prejudge_runs = Table(
     ),
     Index("idx_prejudge_run_tbl_create_date", "started_at"),
     Index("idx_prejudge_run_tbl_unique01", "job_id", unique=True),
-    Column("modify_user", String(36), comment="最後修改者（user email 或 system:* 標記）"),
+    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="初判批次執行紀錄（run 級：每次觸發初判的動作落一列）。與 llm_usage（call 級）以 job_id "
     "關聯——本表存業務語境（誰／何時／範圍／參數／結果統計），token 與費用明細由 llm_usage 聚合",
@@ -594,9 +630,12 @@ attribution_history = Table(
         "job_id", Text, comment="觸發的批次任務 id（與 prejudge_runs.job_id 對齊）；人工事件為空"
     ),
     Column(
-        "create_user", String(36), key="triggered_by", comment="觸發人（user email；kind=prejudge）"
+        "create_user",
+        String(255),
+        key="triggered_by",
+        comment="觸發人（user email；kind=prejudge）",
     ),
-    Column("author", String(36), comment="備註人（user email；kind=note）"),
+    Column("author", String(255), comment="備註人（user email；kind=note）"),
     Column("note_content", Text, key="content", comment="備註內容（kind=note）"),
     Column(
         "create_date",
@@ -710,8 +749,8 @@ evidence_snapshot = Table(
     Index("idx_evidence_snapshot_tbl_prod_oid", "prod_oid"),
     Index("idx_evidence_snapshot_tbl_supplier_oid", "supplier_oid"),
     Index("idx_evidence_snapshot_tbl_unique01", "order_oid", unique=True),
-    Column("create_user", String(36), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(36), comment="最後修改者（user email 或 system:* 標記）"),
+    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
+    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="訂單佐證快照（qc_evidence 的 PG 快取層）：下單當時的商品／規格／方案內容投影，一訂單一列 "
     "+ TTL 懶清理。runtime 派生快取（真相源＝production snapshot，可重生），刻意不入資料包。"

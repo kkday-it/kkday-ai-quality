@@ -74,7 +74,34 @@ def upgrade() -> None:
         op.execute(stmt)
 
 
+_DOWNGRADE_INDEXES: tuple[tuple[str, str], ...] = (
+    ("idx_review_tbl_create_date", "idx_reviews_create_date"),
+    ("idx_review_tbl_prod_oid", "idx_reviews_prod_oid"),
+    ("idx_conversation_tbl_bucket", "idx_conversations_bucket"),
+    ("idx_conversation_tbl_inbound_time", "idx_conversations_inbound_time"),
+    ("idx_conversation_tbl_prod_oid", "idx_conversations_prod_oid"),
+    ("idx_conversation_tbl_vertical", "idx_conversations_vertical"),
+    ("idx_freshdesk_ticket_tbl_created_at", "idx_freshdesk_created_at"),
+    ("idx_freshdesk_ticket_tbl_product_id", "idx_freshdesk_product_id"),
+    ("idx_app_feedback_tbl_created", "idx_app_feedback_created"),
+    ("idx_mixpanel_tracker_tbl_time", "idx_mixpanel_time"),
+)
+
+
 def downgrade() -> None:
-    """僅把表名改回（約束與索引名不逐一還原——它們不影響任何查詢語義）。"""
+    """表名 / PK 約束名 / 索引名一併改回。
+
+    索引名**必須**還原：baseline v2 的 downgrade 是以原名逐一 `drop_index`，留著新名會讓
+    整條 downgrade 鏈斷在最後一支。PK 約束名改回 `<原表名>_pkey`——本機 dev 庫那個
+    `product_reviews_pkey1` 的陳年殘留不還原（upgrade 的解析是動態的，不影響再次 upgrade）。
+    """
+    for new, old in _DOWNGRADE_INDEXES:
+        op.execute(f"ALTER INDEX {new} RENAME TO {old}")
     for old, new in _TABLE_RENAMES:
+        op.execute(
+            f"DO $$ DECLARE c text; BEGIN "
+            f"SELECT conname INTO c FROM pg_constraint "
+            f"WHERE conrelid = '{new}'::regclass AND contype = 'p'; "
+            f"EXECUTE format('ALTER TABLE {new} RENAME CONSTRAINT %I TO {old}_pkey', c); END $$;"
+        )
         op.execute(f"ALTER TABLE {new} RENAME TO {old}")

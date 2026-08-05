@@ -54,8 +54,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """重建結構（不還原資料）。"""
+    """重建結構（不還原原值）。
+
+    `finding_id` 以本檔記載的編碼由自然鍵四欄**重算**（`fd_{source}_{source_id}__{l1}__{l2}`），
+    因為更前面的 `a8e5c31d0f62` 要把 PRIMARY KEY 掛回這一欄——留 NULL 的話整條 downgrade 鏈
+    會斷在那裡。**重算值不等於原值**：91% 的歷史列帶著 2026-07-01 改名前的舊 source code，
+    那個字面已無從還原；此處只保證「結構可用且唯一」，不宣稱資料回來了。
+    """
     op.add_column("attribution_tbl", sa.Column("finding_id", sa.Text(), nullable=True))
+    op.execute(
+        "UPDATE attribution_tbl SET finding_id = 'fd_' || coalesce(feedback_source_code, '') "
+        "|| '_' || coalesce(source_id, '') || '__' || coalesce(l1_code, '') "
+        "|| '__' || coalesce(l2_code, '')"
+    )
+    op.alter_column("attribution_tbl", "finding_id", nullable=False)
     op.execute("DROP INDEX IF EXISTS idx_attribution_tbl_unique01")
     op.execute("CREATE UNIQUE INDEX idx_attribution_tbl_unique01 ON attribution_tbl (finding_id)")
     op.create_table(

@@ -174,6 +174,135 @@ _UPGRADE: tuple[str, ...] = (
 )
 
 
+_DOWNGRADE: tuple[str, ...] = (
+    # ── 索引名還原（20 個）──
+    # baseline v2 的 downgrade 以**原名**逐一 drop_index，這裡不還原就會在鏈尾撞 UndefinedObject。
+    "ALTER INDEX idx_attribution_tbl_feedback_source_code RENAME TO idx_attributions_source",
+    "ALTER INDEX idx_attribution_tbl_mix01 RENAME TO idx_attributions_source_id",
+    "ALTER INDEX idx_attribution_tbl_polarity RENAME TO idx_attributions_polarity",
+    "ALTER INDEX idx_attribution_tbl_prejudge_stage RENAME TO idx_attributions_prejudge_stage",
+    "ALTER INDEX idx_attribution_tbl_l1_code RENAME TO idx_attributions_l1",
+    "ALTER INDEX idx_attribution_tbl_l2_code RENAME TO idx_attributions_l2",
+    "ALTER INDEX idx_attribution_tbl_sentiment_score RENAME TO idx_attributions_sentiment",
+    "ALTER INDEX idx_attribution_tbl_conf_tier RENAME TO idx_attributions_tier",
+    "ALTER INDEX idx_attribution_event_lst_mix01 RENAME TO idx_attribution_history_source_id",
+    "ALTER INDEX idx_attribution_event_lst_create_date RENAME TO idx_attribution_history_created_at",
+    "ALTER INDEX idx_attribution_event_lst_mix02 RENAME TO idx_attribution_history_snapshot",
+    "ALTER INDEX idx_llm_usage_lst_create_date RENAME TO idx_llm_usage_created_at",
+    "ALTER INDEX idx_llm_usage_lst_model RENAME TO idx_llm_usage_model",
+    "ALTER INDEX idx_llm_usage_lst_stage RENAME TO idx_llm_usage_stage",
+    "ALTER INDEX idx_prejudge_run_tbl_create_date RENAME TO idx_prejudge_runs_started_at",
+    "ALTER INDEX idx_prompt_debug_review_tbl_create_date RENAME TO idx_prompt_debug_reviews_created",
+    "ALTER INDEX idx_judge_rule_version_lst_unique02 RENAME TO uq_judge_rule_active",
+    "ALTER INDEX idx_evidence_snapshot_tbl_expires_at RENAME TO idx_evidence_snapshot_expires",
+    "ALTER INDEX idx_evidence_snapshot_tbl_prod_oid RENAME TO idx_evidence_snapshot_prod_oid",
+    "ALTER INDEX idx_evidence_snapshot_tbl_supplier_oid RENAME TO idx_evidence_snapshot_supplier_oid",
+    "ALTER TABLE judge_rule_version_lst RENAME CONSTRAINT idx_judge_rule_version_lst_unique01 TO uq_judge_rule_code_version",
+    # 本支為「業務鍵讓位給 serial PK」而新建的唯一索引：原 schema 沒有，業務鍵由 PK 承擔
+    "DROP INDEX IF EXISTS idx_attribution_tbl_unique01",
+    "DROP INDEX IF EXISTS idx_prejudge_run_tbl_unique01",
+    "DROP INDEX IF EXISTS idx_upload_batch_tbl_unique01",
+    "DROP INDEX IF EXISTS idx_setting_master_unique01",
+    "DROP INDEX IF EXISTS idx_evidence_snapshot_tbl_unique01",
+    # ── attribution_tbl → attributions ──
+    # DROP COLUMN 會連帶移除以該欄為唯一依賴的 PK 約束，故不必先 DROP CONSTRAINT
+    "ALTER TABLE attribution_tbl DROP COLUMN create_user",
+    "ALTER TABLE attribution_tbl DROP COLUMN modify_user",
+    "ALTER TABLE attribution_tbl DROP COLUMN modify_date",
+    "ALTER TABLE attribution_tbl DROP COLUMN attribution_oid",
+    "ALTER TABLE attribution_tbl ALTER COLUMN create_date TYPE text USING create_date::text",
+    "ALTER TABLE attribution_tbl RENAME COLUMN feedback_source_code TO source",
+    "ALTER TABLE attribution_tbl RENAME COLUMN recommended_action TO action",
+    "ALTER TABLE attribution_tbl RENAME COLUMN create_date TO created_at",
+    "ALTER TABLE attribution_tbl RENAME TO attributions",
+    "ALTER TABLE attributions ADD CONSTRAINT attributions_pkey PRIMARY KEY (finding_id)",
+    # ── attribution_event_lst → attribution_history ──
+    # 先改表名再 ADD BIGSERIAL，序列才會叫 attribution_history_id_seq（序列名跟當下表名走）
+    "ALTER TABLE attribution_event_lst DROP COLUMN attribution_event_oid",
+    "ALTER TABLE attribution_event_lst RENAME COLUMN feedback_source_code TO source",
+    "ALTER TABLE attribution_event_lst RENAME COLUMN note_content TO content",
+    "ALTER TABLE attribution_event_lst RENAME COLUMN attribution_snapshot TO attributions",
+    "ALTER TABLE attribution_event_lst RENAME COLUMN create_user TO triggered_by",
+    "ALTER TABLE attribution_event_lst RENAME COLUMN create_date TO created_at",
+    "ALTER TABLE attribution_event_lst RENAME TO attribution_history",
+    "ALTER TABLE attribution_history ADD COLUMN id BIGSERIAL",
+    "ALTER TABLE attribution_history ADD CONSTRAINT attribution_history_pkey PRIMARY KEY (id)",
+    # ── llm_usage_lst → llm_usage ──
+    "ALTER TABLE llm_usage_lst DROP COLUMN create_user",
+    "ALTER TABLE llm_usage_lst DROP COLUMN llm_usage_oid",
+    "ALTER TABLE llm_usage_lst RENAME COLUMN feedback_source_code TO source",
+    "ALTER TABLE llm_usage_lst RENAME COLUMN create_date TO created_at",
+    "ALTER TABLE llm_usage_lst RENAME TO llm_usage",
+    "ALTER TABLE llm_usage ADD COLUMN id BIGSERIAL",
+    "ALTER TABLE llm_usage ADD CONSTRAINT llm_usage_pkey PRIMARY KEY (id)",
+    # ── prejudge_run_tbl → prejudge_runs ──
+    "ALTER TABLE prejudge_run_tbl DROP COLUMN modify_user",
+    "ALTER TABLE prejudge_run_tbl DROP COLUMN modify_date",
+    "ALTER TABLE prejudge_run_tbl DROP COLUMN prejudge_run_oid",
+    "ALTER TABLE prejudge_run_tbl RENAME COLUMN feedback_source_code TO source",
+    "ALTER TABLE prejudge_run_tbl RENAME COLUMN run_status TO status",
+    "ALTER TABLE prejudge_run_tbl RENAME COLUMN trigger_kind TO kind",
+    "ALTER TABLE prejudge_run_tbl RENAME COLUMN create_user TO triggered_by",
+    "ALTER TABLE prejudge_run_tbl RENAME COLUMN create_date TO started_at",
+    "ALTER TABLE prejudge_run_tbl RENAME TO prejudge_runs",
+    "ALTER TABLE prejudge_runs ADD CONSTRAINT prejudge_runs_pkey PRIMARY KEY (job_id)",
+    # ── prompt_debug_review_tbl → prompt_debug_reviews ──
+    "ALTER TABLE prompt_debug_review_tbl DROP COLUMN modify_user",
+    "ALTER TABLE prompt_debug_review_tbl DROP COLUMN modify_date",
+    "ALTER TABLE prompt_debug_review_tbl DROP COLUMN prompt_debug_review_oid",
+    "ALTER TABLE prompt_debug_review_tbl RENAME COLUMN reviewer_comment TO comment",
+    "ALTER TABLE prompt_debug_review_tbl RENAME COLUMN create_user TO reviewer",
+    "ALTER TABLE prompt_debug_review_tbl RENAME COLUMN create_date TO created_at",
+    "ALTER TABLE prompt_debug_review_tbl RENAME TO prompt_debug_reviews",
+    "ALTER TABLE prompt_debug_reviews ADD COLUMN id BIGSERIAL",
+    "ALTER TABLE prompt_debug_reviews ADD CONSTRAINT prompt_debug_reviews_pkey PRIMARY KEY (id)",
+    # ── judge_rule_version_lst → judge_rule_versions ──
+    "ALTER TABLE judge_rule_version_lst DROP COLUMN judge_rule_version_oid",
+    "ALTER TABLE judge_rule_version_lst RENAME COLUMN rule_content TO content",
+    "ALTER TABLE judge_rule_version_lst RENAME COLUMN version_number TO version",
+    "ALTER TABLE judge_rule_version_lst RENAME COLUMN create_user TO author",
+    "ALTER TABLE judge_rule_version_lst RENAME COLUMN create_date TO created_at",
+    "ALTER TABLE judge_rule_version_lst RENAME TO judge_rule_versions",
+    "ALTER TABLE judge_rule_versions ADD COLUMN id BIGSERIAL",
+    "ALTER TABLE judge_rule_versions ADD CONSTRAINT judge_rule_versions_pkey PRIMARY KEY (id)",
+    # ── upload_batch_tbl → batches ──
+    "ALTER TABLE upload_batch_tbl DROP COLUMN create_user",
+    "ALTER TABLE upload_batch_tbl DROP COLUMN modify_user",
+    "ALTER TABLE upload_batch_tbl DROP COLUMN modify_date",
+    "ALTER TABLE upload_batch_tbl DROP COLUMN upload_batch_oid",
+    "ALTER TABLE upload_batch_tbl ALTER COLUMN create_date TYPE text USING create_date::text",
+    "ALTER TABLE upload_batch_tbl RENAME COLUMN feedback_source_code TO source",
+    "ALTER TABLE upload_batch_tbl RENAME COLUMN batch_name TO name",
+    "ALTER TABLE upload_batch_tbl RENAME COLUMN create_date TO uploaded_at",
+    "ALTER TABLE upload_batch_tbl RENAME TO batches",
+    "ALTER TABLE batches ADD CONSTRAINT batches_pkey PRIMARY KEY (batch_id)",
+    # ── setting_master → settings ──
+    "ALTER TABLE setting_master DROP COLUMN create_user",
+    "ALTER TABLE setting_master DROP COLUMN create_date",
+    "ALTER TABLE setting_master DROP COLUMN modify_user",
+    "ALTER TABLE setting_master DROP COLUMN setting_oid",
+    "ALTER TABLE setting_master ALTER COLUMN modify_date TYPE text USING modify_date::text",
+    "ALTER TABLE setting_master RENAME COLUMN setting_code TO key",
+    "ALTER TABLE setting_master RENAME COLUMN setting_value TO data",
+    "ALTER TABLE setting_master RENAME COLUMN modify_date TO updated_at",
+    "ALTER TABLE setting_master RENAME TO settings",
+    "ALTER TABLE settings ADD CONSTRAINT settings_pkey PRIMARY KEY (key)",
+    # ── evidence_snapshot_tbl → evidence_snapshot ──
+    # order_oid 原本是 BigInteger PK（SQLAlchemy 產出 serial），upgrade 卸掉了 nextval 預設，此處補回
+    "ALTER TABLE evidence_snapshot_tbl DROP COLUMN create_user",
+    "ALTER TABLE evidence_snapshot_tbl DROP COLUMN modify_user",
+    "ALTER TABLE evidence_snapshot_tbl DROP COLUMN modify_date",
+    "ALTER TABLE evidence_snapshot_tbl DROP COLUMN evidence_snapshot_oid",
+    "ALTER TABLE evidence_snapshot_tbl RENAME COLUMN product_timezone TO timezone",
+    "ALTER TABLE evidence_snapshot_tbl RENAME COLUMN create_date TO fetched_at",
+    "ALTER TABLE evidence_snapshot_tbl RENAME TO evidence_snapshot",
+    "ALTER TABLE evidence_snapshot ADD CONSTRAINT evidence_snapshot_pkey PRIMARY KEY (order_oid)",
+    "CREATE SEQUENCE IF NOT EXISTS evidence_snapshot_order_oid_seq AS bigint OWNED BY evidence_snapshot.order_oid",
+    "ALTER TABLE evidence_snapshot ALTER COLUMN order_oid SET DEFAULT nextval('evidence_snapshot_order_oid_seq')",
+    "SELECT setval('evidence_snapshot_order_oid_seq', GREATEST(COALESCE((SELECT max(order_oid) FROM evidence_snapshot), 0), 1))",
+)
+
+
 def upgrade() -> None:
     """依序套用表改名 → 欄改名 → 型別轉正 → PK 換 serial → 審計欄 → 索引改名。"""
     for stmt in _UPGRADE:
@@ -181,24 +310,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """回退：僅把 9 張表名改回原名。
+    """完整還原**結構**：索引名 → 審計欄 → serial PK → 型別 → 欄名 → 表名。
 
-    **不還原欄名／PK／型別**——本支是單向的規範對齊，逐條逆轉需要 100+ 條語句且
-    `timestamptz`→`text` 會改變值的字面形式（不可能逐字還原原始字串）。真要完整回退，
-    走 `pg_dump` 備份還原（套用前已備份至 ~/kkday-backups/）。
+    先前只把表名改回，留下欄名／PK／型別全是新版的半套 schema，導致：
+    ① 前一支 `f3d92a7c48be` 的 downgrade 對 `attributions.source` 下 COMMENT 直接 UndefinedColumn；
+    ② 想重新 `upgrade` 又撞 `RENAME COLUMN source` 找不到欄——庫兩頭都走不動。
+    故本支的 downgrade 必須是真正的結構逆操作，而非只做表名。
+
+    **資料層仍有三處不可逆**（結構還原、值不還原，屬本支性質使然）：
+    · `timestamptz` → `text` 走 `::text`，得到 PG 預設字面（`2026-08-04 12:00:00+00`），
+      與原本存的 ISO 8601 字串格式不同——值的語義相同、字面不同。
+    · 4 張表被 `DROP COLUMN` 的舊 `id` 流水號無從還原，以 `BIGSERIAL` 重新編號補回（值必然與原始不同）。
+    · 新增的審計欄內容隨欄位一併消失。
+    要逐值還原請走 `pg_dump` 備份（套用前已備份至 ~/kkday-backups/）。
     """
-    for old_t, new_t in _TABLE_RENAMES_REVERSED:
-        op.execute(f"ALTER TABLE {new_t} RENAME TO {old_t}")
-
-
-_TABLE_RENAMES_REVERSED: tuple[tuple[str, str], ...] = (
-    ("attributions", "attribution_tbl"),
-    ("attribution_history", "attribution_event_lst"),
-    ("llm_usage", "llm_usage_lst"),
-    ("prejudge_runs", "prejudge_run_tbl"),
-    ("prompt_debug_reviews", "prompt_debug_review_tbl"),
-    ("judge_rule_versions", "judge_rule_version_lst"),
-    ("batches", "upload_batch_tbl"),
-    ("settings", "setting_master"),
-    ("evidence_snapshot", "evidence_snapshot_tbl"),
-)
+    for stmt in _DOWNGRADE:
+        op.execute(stmt)
