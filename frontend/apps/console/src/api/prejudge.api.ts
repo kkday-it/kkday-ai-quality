@@ -25,8 +25,6 @@ export interface GetProblemsParams {
   orderOid?: string;
   /** 信心分層過濾（單選；auto_accept/jury/needs_review）。 */
   confidenceTier?: string;
-  /** 判決狀態過濾（多選 new/auto_confirmed/confirmed/dismissed；CSV 傳後端）。 */
-  status?: string[];
   /** 初判模型過濾（多選；attributions.model IN——當前初判維度；CSV 傳後端）。 */
   model?: string[];
   /** 有無外部評論融合資料：'true'=有 / 'false'=無 / 缺省=全部（僅 reviews 生效）。 */
@@ -63,7 +61,6 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.prodOid) q.set('prod_oid', params.prodOid);
   if (params.orderOid) q.set('order_oid', params.orderOid);
   if (params.confidenceTier) q.set('confidence_tier', params.confidenceTier);
-  if (params.status?.length) q.set('status', params.status.join(','));
   if (params.model?.length) q.set('model', params.model.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.bucket?.length) q.set('bucket', params.bucket.join(','));
@@ -97,8 +94,6 @@ export const startProblemsExport = (p: {
   confidence_tier?: string;
   /** 歸因分類（多選任意層級 code；子樹語義）。 */
   taxonomy?: string[];
-  /** 判決狀態（多選 new/auto_confirmed/confirmed/dismissed）。 */
-  status?: string[];
   /** 初判模型篩選（多選；當前初判維度，圈選哪些評論）。 */
   model?: string[];
   /** 輸出結果版本：省略＝當前初判；指定模型＝內容替換為該模型的 attribution_history 最新快照。 */
@@ -171,24 +166,6 @@ export const previewPrejudgeCount = (body: PrejudgeBody): Promise<{ total: numbe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-
-/** 六域裁決（B0 診斷理由 overlay）：命中域帶歸因+理由，棄權域帶棄權理由——六域皆有交代。 */
-export interface DomainVerdict {
-  domain: string;
-  domain_label: string;
-  matched: boolean;
-  attributions: Array<{
-    l1_domain_code: string;
-    l1_label: string;
-    l2_code: string;
-    l2_label: string;
-    confidence: number;
-    evidence_quote: string;
-    summary: Record<string, string>;
-    reason: string;
-  }>;
-  abstain_reason: string;
-}
 
 /**
  * 初判歸因進度 SSE 串流 URL（供原生 EventSource 直接連；免輪詢）。

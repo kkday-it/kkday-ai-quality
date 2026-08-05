@@ -129,7 +129,7 @@ const num = (n: number) => n.toLocaleString();
           <CardSection
             title="各階段成本"
             hint="USD"
-            desc="依呼叫階段分組：polarity 極性閘門 / attribute 歸因 / domain 域分類 / attribute_b cascade / translate 摘要翻譯。"
+            desc="依呼叫階段／呼叫者分組：polarity 極性閘門 / attribute（及 attribute_b、domain）歸因 / pack_* 與 C-1~C-6 六域並行歸因 / prompt_debug 與 prompt_debug_batch 調試台 / prompt_revise 定點改寫。"
           >
             <v-chart :option="byStageOption" class="h-[300px]" autoresize />
           </CardSection>

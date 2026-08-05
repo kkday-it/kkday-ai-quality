@@ -31,7 +31,15 @@ Prompt 已 2.7 萬字，人很難確信「這個誤判只跟這三段有關」�
 
 ## 2. 資料模型
 
-新表 `prompt_debug_reviews`（`backend/app/core/db/tables.py`）。一列＝一個人工評判過的案例。
+> ⚠️ **本節已被實作演進取代（2026-08-04）**：案例**不再落庫**。`prompt_debug_review_tbl` 已由
+> migration `e2a91c47d0b3` drop，案例改存瀏覽器本地（Pinia + localStorage，
+> `frontend/apps/console/src/stores/promptReviewCases.store.ts`，上限 `MAX_CASES` 200 則）——案例是個人
+> 調試用的暫存語料而非團隊共享資產。後端**沒有** `/prompt-debug/reviews` CRUD 端點；改寫與回歸端點由
+> 請求整包帶上 `cases[]`（`PromptDebugCaseIn`），後端純運算不持久化。
+> 下方欄位表僅保留為當時的設計紀錄——**欄位語義仍是前端案例形狀的來源**，但「新表 / 索引 / migration /
+> datapack 登記」等落庫相關內容一律作廢。當前以 code 為準。
+
+原設計：新表 `prompt_debug_reviews`（`backend/app/core/db/tables.py`）。一列＝一個人工評判過的案例。
 
 | 欄 | 型別 | 說明 |
 |---|---|---|

@@ -200,7 +200,7 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
   { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
 ];
 
-/** 共用篩選（各來源皆適用，落 attributions.data 或時間欄）：傾向 / 初判階段 / 信心分層 / 判決狀態 / 初判模型 / 歸因分類 / 日期區間。 */
+/** 共用篩選（各來源皆適用，落 attributions.data 或時間欄）：傾向 / 初判階段 / 信心分層 / 初判模型 / 歸因分類 / 日期區間。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },

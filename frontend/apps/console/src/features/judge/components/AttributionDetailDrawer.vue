@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 歸因詳情抽屜（原 AttributionList 內 modal 抽出）：完整展示單一反饋的
- * 原文 → 關聯資料 → 每條歸因全欄位（分類路徑/信心含原始值/階段/判決狀態/摘要多語系/
+ * 原文 → 關聯資料 → 每條歸因全欄位（分類路徑/信心含原始值/階段/摘要多語系/
  * 逐字佐證/建議行動/負責單位/真值/歸因流水號）。純展示、資料取自列上 attributions，零額外請求；
  * 全部走 Arco 現成組件（a-drawer / a-descriptions / a-tag / a-rate / a-typography）。
  */
@@ -210,7 +210,7 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
         </AsyncSection>
       </div>
 
-      <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因/判決狀態/真值徽章）-->
+      <!-- ③ 每條歸因：全欄位 descriptions（標題列帶主歸因徽章）-->
       <template v-if="row.attributions && row.attributions.length">
         <a-descriptions
           v-for="(a, ai) in row.attributions"

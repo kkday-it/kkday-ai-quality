@@ -304,9 +304,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     );
   };
 
-  // ── 單列判決（操作欄；與批量 selectedKeys 解耦；單列重新初判已下沉 usePrejudgeJob.rejudgeRow）──
-  /** 判決結果提示文案（confirmed/dismissed/new＝撤銷判決回待判決）。 */
-
   return {
     schema,
     // 篩選（單一 reactive 物件；AttributionFilterBar 綁定）
@@ -315,8 +312,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     modelOptions,
     verticalOptions,
     verticalGroups,
-    effVerticals,
-    listFilters,
     onVerticalChange,
     onSortChange,
     onFilterChange,
@@ -341,7 +336,6 @@ export function useAttributionList(source: MaybeRefOrGetter<string>) {
     ...selection,
     // 初判歸因批次 + 單列重新初判（usePrejudgeJob：running/進度/目標/pause/resume/cancel/isRowBusy/rejudgeRow）
     ...job,
-    // 單列判決 + 批量初判
     // 導出（彈窗草稿流程 + 型態選擇 + 背景 job + 實時進度 + 停止）
     exportOpen,
     exportFilters,

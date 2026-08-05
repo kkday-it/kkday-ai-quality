@@ -70,7 +70,7 @@ export const POLARITY_FILTER_OPTS = ['negative', 'neutral', 'positive'].map((val
   value,
   label: POLARITY_LABELS[value],
 }));
-/** 階段 / 分層 / 判決狀態選項（自 label 常數衍生，單一真相）。 */
+/** 初判階段 / 信心分層選項（自 label 常數衍生，單一真相）。 */
 export const STAGE_OPTS = Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }));
 export const TIER_OPTS = Object.entries(TIER_LABELS).map(([value, label]) => ({ value, label }));
 /** 進線分桶篩選選項（conversations 專屬；label 衍生自 BUCKET_LABELS SSOT）。 */

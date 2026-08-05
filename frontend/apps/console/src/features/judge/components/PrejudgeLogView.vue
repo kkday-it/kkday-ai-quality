@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 執行日誌視圖（分組 wrapper）：依 entries 的 `item_id` 自動適應——
- * - 單組（單筆初判／舊快照無 item_id／沙盒單挑）：直接渲染 `PrejudgeLogTabs`，與既往完全一致。
+ * - 單組（單筆初判／舊快照無 item_id）：直接渲染 `PrejudgeLogTabs`，與既往完全一致。
  * - 多組（批量 ≥2 筆）：主從式——左欄「整體流程」評論清單（每筆狀態一目了然＝批量整體視角），
  *   點任一筆 → 右側以同一份 `PrejudgeLogTabs` 只渲染該筆條目（單筆密度的 流程＋polarity＋C-N
  *   tabs＝快速下鑽單筆執行日誌）；job 級事件（任務啟動參數等）收在「整體流程」偽列。
@@ -150,7 +150,7 @@ const STATUS_LABELS: Record<ItemGroup['status'], string> = {
     </div>
     <a-empty v-else-if="!entries.length" description="無日誌紀錄" :image-size="32" />
 
-    <!-- 單組：既往單視圖原樣（單筆/舊快照/沙盒單挑） -->
+    <!-- 單組：既往單視圖原樣（單筆/舊快照） -->
     <PrejudgeLogTabs v-else-if="!grouped" :entries="entries" :streaming="streaming" />
 
     <!-- 多組（批量）：主從式——左欄整體流程清單、右側選中評論的完整日誌 -->

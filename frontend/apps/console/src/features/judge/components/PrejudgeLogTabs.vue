@@ -4,8 +4,8 @@
  * 外層 wrapper，本檔只管「一組 entries」）：每一次 LLM 調用（polarity / C-1..C-6）聚合成獨立 tab，
  * tab 內以「時間軸」由上至下（時間遞增）呈現該調用的生命週期——請求（完整輸入參數，100% 對齊
  * 實際送 API 的 kwargs）→ Prompt 全文 → 回應（原始輸出 + 用量）；非 LLM 的流程階段（載資料 /
- * 落庫 / 錯誤）收在「流程」tab 的時間軸。抽自 `PrejudgeLogDrawer.vue`，供該抽屜（歸因歷史回看落庫快照）與
- * Prompt 測試沙盒（即時 SSE + 歷史回看快照）共用同一份渲染，避免 drift。
+ * 落庫 / 錯誤）收在「流程」tab 的時間軸。抽自 `PrejudgeLogDrawer.vue`，供該抽屜（歸因歷史回看落庫快照）
+ * 與初判執行中的即時 SSE 串流共用同一份渲染，避免 drift。
  *
  * Tab 固定 + 內容捲動：交給公共元件 `StickyTabs`（`@/components`，見
  * `.claude/rules/frontend-vue.md` Tabs 切換展示章節）取代裸 `a-tabs`，本檔不再自行處理

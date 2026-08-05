@@ -17,7 +17,7 @@
   `children`＝**可變深度**。分類的**類別＋層級＋域 metadata＋證據閘**全在此，程式碼零 taxonomy 假設。改
   prompt → `reload()` → 全套（篩選樹/enum/域 meta）即時跟著換。模型判分類靠 `## System` 的 `<facet_catalog>`
   例句（decision_process 明示 l2_code 從 facet_catalog 選），故 `## Taxonomy` 只餵機器、不進模型 context。
-- **載入層**：`prompt_source.load(prompt_id)`——DB（`judge_rule_versions` 的 `prompt_polarity`/
+- **載入層**：`prompt_source.load(prompt_id)`——DB（`judge_rule_version_lst` 的 `prompt_polarity`/
   `prompt_C-1~6`，RuleManager「初判 Prompt」熱編）優先，缺 active 版時 fallback 讀本目錄檔；模組級快取，
   存檔後 `reload()` 清空。域 prompt load 時把 `## Taxonomy` 派生的 code 注入 Schema 的 `l2_code.enum`。
 - **結構派生**：`structure()` 從各域 `## Taxonomy` 派生 `{domain, domain_label, action, owner,

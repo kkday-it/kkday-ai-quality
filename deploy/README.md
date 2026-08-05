@@ -72,7 +72,7 @@ sake（PHP-FPM）掛 fpm-exporter(:9147)+nginx-exporter(:9145) sidecar；本專�
 3. **alembic 執行身份**：RDS 使用者需 schema CREATE/ALTER/DROP；若 migration/runtime 帳號分離需另設計（本輪未做）。
 4. **migration 模式**：entrypoint-in-every-pod 於 replicas:1 安全；多 replica 前需改 ArgoCD PreSync Job 防 DDL 競態。
 5. **連線池**：pool 10＋overflow 20＝30/replica；對照 RDS `db.t4g.small` 的 `max_connections` 留餘裕。
-6. **空庫初始化**：首次走 `init_db`（create_all＋stamp head）；正式 cutover 前對 scratch RDS 乾跑一輪 `upgrade head` 驗證。
+6. **空庫初始化**：一律 `alembic upgrade head`（entrypoint → `app/core/db/schema_bootstrap.py` 單一路徑，空庫也從 baseline 跑完整條鏈，已無 create_all+stamp 分支）；正式 cutover 前仍建議對 scratch RDS 乾跑一輪驗證。
 7. **VPC/SG**：EKS pod → RDS 連通性屬 SRE；確認 pod 內 DNS 可解析 RDS endpoint。
 8. **認證方式**：現為靜態密碼 URL；若要求 RDS Proxy/IAM 短效 token 需另設計刷新（本輪未做）。
 9. **Locale**：alpine（musl C.UTF-8）vs RDS（glibc en_US.UTF-8）排序行為差異——依賴中文 ORDER BY 的功能上線前抽樣比對。

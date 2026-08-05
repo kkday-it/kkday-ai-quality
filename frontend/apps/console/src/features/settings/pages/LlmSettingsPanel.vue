@@ -75,8 +75,7 @@ const onSave = (provider: string, payload: { baseUrl: string; token?: string }) 
 
       <p class="mb-0 mt-3 text-[13px] leading-[1.7] text-[var(--color-text-3)]">
         分頁標題的圓點＝該供應商是否已配 API token（綠＝已配、灰＝未配）。各功能區（初判分類、
-        Prompt 調試台、Prompt 測試沙盒、AI
-        定點改寫）只需在該頁面上選一個模型配置，不必再逐項調旋鈕，
+        Prompt 調試台、AI 定點改寫）只需在該頁面上選一個模型配置，不必再逐項調旋鈕，
         選了即時生效並自動保存，這裡不另設集中綁定入口。⚠️ 綁定是全團隊共用的一份：你換掉某一區的
         配置，同事下次進頁面也會是新的。
       </p>

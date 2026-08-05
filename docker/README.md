@@ -83,7 +83,7 @@ docker volume ls | grep kkday-ai-quality                               # 看本�
 | 變數 | 用途 | 缺失行為 |
 |---|---|---|
 | `POSTGRES_PASSWORD` | PG 密碼（取代 dev trust 免密；backend `DATABASE_URL` 同步引用） | compose 拒啟動 |
-| `AIQ_SECRET_KEY` | settings 表機密 at-rest 加密（生成 `python -c "import secrets;print(secrets.token_urlsafe(32))"`） | compose / backend 拒啟動 |
+| `AIQ_SECRET_KEY` | `setting_master` 表機密 at-rest 加密（生成 `python -c "import secrets;print(secrets.token_urlsafe(32))"`） | compose / backend 拒啟動 |
 | `OPENAI_API_KEY` | LLM 初判 key（fallback；亦可登入後於設定面板配 per-provider token） | 可啟動，但 **stub 硬閘**：批量初判一律 403（防假判覆蓋真歸因） |
 | `CORS_ALLOW_ORIGINS` | 前端正式網域（逗號分隔多個） | 預設 `http://localhost:8080`，上線必改 |
 

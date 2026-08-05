@@ -1,60 +1,87 @@
-// AI 法官前端型別（對應後端 backend/app/schema.py 的 Pydantic 模型）
+// AI 法官前端型別（對應後端 backend/app/core/schema.py 的 Pydantic 模型）
 // 前後端雙語言，靠這份 + 後端 schema 保持 REST/JSON contract 對齊。
 
-export const DIMENSIONS = [
-  '商品定位',
-  '行程流程',
-  '費用資訊',
-  '集合資訊',
-  '使用兌換',
-  '成團條件',
-  '限制與風險',
-  '承諾與SLA',
-] as const;
-export type Dimension = (typeof DIMENSIONS)[number] | 'non_content';
-
-export type LogicalField =
-  | 'prod_name'
-  | 'prod_summary'
-  | 'prod_feature'
-  | 'prod_schedules'
-  | 'pkg_desc'
-  | 'pkg_schedules'
-  | 'none';
-
+/** 建議動作（鍵齊 backend schema.RecommendedAction 的 8 個 Literal）。 */
 export type RecommendedAction =
   | 'rewrite_field'
   | 'fix_contradiction'
   | 'add_missing_info'
   | 'clarify_wording'
+  | 'penalize_breach'
   | 'no_action'
   | 'escalate_ops'
   | 'escalate_ux';
 
+/** 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）；初判硬閘依此封鎖履約不符歸因。 */
+export type EvidenceLevel = 'symptom_only' | 'with_product_page' | 'with_order' | 'with_both';
+
+/** 嚴重度（軸B · ITIL Priority）。 */
+export type Severity = 'P0' | 'P1' | 'P2' | 'P3';
+
+/** L3 充分度檢查結果（第二意見）。 */
 export interface AdequacyResult {
   status: 'adequate' | 'unclear' | 'missing' | 'contradictory' | 'field_empty';
   evidence: string;
   reason: string;
 }
 
+/** 初判單元（SSOT）。 */
 export interface TicketFinding {
-  finding_id: string;
+  /** 特徵 id（source_id）；落庫時進 attribution_tbl.source_id。 */
   ticket_id: string;
-  prod_oid: string;
   pkg_oid: string;
-  order_oid: string; // 訂單編號（B 客人進線可定位；對齊後端 schema.py）
-  supplier_oid: string; // 供應商編號（order_message 進線可定位；對齊後端 schema.py）
-  dimension: Dimension;
-  problem_summary: string;
-  suspected_field: LogicalField;
+  /** 反饋摘要：語系 → 簡明摘要 map（務必含 'zh-tw'；表格只顯示 zh-tw）。 */
+  summary: Record<string, string>;
+  /** LLM 可回細欄名，故為寬鬆 string（非固定 logical field 列舉），與後端一致。 */
+  suspected_field: string;
+  /** 逐字原文佐證（防捏造的 grounding 錨點，非摘要）。 */
   evidence_quote: string;
+  /** 客服對話擷取的正確答案（零幻覺）。 */
   ground_truth_quote: string;
+  /** 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）。 */
   confidence: number;
-  adequacy_check?: AdequacyResult;
+  /** arbiter LLM 原始信心（校準輸入）。 */
+  raw_confidence: number;
+  /** 是否經灰度複判（中信賴區間重新初判）。 */
+  is_enhanced: boolean;
+  /** 複判使用的模型（空＝未複判）。 */
+  enhance_model: string;
+  adequacy_check?: AdequacyResult | null;
   recommended_action: RecommendedAction;
   action_detail: string;
   writer_handoff: boolean;
   is_primary: boolean;
-  status: 'new' | 'confirmed' | 'dismissed' | 'fixed' | 'data_missing';
+  /** 命中的法典 Rule ID（R1-1~R5-5）。 */
+  hit_rule_id: string;
+  /** 高信心且已判定 → 系統自動採納，不進人工佇列。 */
+  is_auto_accepted: boolean;
+  /** ISO 8601。 */
   created_at: string;
+  /** 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）。 */
+  order_oid: string;
+  /** 供應商編號（order_message 進線可定位）。 */
+  supplier_oid: string;
+  /** 預判候選域（初判前可給）。 */
+  root_cause_candidates: string[];
+  /** 初判當下的實際證據層級。 */
+  evidence_level: EvidenceLevel;
+  /** 收斂單選歸因域（候選集不足／卡預判時為空）。 */
+  root_cause_domain: string;
+  /** 子類（如：集合執行、語言服務）。 */
+  sub_cause: string;
+  severity: Severity;
+  /** 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）。 */
+  responsible_party: string;
+  /** L1 域機器碼（content/supplier…）。 */
+  l1_domain_code: string;
+  l1_label: string;
+  /** L2 面向 C-code（C-x-y）。 */
+  l2_code: string;
+  l2_label: string;
+  /** 正負傾向：positive / negative / neutral。 */
+  polarity: string;
+  /** 情緒分 1-5（夾進 polarity 區間）；0＝未初判。 */
+  sentiment_score: number;
+  /** 信心分層：auto_accept / jury / needs_review。 */
+  confidence_tier: string;
 }
