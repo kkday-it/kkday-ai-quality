@@ -121,7 +121,16 @@ def list_rule_history(code: str) -> list[dict]:
     """列某 rule 全版本（version/author/note/is_active/created_at），新到舊。"""
     j = _jrv()
     stmt = (
-        select(j.c.version, j.c.author, j.c.note, j.c.is_active, j.c.created_at)
+        select(
+            # 別名欄（DB 名 ≠ Python key）投影一律 label 回 key，理由同 list_rule_meta：
+            # 不 label 的話規則／Prompt 版本歷史面板收到的是 version_number/create_user/
+            # create_date，時間欄空白、版本號 undefined，連「恢復此版本」都送出 undefined。
+            j.c.version.label("version"),
+            j.c.author.label("author"),
+            j.c.note,
+            j.c.is_active,
+            j.c.created_at.label("created_at"),
+        )
         .where(j.c.rule_code == code)
         .order_by(j.c.version.desc())
     )
