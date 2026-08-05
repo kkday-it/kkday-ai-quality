@@ -89,9 +89,6 @@ def test_local_mode_never_401_unauthenticated(temp_db) -> None:
     with TestClient(app) as client:
         assert client.post("/api/problems/export", json={}).status_code != 401
         assert client.post("/api/judge-rules/C-1/reset-default").status_code != 401
-        assert (
-            client.patch("/api/findings/x/verdict", json={"status": "confirmed"}).status_code != 401
-        )
 
 
 def test_default_allowed_on_prejudge_run(temp_db, permissions_cfg, as_user) -> None:

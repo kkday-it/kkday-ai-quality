@@ -332,6 +332,26 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
     assert db.prejudge_target_ids("reviews", stages=["unjudged"], within_ids=[]) == []
 
 
+def test_get_problems_ignores_retired_status_query_param(temp_db) -> None:
+    """已退役的 status（判決狀態）篩選：舊前端仍帶 ?status=confirmed 打進來時不得 422、也不得過濾。
+
+    回歸鎖兩件事：① 人工判決退役後 attributions 已無 status 欄，殘留的篩選分支退化成無謂詞
+    EXISTS——不報錯也不過濾、靜默回全部，比直接報錯更難察覺，故整條鏈路已拔除；
+    ② FastAPI 只綁定簽名上宣告的 query param，其餘靜默忽略，所以拔除不必與前端同步發版。
+    """
+    from fastapi.testclient import TestClient
+
+    import app.api.main as m
+
+    db.insert_source_batch("reviews", [_pr_row(rec_oid="S1"), _pr_row(rec_oid="S2")])
+    client = TestClient(m.app)
+    baseline = client.get("/api/problems", params={"source": "reviews"})
+    retired = client.get("/api/problems", params={"source": "reviews", "status": "confirmed"})
+    assert baseline.status_code == 200
+    assert retired.status_code == 200  # 未宣告的 query param 不觸發 422
+    assert retired.json()["total"] == baseline.json()["total"] == 2
+
+
 def test_list_problems_model_filter(temp_db) -> None:
     """model 篩選（attributions.model IN——當前初判維度）：單選/多選命中、未命中排除。"""
     db.insert_source_batch(

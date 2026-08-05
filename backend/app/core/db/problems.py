@@ -303,7 +303,6 @@ def list_problems(
     order_oid: str | None = None,
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
-    status: list[str] | None = None,
     model: list[str] | None = None,
     has_external: bool | None = None,
     bucket: list[str] | None = None,
@@ -358,7 +357,6 @@ def list_problems(
         sort_dir,
         has_external=has_external,
         sentiment=sentiment,
-        status=status,
         model=model,
         bucket=bucket,
     )
@@ -384,7 +382,6 @@ def _list_problems_spec(
     sort_dir: str = "desc",
     has_external: bool | None = None,
     sentiment: list[int] | None = None,
-    status: list[str] | None = None,
     model: list[str] | None = None,
     bucket: list[str] | None = None,
 ) -> dict:
@@ -422,9 +419,6 @@ def _list_problems_spec(
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
-        if status:
-            # 判決狀態多選（人工處置軸）；任一歸因命中即列出（與 polarity/stage 同 EXISTS 語義）
-            stmt = stmt.where(_jg_exists(spec))
         if model:
             # 初判模型多選（當前初判維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))

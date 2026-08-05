@@ -512,7 +512,6 @@ def export_problems_xlsx(
     stage: list[str] | None = None,
     confidence_tier: str | None = None,
     taxonomy: list[str] | None = None,
-    status: list[str] | None = None,
     model: list[str] | None = None,
     snapshot_model: str | None = None,
     compare_models: list[str] | None = None,
@@ -530,7 +529,7 @@ def export_problems_xlsx(
 
     Args:
         source/polarity/judged/vertical/date_from/date_to: 同 list_problems 篩選（與畫面一致）。
-        stage/confidence_tier/taxonomy/status/model/has_external/rec_oid/prod_oid/order_oid/
+        stage/confidence_tier/taxonomy/model/has_external/rec_oid/prod_oid/order_oid/
         bucket:
             同 list_problems，使導出＝列表所見即所得（全篩選對齊，非只部分；bucket
             僅 conversations 生效）。
@@ -580,7 +579,6 @@ def export_problems_xlsx(
         stage=stage,
         confidence_tier=confidence_tier,
         taxonomy=taxonomy,
-        status=status,
         model=model,
         has_external=has_external,
         rec_oid=scoped_rec_oid,
@@ -659,7 +657,7 @@ def export_problems_xlsx(
     ws.append([c[0] for c in cols])  # 第 2 列：具體欄位標題
     # 歸因級欄（逐條歸因不同、不合併）：問題摘要＝各歸因自己的痛點片段，故留 attr 級。
     # ⚠️ 新增歸因級欄位必須同步三處：_EXPORT_XLSX_COLS + _flat_attr + 本集合——缺此集合會
-    # fallback 讀 row 級（_enrich_problem 的 status 恆 None）→ 欄位靜默空白（status 曾踩）。
+    # fallback 去讀 row 級（那裡沒有這個鍵）→ 該欄整欄靜默空白，導出看起來正常卻少資料。
     _attr_keys = {
         "taxonomy",
         "confidence",

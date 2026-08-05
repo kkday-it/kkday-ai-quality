@@ -323,7 +323,6 @@ def _base_kwargs(item: dict) -> dict:
         "ticket_id": source_id,  # ＝特徵 id（reviews→rec_oid…）
         "pkg_oid": item.get("pkg_oid", "") or "",
         "order_oid": item.get("order_oid", "") or "",
-        "status": "new",
         "created_at": now,
     }
 
@@ -552,7 +551,7 @@ def to_findings(
     src = item.get("source", "")
     source_id = item.get("source_id", "")
 
-    # 各 return 皆過 _route：依 finding 的 tier+stage 設 status（G1 自動確認路由）。
+    # 各 return 皆過 _route：依 finding 的 tier+stage 設 is_auto_accepted（G1 自動採納路由）。
     polarity, sentiment = _stage1_polarity(item, text, model, versions=versions)
     if polarity not in _attribute_when():  # config 驅動（prejudge.json/verdict.json polarity_gate）
         return _route([_non_issue_finding(item, polarity, used_model, sentiment=sentiment)])
