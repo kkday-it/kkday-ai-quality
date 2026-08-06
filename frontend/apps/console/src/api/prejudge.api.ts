@@ -192,10 +192,23 @@ export interface PrejudgeRunLogEntry {
   data?: Record<string, unknown>;
 }
 
-/** 讀某次初判落庫的完整執行日誌快照（歸因歷史「查看 LLM 日誌」入口）；
- * 僅小批量 job 有收集內容，無日誌時 404。 */
-export const getPrejudgeRunLog = (jobId: string): Promise<{ entries: PrejudgeRunLogEntry[] }> =>
-  j(`${BASE}/v1/prejudge/runs/${encodeURIComponent(jobId)}/log`);
+/** 某次初判落庫的執行日誌（一則評論一列，故可只取單則）。 */
+export interface PrejudgeRunLog {
+  entries: PrejudgeRunLogEntry[];
+  /** 本 job 有日誌的評論清單（不含 job 級事件列）；整批視角下供逐則點選。 */
+  items: { source_id: string; count: number }[];
+  /** 整批視角是否有評論未併入 entries（大批量只合併前 N 則）。 */
+  truncated: boolean;
+}
+
+/** 讀某次初判落庫的執行日誌（歸因歷史「查看 LLM 日誌」入口）。
+ * 不分批量大小皆有日誌（後端逐筆落庫）；`sourceId` 指定只取該則評論，省去整批傳輸。
+ * 僅「啟用逐筆落庫前、當初就沒收日誌」的舊大批量 job 會 404。 */
+export const getPrejudgeRunLog = (jobId: string, sourceId?: string): Promise<PrejudgeRunLog> =>
+  j(
+    `${BASE}/v1/prejudge/runs/${encodeURIComponent(jobId)}/log` +
+      (sourceId ? `?source_id=${encodeURIComponent(sourceId)}` : ''),
+  );
 
 /** 暫停初判歸因任務（提交迴圈阻塞，已在跑的收斂後 processed 停增）→ 更新後快照。 */
 export const pausePrejudge = (jobId: string) =>

@@ -21,32 +21,40 @@ const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
 const entries = ref<LogEntry[]>([]);
 const loadingHistory = ref(false);
 const streamError = ref('');
+/** 整批視角：本 job 有日誌的評論數，以及「是否只併了前幾則」（大批量必然為 true）。 */
+const itemCount = ref(0);
+const truncated = ref(false);
 
-const _openHistory = async (jid: string) => {
+// 日誌一則評論一列，故帶 source_id 直接向後端取該則（不再整批載回前端過濾）。
+const _openHistory = async (jid: string, sid?: string) => {
   loadingHistory.value = true;
   try {
-    const r = await getPrejudgeRunLog(jid);
+    const r = await getPrejudgeRunLog(jid, sid);
     entries.value = r.entries;
+    itemCount.value = r.items.length;
+    truncated.value = r.truncated;
   } catch (e: any) {
     streamError.value =
       (e?.message || '此任務無執行日誌快照') +
-      '——大批量任務（逐筆日誌僅小批量收集）或啟用日誌前的舊初判皆屬正常，不代表未執行；執行結果與費用見「初判紀錄」。';
+      '——啟用逐筆日誌落庫前的舊初判屬正常，不代表未執行；執行結果與費用見「初判紀錄」。';
   } finally {
     loadingHistory.value = false;
   }
 };
 
-const _open = (jid: string) => {
+const _open = (jid: string, sid?: string) => {
   entries.value = [];
   streamError.value = '';
+  truncated.value = false;
+  itemCount.value = 0;
   showAll.value = false;
-  void _openHistory(jid);
+  void _openHistory(jid, sid);
 };
 
 watch(
-  () => [props.visible, props.jobId] as const,
-  ([v, jid]) => {
-    if (v && jid) _open(jid);
+  () => [props.visible, props.jobId, props.itemId] as const,
+  ([v, jid, sid]) => {
+    if (v && jid) _open(jid, sid);
   },
   { immediate: true },
 );
@@ -119,6 +127,10 @@ const legacyNote = computed(
     </template>
 
     <a-alert v-if="streamError" type="info" class="mb-2">{{ streamError }}</a-alert>
+    <a-alert v-if="truncated" type="info" class="mb-2">
+      本批共 {{ itemCount }} 則評論有日誌，整批視角僅合併前段以免渲染過載——要看特定評論，
+      請從該評論的「歸因歷史 › 查看 LLM 日誌」進入（直接定位該則）。
+    </a-alert>
     <a-alert v-if="legacyNote && !showAll" type="info" class="mb-2">
       此快照產生於逐評論標記機制之前：流程已按本評論過濾，但 LLM 調用（polarity / C-N）無法歸屬
       單一評論故未顯示——對本評論「重新初判」一次即可取得完整逐評論日誌。

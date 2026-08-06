@@ -26,6 +26,10 @@ from app.core.db.datapack import (
 _DELIBERATELY_EXCLUDED = {
     # runtime 派生快取（真相源＝production snapshot，可重生），且含 PII-adjacent 商品內容
     "evidence_snapshot_tbl",
+    # 初判執行日誌（觀測型：LLM prompt/回應逐筆快照）。跨環境搬遷的價值為零——它描述的是
+    # 「某台機器某次跑批當下發生什麼」，換環境後既無法重現也無人回看；且是本庫成長最快的表
+    # （全量批一次數萬列），入包只會讓資料包膨脹數百 MB。留在原環境，由 retention 依保留期清理。
+    "prejudge_run_log_lst",
 }
 
 

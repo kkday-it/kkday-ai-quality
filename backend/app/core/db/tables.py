@@ -570,12 +570,6 @@ prejudge_runs = Table(
         comment="開始時間",
     ),
     Column("finished_at", DateTime(timezone=True), comment="結束時間；執行中為空"),
-    Column(
-        "log",
-        JSONB,
-        comment="run_log 快照（entries 陣列）：僅小批量 job 收集，供事後回看完整 LLM 日誌；"
-        "run_log 本身純記憶體不落庫",
-    ),
     Index("idx_prejudge_run_tbl_create_date", "started_at"),
     Index("idx_prejudge_run_tbl_unique01", "job_id", unique=True),
     Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
@@ -583,6 +577,51 @@ prejudge_runs = Table(
     comment="初判批次執行紀錄（run 級：每次觸發初判的動作落一列）。與 llm_usage（call 級）以 job_id "
     "關聯——本表存業務語境（誰／何時／範圍／參數／結果統計），token 與費用明細由 llm_usage 聚合",
 )
+
+prejudge_run_logs = Table(
+    "prejudge_run_log_lst",
+    metadata,
+    Column(
+        "prejudge_run_log_oid",
+        Integer,
+        Identity(),
+        primary_key=True,
+        comment="流水號主鍵（serial）",
+    ),
+    Column(
+        "job_id",
+        Text,
+        nullable=False,
+        comment="所屬初判任務 id（與 prejudge_runs.job_id 對齊；無 FK，軟關聯）",
+    ),
+    Column(
+        "source_id",
+        Text,
+        nullable=False,
+        comment="日誌所屬評論的來源自然鍵；空字串＝job 級事件（任務啟動/收尾，不屬於任何單一評論）",
+    ),
+    Column(
+        "entries",
+        JSONB,
+        nullable=False,
+        comment="該評論本次初判的完整日誌條目陣列（run_log entries 形狀：ts/kind/stage/message/label/data）",
+    ),
+    # 本表不出 wire（讀取端只回 entries 陣列），故欄名不做 Python key 別名，DB 規範名直用
+    Column("create_user", String(255), comment="觸發人（user email）"),
+    Column(
+        "create_date",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment="落庫時間（該筆判完即寫，非整批結束才寫）",
+    ),
+    # 回看熱路徑＝(job_id, source_id) 直取單筆；唯一性同時保證重跑同一筆時 upsert 而非長出重複列
+    Index("idx_prejudge_run_log_lst_unique01", "job_id", "source_id", unique=True),
+    Index("idx_prejudge_run_log_lst_create_date", "create_date"),
+    comment="初判執行日誌（append-only 明細流水，一則評論一列）：每筆判完即落庫，記憶體佔用與批量大小"
+    "脫鉤，故不分批量大小全數收集。刻意不與 prejudge_runs 同列——日誌是數十 KB 的 blob，若塞回 run 列"
+    "的 JSONB 欄，逐筆累加會讓 Postgres 每次都整列重寫（O(N²) 寫入放大）",
+)
+
 
 attribution_history = Table(
     "attribution_event_lst",

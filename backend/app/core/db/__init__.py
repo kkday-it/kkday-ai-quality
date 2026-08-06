@@ -41,7 +41,7 @@ from app.core.db.prejudge_runs import (
     insert_prejudge_run,
     list_prejudge_runs,
     prejudge_run_detail,
-    save_run_log,
+    save_run_log_item,
     update_prejudge_run_status,
 )
 from app.core.db.prejudge_targets import prejudge_target_ids
@@ -104,6 +104,6 @@ __all__ = [
     "insert_prejudge_run",
     "prejudge_run_detail",
     "list_prejudge_runs",
-    "save_run_log",
+    "save_run_log_item",
     "update_prejudge_run_status",
 ]

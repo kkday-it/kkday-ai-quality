@@ -296,15 +296,21 @@ def run_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
 
 
 @router.get("/runs/{job_id}/log")
-def run_log_detail(job_id: str, _: dict = Depends(auth.get_current_user)) -> dict:
-    """讀某次初判落庫的完整執行日誌快照（歸因歷史「查看 LLM 日誌」入口）。
+def run_log_detail(
+    job_id: str,
+    source_id: str | None = None,
+    _: dict = Depends(auth.get_current_user),
+) -> dict:
+    """讀某次初判落庫的執行日誌（歸因歷史「查看 LLM 日誌」入口）→ {entries, items, truncated}。
 
-    僅小批量 job（run_log.LOG_JOB_MAX_ITEMS 內）有收集內容；大批量 / 啟用日誌前的舊初判回 404。
+    不分批量大小皆有日誌（逐筆落庫，見 judge/run_log.py 檔頭）；`source_id` 指定只看該則評論
+    （附 job 級事件供脈絡），不給則合併前 N 則（`items` 列出全部供逐則點選）。啟用逐筆落庫前的
+    舊初判已由 migration 拆進新表，唯獨當初就沒收日誌的大批量 job 回 404。
     """
-    entries = db.get_run_log(job_id)
-    if entries is None:
+    data = db.get_run_log(job_id, source_id)
+    if data is None:
         raise HTTPException(status_code=404, detail=f"此任務無執行日誌快照：{job_id}")
-    return {"entries": entries}
+    return data
 
 
 @router.get("/stream")
@@ -343,7 +349,8 @@ async def prejudge_stream(job_id: str) -> StreamingResponse:
 async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse:
     """SSE 推送單次初判 job 的執行日誌（各階段 + LLM 輸入參數/prompt/輸出）——供前端抽屜即時檢視。
 
-    僅小批量 job 收集日誌（run_log.LOG_JOB_MAX_ITEMS）；每筆 entry 一個 event 增量推送
+    僅小批量 job 建即時佇列（run_log.LOG_LIVE_MAX_ITEMS）；大批量不即時推、跑完後於初判紀錄
+    逐評論回看（`/runs/{job_id}/log?source_id=…`）。每筆 entry 一個 event 增量推送
     （offset 支援續讀），日誌收集結束且讀盡即推 done 關閉。不加 auth Depends：同 /prejudge/stream
     （原生 EventSource 帶不了 Authorization header，job_id 為不可猜的 capability token）。
     """
@@ -356,7 +363,7 @@ async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse
         誤判成「無日誌」立即關流（首次初判日誌永遠空白的競態根因）。
         """
         idx = max(0, offset)
-        grace = 5.0  # 尚未 bind 的寬限秒數；超過才視為真的不收集日誌（如大批量 job）
+        grace = 5.0  # 尚未 bind 的寬限秒數；超過才視為真的無即時佇列（如大批量 job）
         while True:
             batch, done, exists = run_log.read(job_id, idx)
             if not exists:
@@ -365,7 +372,8 @@ async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse
                     await asyncio.sleep(_LOG_SSE_POLL_INTERVAL)
                     continue
                 msg = json.dumps(
-                    {"detail": "此任務無執行日誌（僅小批量任務收集）"}, ensure_ascii=False
+                    {"detail": "大批量任務不即時串流日誌；跑完後可於「初判紀錄」逐則評論回看"},
+                    ensure_ascii=False,
                 )
                 yield f"event: error\ndata: {msg}\n\n"
                 return

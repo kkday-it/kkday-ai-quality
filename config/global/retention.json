@@ -6,9 +6,9 @@
     "delete_older_than_days": 180
   },
 
-  "prejudge_run_tbl": {
-    "_rationale": "run 的統計列（筆數/成功失敗/token/費用）要長期保留供成本回溯；但 run_log 是逐筆 LLM 對話快照，平均數十 KB/列、佔該表絕大部分體積，實際回看窗只有『跑完當下看一眼』。故只清 log 欄、保留統計列——端點對 log 為空已有 404 分支。",
-    "null_log_older_than_days": 30
+  "prejudge_run_log_lst": {
+    "_rationale": "初判執行日誌（逐筆 LLM 對話快照，一則評論一列，實測約 43 KB/則）。實際回看窗只有『跑完當下看一眼』與『這則判錯了回頭查為什麼』，一個月後無人問津；run 的統計列（筆數/成功失敗/token/費用）在 prejudge_run_tbl 另存並長期保留，清日誌不影響成本回溯。全量批一次就是數萬列，這是本庫成長最快的表——保留期不可省。",
+    "delete_older_than_days": 30
   },
 
   "attribution_event_lst": {

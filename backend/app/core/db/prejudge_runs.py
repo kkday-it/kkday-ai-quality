@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select, update
 from sqlalchemy import insert as sa_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.db import tables as T
 from app.core.db._shared import select_wire, wire_row
@@ -81,23 +82,70 @@ def finish_prejudge_run(job_id: str, snap: dict) -> None:
         )
 
 
-def save_run_log(job_id: str, entries: list[dict]) -> None:
-    """落存單次初判的完整執行日誌快照（run_log.read 產出）；僅小批量 job 有收集內容。
+def save_run_log_item(
+    job_id: str, source_id: str, entries: list[dict], triggered_by: str = ""
+) -> None:
+    """落存**單一評論**的初判執行日誌（該筆判完即寫，不等整批結束）。
 
-    供歸因歷史「查看 LLM 日誌」入口事後回看（run_log 本身純記憶體、重啟即清）。
+    一筆一列 INSERT（衝突則覆蓋，供重跑同一筆時取代舊日誌）——刻意不累加回 prejudge_runs 的
+    JSONB 欄：那會讓每筆都整列重寫一次已成長的 blob，34k 筆的批次累計寫入量是 O(N²)。
+    `source_id` 空字串＝job 級事件（任務啟動/收尾）。
     """
+    lg = T.prejudge_run_logs
+    stmt = pg_insert(lg).values(
+        job_id=job_id, source_id=source_id, entries=entries, create_user=triggered_by or None
+    )
     with T.get_engine().begin() as c:
         c.execute(
-            update(T.prejudge_runs).where(T.prejudge_runs.c.job_id == job_id).values(log=entries)
+            stmt.on_conflict_do_update(
+                index_elements=[lg.c.job_id, lg.c.source_id],
+                set_={"entries": stmt.excluded.entries, "create_date": func.now()},
+            )
         )
 
 
-def get_run_log(job_id: str) -> list[dict] | None:
-    """讀某 job 落庫的執行日誌快照；job 不存在或未收集日誌（大批量 / 舊資料）回 None。"""
-    r = T.prejudge_runs
+def get_run_log(job_id: str, source_id: str | None = None, merge_limit: int = 20) -> dict | None:
+    """讀某 job 的執行日誌 → {entries, items, truncated}；完全沒有日誌回 None（端點轉 404）。
+
+    Args:
+        job_id: 初判任務 id。
+        source_id: 只看這則評論（附 job 級事件供脈絡）；None＝整批視角。
+        merge_limit: 整批視角最多合併幾則評論的條目（大批量下全合併會撐爆前端渲染；
+            未納入的評論仍列在 items 供逐則點選）。
+
+    Returns:
+        entries: 依 ts 遞增排序的條目陣列。
+        items: 本 job 有日誌的評論清單 [{source_id, count}]（不含 job 級列）。
+        truncated: 整批視角下是否有評論未併入 entries。
+    """
+    lg = T.prejudge_run_logs
     with T.get_engine().connect() as c:
-        row = c.execute(select(r.c.log).where(r.c.job_id == job_id)).first()
-    return row[0] if row and row[0] else None
+        rows = (
+            c.execute(
+                select(lg.c.source_id, lg.c.entries)
+                .where(lg.c.job_id == job_id)
+                .order_by(lg.c.prejudge_run_log_oid)  # 落庫序＝評論判完的先後
+            )
+            .mappings()
+            .all()
+        )
+    if not rows:
+        return None
+    job_level = [r for r in rows if not r["source_id"]]
+    items = [
+        {"source_id": r["source_id"], "count": len(r["entries"])} for r in rows if r["source_id"]
+    ]
+    if source_id is not None:
+        picked = [r for r in rows if r["source_id"] == source_id]
+        if not picked and not job_level:
+            return None
+        truncated = False
+    else:
+        picked = [r for r in rows if r["source_id"]][:merge_limit]
+        truncated = len(items) > len(picked)
+    entries = [e for r in (*job_level, *picked) for e in r["entries"]]
+    entries.sort(key=lambda e: e.get("ts") or 0)
+    return {"entries": entries, "items": items, "truncated": truncated}
 
 
 def any_judged(source: str | None, item_ids: list[str], sample_cap: int = 1000) -> bool:
@@ -168,7 +216,7 @@ def prejudge_run_detail(job_id: str) -> dict | None:
 def _serialize(row) -> dict:
     """run 列 → API dict（顯式白名單 + datetime 轉 ISO 字串）。
 
-    `log` 刻意不在白名單內：它是可觀的快照（既有資料平均約 70 KB/列），run 摘要/詳情不需要，
-    專用 `get_run_log` 才讀。白名單同時使 DB 新增欄不會自動流進 API（見 `_shared.wire_row`）。
+    白名單使 DB 新增欄不會自動流進 API（見 `_shared.wire_row`）。執行日誌另存
+    `prejudge_run_log_lst`（一評論一列），專用 `get_run_log` 才讀，不隨 run 摘要/詳情回傳。
     """
     return wire_row(row, _WIRE_COLS)

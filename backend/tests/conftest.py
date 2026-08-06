@@ -79,7 +79,7 @@ def _forbid_non_test_db(conn) -> None:
     """任何指向非測試庫的連線一律當場拋錯（連到 dev 正式庫 = 缺陷，不是可容忍的雜訊）。
 
     同時記錄到 `_db_escapes` 再拋：呼叫端多半包在 best-effort 的 `except Exception: pass`
-    裡（`update_prejudge_run_status` / `save_run_log` / usage flush 皆是），只拋錯會被吞掉、
+    裡（`update_prejudge_run_status` / `save_run_log_item` / usage flush 皆是），只拋錯會被吞掉、
     測試照樣全綠。靠 `_assert_no_db_escape` 讀這份紀錄把測試判紅才是真正的閘門。
     """
     name = conn.engine.url.database

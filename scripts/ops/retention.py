@@ -7,7 +7,8 @@
 清理範圍（皆為**觀測型／可重生**資料，業務真相不在其中）：
 
 1. `llm_usage_lst`      — 刪除超過保留期的 per-call 用量列
-2. `prejudge_run_tbl`   — 把超過保留期的 `log` 欄置 NULL（**保留統計列**，不刪 run）
+2. `prejudge_run_log_lst` — 刪除超過保留期的執行日誌列（**保留 `prejudge_run_tbl` 統計列**，
+   只清日誌；一則評論一列，故是 DELETE 而非置 NULL）
 3. `attribution_event_lst`
    · 刪除「已被後續成功初判取代」的 failure 事件
    · 每 (來源, 評論, 模型) 只保留最新 N 筆 prejudge 快照
@@ -25,7 +26,7 @@
         python /app/scripts/ops/retention.py            # dry-run，只報不刪
     docker compose -f docker-compose.dev.yml exec backend \\
         python /app/scripts/ops/retention.py --apply    # 真的執行
-    ... --only llm_usage_lst,prejudge_run_tbl           # 只跑指定項目
+    ... --only llm_usage_lst,prejudge_run_log_lst       # 只跑指定項目
 """
 
 from __future__ import annotations
@@ -78,21 +79,18 @@ def clean_llm_usage(conn, pol: dict, *, applied: bool) -> int:
 
 
 def clean_run_logs(conn, pol: dict, *, applied: bool) -> int:
-    """把超過保留期的 run_log 置 NULL（保留統計列本身）。"""
-    days = pol["prejudge_run_tbl"]["null_log_older_than_days"]
+    """刪除超過保留期的初判執行日誌列（`prejudge_run_tbl` 的統計列本身永久保留）。"""
+    days = pol["prejudge_run_log_lst"]["delete_older_than_days"]
     cut = _cutoff(days)
     n = conn.execute(
-        text("SELECT count(*) FROM prejudge_run_tbl WHERE log IS NOT NULL AND create_date < :cut"),
+        text("SELECT count(*) FROM prejudge_run_log_lst WHERE create_date < :cut"),
         {"cut": cut},
     ).scalar()
     if applied and n:
         conn.execute(
-            text(
-                "UPDATE prejudge_run_tbl SET log = NULL WHERE log IS NOT NULL AND create_date < :cut"
-            ),
-            {"cut": cut},
+            text("DELETE FROM prejudge_run_log_lst WHERE create_date < :cut"), {"cut": cut}
         )
-    _report(f"prejudge_run_tbl.log（逾 {days} 天置 NULL）", n, "列", applied=applied)
+    _report(f"prejudge_run_log_lst（逾 {days} 天）", n, "列", applied=applied)
     return n
 
 
@@ -169,7 +167,7 @@ def clean_batch_artifacts(pol: dict, *, applied: bool) -> int:
 
 _DB_TASKS = {
     "llm_usage_lst": clean_llm_usage,
-    "prejudge_run_tbl": clean_run_logs,
+    "prejudge_run_log_lst": clean_run_logs,
     "attribution_event_lst": lambda c, p, applied: (
         clean_superseded_failures(c, p, applied=applied)
         + clean_old_snapshots(c, p, applied=applied)

@@ -199,6 +199,15 @@ def _work_one(
                 attribution_history.insert_failure_event(
                     source or "", source_id, error=err, job_id=job_id, triggered_by=triggered_by
                 )
+        finally:
+            # 本筆日誌即刻落庫並釋放記憶體（成功/失敗都要——失敗筆的日誌正是最該回看的）。
+            # 這一步讓日誌佔用與批量大小脫鉤，是「所有 job 都收日誌」的前提。
+            try:
+                key = source_id or str(item.get("item_id") or "")
+                if entries := run_log.take(job_id, key):
+                    db.save_run_log_item(job_id, key, entries, triggered_by)
+            except Exception:  # noqa: BLE001  日誌純輔助，絕不阻斷初判
+                _log.debug("執行日誌落庫失敗 job=%s item=%s", job_id, source_id, exc_info=True)
 
 
 def _reload_judge_rules() -> None:
@@ -281,23 +290,23 @@ def _run(
     flex_before = client.flex_stats()
     # LLM exact-cache 讀取閘：批次開（重用規則未變部分·零 token）；顯式重新初判關（使用者要求真的重打）
     client.set_llm_cache_read(cache_read)
-    # 小批量 job 收集執行日誌（前端抽屜 SSE 即時檢視）；bind 後 copy_context 快照自動攜帶歸屬
-    if len(item_ids) <= run_log.LOG_JOB_MAX_ITEMS:
-        run_log.bind(job_id)
-        run_log.emit(
-            "stage",
-            "job",
-            f"初判任務啟動：{len(item_ids)} 筆",
-            {
-                "model": model,
-                "base_url": eff.get("base_url"),
-                "temperature": eff.get("temperature"),
-                "thinking": eff.get("thinking"),
-                "reasoning_effort": eff.get("reasoning_effort"),
-                "service_tier": tier,
-                "cache_read": cache_read,
-            },
-        )
+    # 執行日誌：所有 job 都收（逐筆判完即落庫，見 _work_one finally），僅小批量另建 SSE 即時佇列。
+    # bind 後 copy_context 快照自動攜帶歸屬。
+    run_log.bind(job_id, live=len(item_ids) <= run_log.LOG_LIVE_MAX_ITEMS)
+    run_log.emit(
+        "stage",
+        "job",
+        f"初判任務啟動：{len(item_ids)} 筆",
+        {
+            "model": model,
+            "base_url": eff.get("base_url"),
+            "temperature": eff.get("temperature"),
+            "thinking": eff.get("thinking"),
+            "reasoning_effort": eff.get("reasoning_effort"),
+            "service_tier": tier,
+            "cache_read": cache_read,
+        },
+    )
 
     def _sink(m: str, prompt: int, completion: int, cached: int = 0) -> None:
         """token 用量回報：累計 total_tokens 並依模型單價加總 cost_usd（cached 折扣＋job 級 tier 折扣）。
@@ -408,13 +417,13 @@ def _run(
                 db.finish_prejudge_run(job_id, snap)
         except Exception:  # noqa: BLE001
             _log.exception("歸因歷史終態回寫失敗 job=%s", job_id)
-        run_log.finish(job_id)  # 日誌收尾（未 bind 的大批量 job 為 no-op）；SSE 讀盡即關閉
-        try:  # 落存執行日誌快照（僅小批量 job 有收集內容）供歸因歷史「查看 LLM 日誌」事後回看
-            entries, _done, exists = run_log.read(job_id)
-            if exists:
-                db.save_run_log(job_id, entries)
+        run_log.finish(job_id)  # SSE 佇列收尾（大批量無佇列時為 no-op）；讀盡即關閉串流
+        try:  # job 級事件（任務啟動等，不屬任何評論）落庫；逐評論的部分已在 _work_one 各自寫完
+            if entries := run_log.take(job_id, None):
+                db.save_run_log_item(job_id, "", entries, triggered_by)
         except Exception:  # noqa: BLE001
-            _log.exception("執行日誌落庫失敗 job=%s", job_id)
+            _log.exception("job 級執行日誌落庫失敗 job=%s", job_id)
+        run_log.drop_job(job_id)  # 兜底清理殘留桶（如取消時已提交但未走完 _work_one 的筆）
         _drop_controls(job_id)
 
 
