@@ -1,8 +1,11 @@
 """歸因歷史（attribution_history）：評論級 append-only 事件流（初判快照 / 判決轉移 / 備註）。
 
 一則評論 (source, source_id) 的時間軸由這些事件構成：
-- kind='prejudge'：一次初判的完整歸因快照（replace_source_findings 同交易寫入；
-  model+params+result_digest 與最新一筆完全相同即 skip——全欄位嚴格去重）。
+- kind='prejudge'：一次初判的完整歸因快照（replace_source_findings 同交易寫入）。
+  **每次初判都留一列，不做去重**（2026-08-06 改）：使用者要能從時間軸看到「這則評論被跑過幾次」，
+  而不只是「結果變過幾次」——舊的去重讓「跑了但結果一樣」與「根本沒跑到」在畫面上無法區分，
+  且該次 job 的 LLM 日誌因為沒有歷史列掛載而從 UI 走不到。結果是否有變由 `result_digest`
+  標記在 `params.unchanged`，交給前端顯示為「重跑·無變化」。
 - kind='note'：評論級備註（綁 (source, source_id)，跨重新初判穩定）。
 
 prejudge_runs 是 run 級、llm_usage 是 call 級；本表補「單一評論初判演進」缺口，
@@ -89,6 +92,11 @@ def result_digest(attributions: list[dict]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _params_key(params: dict | None) -> dict:
+    """參數比對鍵：剔除 `unchanged` 顯示旗標，只留真正的初判參數（model / prompt_versions…）。"""
+    return {k: v for k, v in (params or {}).items() if k != "unchanged"}
+
+
 def insert_prejudge_event(
     c: Connection,
     source: str,
@@ -100,14 +108,15 @@ def insert_prejudge_event(
     job_id: str | None,
     triggered_by: str | None,
 ) -> bool:
-    """寫入一筆 kind='prejudge' 歷史（去重：與最新一筆 model+params+digest 全同即 skip）。
+    """寫入一筆 kind='prejudge' 歷史——**每次初判都寫，不去重**。
 
-    收呼叫端交易內的 connection（replace_source_findings 的 `begin()` 區塊）——比對與插入
-    必須和初判寫入同交易，且以 FOR UPDATE 鎖最新歷史列序列化並發重新初判，否則兩個並發 job
-    可能同時讀到「無變化」而漏記、或雙寫重複列（TOCTOU）。
+    與最新一筆 model+params+digest 全同時，仍照寫，只在 `params.unchanged` 標記結果無變化
+    （前端據此顯示「重跑·無變化」）。收呼叫端交易內的 connection（replace_source_findings 的
+    `begin()` 區塊）——比對與插入必須和初判寫入同交易，且以 FOR UPDATE 鎖最新歷史列序列化
+    並發重新初判，避免兩個並發 job 對「是否有變化」讀到彼此的中間態。
 
     Returns:
-        是否實際插入（False＝與前一筆完全相同已 skip）。
+        本次結果是否與前一筆不同（True＝有變化；首筆亦為 True）。
     """
     h = T.attribution_history
     digest = result_digest(attributions)
@@ -118,27 +127,28 @@ def insert_prejudge_event(
         .limit(1)
         .with_for_update()
     ).first()
-    if (
+    unchanged = (
         latest is not None
         and (latest.model or "") == (model or "")
-        and (latest.params or {}) == (params or {})
+        # 比對排除 `unchanged` 旗標本身：它是我們自己蓋上去的顯示標記，不是初判參數。
+        # 不排除的話，「上一列有旗標、這一列還沒算出來」會讓 params 恆不相等，旗標永遠只蓋得上一次。
+        and _params_key(latest.params) == _params_key(params)
         and latest.result_digest == digest
-    ):
-        return False
+    )
     c.execute(
         sa_insert(h).values(
             source=source,
             source_id=source_id,
             kind="prejudge",
             model=model,
-            params=params or {},
+            params={**(params or {}), "unchanged": True} if unchanged else (params or {}),
             attributions=attributions,
             result_digest=digest,
             job_id=job_id or "",
             triggered_by=triggered_by or SYSTEM_USER,
         )
     )
-    return True
+    return not unchanged
 
 
 def insert_failure_event(

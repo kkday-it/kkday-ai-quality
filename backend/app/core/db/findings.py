@@ -92,16 +92,17 @@ def replace_source_findings(
             values = _finding_values(f, source)
             snapshots.append(_history.snapshot_of(values))
             c.execute(sa_insert(jg).values(**values))
-        if findings:
-            # 評論級歸因歷史（同交易；model 每次 to_findings 呼叫內一致，取首筆即可）
-            _history.insert_prejudge_event(
-                c,
-                source,
-                source_id,
-                model=findings[0].model_used,
-                params=params,
-                attributions=snapshots,
-                job_id=job_id,
-                triggered_by=triggered_by,
-            )
+        # 評論級歸因歷史（同交易）：**空結果也記**——「這次初判把歸因清空了」與「跑了但結果一樣」
+        # 都是使用者要在時間軸看到的事實，漏記會讓該次 job 在這則評論上完全查無痕跡。
+        # model 取首筆（同一次 to_findings 內一致）；空結果無首筆可取，退回 job 級參數快照。
+        _history.insert_prejudge_event(
+            c,
+            source,
+            source_id,
+            model=findings[0].model_used if findings else str((params or {}).get("model") or ""),
+            params=params,
+            attributions=snapshots,
+            job_id=job_id,
+            triggered_by=triggered_by,
+        )
     return len(findings)

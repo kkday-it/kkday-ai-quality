@@ -142,7 +142,8 @@ const structKey = (snaps: Snap[]): string =>
 
 /**
  * 初判事件 vs 前一次初判的變更徽章（oldest→newest 逐筆對比；首筆回「初次初判」）。
- * 後端去重保證相鄰初判必有差異：模型/歸因數/分類 逐項報，僅措辭信心漂移歸「內容微調」。
+ * 每次初判都留一列（後端不去重），結果與前一次完全相同者由後端標 `params.unchanged`
+ * → 顯示「重跑·無變化」；其餘逐項報模型/歸因數/分類，僅措辭信心漂移歸「內容微調」。
  */
 const changesById = computed<Record<number, string[]>>(() => {
   const attributions = list.value.filter((e) => e.kind === 'prejudge'); // 已是 oldest→newest（後端 ASC）
@@ -150,6 +151,10 @@ const changesById = computed<Record<number, string[]>>(() => {
   attributions.forEach((e, i) => {
     if (i === 0) {
       out[e.id] = [(e.params as any)?.backfilled ? '初始回填' : '初次初判'];
+      return;
+    }
+    if ((e.params as any)?.unchanged) {
+      out[e.id] = ['重跑 · 無變化']; // 後端標記：模型/參數/結果與前一次完全相同
       return;
     }
     const prev = attributions[i - 1];

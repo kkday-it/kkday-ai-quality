@@ -57,7 +57,7 @@ def _replace(rec_oid: str, findings: list[TicketFinding], model: str = "gpt-5-mi
     )
 
 
-# ── kind='prejudge'：寫入 + 全欄位嚴格去重 ─────────────────────────────
+# ── kind='prejudge'：每次初判都寫一列（不去重；相同結果標 params.unchanged）──────
 def test_first_judgment_records_history(temp_db) -> None:
     """首次初判落一筆 kind='prejudge' 歷史（含 model / 快照 / 觸發資訊）。"""
     db.insert_source_batch("reviews", [_pr_row("H1")])
@@ -71,12 +71,44 @@ def test_first_judgment_records_history(temp_db) -> None:
     assert e["attributions"][0]["l1"]["code"] == "content"
 
 
-def test_identical_rejudge_skips_history(temp_db) -> None:
-    """同 model+參數+結果重新初判兩次 → 去重只留 1 筆（快取命中/零漂移場景不灌水時間軸）。"""
+def test_identical_rejudge_still_records_history(temp_db) -> None:
+    """同 model+參數+結果重新初判兩次 → **兩筆都留**，第二筆標 params.unchanged。
+
+    刻意不去重（2026-08-06 改）：使用者要能看出「這則被跑過幾次」而非只有「結果變過幾次」——
+    舊行為讓「跑了但結果一樣」與「根本沒跑到」在畫面上無法區分，且該次 job 的 LLM 日誌
+    會因為沒有歷史列掛載而從 UI 走不到。
+    """
     db.insert_source_batch("reviews", [_pr_row("H2")])
     _replace("H2", [_finding("H2")])
     _replace("H2", [_finding("H2")])
-    assert len(_history("H2", "prejudge")) == 1
+    rows = _history("H2", "prejudge")
+    assert len(rows) == 2
+    assert not rows[0]["params"].get("unchanged"), "首筆不該被標無變化"
+    assert rows[1]["params"].get("unchanged") is True, "第二筆結果相同，應標 unchanged"
+
+
+def test_third_identical_rejudge_still_flagged_unchanged(temp_db) -> None:
+    """連跑三次相同結果：第三筆仍要標 unchanged。
+
+    回歸鎖定一個實作坑——`unchanged` 旗標寫進 params 後，若比對時不把它剔除，
+    「上一列有旗標、這一列還沒算」會讓 params 恆不相等，旗標只蓋得上第二筆。
+    """
+    db.insert_source_batch("reviews", [_pr_row("H2b")])
+    for _ in range(3):
+        _replace("H2b", [_finding("H2b")])
+    rows = _history("H2b", "prejudge")
+    assert len(rows) == 3
+    assert [bool(r["params"].get("unchanged")) for r in rows] == [False, True, True]
+
+
+def test_empty_result_rejudge_records_history(temp_db) -> None:
+    """初判把歸因清空（0 筆結果）也要留一列——否則該次 job 在這則評論上查無痕跡。"""
+    db.insert_source_batch("reviews", [_pr_row("H2c")])
+    _replace("H2c", [_finding("H2c")])
+    _replace("H2c", [])
+    rows = _history("H2c", "prejudge")
+    assert len(rows) == 2
+    assert rows[1]["attributions"] == []
 
 
 def test_model_change_records_history(temp_db) -> None:
