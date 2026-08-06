@@ -256,3 +256,12 @@ def start(
 def get_job(job_id: str) -> dict[str, Any] | None:
     """回進度快照（深拷貝）；job 不存在（或行程重啟後）回 None。"""
     return _store.get(job_id)
+
+
+def mark_running_interrupted() -> list[str]:
+    """graceful shutdown 收尾：把仍在跑的 job 標 interrupted。
+
+    ⚠️ 本模組的 job **沒有斷點**（結果只在記憶體，不像跑批會逐筆落盤），所以 interrupted 是終態、
+    不能續跑——但仍必須標記：否則行程重啟後快照永遠停在 `running`，前端輪詢等不到終態。
+    """
+    return _store.mark_interrupted(running_statuses=("running",), new_status="interrupted")

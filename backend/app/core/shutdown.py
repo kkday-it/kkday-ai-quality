@@ -13,8 +13,11 @@ _log = logging.getLogger(__name__)
 
 
 def mark_running_jobs_interrupted() -> dict[str, list[str]]:
-    """把 5 套 registry（export/import/prejudge/upload/prompt_debug_batch）
-    仍在跑的 job 全標 interrupted。
+    """把 6 套 registry 仍在跑的 job 全標 interrupted。
+
+    涵蓋全部 6 個 `JobStore` 實例——**數量必須與實例數一致**，漏一個的後果是該 registry 的 job
+    在行程重啟後永遠停在 `running`，前端輪詢等不到終態（`prompt_regression` 曾漏收，2026-08-06 補上）。
+    新增 registry 時務必同步登記於此，`tests/test_graceful_shutdown.py` 有覆蓋數量斷言。
 
     函式內 import：shutdown 僅在 process 結束時走一次，不讓 core 底層模組
     在頂層反向依賴 judge 套件（維持依賴方向單向）。
@@ -23,7 +26,7 @@ def mark_running_jobs_interrupted() -> dict[str, list[str]]:
         registry 名 → 被標記的 job_id 清單（全空＝無進行中 job）。
     """
     from app.core import export_jobs, import_jobs
-    from app.judge import prejudge_batch, prompt_debug_batch
+    from app.judge import prejudge_batch, prompt_debug_batch, prompt_regression
     from app.judge.ingest import upload_batch
 
     marked = {
@@ -32,6 +35,7 @@ def mark_running_jobs_interrupted() -> dict[str, list[str]]:
         "prejudge": prejudge_batch.mark_running_interrupted(),
         "upload": upload_batch.mark_running_interrupted(),
         "prompt_debug_batch": prompt_debug_batch.mark_running_interrupted(),
+        "prompt_regression": prompt_regression.mark_running_interrupted(),
     }
     hit = {k: v for k, v in marked.items() if v}
     if hit:
