@@ -489,12 +489,7 @@ function openLlmSettings(): void {
     <div class="debug-grid min-h-0 flex-1">
       <section class="debug-panel flex min-h-0 flex-col">
         <div class="panel-head shrink-0">
-          <div>
-            <div class="panel-title">System Prompt</div>
-            <div class="panel-sub">
-              已注入 {{ defaults?.L2_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B 調試
-            </div>
-          </div>
+          <div class="panel-title">System Prompt</div>
           <a-space size="mini">
             <a-button
               type="text"
@@ -520,6 +515,10 @@ function openLlmSettings(): void {
               >存為新草稿</a-button
             >
           </a-space>
+        </div>
+        <!-- 說明文字獨立一行：與按鈕同排時左側只分到約 70px，會被擠成 5 行窄柱 -->
+        <div class="panel-sub shrink-0 mb-3">
+          已注入 {{ defaults?.L2_count ?? '—' }} 類操作定義；可直接改寫或整篇貼入做 A/B 調試
         </div>
         <div class="mb-3 flex shrink-0 flex-col gap-1">
           <!-- 多控制項橫排且可能換行 → 依前端規則用 a-row/a-col（gutter 同時管欄距與換行行距），
