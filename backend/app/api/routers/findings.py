@@ -61,6 +61,6 @@ def add_attribution_history_note(
     return db.add_history_note(
         body.source,
         body.source_id,
-        author=user.get("email") or "unknown",
+        author=auth.actor(user),
         content=content,
     )

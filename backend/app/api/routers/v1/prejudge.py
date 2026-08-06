@@ -195,7 +195,7 @@ def start_prejudge(
         eff,
         model,
         source=body.source,
-        triggered_by=user.get("email", ""),
+        triggered_by=auth.actor(user),
         kind=kind,
         rejudge=rejudge,
         params=params,

@@ -18,6 +18,7 @@ import {
 } from '@/api';
 import { ScrollFadeArea, StateGuard } from '@/components';
 import { POLARITY_LABELS, type ProblemRow } from '../constants';
+import { formatActor } from '../utils';
 
 // 「查看 LLM 日誌」入口目標（點開才載；PrejudgeLogDrawer 為歷史快照回看專用）
 const PrejudgeLogDrawer = defineAsyncComponent(() => import('./PrejudgeLogDrawer.vue'));
@@ -206,7 +207,7 @@ const failureText = (e: AttributionHistoryEntry): string => {
                     >
                       {{ c }}
                     </a-tag>
-                    <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
+                    <span v-if="e.triggered_by">by {{ formatActor(e.triggered_by) }}</span>
                     <a-button
                       v-if="e.job_id"
                       size="mini"
@@ -218,11 +219,13 @@ const failureText = (e: AttributionHistoryEntry): string => {
                   </template>
                   <template v-else-if="e.kind === 'failure'">
                     <a-tag size="small" color="red">初判失敗</a-tag>
-                    <span v-if="e.triggered_by">by {{ e.triggered_by }}</span>
+                    <span v-if="e.triggered_by">by {{ formatActor(e.triggered_by) }}</span>
                   </template>
                   <template v-else>
                     <a-tag size="small" color="gray">備註</a-tag>
-                    <span class="font-medium text-[var(--color-text-2)]">{{ e.author }}</span>
+                    <span class="font-medium text-[var(--color-text-2)]">{{
+                      formatActor(e.author)
+                    }}</span>
                   </template>
                 </div>
                 <!-- 內容：依事件類型 -->

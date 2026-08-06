@@ -115,7 +115,7 @@ def prompt_debug_save_draft(
 
     try:
         saved = prompt_debug_versions.save_draft(
-            body.system_prompt, note=body.note, author=str(user.get("email") or "")
+            body.system_prompt, note=body.note, author=auth.actor(user)
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -161,7 +161,7 @@ def prompt_debug_promote_release(
 
     try:
         result = prompt_debug_versions.promote(
-            body.draft, body.name, note=body.note, author=str(user.get("email") or "")
+            body.draft, body.name, note=body.note, author=auth.actor(user)
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -184,7 +184,7 @@ def prompt_debug_activate_release(
     from app.judge import prompt_debug_versions
 
     try:
-        result = prompt_debug_versions.set_active_release(name, author=str(user.get("email") or ""))
+        result = prompt_debug_versions.set_active_release(name, author=auth.actor(user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -501,7 +501,7 @@ async def prompt_debug_batch_start(
             system_prompt=system_prompt,
             overrides=overrides_dict,
             effective=effective,
-            triggered_by=user.get("email", ""),
+            triggered_by=auth.actor(user),
             config_name=config_name.strip(),
         )
     except ValueError as exc:
@@ -660,7 +660,7 @@ async def prompt_debug_batch_start_multi(
             workers=workers,
             system_prompt=system_prompt,
             entries=entries,
-            triggered_by=user.get("email", ""),
+            triggered_by=auth.actor(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -730,7 +730,7 @@ def prompt_debug_batch_resume(
             effective,
             workers=body.workers,
             rerun=body.rerun,
-            triggered_by=user.get("email", ""),
+            triggered_by=auth.actor(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

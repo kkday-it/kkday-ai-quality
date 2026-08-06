@@ -12,7 +12,7 @@
     "release-v2": {
       "source_draft": "2026-08-03-120205",
       "note": "260803 表全面改版（24 類重構：現場/費用類上線、[101] 重構、兜底統一「其他」、新增 redirected_to_cancel_flag）＋契約 SSOT 同批升到 260803",
-      "author": "local@kkday.internal",
+      "author": "system",
       "promoted_at": "2026-08-03T15:59:15+08:00",
       "sha256": "ea0c704ed4d79222c84f5e63d843e0f0303a349539db858d4ddad86ece13201d"
     }

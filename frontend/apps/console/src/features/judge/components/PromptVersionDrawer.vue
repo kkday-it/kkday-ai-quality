@@ -27,6 +27,7 @@ import { type PromptDraftMeta, type PromptReleaseMeta } from '@/api';
 import { TableLayout } from '@/components';
 import { usePromptRelease } from '../composables';
 import { PAGINATION_WITH_ALL } from '@/constants/table.constant';
+import { formatActor } from '../utils';
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
 
 // 對比抽屜點開才載（內含 diff 演算法與全文，非首屏必需）
@@ -156,7 +157,6 @@ watch(
   },
   { immediate: true },
 );
-
 </script>
 
 <template>
@@ -215,7 +215,9 @@ watch(
           </a-table-column>
           <a-table-column title="備註 / 上線理由" data-index="note" ellipsis tooltip />
           <a-table-column title="來源草稿" data-index="sourceDraft" :width="150" ellipsis tooltip />
-          <a-table-column title="操作人" data-index="author" :width="140" ellipsis tooltip />
+          <a-table-column title="操作人" data-index="author" :width="140" ellipsis tooltip>
+            <template #cell="{ record }">{{ formatActor(record.author) }}</template>
+          </a-table-column>
           <a-table-column title="時間" data-index="at" :width="150" ellipsis tooltip />
           <a-table-column title="操作" :width="128" align="right">
             <template #cell="{ record }">
@@ -264,13 +266,18 @@ watch(
       cancel-text="取消"
       @ok="release.confirmPromote"
     >
-      <a-form :model="{ releaseName: release.releaseName.value, releaseNote: release.releaseNote.value }" layout="vertical">
+      <a-form
+        :model="{ releaseName: release.releaseName.value, releaseNote: release.releaseNote.value }"
+        layout="vertical"
+      >
         <a-form-item label="來源草稿">
           <span class="font-medium">{{ release.sourceDraft.value }}</span>
         </a-form-item>
         <a-form-item
           label="正式版名稱"
-          :validate-status="!release.nameValid.value || release.nameTaken.value ? 'error' : undefined"
+          :validate-status="
+            !release.nameValid.value || release.nameTaken.value ? 'error' : undefined
+          "
           :help="
             release.nameTaken.value
               ? '此名稱已存在（正式版不覆寫，請換名）'

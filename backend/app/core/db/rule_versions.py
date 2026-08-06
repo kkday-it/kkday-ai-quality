@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 
+from app.core.auth import SYSTEM_USER
 from app.core.db import tables as T
 from app.core.paths import AI_JUDGE_DIR as _AI_JUDGE_DIR
 from app.core.paths import GLOBAL_DIR as _GLOBAL_DIR
@@ -211,7 +212,7 @@ def seed_rules_from_files() -> dict:
             continue
         try:
             save_rule_version(
-                code, default_rule_content(code), note="seed from file", author="system"
+                code, default_rule_content(code), note="seed from file", author=SYSTEM_USER
             )
             out[code] = "seeded"
         except FileNotFoundError:

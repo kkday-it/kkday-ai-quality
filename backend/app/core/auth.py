@@ -15,6 +15,16 @@ from app.core.config import env
 
 _bearer = HTTPBearer(auto_error=False)
 
+# 稽核欄（create_user / author / triggered_by）的統一系統標記。
+# 沒有 SSO 就沒有經過驗證的身分——本地模式下把自填的 email 記成稽核紀錄是假的可追溯性，
+# 一律記 system 更誠實。be2 SSO 接入後 verifier 回真實 email，屆時稽核欄才有真的人。
+SYSTEM_USER = "system"
+
+
+def actor(user: dict) -> str:
+    """稽核欄要寫的身分字串：有真實 email 用它，否則 `SYSTEM_USER`（唯一的 fallback 出口）。"""
+    return str(user.get("email") or "").strip() or SYSTEM_USER
+
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -23,12 +33,12 @@ def get_current_user(
 
     本地模式的 email 僅供權限授予查詢與稽核欄位使用，非登入身分（無登入系統）；
     可用 env LOCAL_USER_EMAIL 指定（如需在單機環境測試 grants[email] 顆粒權限），
-    未設則回通用佔位 email。
+    未設則回 `SYSTEM_USER`——無 SSO 時本就無從辨識是誰，稽核欄記 system 而非假 email。
     """
     from app.core.permissions.deps import auth_config
 
     if str(auth_config().get("authProvider") or "local").lower() != "be2":
-        return {"email": env.local_user_email or "local@kkday.internal"}
+        return {"email": env.local_user_email or SYSTEM_USER}
 
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="未提供認證 token")

@@ -11,6 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy import insert as sa_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.core.auth import SYSTEM_USER
 from app.core.db import tables as T
 from app.core.db._shared import select_wire, wire_row
 
@@ -93,7 +94,7 @@ def save_run_log_item(
     """
     lg = T.prejudge_run_logs
     stmt = pg_insert(lg).values(
-        job_id=job_id, source_id=source_id, entries=entries, create_user=triggered_by or None
+        job_id=job_id, source_id=source_id, entries=entries, create_user=triggered_by or SYSTEM_USER
     )
     with T.get_engine().begin() as c:
         c.execute(

@@ -11,7 +11,7 @@ import { useIntervalFn } from '@vueuse/core';
 import { getPrejudgeRun, listPrejudgeRuns, type PrejudgeRun, type PrejudgeRunStage } from '@/api';
 import { TableLayout } from '@/components';
 import { DEFAULT_PAGE_SIZE, SOURCE_LABEL } from '../constants';
-import { fmtDt, fmtDuration } from '../utils';
+import { fmtDt, fmtDuration, formatActor } from '../utils';
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void }>();
@@ -196,7 +196,9 @@ const paramsSummary = (r: PrejudgeRun) => {
             {{ fmtDuration(record.started_at, record.finished_at) }}
           </template>
         </a-table-column>
-        <a-table-column title="觸發人" data-index="triggered_by" :width="150" ellipsis tooltip />
+        <a-table-column title="觸發人" data-index="triggered_by" :width="150" ellipsis tooltip>
+          <template #cell="{ record }">{{ formatActor(record.triggered_by) }}</template>
+        </a-table-column>
       </template>
 
       <!-- 展開行：發起參數摘要 + per-stage LLM 用量明細（懶載） -->

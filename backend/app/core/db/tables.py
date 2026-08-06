@@ -164,8 +164,14 @@ attributions = Table(
         "l2_code",
         unique=True,
     ),
-    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
+    Column(
+        "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
+    Column(
+        "modify_user",
+        String(255),
+        comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
+    ),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="初判歸因結果（一列＝一條歸因，同一則反饋可有多列）。全 typed scalar 欄無 JSONB blob——"
     "本表是查詢／聚合／篩選密集的分析核心，typed 欄可直接 btree 索引且 SQL 乾淨；巢狀物件屬呈現層，"
@@ -359,8 +365,14 @@ batches = Table(
     ),
     Column("note", Text, comment="使用者上傳時輸入的備註（每工作表一則，隨批次保存）"),
     Index("idx_upload_batch_tbl_unique01", "batch_id", unique=True),
-    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
+    Column(
+        "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
+    Column(
+        "modify_user",
+        String(255),
+        comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
+    ),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="上傳批次審計流水：一列＝一次上傳中的一張工作表，供資料上傳頁回溯來源檔與筆數",
 )
@@ -385,9 +397,15 @@ settings = Table(
         comment="最後更新時間（timestamptz，UTC）",
     ),
     Index("idx_setting_master_unique01", "key", unique=True),
-    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
+    Column(
+        "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
     Column("create_date", DateTime(timezone=True), comment="建立時間"),
-    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
+    Column(
+        "modify_user",
+        String(255),
+        comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
+    ),
     comment="全項目共享設定（單例 row，見 core/settings.py）：LLM 連線與模型配置庫、QC DB 連線、"
     "功能區綁定、導出偏好。機密欄位加密後才落此表",
 )
@@ -424,7 +442,12 @@ judge_rule_versions = Table(
         comment="該版本完整內容；prompt_* 為 {_meta, text(md 全文)}",
     ),
     Column("note", Text, comment="存檔備註（使用者輸入，說明本次改了什麼）"),
-    Column("create_user", String(255), key="author", comment="存檔人（user email）"),
+    Column(
+        "create_user",
+        String(255),
+        key="author",
+        comment="存檔人（SSO 接入前一律 system，接入後為使用者 email）",
+    ),
     Column(
         "is_active",
         Boolean,
@@ -509,7 +532,9 @@ llm_usage = Table(
     Index("idx_llm_usage_lst_create_date", "created_at"),
     Index("idx_llm_usage_lst_model", "model"),
     Index("idx_llm_usage_lst_stage", "stage"),
-    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
+    Column(
+        "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
     comment="AI 使用紀錄（per-call：每次真實 LLM 呼叫落一列），供成本 dashboard 多維度聚合。"
     "唯一寫入點＝llm.client 的 usage recorder（批次走 buffer 批量寫、單次即時寫）",
 )
@@ -561,7 +586,12 @@ prejudge_runs = Table(
     Column("failed", Integer, comment="失敗筆數"),
     Column("total_tokens", BigInteger, comment="本 run 累計 token（usage sink 加總）"),
     Column("cost_usd", Float, comment="本 run 累計費用（pricing 換算）"),
-    Column("create_user", String(255), key="triggered_by", comment="觸發人（user email）"),
+    Column(
+        "create_user",
+        String(255),
+        key="triggered_by",
+        comment="觸發人（SSO 接入前一律 system，接入後為使用者 email）",
+    ),
     Column(
         "create_date",
         DateTime(timezone=True),
@@ -572,7 +602,11 @@ prejudge_runs = Table(
     Column("finished_at", DateTime(timezone=True), comment="結束時間；執行中為空"),
     Index("idx_prejudge_run_tbl_create_date", "started_at"),
     Index("idx_prejudge_run_tbl_unique01", "job_id", unique=True),
-    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
+    Column(
+        "modify_user",
+        String(255),
+        comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
+    ),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="初判批次執行紀錄（run 級：每次觸發初判的動作落一列）。與 llm_usage（call 級）以 job_id "
     "關聯——本表存業務語境（誰／何時／範圍／參數／結果統計），token 與費用明細由 llm_usage 聚合",
@@ -607,7 +641,9 @@ prejudge_run_logs = Table(
         comment="該評論本次初判的完整日誌條目陣列（run_log entries 形狀：ts/kind/stage/message/label/data）",
     ),
     # 本表不出 wire（讀取端只回 entries 陣列），故欄名不做 Python key 別名，DB 規範名直用
-    Column("create_user", String(255), comment="觸發人（user email）"),
+    Column(
+        "create_user", String(255), comment="觸發人（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
     Column(
         "create_date",
         DateTime(timezone=True),
@@ -672,9 +708,13 @@ attribution_history = Table(
         "create_user",
         String(255),
         key="triggered_by",
-        comment="觸發人（user email；kind=prejudge）",
+        comment="觸發人（SSO 接入前一律 system，接入後為使用者 email；kind=prejudge）",
     ),
-    Column("author", String(255), comment="備註人（user email；kind=note）"),
+    Column(
+        "author",
+        String(255),
+        comment="備註人（SSO 接入前一律 system，接入後為使用者 email；kind=note）",
+    ),
     Column("note_content", Text, key="content", comment="備註內容（kind=note）"),
     Column(
         "create_date",
@@ -788,8 +828,14 @@ evidence_snapshot = Table(
     Index("idx_evidence_snapshot_tbl_prod_oid", "prod_oid"),
     Index("idx_evidence_snapshot_tbl_supplier_oid", "supplier_oid"),
     Index("idx_evidence_snapshot_tbl_unique01", "order_oid", unique=True),
-    Column("create_user", String(255), comment="建立者（user email 或 system:* 標記）"),
-    Column("modify_user", String(255), comment="最後修改者（user email 或 system:* 標記）"),
+    Column(
+        "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
+    ),
+    Column(
+        "modify_user",
+        String(255),
+        comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
+    ),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     comment="訂單佐證快照（qc_evidence 的 PG 快取層）：下單當時的商品／規格／方案內容投影，一訂單一列 "
     "+ TTL 懶清理。runtime 派生快取（真相源＝production snapshot，可重生），刻意不入資料包。"

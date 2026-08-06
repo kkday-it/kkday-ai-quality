@@ -18,6 +18,7 @@ import logging
 from sqlalchemy import Connection, and_, select
 from sqlalchemy import insert as sa_insert
 
+from app.core.auth import SYSTEM_USER
 from app.core.db import tables as T
 from app.core.db._shared import select_wire, wire_row
 
@@ -134,7 +135,7 @@ def insert_prejudge_event(
             attributions=attributions,
             result_digest=digest,
             job_id=job_id or "",
-            triggered_by=triggered_by or "",
+            triggered_by=triggered_by or SYSTEM_USER,
         )
     )
     return True
@@ -164,7 +165,7 @@ def insert_failure_event(
                     kind="failure",
                     params={"error": error},
                     job_id=job_id or "",
-                    triggered_by=triggered_by or "",
+                    triggered_by=triggered_by or SYSTEM_USER,
                 )
             )
     except Exception:  # noqa: BLE001  失敗留痕是輔助，寫不進去也不能拖垮初判批次

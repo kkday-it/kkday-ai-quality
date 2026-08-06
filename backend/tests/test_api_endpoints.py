@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core import auth
+
 
 @pytest.fixture
 def client(temp_db):
@@ -59,9 +61,13 @@ def test_start_prejudge_accepts_prompt_versions(client, auth_headers, monkeypatc
 
 
 def test_me_returns_fixed_local_identity(client) -> None:
-    """本地模式無登入系統：/api/auth/me 不帶 Authorization header 也直接回固定身分。"""
+    """本地模式無登入系統：/api/auth/me 不帶 Authorization header 也直接回固定身分。
+
+    該身分是 `SYSTEM_USER` 而非假 email——沒有 SSO 就沒有經過驗證的人，稽核欄記 system
+    才誠實（見 app/core/auth.py）。be2 SSO 接入後這裡才會是真實 email。
+    """
     r = client.get("/api/auth/me")
-    assert r.status_code == 200 and "@" in str(r.json().get("email"))
+    assert r.status_code == 200 and r.json().get("email") == auth.SYSTEM_USER
 
 
 # ── settings ──────────────────────────────────────────────────────

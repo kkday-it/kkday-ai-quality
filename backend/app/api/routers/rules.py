@@ -232,7 +232,7 @@ def reset_default_all(
 
     缺默認檔的 code 由 db 層跳過（回傳 skipped），不視為錯誤。
     """
-    res = db.reset_all_rule_defaults(author=user.get("email", ""))
+    res = db.reset_all_rule_defaults(author=auth.actor(user))
     _reload_judge_cache()
     return res
 
@@ -246,7 +246,7 @@ def save_rule(
     """存檔（先 jsonschema 驗證 → 新版 active）。"""
     _check_code(code)
     _validate(code, body.content)
-    res = db.save_rule_version(code, body.content, note=body.note, author=user.get("email", ""))
+    res = db.save_rule_version(code, body.content, note=body.note, author=auth.actor(user))
     _reload_judge_cache()
     return res
 
@@ -260,7 +260,7 @@ def restore_rule(
     """恢復某歷史版本（複製為新 active 版）。"""
     _check_code(code)
     try:
-        res = db.restore_rule_version(code, version, author=user.get("email", ""))
+        res = db.restore_rule_version(code, version, author=auth.actor(user))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     _reload_judge_cache()
@@ -275,7 +275,7 @@ def reset_default(
     """恢復默認（讀 config/ai_judge/ 檔內容存為新 active 版）。"""
     _check_code(code)
     try:
-        res = db.reset_rule_default(code, author=user.get("email", ""))
+        res = db.reset_rule_default(code, author=auth.actor(user))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="默認檔不存在") from None
     _reload_judge_cache()
