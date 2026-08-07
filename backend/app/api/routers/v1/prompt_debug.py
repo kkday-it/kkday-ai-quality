@@ -739,10 +739,10 @@ def prompt_debug_batch_resume(
 @router.get("/prompt-debug/batch/runs/{run_id}/files/{kind}")
 def prompt_debug_batch_file(
     run_id: str,
-    kind: Literal["csv", "jsonl", "preds", "input"],
+    kind: Literal["csv", "preds", "input"],
     user: dict = Depends(auth.get_current_user),
 ) -> FileResponse:
-    """下載 run 產物：csv=結果表、jsonl=逐筆原始紀錄（斷點）、preds=成功判定彙總、input=原輸入檔。"""
+    """下載 run 產物：csv=結果表、preds=成功判定彙總、input=原輸入檔。"""
     from app.judge import prompt_debug_batch
 
     try:

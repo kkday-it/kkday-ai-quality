@@ -439,7 +439,6 @@ async function onDownload(
     const blob = await downloadPromptDebugBatchFile(run.run_id, kind);
     const names: Record<PromptDebugBatchFileKind, string> = {
       csv: `${run.run_id}_results.csv`,
-      jsonl: `${run.run_id}_raw_results.jsonl`,
       preds: `${run.run_id}_preds.json`,
       input: run.input_name,
     };
@@ -910,9 +909,10 @@ watch(
                ⚠️ 刻意收成單一描述區塊而非三個窄欄：拆欄會讓整表最小寬度到 1040px、必然橫向捲動，
                而抽屜寬度有限；合併儲存格也會因為鄰欄有 N 列而拉出一大塊空白（見 RecordContextPanel
                的 compact 版型，同一套「左小標籤＋右內容」語彙）。
-               ⚠️ 三欄**刻意都不給 `width`**：配合 `table-layout-fixed`，未指定寬度的欄會等分容器
-               （1:1:1）。給了 px 反而兩頭不討好——220 太窄會把時間戳從中間折行、操作鈕擠成直排，
-               300 又讓「執行」欄從單字中間斷開；等分在各種抽屜寬度下都成立。 -->
+               ⚠️ 「本批」「執行」兩欄**刻意都不給 `width`**：配合 `table-layout-fixed`，未指定寬度的
+               欄會等分剩餘空間。給了 px 反而兩頭不討好——220 太窄會把時間戳從中間折行，300 又讓
+               「執行」欄從單字中間斷開；等分在各種抽屜寬度下都成立。「操作」欄則相反，固定窄寬
+               （見該欄註解）。 -->
           <!-- ⚠️ 只有這一欄垂直置中：它是**整組的標籤**（rowspan 吃掉 N 列高度），置中才與整組對齊；
                靠上會讓它黏在第一個 model 那列、下方拖一大塊空白。「執行」「操作」是逐列內容，
                必須靠上與各自那一列對齊——兩者語義不同，對齊方式刻意不一致。 -->
@@ -994,9 +994,12 @@ watch(
               </div>
             </template>
           </a-table-column>
-          <a-table-column title="操作" :cell-style="{ verticalAlign: 'top' }">
+          <!-- ⚠️ 「操作」欄刻意固定窄寬 + 按鈕直排：這一列的動作最多 3 顆（看進度/停止、續跑、重跑、
+               CSV），橫排時得吃掉整表 1/3 寬度，而左邊兩欄的描述區塊本來就更需要空間。直排不會
+               增加列高——同列的「執行」描述區塊本身就是 3 行高，按鈕正好落在同一段垂直空間內。 -->
+          <a-table-column title="操作" :width="96" :cell-style="{ verticalAlign: 'top' }">
             <template #cell="{ record }">
-              <div class="flex flex-wrap items-center gap-x-1">
+              <div class="flex flex-col items-start gap-y-0.5">
                 <a-button
                   v-if="record.status === 'running' || record.status === 'cancelling'"
                   size="mini"
@@ -1041,15 +1044,6 @@ watch(
                 >
                   <template #icon><icon-download /></template>
                   CSV
-                </a-button>
-                <a-button
-                  v-if="record.processed || record.ok_count"
-                  size="mini"
-                  type="text"
-                  @click="onDownload(record, 'jsonl')"
-                >
-                  <template #icon><icon-download /></template>
-                  JSONL
                 </a-button>
               </div>
             </template>

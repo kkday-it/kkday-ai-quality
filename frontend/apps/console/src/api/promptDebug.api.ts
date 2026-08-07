@@ -393,7 +393,7 @@ export const streamPromptDebug = (
 export type PromptDebugBatchStatus =
   'running' | 'cancelling' | 'done' | 'error' | 'cancelled' | 'interrupted';
 
-/** 快照內「最近完成」明細（即時回報環，全量明細在 jsonl 下載）。 */
+/** 快照內「最近完成」明細（即時回報環，全量成功明細在結果 CSV）。 */
 export interface PromptDebugBatchRecentItem {
   item_id: string;
   /** 這一筆是否成功（與快照的 `ok_count` 計數刻意不同名——同名不同義是這個模組出過的事故）。 */
@@ -429,7 +429,7 @@ export interface PromptDebugBatchSnapshot {
   /** 累計成功**筆數**（含斷點復用）。 */
   ok_count: number;
   failed: number;
-  /** 成功但欄位校驗未過（詳情在 jsonl.validation_issues）。 */
+  /** 成功但欄位校驗未過（詳情落在 run 目錄的 raw_results.jsonl `validation_issues`，不對外下載）。 */
   invalid: number;
   total_tokens: number;
   cost_usd: number;
@@ -492,8 +492,8 @@ export interface PromptDebugBatchRunRow {
   has_csv: boolean;
 }
 
-/** run 產物下載類型：csv=結果表、jsonl=逐筆原始紀錄（斷點）、preds=成功判定彙總、input=原輸入檔。 */
-export type PromptDebugBatchFileKind = 'csv' | 'jsonl' | 'preds' | 'input';
+/** run 產物下載類型：csv=結果表、preds=成功判定彙總、input=原輸入檔。 */
+export type PromptDebugBatchFileKind = 'csv' | 'preds' | 'input';
 
 // 前端跑批一律走 `startPromptDebugBatchGroup`（單選一個 model＝群組大小為 1），不維護第二條
 // 啟動路徑。後端 `POST /batch/start` 端點保留供腳本/外部呼叫，前端無呼叫端。

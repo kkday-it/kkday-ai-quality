@@ -1401,9 +1401,10 @@ def cancel_run(run_id: str) -> bool:
 
 
 # 下載 kind → (run 目錄內檔名, media type)；input 保留原名故另行處理
+# ⚠️ `raw_results.jsonl` 刻意不開放下載：它是續跑斷點的內部狀態檔（逐筆 flush、同 id 可重複多筆），
+#    不是交付產物；要看逐筆結果看 results.csv。檔案本身照舊寫，只是不經 HTTP 對外。
 _DOWNLOAD_KINDS = {
     "csv": ("results.csv", "text/csv"),
-    "jsonl": ("raw_results.jsonl", "application/x-ndjson"),
     "preds": ("preds.json", "application/json"),
 }
 
