@@ -26,11 +26,19 @@ export interface ScoreItem {
   n: number;
 }
 
-/** 信心分層計數（auto_accept/jury/needs_review）。 */
+/**
+ * 信心分層計數（auto_accept / jury / needs_review / human）。
+ *
+ * `human` 是**人工糾正過的列**——它們的 `conf_value` 被設為 NULL（原 AI 信心描述的是舊分類，
+ * 掛在新分類上是謊言），只留 `conf_tier='human'`，故不參與數值分箱、自成一桶。
+ * ⚠️ 少宣告這一欄的後果是靜默的：後端照樣回四個桶，前端只是「看不到」→ 圓餅少一塊、
+ * 各段加總對不上總數，而 TypeScript 不會抗議（多回的鍵不會報錯）。
+ */
 export interface TierCounts {
   auto_accept: number;
   jury: number;
   needs_review: number;
+  human: number;
 }
 
 /** 月度時序（已判 / 負向）。 */

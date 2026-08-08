@@ -12,3 +12,4 @@ export * from './usage.api';
 export * from './promptDebug.api';
 export * from './evidence.api';
 export * from './overview.api';
+export * from './corrections.api';

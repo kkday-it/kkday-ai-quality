@@ -30,7 +30,7 @@ export function patchAiJudgeData(base: Overview3, real: AiJudgeOverviewResp): Ov
   if (engine) {
     engine.metrics = [
       { label: '內容類歸因占比', value: share, unit: '%' },
-      { label: '已初判進線', value: real.totals.judged_items, unit: '筆' },
+      { label: '已初判反饋', value: real.totals.judged_items, unit: '筆' },
       { label: '歸因樣本', value: real.totals.attributed_rows, unit: '筆' },
     ];
     if (hasTrend) engine.spark = ratios;
@@ -47,7 +47,7 @@ export function patchAiJudgeData(base: Overview3, real: AiJudgeOverviewResp): Ov
       ns.deltaGood = d <= 0;
       ns.spark = ratios;
     }
-    ns.hint = '真實資料：attributions 內容類占比（初判時間軸·distinct 進線）。';
+    ns.hint = '真實資料：attributions 內容類占比（初判時間軸·distinct 反饋）。';
   }
 
   // content goal 落後趨勢圖：改真實月序列（target 門檻沿用 config 值）

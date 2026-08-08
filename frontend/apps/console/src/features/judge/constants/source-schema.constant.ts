@@ -23,7 +23,8 @@ export interface StageFilterDef {
   type: 'stage';
 }
 
-/** 信心分層篩選（單選；選項來自 TIER_LABELS，值 auto_accept/jury/needs_review）。 */
+/** 信心分層篩選（單選；選項來自 TIER_LABELS，值 auto_accept/jury/needs_review/human）。
+ *  下拉由 TIER_LABELS 動態產生，故 SSOT 加了 human 之後這裡自動多一個選項，無需改碼。 */
 export interface TierFilterDef {
   type: 'tier';
 }
@@ -44,6 +45,11 @@ export interface HasExternalFilterDef {
   type: 'hasExternal';
 }
 
+/** 人工介入狀態篩選（單選；AI 原判／已人工介入／有待審建議——全 5 來源皆適用）。 */
+export interface HumanStateFilterDef {
+  type: 'humanState';
+}
+
 /** 進線分桶篩選（多選；conversations 專屬直欄，選項來自 BUCKET_LABELS）。 */
 export interface BucketFilterDef {
   type: 'bucket';
@@ -59,6 +65,7 @@ export type SourceFilterDef =
   | ModelFilterDef
   | TaxonomyFilterDef
   | HasExternalFilterDef
+  | HumanStateFilterDef
   | DateRangeFilterDef
   | BucketFilterDef;
 
@@ -133,6 +140,8 @@ export interface Attribution {
   /** 歸因流水號主鍵（serial）；同一則反饋的多條歸因靠它區分。 */
   attribution_oid?: number;
   polarity?: string;
+  /** 情緒分 1-5（與 polarity 同段輸出：負 1-2 / 中 3 / 正 4-5）。 */
+  sentiment_score?: number;
   /** 初判階段（judged/pending_review/pending_data）。 */
   stage?: string;
   l1?: AttributionLevel;
@@ -147,6 +156,20 @@ export interface Attribution {
   is_primary?: boolean;
   /** 系統是否自動採納（信心達 auto_accept 門檻）。 */
   is_auto_accepted?: boolean;
+  /** 現值來源（後端派生的顯示 SSOT）：`human`＝人工糾正或新增，顯示修改者取代 model。 */
+  origin?: 'ai' | 'human';
+  /** 人工手動新增（AI 未產出、由人補上）。 */
+  is_manual_created?: boolean;
+  /** AI 產出後由人工改過值。 */
+  is_human_corrected?: boolean;
+  /** 糾正者（無 SSO 時為 system）。 */
+  corrected_by?: string | null;
+  /** 糾正時間（ISO）。 */
+  corrected_at?: string | null;
+  /** 最近一次糾正／刪除的理由。 */
+  correction_reason?: string | null;
+  /** 人工複審狀態：unreviewed / confirmed（確認 AI 判對）/ corrected（已糾正）。 */
+  review_status?: string;
 }
 
 /**
@@ -161,7 +184,18 @@ export interface ProblemRow {
   // ── 一列一 review（後端 _paged_fanout 附）：多歸因收進 attributions 陣列，右側單欄堆疊呈現 ──
   _group?: string; // 該 review 的特徵 id（source_id；前端 rowKey / expand key）
   _seq?: number; // review 在本頁的序號（#seq 顯示）
-  attributions?: Attribution[]; // 該 review 的多條歸因（0＝未初判，右欄顯示「—」）
+  attributions?: Attribution[]; // 該 review 的存活歸因（不含人工標記為誤判的列）
+  suggestion_count?: number; // 待審 LLM 建議數（人工託管的反饋重新初判後產生；0＝無）
+  /**
+   * 判定狀態（服務端由兩個 SQL 計數派生，**前端不要再用 attributions.length 自己推**）：
+   * `judged` 有存活歸因｜`dismissed` 判過但歸因全被人工標記為 AI 誤判｜`unjudged` 從未判過。
+   * `dismissed` 是關鍵的第三態：這種列的 `attributions` 是空陣列，但它**不是**未初判——
+   * 少了這個狀態，畫面會顯示「未初判」而批量初判卻不會撈它，兩個數字互相矛盾。
+   */
+  judge_state?: 'judged' | 'dismissed' | 'unjudged';
+  dismissed_count?: number; // 被人工標記為 AI 誤判的歸因數（judge_state='dismissed' 時 >0）
+  /** 這則反饋的備註數（整則 + 面向合計）。0＝無，列上不顯示徽記。 */
+  note_count?: number;
   [key: string]: unknown;
 }
 
@@ -197,10 +231,26 @@ const COMPOSITE_COLUMNS: TableColumnData[] = [
     width: 260,
     sortable: { sortDirections: ['ascend', 'descend'] },
   },
-  { title: '操作', slotName: 'actions', width: 132, fixed: 'right' },
+  // 操作欄按分類分四組（反饋／初判／判決／人工），每組兩顆帶 icon 的四字按鈕。
+  //
+  // **寬度模型：112 是「並排 vs 堆疊」的切換點，不是裁切下限。**
+  // `.act-group` 帶 `flex-wrap`（見 AttributionList 的 style），所以這一欄**不可能被裁切**——
+  // 不夠寬就換行。於是宣告寬不再需要保守下限，改為挑一個「在常見視窗下呈現想要的形態」的值：
+  //
+  //   實測（2048px 容器、各欄一致拉伸 1.67×）：
+  //     一組並排需 148px（icon+4字 ×2 + gap6×2 + 分隔點4）、單顆需 66px
+  //     宣告 112 → 渲染 187 → 可用 155 ≥ 148 → **寬螢幕維持四行並排**
+  //     宣告 112 → 窄視窗退回比例 1.0 → 可用 80 ≥ 66 → **自動堆疊成七行，仍不裁切**
+  //
+  // ⚠️ 曾一路加寬到 180（→ 寬螢幕渲染 301、留白 152px）。原因是當時沒有 flex-wrap，
+  // 只能靠「寧可留白也不要靜默裁切」的保守下限硬撐。加了換行之後那個取捨消失了。
+  //
+  // 列高不是限制：整列高度由「關聯資料」欄決定（實測 315px），而本欄內容並排時 79px、
+  // 堆疊成七行也只有 151px——變高完全不影響版面。
+  { title: '操作', slotName: 'actions', width: 112, fixed: 'right' },
 ];
 
-/** 共用篩選（各來源皆適用，落 attributions.data 或時間欄）：傾向 / 初判階段 / 信心分層 / 初判模型 / 歸因分類 / 日期區間。 */
+/** 共用篩選（各來源皆適用）：傾向 / 初判階段 / 信心分層 / 初判模型 / 歸因分類 / 日期區間 / 人工介入狀態。 */
 const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'polarity' },
   { type: 'stage' },
@@ -208,6 +258,8 @@ const BASE_FILTERS: SourceFilterDef[] = [
   { type: 'model' },
   { type: 'taxonomy' },
   { type: 'dateRange', field: 'occurred_at', label: '反饋時間' },
+  // 人工介入狀態：全 5 來源皆適用（糾正與待審建議不分來源）
+  { type: 'humanState' },
 ];
 
 /** 組某來源的篩選：共用集（+ reviews 專屬「有無外部評論」；+ conversations 專屬「分桶／商品垂直分類」）。 */

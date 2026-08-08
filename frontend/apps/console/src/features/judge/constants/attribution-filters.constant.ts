@@ -18,6 +18,8 @@ export interface AttributionFilters {
   taxonomy: string[];
   /** 有無外部評論（''=全部 / 'true'=有 / 'false'=無）。 */
   hasExternal: string;
+  /** 人工介入狀態（''=全部 / ai_only=AI 原判 / corrected=已人工介入 / suggested=有待審建議）。 */
+  humanState: string;
   /** 反饋時間區間 [from, to]（'YYYY-MM-DD'）。 */
   dateRange: string[];
   /** 評論 rec_oid 精確。 */
@@ -41,6 +43,7 @@ export const emptyFilters = (): AttributionFilters => ({
   model: [],
   taxonomy: [],
   hasExternal: '',
+  humanState: '',
   dateRange: [],
   recOid: '',
   prodOid: '',
@@ -109,5 +112,6 @@ export const filtersToParams = (f: AttributionFilters) => {
     prodOid: f.prodOid.trim() || undefined,
     orderOid: f.orderOid.trim() || undefined,
     bucket: f.bucket.length ? f.bucket : undefined,
+    humanState: f.humanState || undefined,
   };
 };

@@ -16,6 +16,12 @@ export interface RuleMeta {
   created_at: string | null;
   /** L1 域中文名，自 content._meta.label（SSOT）；schema 等無此欄者為 null，由前端 fallback 補。 */
   label: string | null;
+  /**
+   * `prompts/{id}.md` 的檔名（去副檔名，如 `01_C-1_content`）；非 prompt_* 規則為 null。
+   *
+   * 由後端自 `app.judge.prompt_source` 的對照表派生——前端不複製那份表，否則改檔名時必漏改一邊。
+   */
+  prompt_id: string | null;
 }
 
 /** 歷史版本列。 */

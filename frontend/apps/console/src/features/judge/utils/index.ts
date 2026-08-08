@@ -12,3 +12,4 @@ export * from './sentiment.util';
 export * from './logView.util';
 export * from './reviewControl.util';
 export * from './pipelineGate.util';
+export * from './attribution.util';

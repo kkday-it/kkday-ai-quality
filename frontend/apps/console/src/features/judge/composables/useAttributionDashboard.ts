@@ -12,11 +12,22 @@ import {
 } from '../utils';
 import { POLARITY_LABELS, TIER_LABELS } from '../constants';
 
-/** 信心分層三段（語義色固定；label 走 SSOT）。 */
+/**
+ * 信心分層四段（語義色固定；label 走 SSOT 的 `TIER_LABELS`）。
+ *
+ * 前三段是 AI 的信心分箱（綠＝自動採信／橙＝評審複審／紅＝人工複審）；
+ * **第四段 `human` 不是信心等級，是「這一列已由人決定」**——故刻意用中性藍紫而非紅綠橙，
+ * 避免讀者把它讀成「比 needs_review 更差的一級」。
+ *
+ * ⚠️ 漏掉 human 這段的後果是靜默的：後端 `_by_tier` 照樣回四個桶，圓餅只是少畫一塊，
+ * 各段加總與總數對不上而沒有任何錯誤。2026-08-07 後端補了 human 桶卻沒同步這裡，
+ * 正好重演了它要修的那個失敗模式——**改 by_tier 的桶就要同步改這裡**。
+ */
 const TIERS = [
   { key: 'auto_accept', color: '#00b42a' },
   { key: 'jury', color: '#ff7d00' },
   { key: 'needs_review', color: '#f53f3f' },
+  { key: 'human', color: '#722ed1' },
 ] as const;
 
 /** L1 歸因域配色（依 by_l1 顯示序循環取色；固定序保證圓餅 / 長條同域同色）。 */

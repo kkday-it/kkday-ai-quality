@@ -5,6 +5,8 @@ import type { LlmOverrides } from '@/features/settings/types';
 
 /** 統一問題列表查詢參數（傾向/階段/信心分層/歸因分類/垂直分類/日期區間/精確 id）。 */
 export interface GetProblemsParams {
+  /** 人工介入狀態：ai_only / corrected / suggested（後端 list_problems 的 human_state）。 */
+  humanState?: string;
   source?: string;
   judged?: boolean;
   /** 傾向篩選（多選 positive/neutral/negative；CSV 傳後端）。 */
@@ -64,6 +66,7 @@ export const getProblems = (params: GetProblemsParams = {}): Promise<ProblemList
   if (params.model?.length) q.set('model', params.model.join(','));
   if (params.taxonomy?.length) q.set('taxonomy', params.taxonomy.join(','));
   if (params.bucket?.length) q.set('bucket', params.bucket.join(','));
+  if (params.humanState) q.set('human_state', params.humanState);
   if (params.hasExternal) q.set('has_external', params.hasExternal);
   if (params.sortBy) q.set('sort_by', params.sortBy);
   if (params.sortDir) q.set('sort_dir', params.sortDir);

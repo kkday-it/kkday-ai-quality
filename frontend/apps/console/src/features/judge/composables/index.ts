@@ -12,3 +12,4 @@ export * from './usePromptReviewCases';
 export * from './usePromptRevise';
 export * from './usePromptVersionPicker';
 export * from './useRejudgeConfirm';
+export * from './useAttributionCorrection';
