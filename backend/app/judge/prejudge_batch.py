@@ -176,7 +176,7 @@ def _work_one(
             history_params = {"model": model}
             if versions_used:
                 history_params["prompt_versions"] = versions_used
-            db.replace_source_findings(
+            outcome = db.replace_source_findings(
                 src,
                 source_id,
                 findings,
@@ -184,7 +184,17 @@ def _work_one(
                 job_id=job_id,
                 triggered_by=triggered_by,
             )
-            run_log.emit("stage", "db", f"落庫完成 {source_id}")
+            # 人工託管的反饋不覆蓋現值、只留待審建議——這件事一定要說出來，否則使用者會把
+            # 「我重判了但畫面沒變」當成 bug（實際上是設計要保護他改過的值）。
+            if outcome["mode"] == "suggest":
+                run_log.emit(
+                    "stage",
+                    "db",
+                    f"本則已人工託管，{outcome['suggested']} 條結果轉為待審建議 {source_id}",
+                    {"mode": "suggest", **outcome},
+                )
+            else:
+                run_log.emit("stage", "db", f"落庫完成 {source_id}")
             _bump(job_id, ok=True)
         except Exception as e:  # noqa: BLE001  單筆失敗隔離，不讓一筆炸掉整批
             item_id = str(item.get("item_id") or "")
@@ -531,7 +541,7 @@ def start_job(
         item_ids: 初判標的 item_id 清單（端點已解析：顯式選取 / scope=all 未初判集合）。
         eff: effective LLM dict（settings.effective_llm_dict 產；含 model/token/reasoning）。
         model: 主初判模型名（Stage2/2b；stub 模式引擎自走啟發式）。
-        source: 來源 code（穿透至 get_items_by_ids 選表 + insert_finding 記錄來源；
+        source: 來源 code（穿透至 get_items_by_ids 選表 + replace_source_findings 記錄來源；
             None＝不限定來源的舊版相容路徑）。
         triggered_by: 觸發人（user email；歸因歷史落庫）。
         kind: 觸發型態（batch/selected/single；歸因歷史落庫，端點解析）。

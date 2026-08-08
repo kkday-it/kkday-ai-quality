@@ -1,0 +1,10 @@
+{
+  "_comment": "人工糾正的可改欄位與提交門檻（業務可調，改此檔即生效，無需改碼）。前後端同讀本檔——前端據 editable_fields 決定糾正抽屜長什麼樣，後端據同一份做寫入白名單，避免兩邊漂移。",
+
+  "editable_fields": ["l1_code", "l2_code", "sentiment_score"],
+  "_editable_fields_rationale": "刻意**不開放**改 summary / evidence：那兩欄是 LLM 的 grounding 產物（evidence 是逐字擷取原文的防幻覺錨點，同時也是 grounding 驗證的比對基準），人改過之後就再也分不清哪些是原文、哪些是人寫的，整套 evidence 校驗的意義會消失。手動**新增**的歸因則必須自填 summary——那一列從頭到尾都是人寫的，語義乾淨、不影響 grounding。l1_label / l2_label 不在此清單且永遠由服務端自 ai_judge 解析：label 是判決當下的分類名快照，讓 client 送 label 等於開一個造假入口。**polarity（情緒傾向）也刻意不在清單內**：它由 sentiment_score 派生（負向 1-2 / 中立 3 / 正向 4-5，區間 SSOT 在 backend/app/core/schema.py 的 SENTIMENT_BANDS，初判引擎的 _clamp_sentiment 讀的是同一份）。讓人另外選傾向的話，『正向＋情緒分 1』這種自相矛盾的組合就有機會落庫，而且使用者也搞不清楚兩個欄位誰說了算。",
+
+  "reason_min_length": 5,
+  "reason_max_length": 500,
+  "_reason_rationale": "糾正必須填理由才能提交。這不是形式主義——理由是這套設計避免重蹈 2026-08-04 人工判決軸覆轍的關鍵：舊版只有『確認／忽略』兩顆沒有資訊量的按鈕，6,242 條裡只有 1 個人按過。理由 + 欄位級 delta 才能讓人工糾正成為 Prompt 迭代的金標（對齊 prompt_regression 的 corrections/confirmed 判準）。下限 5 字是為了擋掉『錯』『不對』這種等同沒填的輸入。"
+}

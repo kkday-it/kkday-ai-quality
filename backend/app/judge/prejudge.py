@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, get_args
 
 from app.core import ai_judge
-from app.core.schema import RecommendedAction, TicketFinding
+from app.core.schema import SENTIMENT_BANDS, RecommendedAction, TicketFinding
 from app.judge.llm import client
 
 # ── config（prejudge.json/verdict.json：信心閾值 + prejudge 旋鈕）；lazy 快取 ──────────────
@@ -395,11 +395,12 @@ def _clamp_sentiment(raw: Any, polarity: str) -> int:
         v = int(round(float(raw)))
     except (TypeError, ValueError):
         v = 0
-    if polarity == "positive":
-        return min(5, max(4, v)) if v else 5
-    if polarity == "negative":
-        return min(2, max(1, v)) if v else 1
-    return 3  # neutral（含非法 polarity 兜底：中立恆 3）
+    # 區間取自 schema.SENTIMENT_BANDS（唯一真相源；人工糾正的反向派生也讀同一份）
+    lo, hi = SENTIMENT_BANDS.get(polarity, SENTIMENT_BANDS["neutral"])
+    if not v:
+        # 缺值時取該區間的代表值：正向取上界（5）、負向取下界（1）、中立恆 3
+        return hi if polarity == "positive" else lo
+    return min(hi, max(lo, v))
 
 
 def _stage1_polarity(

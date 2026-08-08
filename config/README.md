@@ -27,6 +27,8 @@
   - 判準的**實測校準層**（`calibration`／`L3_guide`／`L4_guide`／全域規則 R1–R5）只存在於 Prompt 快照，本檔不留副本——同一段文字兩處存放必然 drift，且校驗器不消費它（260722 版曾在本檔並存 8 類 calibration，隨表改版一併清退）。
 - `RootCauseLabelingFramework.json` — PM 維護的《根因標籤架構》原表轉錄（`taxonomy_version` `2026-07-28`；受控詞彙＋邊界判準＋`hard_rules`/`usage_notes`/`status_legend`）。**零 code 消費**——程式實際讀的是上一條 `after_sales_root_cause.json`（版本 `2026-08-03`），本檔僅供人查閱原始定義，兩者版本不同步時以 `after_sales_root_cause.json` 為準
 - `source_mapping.json`（+`.schema`）— 5 來源欄位映射（源欄→canonical）+ 上傳指紋辨識／必備表頭校驗（已納入 RULE_CODES＝可經「規則配置 › 上傳表頭校驗」版本化編輯 + 存檔熱重載；本檔為初始 seed）
+- `correction.json` — **人工糾正政策**（前後端同讀，避免兩邊漂移）：`editable_fields` 可改欄白名單（後端據此做寫入白名單、前端據此決定表單長什麼樣）+ `reason_min_length`/`reason_max_length` 理由長度門檻。⚠️ 刻意**不開放**改 `summary`/`evidence`——那兩欄是 LLM 的 grounding 產物（evidence 是逐字擷取原文的防幻覺錨點），人改過就再也分不清哪些是原文；`polarity` 也不在清單內，它由 `sentiment_score` 派生（區間 SSOT 在 `backend/app/core/schema.py` 的 `SENTIMENT_BANDS`）。
+- `attribution_dimension.json` — **值域主檔的默認 seed**（真相源是 DB 表 `attribution_dimension_master`，業務可於「設定 › 判決值域」維護）：**四軸**——`responsible_party`（責任方，六個域的 `_meta.owner_role` 全空故為提案值、待業務確認）／`severity`（取自既有 `Severity` Literal）／`verdict_action`（取自既有 `RecommendedAction` Literal）／`note_type`（備註的互動類型：內部說明／已聯繫供應商／已聯繫旅客／待跟進／已解決）。`item_code` 是落庫的機器碼、改碼＝改歷史語義故禁改；`item_label` 可改，落庫時同存快照。
 
 ## overview/（總覽儀表板）
 - `dashboard.json` — 質檢概覽 config-驅動版面（views 分區 + charts catalog）；前端 `@config/overview/dashboard.json` 讀取（DashboardView），業務可調版面免改碼

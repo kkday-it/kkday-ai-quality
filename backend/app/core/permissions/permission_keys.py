@@ -11,12 +11,19 @@ from __future__ import annotations
 # ── 判準法典管理（破壞性：改初判規範 / 覆蓋整庫，只在 grants）──
 JUDGE_RULE_MANAGE = "judge-rule.version.manage"  # 發布 / 恢復版本 / 恢復默認初判規則
 DATA_DATAPACK_IMPORT = "data.datapack.import"  # 全庫資料包匯入（truncate-then-load·最高破壞性）
+ATTRIBUTION_DIMENSION_MANAGE = (
+    "attribution.dimension.manage"  # 維護判決值域主檔（改 label 影響全庫判決顯示）
+)
 
 # ── 日常質檢作業（入 default，登入即可用）──
 DATA_DATAPACK_EXPORT = "data.datapack.export"  # 全庫資料包導出
 DATA_SOURCE_UPLOAD = "data.source.upload"  # 上傳 5 來源資料落庫
 PROBLEM_LIST_EXPORT = "problem.list.export"  # 導出問題列表 xlsx
 PREJUDGE_RUN = "prejudge.run"  # 啟動/暫停/恢復/停止批量初判歸因（消耗 LLM 額度）
+ATTRIBUTION_CORRECTION_MANAGE = (
+    "attribution.correction.manage"  # 人工糾正歸因（改/增/標記誤判/還原）
+)
+ATTRIBUTION_REVIEW = "attribution.review"  # 複審確認 AI 判對（待複審的出口）
 
 # ── 設定管理（LLM 連線 + QC DB 連線；敏感項只在 grants）──
 # 模型配置庫（llm_model_configs）刻意**不設 key**：它只決定「用哪個 model、思考多深」，不涉及
@@ -31,10 +38,13 @@ ALL_KEYS: frozenset[str] = frozenset(
     {
         JUDGE_RULE_MANAGE,
         DATA_DATAPACK_IMPORT,
+        ATTRIBUTION_DIMENSION_MANAGE,
         DATA_DATAPACK_EXPORT,
         DATA_SOURCE_UPLOAD,
         PROBLEM_LIST_EXPORT,
         PREJUDGE_RUN,
+        ATTRIBUTION_CORRECTION_MANAGE,
+        ATTRIBUTION_REVIEW,
         SETTINGS_LLM_CONFIG_MANAGE,
         SETTINGS_QC_CONFIG_MANAGE,
         SETTINGS_SECRET_READ,

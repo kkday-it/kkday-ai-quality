@@ -93,6 +93,7 @@ async def _no_active_release_handler(_request: Request, exc: NoActiveReleaseErro
 # ── 掛載領域 router（各自帶完整 /api 路徑；v1 為新攝取架構 /api/v1）──
 from app.api.routers import admin_import as admin_import_router  # noqa: E402
 from app.api.routers import auth as auth_router  # noqa: E402
+from app.api.routers import corrections as corrections_router  # noqa: E402
 from app.api.routers import evidence as evidence_router  # noqa: E402
 from app.api.routers import exports as exports_router  # noqa: E402
 from app.api.routers import findings as findings_router  # noqa: E402
@@ -113,6 +114,7 @@ for _r in (
     auth_router.router,  # /api/auth
     inbound_router.router,  # /api/inbound + /api/batches
     settings_router.router,  # /api/settings + /api/datasource
+    corrections_router.router,  # /api/attributions（人工糾正 / 複審）
     findings_router.router,  # /api/findings + /api/products
     problems_router.router,  # /api/problems
     evidence_router.router,  # /api/evidence（訂單佐證唯讀查詢·詳情抽屜 lazy fetch）
@@ -123,6 +125,7 @@ for _r in (
     app.include_router(_r)
 
 db.seed_rules_from_files()  # 初次播種：無 DB 版的 rule 以默認檔建 v1 active（冪等）
+db.seed_dimensions_from_file()  # 初次播種：判決值域三軸以默認檔灌入（冪等；空庫才會實際寫入）
 
 # Prometheus /metrics（EKS Step 6 Grafana 驗收契約；PHP fpm-exporter 的 Python 等效）。
 # 免 auth（Prometheus scrape 不帶憑證）、不進 OpenAPI schema、access log 排除見 logging_setup。

@@ -74,7 +74,8 @@
   "tier_labels": {
     "jury": "評審複審",
     "auto_accept": "自動採信",
-    "needs_review": "人工複審"
+    "needs_review": "人工複審",
+    "human": "人工判定"
   },
   "stage_labels": {
     "judged": "已初判",

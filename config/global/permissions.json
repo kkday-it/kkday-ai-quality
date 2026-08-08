@@ -4,6 +4,8 @@
   "_no_auth_grant_all_comment": "本地已廢除帳戶登錄系統（register/login/切換帳號全移除，單機內網環境）→ 無法辨識使用者身分，一律全通過（ALL_KEYS）。be2 SSO 接入後改 false，改由 default ∪ grants[email] 判斷「進入頁面只顯示有權限的部分」。",
   "default": [
     "prejudge.run",
+    "attribution.correction.manage",
+    "attribution.review",
     "problem.list.export",
     "data.source.upload",
     "data.datapack.export",

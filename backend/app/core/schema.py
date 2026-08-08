@@ -22,6 +22,26 @@ RecommendedAction = Literal[
 ]
 
 
+# ── 傾向 ↔ 情緒分的對應區間（**唯一真相源**）──────────────────────────────────
+# 兩個方向都從這裡取，避免各寫一份而漂移：
+# - 正向：`prejudge._clamp_sentiment` 把 LLM 的情緒分夾進 polarity 對應區間
+# - 反向：`db.corrections.polarity_for_sentiment` 由人工填的情緒分**派生**傾向
+#   （人工糾正只填情緒分，傾向不讓人另外選——否則會出現「正向＋情緒分 1」這種矛盾組合）
+SENTIMENT_BANDS: dict[str, tuple[int, int]] = {
+    "negative": (1, 2),
+    "neutral": (3, 3),  # 中立恆為 3（doc 定義為單點，不是區間）
+    "positive": (4, 5),
+}
+
+
+def polarity_for_sentiment(score: int) -> str:
+    """情緒分 → 傾向（1-2 負向 / 3 中立 / 4-5 正向）；超出 1-5 一律回中立。"""
+    for polarity, (lo, hi) in SENTIMENT_BANDS.items():
+        if lo <= score <= hi:
+            return polarity
+    return "neutral"
+
+
 # ── SSOT v2.7 軸A/軸B 共用型別 ──
 # 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）
 # 初判硬閘依此封鎖：< with_order ⇒ 禁判 ②contract_breach

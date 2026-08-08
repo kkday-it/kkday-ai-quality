@@ -155,8 +155,16 @@ def _validate(code: str, content: dict) -> None:
 
 @router.get("")
 def list_rules(user: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """列所有初判規則的 active 版 meta（rule_code/version/author/note/created_at）。"""
-    return db.list_rule_meta()
+    """列所有初判規則的 active 版 meta（rule_code/version/author/note/created_at/label/prompt_id）。
+
+    `prompt_id` 只有 prompt_* 規則有值，＝`prompts/{id}.md` 的檔名（去副檔名，如 `01_C-1_content`）。
+    在這一層補而不是在 `db.list_rule_meta` 補：對照表的 SSOT 在 `app.judge.prompt_source`，
+    而 db 層不該反向依賴 judge 層。前端也不自己複製一份對照表——那份表一旦兩處各存一份，
+    改檔名時必然漏改其中一邊。
+    """
+    from app.judge.prompt_source import prompt_id_for_rule
+
+    return [{**m, "prompt_id": prompt_id_for_rule(m["rule_code"])} for m in db.list_rule_meta()]
 
 
 # 註：須定義於 `/{code}` GET 之前（雖然路徑段數不同不會衝突，仍比照 reset-default-all 慣例前置）。
