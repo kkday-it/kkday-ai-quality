@@ -14,8 +14,12 @@ repos:
     hooks:
       - id: eslint
         name: eslint (frontend)
-        # pnpm -C 定錨 console；只在前端檔變動時觸發，pass_filenames=false 走專案級檢查
-        entry: pnpm -C frontend/apps/console lint
+        # ⚠️ 必須先 cd 進 frontend/ 再跑，不能用 `pnpm -C frontend/apps/console`：
+        # pnpm 的版本解析發生在 `-C` **之前**——從 repo 根啟動時讀不到
+        # frontend/package.json 的 `packageManager`，會以全域版本啟動，接著發現目標專案釘的是
+        # 另一版卻已經切不回去（corepack 不支援中途換版），於是 eslint 根本沒跑就 exit 1。
+        # 從 frontend/ 啟動則能正確自動切到釘住的版本。
+        entry: bash -c 'cd frontend && pnpm --filter console lint'
         language: system
         files: ^frontend/.*\.(ts|vue|js)$
         pass_filenames: false
