@@ -91,6 +91,10 @@ _RULE_META_WIRE = {
     "note": None,
     "created_at": "str",
     "label": None,  # content._meta.label，缺值由前端 fallback
+    # prompts/{id}.md 的檔名（去副檔名）；非 prompt_* 規則為 None。由 router 自
+    # `app.judge.prompt_source` 的對照表派生——前端據此顯示「01_C-1_content 商品內容」，
+    # 讓「選哪一支 prompt 的哪一版」對得上 prompts/ 目錄的實際檔案。
+    "prompt_id": None,
 }
 
 _RULE_HISTORY_WIRE = {
@@ -127,6 +131,15 @@ _ATTRIBUTION_DTO_WIRE = {
     "model": None,
     "is_primary": None,
     "is_auto_accepted": None,
+    # ── 人工介入（2026-08-06）：origin 是「顯示來源」的 SSOT，前端據此決定顯示
+    # 「人工 · 修改者」還是初判 model；is_deleted 刻意不出 wire（tombstone 根本不會被回傳）。
+    "origin": None,
+    "is_manual_created": None,
+    "is_human_corrected": None,
+    "corrected_by": None,
+    "corrected_at": None,
+    "correction_reason": None,
+    "review_status": None,
 }
 
 # attribution_dto 的輸入樣本（typed 欄 mapping）——契約測試與別名欄探針共用同一份，避免兩處漂移。
@@ -224,7 +237,12 @@ def seeded(temp_db):
             "triggered_by": "wire@kkday.com",
         }
     )
-    db.add_history_note("reviews", "R-wire-1", author="wire@kkday.com", content="契約夾具")
+    # 備註的 note_type 走值域主檔驗證，而 temp_db 會清空所有表 → 必須先播種
+    # （production 由 main.py 啟動時 seed_dimensions_from_file 負責）。
+    db.seed_dimensions_from_file()
+    db.add_note(
+        "reviews", "R-wire-1", note_type="internal", content="契約夾具", author="wire@kkday.com"
+    )
     db.create_batch(
         source="reviews",
         source_label="評論",
@@ -270,13 +288,22 @@ def test_prejudge_run_list_and_detail_wire(seeded):
 
 
 def test_attribution_history_wire(seeded):
-    """`/api/attribution-history` 與 notes POST：兩者共用同一個序列化函式，形狀須一致。"""
+    """`/api/attribution-history`：時間軸的事件形狀。
+
+    ⚠️ 備註自 2026-08-07 起存在**另一張表**（`attribution_note_lst`），由
+    `list_attribution_history` 在回傳時併進同一條軸並轉成事件形狀。兩種來源在 wire 上必須**同形**
+    ——不同形的話前端要為備註另寫一套渲染，而使用者看到的本來就該是一條軸。
+    """
     events = db.list_attribution_history("reviews", "R-wire-1")
     assert events
-    _assert_wire(events[0], _ATTRIBUTION_HISTORY_WIRE, "list_attribution_history[]")
-
-    created = db.add_history_note("reviews", "R-wire-2", author="w@kkday.com", content="x")
-    _assert_wire(created, _ATTRIBUTION_HISTORY_WIRE, "add_history_note")
+    for e in events:
+        _assert_wire(e, _ATTRIBUTION_HISTORY_WIRE, f"list_attribution_history[] kind={e['kind']}")
+    assert {e["kind"] for e in events} >= {"prejudge", "note"}, (
+        "夾具須同時含事件與備註，否則「兩種來源同形」這條斷言是空跑的"
+    )
+    assert all(isinstance(e["id"], int) for e in events), (
+        "id 必須恆為 int——備註曾一度做成 'note-N' 字串，讓 wire 上同一欄位變成多型"
+    )
 
 
 def test_batches_wire(seeded):
@@ -357,13 +384,34 @@ def _probe_attribution(client: TestClient) -> list:
     ⚠️ **必須帶 `source=reviews`**：`/api/problems` 不指定來源時恆回 0 列（既有行為），
     探針會變成打了個空的 → marker 靠合成 dto 提供 → 斷言 vacuous 卻永遠綠。
     合成 dto 的覆蓋由 `test_attribution_dto_wire` 負責，這裡只認真實端點的輸出。
+
+    ⚠️ **糾正工作台端點必須自己列一條**：`GET /api/attributions` 的 `source`/`source_id` 是
+    必填 query param，反向端點掃描（`test_no_db_canonical_name_on_any_get_endpoint`）打它會拿到
+    422 而落進 `unreachable`，等於這條路徑對 DB 規範名的洩漏是零防護。它是唯一會回傳 tombstone
+    列的 wire 出口，形狀漂移不會被別的探針攔到。
     """
-    return [client.get("/api/problems?source=reviews").json()]
+    return [
+        client.get("/api/problems?source=reviews").json(),
+        client.get("/api/attributions?source=reviews&source_id=R-wire-1").json(),
+    ]
 
 
 def _probe_attribution_event(client: TestClient) -> list:
     """`attribution_event_lst`：歸因歷史時間軸（select_wire 全欄直出）。"""
     return [client.get("/api/attribution-history?source=reviews&source_id=R-wire-1").json()]
+
+
+def _probe_attribution_note(client: TestClient) -> list:
+    """`attribution_note_lst`：備註清單，以及併進時間軸後的同形轉換。
+
+    兩條路徑都要探：`/api/attribution-notes` 是備註自己的 DTO，而時間軸把備註轉成事件形狀後
+    也會出 wire——後者是手寫的欄位對映，最容易在改欄時漏掉而讓 DB 規範名（feedback_source_code）
+    直接洩到前端。
+    """
+    return [
+        client.get("/api/attribution-notes?source=reviews&source_id=R-wire-1").json(),
+        client.get("/api/attribution-history?source=reviews&source_id=R-wire-1").json(),
+    ]
 
 
 def _probe_judge_rule_version(client: TestClient) -> list:
@@ -419,6 +467,7 @@ def _probe_setting(client: TestClient) -> list:
 _ALIASED_TABLE_PROBES: dict[str, tuple[Callable[[TestClient], list], str | None]] = {
     "attribution_tbl": (_probe_attribution, "action"),
     "attribution_event_lst": (_probe_attribution_event, "attributions"),
+    "attribution_note_lst": (_probe_attribution_note, "note_type"),
     "evidence_snapshot_tbl": (_probe_evidence_snapshot, "fetched_at"),
     "judge_rule_version_lst": (_probe_judge_rule_version, "version"),
     "llm_usage_lst": (_probe_llm_usage, None),

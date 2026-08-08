@@ -173,7 +173,8 @@ def test_internal_kinds_excluded_from_user_timeline(temp_db) -> None:
 
     db.insert_source_batch("reviews", [_pr_row("HK1")])
     _replace("HK1", [_finding("HK1")])
-    db.add_history_note("reviews", "HK1", author="qa@kkday.com", content="人工備註")
+    db.seed_dimensions_from_file()  # note_type 走值域主檔驗證，temp_db 清空後須重播種
+    db.add_note("reviews", "HK1", note_type="internal", content="人工備註", author="qa@kkday.com")
     with T.get_engine().begin() as c:
         c.execute(
             insert(T.attribution_history).values(

@@ -52,8 +52,14 @@ def batch_env(monkeypatch):
     monkeypatch.setattr(
         db,
         "replace_source_findings",
-        # **kw 吸收評論級歷史 kwargs（params/job_id/triggered_by），mock 不落史
-        lambda src, sid, findings, **kw: state["replaced"].append((src, sid)) or len(findings),
+        # **kw 吸收評論級歷史 kwargs（params/job_id/triggered_by），mock 不落史。
+        # 回傳形狀必須跟著真實契約走（2026-08-06 由 int 改為 {mode, written, suggested}）——
+        # fake 停在舊契約的話，_work_one 讀 outcome["mode"] 會炸在 per-item try 裡被計成 failed，
+        # 測試會以「全部失敗」的形式紅，看起來像編排層壞了，其實只是 fake 過期。
+        lambda src, sid, findings, **kw: (
+            state["replaced"].append((src, sid))
+            or {"mode": "replace", "written": len(findings), "suggested": 0}
+        ),
     )
     monkeypatch.setattr(
         db, "insert_llm_usage_rows", lambda rows: state["usage_flushed"].append(len(rows)) or 0

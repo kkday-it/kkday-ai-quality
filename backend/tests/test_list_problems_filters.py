@@ -16,6 +16,17 @@ from tests._factories import review_row
 _pr_row = review_row
 
 
+def _seed_finding(f: TicketFinding, source: str) -> None:
+    """測試 fixture：把一則反饋的初判結果寫進 attributions。
+
+    走 production 的 `replace_source_findings`（整組替換語義）。**不要改回對自然鍵做 upsert**：
+    `idx_attribution_tbl_unique01` 已是 DEFERRABLE 約束（見 migration a3e58d21c9f4），
+    PG 不允許 deferrable 約束當 `ON CONFLICT` 的 arbiter，upsert 會直接報錯。
+    本檔每個測試內的 ticket_id 互異，故「整組替換」與逐筆插入等效。
+    """
+    db.replace_source_findings(source, f.ticket_id, [f])
+
+
 def _conv_row(session_oid: str = "SESS1", **overrides) -> dict:
     """建一筆 conversations 源列（現行拆表 schema：源欄名、值皆 Text）。"""
     base = {
@@ -86,7 +97,7 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
         [_pr_row(rec_oid="R1", rec_scores="5"), _pr_row(rec_oid="R2", rec_scores="2")],
     )
     # R1 判到 L2（l3 空）；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R1",
             recommended_action="no_action",
@@ -98,7 +109,7 @@ def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
         ),
         "reviews",
     )
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R2",
             recommended_action="no_action",
@@ -154,7 +165,7 @@ def test_list_problems_source_registry_date_range_filter(temp_db) -> None:
 def test_list_problems_source_registry_judged_filter(temp_db) -> None:
     """source='reviews' + judged：僅回有 / 無對應 attributions 列者。"""
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R1",  # source_id（reviews→rec_oid）
             recommended_action="no_action",
@@ -174,7 +185,7 @@ def test_list_problems_source_registry_judged_filter(temp_db) -> None:
 def test_prejudge_target_ids_uses_registry_for_reviews(temp_db) -> None:
     """prejudge_target_ids(source='reviews') 走專表 join，只回未初判 source_id。"""
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R1",
             recommended_action="no_action",
@@ -236,7 +247,7 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
     SQLAlchemy 會把子查詢的 attributions 也 auto-correlate 掉 → 「no FROM clauses」500。
     """
     db.insert_source_batch("reviews", [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2")])
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R1",
             recommended_action="no_action",
@@ -244,7 +255,7 @@ def test_list_problems_sort_by_confidence_no_correlation_error(temp_db) -> None:
         ),
         "reviews",
     )
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R2",
             recommended_action="no_action",
@@ -272,7 +283,7 @@ def test_prejudge_target_ids_full_dimension_filters(temp_db) -> None:
         ],
     )
     # R3 已初判（負向 · pending_review · jury · content）；R1/R2 未初判
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R3",
             recommended_action="no_action",
@@ -314,7 +325,7 @@ def test_prejudge_target_ids_within_ids_scope(temp_db) -> None:
         [_pr_row(rec_oid="R1"), _pr_row(rec_oid="R2"), _pr_row(rec_oid="R3")],
     )
     # R3 已初判（judged）；R1/R2 未初判
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="R3",
             recommended_action="no_action",
@@ -358,7 +369,7 @@ def test_list_problems_model_filter(temp_db) -> None:
         "reviews",
         [_pr_row(rec_oid="M1", rec_scores="2"), _pr_row(rec_oid="M2", rec_scores="1")],
     )
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="M1",
             recommended_action="no_action",
@@ -369,7 +380,7 @@ def test_list_problems_model_filter(temp_db) -> None:
         ),
         "reviews",
     )
-    db.insert_finding(
+    _seed_finding(
         TicketFinding(
             ticket_id="M2",
             recommended_action="no_action",

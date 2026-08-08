@@ -137,3 +137,41 @@ def test_attribution_breakdown_model_filter(temp_db) -> None:
     _seed(temp_db)
     ov = db.attribution_breakdown(source="reviews", l1="content", model=["nonexistent"])
     assert ov["by_l2"] == []  # 無該模型初判 → 空分布
+
+
+def test_by_tier_counts_human_rows_in_own_bucket(temp_db) -> None:
+    """人工糾正過的列必須進 `by_tier` 的 human 桶，**不能從分佈裡消失**。
+
+    這支鎖的是一個曾經靜默存在的缺陷：糾正會把 `conf_value` 設為 NULL（原 AI 信心描述的是舊分類，
+    掛在新分類上是謊言），只留 `conf_tier='human'`；但 `_by_tier` 當時只做數值分箱、其查詢又帶
+    `WHERE conf_value IS NOT NULL`——於是人工列被整批濾掉，分佈總數悄悄變小，**不報任何錯**。
+
+    ⚠️ **斷言的是結果不是機制**：`test_corrections.py` 已經有一支斷言「糾正後 conf_tier == 'human'」，
+    但那只驗到寫入端。寫入端做對了、聚合端不認得它，照樣是壞的——這正是當初漏掉的那一格。
+    改動任何吃 `conf_value` 的聚合時，這支會紅。
+    """
+    from sqlalchemy import update
+
+    from app.core.db import tables as T
+
+    _seed(temp_db)
+    jg = T.attributions
+    before = db.attribution_overview(source="reviews")["by_tier"]
+    total_before = sum(before.values())
+    assert before.get("human", 0) == 0, "夾具不該預先有人工列"
+    assert total_before > 0, "夾具至少要有一列有信心值，否則本測試驗不到東西"
+
+    # 把一列改成人工列的形狀（與 corrections.correct_attribution 的寫入一致）
+    with T.get_engine().begin() as c:
+        oid = c.execute(jg.select().with_only_columns(jg.c.attribution_oid).limit(1)).scalar_one()
+        c.execute(
+            update(jg)
+            .where(jg.c.attribution_oid == oid)
+            .values(conf_value=None, conf_raw=None, conf_tier="human")
+        )
+
+    after = db.attribution_overview(source="reviews")["by_tier"]
+    assert after.get("human") == 1, "人工列必須出現在 human 桶"
+    assert sum(after.values()) == total_before, (
+        "分佈總數不能因為某列變成人工列而減少——少一列就是靜默漏計"
+    )
