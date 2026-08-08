@@ -3,6 +3,7 @@
  * 初判 Prompt 歷史（頁內面板版）：版本清單（恢復鈕）+ 選兩版 md 行級對比（PromptDiffCompare）。
  * 與 RuleHistoryPanel（JSON 樹 diff）同結構，差異＝對比區改用 md 文字 diff——prompt content 非樹。
  */
+import { IconUndo } from '@arco-design/web-vue/es/icon';
 import { onMounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { ScrollFadeArea } from '@/components';
@@ -68,7 +69,7 @@ const columns = [
           content="恢復此版本？（新增 active 版本）"
           @ok="restore(record.version)"
         >
-          <a-button size="mini">恢復</a-button>
+          <a-button size="mini"><template #icon><icon-undo /></template>恢復</a-button>
         </a-popconfirm>
       </template>
     </a-table>

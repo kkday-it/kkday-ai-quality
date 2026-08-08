@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IconSave } from '@arco-design/web-vue/es/icon';
 import { onMounted, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import exportCfg from '@config/global/export.json';
@@ -46,7 +47,7 @@ const onSave = async () => {
           :placeholder="exportCfg.gdrive_upload_folder_url || 'https://drive.google.com/drive/…'"
           @press-enter="onSave"
         />
-        <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
+        <a-button type="primary" :loading="saving" @click="onSave"><template #icon><icon-save /></template>儲存</a-button>
       </div>
       <div class="mt-1 text-xs leading-relaxed text-[#86909c]">
         導出完成通知的「打開 Google Drive

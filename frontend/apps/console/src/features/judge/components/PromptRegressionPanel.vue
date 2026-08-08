@@ -9,6 +9,7 @@
  * 模型刻意跟著「Prompt 調試台」功能區（＝實際跑批用的那顆），不用改寫用的旗艦模型：回歸要驗的是
  * 這份 Prompt 在線上模型上的表現，拿更強的模型跑會得到偏樂觀、對不上線上的結論。
  */
+import { IconArrowLeft, IconPlayArrow } from '@arco-design/web-vue/es/icon';
 import { computed, ref, watch } from 'vue';
 import { LlmConfigSelect } from '@/components';
 import { type PromptDraftMeta, type PromptReleaseMeta } from '@/api';
@@ -110,7 +111,7 @@ function display(value: unknown): string {
           :loading="regression.running.value"
           :disabled="!canRun"
           @click="emit('run', targetPrompt, llm.overrides.value)"
-        >
+        ><template #icon><icon-play-arrow /></template>
           開始回歸
         </a-button>
       </div>
@@ -212,7 +213,7 @@ function display(value: unknown): string {
         有 {{ snap.broken }} 個原本判對的欄被改壞了——這版不該直接上線。
         <!-- 改造前這裡只有一句「回 AI 改寫取消掉相關補丁」的純文字，照做還得自己找回去 -->
         <template #action>
-          <a-button size="mini" status="danger" @click="emit('backToPatches')">
+          <a-button size="mini" status="danger" @click="emit('backToPatches')"><template #icon><icon-arrow-left /></template>
             回上一步調整補丁
           </a-button>
         </template>
@@ -220,7 +221,7 @@ function display(value: unknown): string {
       <a-alert v-else-if="!stale && snap.status === 'done' && snap.fixed" type="success" class="mt-2">
         修好 {{ snap.fixed }} 欄、零改壞。仍建議在正式上線前拉一批真實資料複驗。
         <template #action>
-          <a-button size="mini" @click="emit('requestBatch')">改用跑批複驗</a-button>
+          <a-button size="mini" @click="emit('requestBatch')"><template #icon><icon-play-arrow /></template>改用跑批複驗</a-button>
         </template>
       </a-alert>
     </section>

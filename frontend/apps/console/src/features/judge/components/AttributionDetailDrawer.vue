@@ -6,10 +6,12 @@
  * 全部走 Arco 現成組件（a-drawer / a-descriptions / a-tag / a-rate / a-typography）。
  */
 import { computed, watch } from 'vue';
-import { IconRefresh } from '@arco-design/web-vue/es/icon';
+import { IconRefresh, IconRobot } from '@arco-design/web-vue/es/icon';
 import { AsyncSection, JsonEditor } from '@/components';
 import ExternalReviewPanel from './ExternalReviewPanel.vue';
 import RecordContextPanel from './RecordContextPanel.vue';
+import { notifyComingSoon } from '@/utils';
+import { formatActor } from '../utils';
 import {
   ACTION_LABEL,
   DIALOGUE_ROLE_COLORS,
@@ -30,6 +32,11 @@ import { useOrderEvidence } from '../composables';
 import { fmtDt, parseDialogue, sentimentClass, type DialogueTurn } from '../utils';
 
 const visible = defineModel<boolean>('visible', { default: false });
+/** 判決歸因佔位文案（與列表操作欄同一份說法，避免兩處措辭不一）。 */
+const VERDICT_COMING_SOON =
+  '判決歸因會在初判分類之上判定「責任方 · 嚴重度 · 建議行動」，讓質檢結果能追到供應商／商品／客服。'
+  + '資料欄位與值域主檔已就緒，判定流程開發中。目前可先用「人工糾正」修正 AI 的分類。';
+
 const props = defineProps<{
   row: ProblemRow | null;
   /** 反饋來源 code：決定「補充」/「關聯資料」的段落歸屬（與列表共用 `schemaFor` 同一份 schema）。 */
@@ -98,7 +105,7 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
     :width="640"
     :footer="false"
     unmount-on-close
-    :title="`歸因詳情 · #${row?.source_record_id ?? row?.source_id ?? ''}`"
+    :title="`反饋詳情 · #${row?.source_record_id ?? row?.source_id ?? ''}`"
   >
     <div v-if="row" class="flex flex-col gap-4">
       <!-- ① 反饋原文：星等 + 傾向 + 標題 + 全文 + ID·時間 -->
@@ -263,8 +270,28 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
             <span v-else>—</span>
           </a-descriptions-item>
           <a-descriptions-item label="初判模型">
-            <a-tag v-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
+            <!-- 人工糾正過的列顯示修改者取代模型（origin 由後端派生，前端不判斷）-->
+            <template v-if="a.origin === 'human'">
+              <a-tag size="small" color="orange">人工 · {{ formatActor(a.corrected_by) }}</a-tag>
+              <span v-if="a.correction_reason" class="ml-2 text-xs text-[var(--color-text-3)]">
+                理由：{{ a.correction_reason }}
+              </span>
+            </template>
+            <a-tag v-else-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
             <span v-else>—</span>
+          </a-descriptions-item>
+          <!-- 判決歸因（定責＋行動）：本輪只建流程節點，判定實作未完成 -->
+          <a-descriptions-item label="判決歸因">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-[var(--color-text-3)]">尚未判決（責任方 · 嚴重度 · 建議行動）</span>
+              <a-button
+                type="text"
+                size="mini"
+                @click="notifyComingSoon('判決歸因', VERDICT_COMING_SOON)"
+              ><template #icon><icon-robot /></template>
+                設定判決
+              </a-button>
+            </div>
           </a-descriptions-item>
           <a-descriptions-item label="反饋摘要">
             <div>{{ a.content?.summary || '—' }}</div>
@@ -298,6 +325,15 @@ const isNewSegment = (turns: DialogueTurn[], idx: number): boolean =>
           </a-descriptions-item>
         </a-descriptions>
       </template>
+      <!--
+        空歸因有兩種完全不同的意義，文案必須分開講（判定狀態讀服務端派生的 judge_state，
+        不用陣列長度推斷）：dismissed ＝判過但歸因全被人工標記為 AI 誤判（可還原）；
+        其餘＝從未判過或正向不歸因。
+      -->
+      <a-empty
+        v-else-if="row.judge_state === 'dismissed'"
+        :description="`AI 的歸因已全部被人工標記為誤判（${row.dismissed_count ?? 0} 條）；可在「人工糾正」中還原`"
+      />
       <a-empty v-else description="此列尚無歸因（未初判 / 正向不歸因）" />
     </div>
   </a-drawer>

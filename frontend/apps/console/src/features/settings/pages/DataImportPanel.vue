@@ -12,7 +12,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { fmtPercent } from '@/utils';
 import { Message } from '@arco-design/web-vue';
-import { IconDownload } from '@arco-design/web-vue/es/icon';
+import { IconCheck, IconDownload, IconUpload } from '@arco-design/web-vue/es/icon';
 import { useExportJob } from '@/features/judge/composables';
 import { ExportProgressBar } from '@/components';
 import ExportPreferencesPanel from './ExportPreferencesPanel.vue';
@@ -197,7 +197,7 @@ onUnmounted(closeStream);
       @change="onFileChange"
     >
       <template #upload-button>
-        <a-button type="outline">導入資料包</a-button>
+        <a-button type="outline"><template #icon><icon-upload /></template>導入資料包</a-button>
       </template>
     </a-upload>
 
@@ -245,7 +245,7 @@ onUnmounted(closeStream);
             :disabled="!canImport"
             :loading="importing"
             @click="runImport"
-          >
+          ><template #icon><icon-check /></template>
             確認匯入
           </a-button>
         </div>

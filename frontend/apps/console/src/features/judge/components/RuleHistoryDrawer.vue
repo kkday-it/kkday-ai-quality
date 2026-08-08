@@ -2,6 +2,7 @@
 /** 歷史對比恢復（抽屜版·code 驅動）：版本清單（恢復鈕）+ 選兩版並排 JSON 檢視對比（含變動標紅 / 展開對齊）。
  * 對比區塊委派共用 VersionDiffCompare。由 props.code 指定規則（**不綁全域 store**·可用於任一規則），
  * 自管歷史載入與恢復；恢復後 emit `restored` 供呼叫端重載當前內容。 */
+import { IconUndo } from '@arco-design/web-vue/es/icon';
 import { ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
@@ -59,7 +60,7 @@ const columns = [
 </script>
 
 <template>
-  <a-drawer v-model:visible="visible" :title="`${label} — 歷史版本`" :width="900" :footer="false">
+  <a-drawer v-model:visible="visible" :title="`${label} · 歷史版本`" :width="900" :footer="false">
     <!-- 對比兩版（並排 JSON + 變動標紅 + 展開對齊）-->
     <VersionDiffCompare class="mb-4" :history="history" :fetch="fetchVersion" :active="visible" />
     <!-- 版本清單 + 恢復 -->
@@ -75,7 +76,7 @@ const columns = [
           content="恢復此版本？（新增 active 版本）"
           @ok="restore(record.version)"
         >
-          <a-button size="mini">恢復</a-button>
+          <a-button size="mini"><template #icon><icon-undo /></template>恢復</a-button>
         </a-popconfirm>
       </template>
     </a-table>

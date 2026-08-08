@@ -10,7 +10,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
 import { getPrejudgeRun, listPrejudgeRuns, type PrejudgeRun, type PrejudgeRunStage } from '@/api';
 import { TableLayout } from '@/components';
-import { DEFAULT_PAGE_SIZE, SOURCE_LABEL } from '../constants';
+import { DEFAULT_PAGE_SIZE, SOURCE_LABEL, TABLE_DEFAULTS } from '../constants';
 import { fmtDt, fmtDuration, formatActor } from '../utils';
 
 const props = defineProps<{ visible: boolean }>();
@@ -133,7 +133,9 @@ const paramsSummary = (r: PrejudgeRun) => {
     unmount-on-close
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
-    <template #title>初判歷史（每次批量 / 選取 / 單筆重新初判的 LLM 使用紀錄）</template>
+    <!-- 標題與列操作欄的「初判歷史」刻意區分：那個是**某則反饋**的事件時間軸，這個是
+         **每次 job** 的 LLM 使用紀錄，兩者層級不同。補充說明放內文不放標題（見 frontend-vue.md）。 -->
+    <template #title>初判執行紀錄</template>
 
     <!-- 內建表格模式：滿高首尾固定 + server 分頁（含「全部」）+ error 表上方顯示 -->
     <TableLayout
@@ -203,7 +205,7 @@ const paramsSummary = (r: PrejudgeRun) => {
 
       <!-- 展開行：發起參數摘要 + per-stage LLM 用量明細（懶載） -->
       <template #expand-row="{ record }">
-        <div class="px-2 py-1 text-xs">
+        <div class="text-xs">
           <div v-if="paramsSummary(record)" class="mb-2 text-gray-500">
             {{ paramsSummary(record) }}
           </div>
@@ -211,12 +213,16 @@ const paramsSummary = (r: PrejudgeRun) => {
             <a-alert v-if="detailErrorOf(record.job_id)" type="warning">
               明細載入失敗：{{ detailErrorOf(record.job_id) }}
             </a-alert>
+            <!-- 密度走 TABLE_DEFAULTS，不寫 size 字面值：儲存格內距一律用 Arco 預設（見
+                 `.claude/rules/frontend-vue.md`「表格儲存格內距」），`size` 只剩控制字級，留著 mini 只會把數字欄壓到
+                 12px（本表放的是 token 數／費用／呼叫數，對數字辨識是實質退步），換不到密度收益。
+                 全站唯一一個 mini 本身就是 drift——密度真相源是 TABLE_DEFAULTS。 -->
             <a-table
               v-else-if="stagesOf(record.job_id)?.length"
+              v-bind="TABLE_DEFAULTS"
               row-key="stage"
               :data="stagesOf(record.job_id) ?? []"
               :pagination="false"
-              size="mini"
             >
               <template #columns>
                 <a-table-column title="階段" data-index="stage" :width="110" />

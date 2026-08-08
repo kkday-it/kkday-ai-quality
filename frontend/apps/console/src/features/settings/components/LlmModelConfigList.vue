@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
-import { IconDragDotVertical, IconPlus } from '@arco-design/web-vue/es/icon';
+import { IconDragDotVertical, IconExperiment, IconPlus, IconSave } from '@arco-design/web-vue/es/icon';
 import { PERM } from '@/api';
 import { AccordionGroup, LlmConfigTestResult, LlmKnobs } from '@/components';
 import { areasUsingConfig, useListDragSort, useLlmConfigTest } from '@/composables';
@@ -337,7 +337,7 @@ const llmTest = useLlmConfigTest(
                 :loading="llmTest.testing.value"
                 :disabled="!draftKnobs.model"
                 @click="llmTest.onTest"
-              >
+              ><template #icon><icon-experiment /></template>
                 測試連線
               </a-button>
               <a-button
@@ -346,7 +346,7 @@ const llmTest = useLlmConfigTest(
                 :loading="saving"
                 :disabled="!!conflict"
                 @click="save"
-              >
+              ><template #icon><icon-save /></template>
                 儲存
               </a-button>
             </div>

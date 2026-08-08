@@ -189,7 +189,7 @@ const bdTagText = (r: ProblemRow): string =>
   </a-descriptions>
 
   <!-- ── compact 版型：左小標籤 + 右內容的緊湊列（列表「關聯資料」欄）── -->
-  <div v-else class="flex flex-col gap-1 py-1 text-xs leading-relaxed">
+  <div v-else class="flex flex-col gap-1 text-xs leading-relaxed">
     <!-- 訂單 -->
     <div v-if="hasSection('order')" class="flex gap-1.5">
       <span v-if="showLabels" :class="SECTION_LABEL_CLASS">訂單</span>

@@ -17,7 +17,7 @@ defineProps<{ hint?: string; url?: string; dapTable?: string }>();
       此指標資料源於外部儀表板，本平台不重複計算<span v-if="dapTable">（{{ dapTable }}）</span>。
     </p>
     <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" class="mt-1">
-      <a-button type="primary" size="small">開啟外部儀表板 ↗</a-button>
+      <a-button type="primary" size="small"><template #icon><icon-launch /></template>開啟外部儀表板</a-button>
     </a>
     <span v-else class="text-xs text-[#c9cdd4]">（連結待補）</span>
   </div>

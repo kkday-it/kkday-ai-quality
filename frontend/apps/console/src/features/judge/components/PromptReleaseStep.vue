@@ -9,6 +9,7 @@
  * 兩顆按鈕的門檻刻意不同：草稿不影響線上口徑，改壞了也該讓人留存半成品；把改壞的版本推上線
  * 才是要擋的那件事。
  */
+import { IconToTop } from '@arco-design/web-vue/es/icon';
 import { computed } from 'vue';
 import { MdTextDiff } from '@/components';
 import type { PromptReleaseMeta } from '@/api';
@@ -115,7 +116,7 @@ const promoteTooltip = computed(() => {
               size="small"
               :disabled="!canPromote"
               @click="release.openPromote(savedDraft)"
-            >
+            ><template #icon><icon-to-top /></template>
               升為正式版
             </a-button>
           </span>

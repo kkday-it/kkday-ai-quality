@@ -20,10 +20,7 @@ import {
 } from '@/components';
 import { usePermission } from '@/composables/usePermission';
 import { fmtPercent } from '@/utils';
-import {
-  IconDownload,
-  IconHistory,
-} from '@arco-design/web-vue/es/icon';
+import { IconCode, IconDownload, IconEdit, IconEraser, IconEye, IconFile, IconHistory, IconMessage, IconPauseCircle, IconRobot, IconRotateLeft, IconSelectAll, IconSync, IconUndo } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import {
   AttributionDetailDrawer,
@@ -33,7 +30,7 @@ import {
   PromptVersionPickerGroup,
   RecordContextPanel,
 } from '../components';
-import { useAttributionList, useRejudgeConfirm } from '../composables';
+import { useAttributionCorrection, useAttributionList, useRejudgeConfirm } from '../composables';
 import {
   CONF_TIER_CLASS,
   DIALOGUE_ROLE_COLORS,
@@ -42,6 +39,7 @@ import {
   idPlaceholderFor,
   POLARITY_COLOR,
   POLARITY_LABELS,
+  REVIEW_STATUS_LABELS,
   SECTION_LABEL_CLASS,
   SOURCES,
   STAGE_COLOR,
@@ -49,15 +47,33 @@ import {
   TIER_LABELS,
   type FilterField,
   type ProblemRow,
+  type TimelineScope,
 } from '../constants';
-import { fmtDt, parseDialogue, sentimentClass, type DialogueTurn } from '../utils';
+import { fmtDt, formatActor, parseDialogue, sentimentClass, type DialogueTurn } from '../utils';
+import { notifyComingSoon } from '@/utils';
 
 const SOURCE_OPTS = SOURCES.map((s) => ({ value: s.value, label: s.label }));
+
+/** 判決歸因佔位文案：說清楚它是什麼、現在可以先做什麼（不只是「還沒做」）。 */
+const VERDICT_COMING_SOON =
+  '判決歸因會在初判分類之上判定「責任方 · 嚴重度 · 建議行動」，讓質檢結果能追到供應商／商品／客服。'
+  + '資料欄位與值域主檔已就緒（設定 › 判決值域可維護），判定流程開發中。'
+  + '目前可先用「人工糾正」修正 AI 的分類。';
+
+/** 判決歷史佔位文案：說清楚「軸只有一條」，現在就能從人工紀錄看到跨階段的完整脈絡。 */
+const VERDICT_HISTORY_COMING_SOON =
+  '判決事件（定責 · 嚴重度 · 建議行動的變更）尚未產生，因此這一段還是空的。'
+  + '時間軸本身只有一條——判決功能上線後，判決事件會自動排進同一條軸，'
+  + '現在可先從「人工歷史」看到糾正、複審與備註的完整脈絡。';
 
 // 按鈕級權限遮罩（後端 403 兜底；此處 disabled 讓無權者一眼可辨「功能存在但不可用」）
 const { can } = usePermission();
 const canPrejudge = computed(() => can(PERM.prejudgeRun));
 const canExport = computed(() => can(PERM.problemListExport));
+const canCorrect = computed(() => can(PERM.attributionCorrect));
+// 「確認正確」屬複審域（attribution.review），與糾正是**不同的**權限鍵——工作台裡兩種動作並排，
+// 共用一個旗標會讓只有其中一種權限的人看到錯誤的可用狀態。
+const canReview = computed(() => can(PERM.attributionReview));
 
 // 歸因歷史抽屜（點開才載；每次批量/選取/單筆重新初判的 LLM 使用紀錄）
 const PrejudgeRunsDrawer = defineAsyncComponent(
@@ -65,6 +81,42 @@ const PrejudgeRunsDrawer = defineAsyncComponent(
 );
 // 終態摘要卡「查看 LLM 日誌」目標（點開才載；歷史快照回看專用，大批量無快照時元件自帶說明）
 const PrejudgeLogDrawer = defineAsyncComponent(() => import('../components/PrejudgeLogDrawer.vue'));
+
+// ── 人工介入（糾正 / 待審建議）：點開才載，兩個抽屜都不進首屏 ──
+const AttributionCorrectionDrawer = defineAsyncComponent(
+  () => import('../components/AttributionCorrectionDrawer.vue'),
+);
+const AttributionSuggestionDrawer = defineAsyncComponent(
+  () => import('../components/AttributionSuggestionDrawer.vue'),
+);
+/** 糾正完成後重載列表（現值變了、徽記可能出現或消失）。 */
+const correction = useAttributionCorrection(() => void loadPage());
+const suggestionOpen = ref(false);
+const suggestionTarget = ref<{ source: string; sourceId: string }>({ source: '', sourceId: '' });
+
+/**
+ * 開人工糾正工作台。
+ *
+ * **只傳反饋座標，不預選任何一條歸因**——工作台是反饋級的，開啟後列出該反饋的全部歸因
+ * （含已標記誤判的），使用者自己挑要動哪一條。舊版在這裡取 `attributions[0]` 當預設標的，
+ * 於是一則反饋有多條歸因時第二條以後完全碰不到。
+ */
+const openCorrection = (record: ProblemRow) => {
+  void correction.openFor(source.value, String(record.source_id ?? record._group ?? ''));
+};
+
+/** 開待審建議對比抽屜（以反饋 id）。 */
+const openSuggestionsFor = (sourceId: string) => {
+  if (!sourceId) return;
+  suggestionTarget.value = { source: source.value, sourceId };
+  correction.open.value = false; // 兩個抽屜不疊層：跳過去時先收掉工作台
+  suggestionOpen.value = true;
+};
+
+/** 開待審建議對比抽屜（列表列徽記入口）。 */
+const openSuggestions = (record: ProblemRow) => {
+  openSuggestionsFor(String(record.source_id ?? record._group ?? ''));
+};
 const logDrawerVisible = ref(false);
 const logDrawerJobId = ref('');
 /** 終態摘要卡「查看 LLM 日誌」：以 lastRun.jobId 精準開啟該次 job 的日誌快照。 */
@@ -81,9 +133,16 @@ const AttributionHistoryDrawer = defineAsyncComponent(
 );
 const historyOpen = ref(false);
 const historyRow = ref<ProblemRow | null>(null);
-/** 開某則評論的歸因歷史時間軸（source_id 級；與 run 級「歸因歷史」抽屜不同層）。 */
-const openJudgmentHistory = (record: ProblemRow) => {
+const historyScope = ref<TimelineScope>('all');
+/**
+ * 開某則反饋的時間軸（source_id 級；與 run 級「歸因歷史」抽屜不同層）。
+ *
+ * `scope` 切的是「看哪一段」——**一則反饋只有一條時間軸**，初判／判決／人工三個入口開的是
+ * 同一條軸的不同視圖，不是三條各自獨立的歷史（理由見 constants/timeline.constant.ts）。
+ */
+const openTimeline = (record: ProblemRow, scope: TimelineScope = 'all') => {
   historyRow.value = record;
+  historyScope.value = scope;
   historyOpen.value = true;
 };
 
@@ -274,17 +333,19 @@ onMounted(init);
 </script>
 
 <template>
-  <!-- 初判歸因控制列送進固定工具列橫帶（tab 下方），與歸因概覽一致、恆常可見 -->
+  <!--
+    反饋來源＝切換「看哪一份資料」（與歸因概覽的檢視切換同一份 SSOT：SOURCES），語義是導航
+    不是篩選，故送進主 tab 列下方的子 tab 列，並與歸因概覽採同一種控件（分段按鈕）。
+  -->
+  <Teleport to="#page-subtabs">
+    <a-radio-group v-model="source" type="button" size="small" @change="onFilterChange">
+      <a-radio v-for="s in SOURCE_OPTS" :key="s.value" :value="s.value">{{ s.label }}</a-radio>
+    </a-radio-group>
+  </Teleport>
+
+  <!-- 初判歸因控制列送進固定工具列橫帶（子 tab 列下方），與歸因概覽一致、恆常可見 -->
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-500">反饋來源</span>
-      <a-select
-        v-model="source"
-        size="small"
-        style="width: 150px"
-        :options="SOURCE_OPTS"
-        @change="onFilterChange"
-      />
       <!-- 商品垂直分類複選（全局 SSOT；預設不篩選，勾選才收斂範圍；順序於「配置」規則頁拖曳調整）-->
       <span class="text-sm text-gray-500">商品垂直分類</span>
       <a-select
@@ -308,14 +369,19 @@ onMounted(init);
           :disabled="!canPrejudge"
           @click="openBatchConfirm"
         >
+          <!-- icon 與列內「初判分類」同一個（IconRobot＝AI 產出的判定）：批量與單列是同一個動作
+               的兩種範圍，用不同 icon 會讓人以為是兩件事 -->
+          <template #icon><icon-robot /></template>
           初判分類{{ runCount ? `（已選 ${runCount}）` : '' }}
         </a-button>
-        <!-- 初判歷史：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄）。
+        <!-- 初判執行紀錄：純檢視（每次批量/選取/單筆重新初判的 LLM 使用紀錄）。
+             **不叫「初判歷史」**——那是列操作欄裡「某則反饋的初判事件時間軸」的名字，兩者層級不同，
+             同名會讓人以為開錯視窗（見 rules/frontend-vue.md「抽屜/彈窗標題命名」第 4 條）。
              在 button-group 內用 secondary（有底色）而非 text——text 無邊框會讓群組看起來不相連，
              見 rules/frontend-vue.md「同類按鈕聚合」對 group 內禁用 text 的說明 -->
         <a-button type="secondary" @click="runsDrawerVisible = true">
           <template #icon><icon-history /></template>
-          初判歷史
+          初判執行紀錄
         </a-button>
         <a-button
           type="primary"
@@ -334,11 +400,33 @@ onMounted(init);
   <!-- 歸因歷史抽屜（懶載；unmount-on-close）-->
   <PrejudgeRunsDrawer v-model:visible="runsDrawerVisible" />
 
+  <!-- 人工糾正抽屜（修改 / 新增 / 標記誤判三模式共用；狀態由 useAttributionCorrection 持有）-->
+  <!-- 人工糾正工作台（反饋級）。`@suggestions` 讓工作台頂部的橫幅能跳到待審建議抽屜——
+       兩個入口操作同一份資料，必須互相看得見。 -->
+  <AttributionCorrectionDrawer
+      :ctl="correction"
+      :can-review="canReview"
+      @suggestions="openSuggestionsFor(correction.target.sourceId)"
+    />
+
+  <!-- 待審建議對比抽屜（人工現值 vs LLM 新值；採納後重載列表讓徽記與現值同步）-->
+  <AttributionSuggestionDrawer
+    v-model:visible="suggestionOpen"
+    :source="suggestionTarget.source"
+    :source-id="suggestionTarget.sourceId"
+    @resolved="loadPage"
+  />
+
   <!-- 終態摘要卡「查看 LLM 日誌」目標（歷史快照回看；懶載）-->
   <PrejudgeLogDrawer v-model:visible="logDrawerVisible" :job-id="logDrawerJobId" />
 
-  <!-- 歸因歷史抽屜（評論級時間軸；懶載）-->
-  <AttributionHistoryDrawer v-model:visible="historyOpen" :source="source" :row="historyRow" />
+  <!-- 反饋級時間軸抽屜（依 scope 切階段視圖；懶載）-->
+  <AttributionHistoryDrawer
+      v-model:visible="historyOpen"
+      :source="source"
+      :row="historyRow"
+      :scope="historyScope"
+    />
 
   <div class="flex h-full flex-col gap-4">
     <!-- 本批失敗筆：初判完成後（非執行中）有失敗才顯示——可查原因 + 一鍵重新初判（走 item_ids 顯式路徑）-->
@@ -352,7 +440,7 @@ onMounted(init);
           >失敗筆可重新初判補上；系統性失敗連續多次後會停止隱式重撈，需在此手動重新初判。</span
         >
         <a-popover position="bl">
-          <a-button size="mini" type="text">查看原因</a-button>
+          <a-button size="mini" type="text"><template #icon><icon-eye /></template>查看原因</a-button>
           <template #content>
             <ScrollFadeArea max-height="16rem" class="w-96 text-xs">
               <div v-for="f in failedItems" :key="f.item_id" class="mb-1 break-all">
@@ -363,7 +451,7 @@ onMounted(init);
           </template>
         </a-popover>
         <a-button size="mini" type="primary" status="warning" @click="retryFailed"
-          >重新初判本批失敗筆</a-button
+          ><template #icon><icon-sync /></template>重新初判本批失敗筆</a-button
         >
       </div>
     </a-alert>
@@ -428,20 +516,27 @@ onMounted(init);
             />
           </a-col>
           <a-col flex="none">
-            <a-button size="small" type="outline" @click="selectPages">選取分頁</a-button>
+            <a-button size="small" type="outline" @click="selectPages">
+              <template #icon><icon-select-all /></template>
+              選取分頁
+            </a-button>
           </a-col>
           <a-col flex="none">
             <!-- 常駐可見以利發現「取消選擇」；無選取時 disabled（非 v-if 隱藏） -->
-            <a-button size="small" :disabled="!runCount" @click="clearSelection">清除選擇</a-button>
+            <a-button size="small" :disabled="!runCount" @click="clearSelection">
+              <template #icon><icon-eraser /></template>
+              清除選擇
+            </a-button>
           </a-col>
           <a-col flex="auto" class="flex items-center justify-end gap-2">
             <span v-if="activeFilterCount" class="text-xs text-[rgb(var(--primary-6))]">
               已套用 {{ activeFilterCount }} 項篩選
             </span>
             <span class="text-xs text-gray-400">每頁 {{ pageSize }} · 已選 {{ runCount }}</span>
-            <a-button size="small" type="outline" status="warning" @click="resetFilters"
-              >重置篩選</a-button
-            >
+            <a-button size="small" type="outline" status="warning" @click="resetFilters">
+              <template #icon><icon-rotate-left /></template>
+              重置篩選
+            </a-button>
           </a-col>
         </a-row>
       </template>
@@ -451,7 +546,7 @@ onMounted(init);
            全文或進線對話輪次）②補充＝關於這則反饋自身的附加屬性（外部評論融合維度 +
            schema.supplementSections 段落，如進線的分桶/行程階段/處理方/訊息數）。 -->
       <template #review="{ record }">
-        <div class="flex flex-col gap-1 py-1">
+        <div class="flex flex-col gap-1">
           <!-- ① 原文（星等/標題僅評論形來源有值；進線走對話輪次渲染）-->
           <div class="flex gap-1.5">
             <span :class="SECTION_LABEL_CLASS">原文</span>
@@ -472,6 +567,19 @@ onMounted(init);
                 >
                   {{ POLARITY_LABELS[String(record.polarity)] || record.polarity }}
                 </a-tag>
+                <!--
+                  沒有傾向時要分兩種情況講清楚：判過但歸因全被標記為 AI 誤判（dismissed），
+                  與從未判過（unjudged）。兩者都是空白，但意義相反——把 dismissed 顯示成
+                  「未初判」會與批量初判的標的數對不起來（它認為這則判過、不會再撈）。
+                  判定狀態一律讀服務端派生的 judge_state，不用 polarity/attributions 是否存在推斷。
+                -->
+                <span
+                  v-else-if="record.judge_state === 'dismissed'"
+                  class="text-xs text-gray-400"
+                  :title="`AI 的歸因已全部被人工標記為誤判（${record.dismissed_count ?? 0} 條），可在人工糾正中還原`"
+                >
+                  已標記誤判
+                </span>
                 <span v-else class="text-xs text-gray-300">未初判</span>
                 <!-- 我方情緒分 1-5（重新初判後回填；與外部評論情緒分同尺度直接對比）-->
                 <span v-if="record.our_sentiment" class="flex items-center gap-1 text-xs">
@@ -556,12 +664,36 @@ onMounted(init);
       <!-- 判決歸因合併欄：每條歸因一塊（L1→L2 + 信心 + 分層 + 初判階段 全放一起），
                塊間細線分隔；多歸因並存時逐塊堆疊，資訊聚合、一眼看完整初判。 -->
       <template #verdict="{ record }">
+        <!-- 需要注意的標記集中在這一欄的頂部：待審建議（AI 有話說）與備註數（人留過話）。
+             ⚠️ 備註徽記**不是裝飾**：功能沒有可見性就沒人用——2026-08-04 退役的人工判決軸
+             正是這樣死的（6,242 條裡只有 1 個人按過那兩顆按鈕）。 -->
+        <div v-if="record.suggestion_count || record.note_count" class="mb-1 flex flex-wrap gap-1">
+          <a-tag
+            v-if="record.suggestion_count"
+            size="small"
+            color="red"
+            class="cursor-pointer"
+            @click="openSuggestions(record)"
+          >
+            AI 有 {{ record.suggestion_count }} 條新建議
+          </a-tag>
+          <a-tag
+            v-if="record.note_count"
+            size="small"
+            color="gray"
+            class="cursor-pointer"
+            @click="openTimeline(record, 'human')"
+          >
+            <template #icon><icon-message /></template>
+            {{ record.note_count }} 則備註
+          </a-tag>
+        </div>
         <template v-if="record.attributions && record.attributions.length">
           <!-- 每條歸因一塊，比照關聯資料欄：左小標籤（摘要/歸因/信心/操作）+ 右內容或操作 -->
           <div
             v-for="(a, ai) in record.attributions"
             :key="ai"
-            class="verdict-blk flex flex-col gap-1 py-1 text-xs leading-relaxed"
+            class="verdict-blk flex flex-col gap-1 text-xs leading-relaxed"
           >
             <!-- 摘要（LLM 繁中概括，顯明；僅有值才顯示）-->
             <div v-if="a.content?.summary" class="flex gap-1.5">
@@ -611,8 +743,24 @@ onMounted(init);
                     a.confidence?.tier ? TIER_LABELS[a.confidence.tier] || a.confidence.tier : '—'
                   }}
                 </span>
-                <!-- 初判模型（溯源；重新初判後更新）-->
-                <a-tag v-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
+                <!-- 現值來源：人工糾正過的列顯示修改者取代初判模型（origin 由後端派生，前端不判斷）-->
+                <a-tag
+                  v-if="a.origin === 'human'"
+                  size="small"
+                  color="orange"
+                  :title="a.correction_reason || ''"
+                >
+                  人工 · {{ formatActor(a.corrected_by) }}
+                </a-tag>
+                <a-tag v-else-if="a.model" size="small" color="purple">{{ a.model }}</a-tag>
+                <!-- 複審狀態：只在非預設態顯示（未複審是常態，不佔位）-->
+                <a-tag
+                  v-if="a.review_status && a.review_status !== 'unreviewed'"
+                  size="small"
+                  :color="a.review_status === 'confirmed' ? 'green' : 'orange'"
+                >
+                  {{ REVIEW_STATUS_LABELS[a.review_status] || a.review_status }}
+                </a-tag>
                 <!-- 初判階段：僅非 judged 的異常態才提示（已初判＝常態不佔位；全量三軸見詳情抽屜）-->
                 <a-tag
                   v-if="a.stage && a.stage !== 'judged'"
@@ -633,30 +781,98 @@ onMounted(init);
       <template #context="{ record }">
         <RecordContextPanel :record="record" :sections="schema.contextSections" />
       </template>
-      <!-- 操作欄：整列級動作全展開（初判分類 / 查看詳情 / 初判歷史）。與批量選取解耦。
-           每列都會重複這組按鈕，統一用 type="text" 輕量呈現（不套用 rules/frontend-vue.md「視覺區分主次」的
-           primary/outline/dashed 分級——那條規則鎖定 toolbar/卡片動作列/彈窗 footer 這種「該區只出現一次」
-           的場景；per-row 操作欄會隨列數重複出現，用色塊反而視覺噪音，見該規則新增的例外說明）；橫向鋪開、
-           一行放不下自動換行，不再逐顆垂直堆疊佔滿列高。 -->
+      <!-- 操作欄：**按流程階段分組**（2026-08-07 重整）。
+           原本五顆按鈕平鋪，每加一個功能就多一條，很快會變成一面看不出主從的連結牆。改成
+           「階段標籤 + 該階段的動作」之後，功能歸屬一眼可辨，日後補判決／備註也有明確的落點。
+
+           三個階段對齊系統的流水線：**初判**（AI 分類）→ **判決**（定責＋行動，未實作）→
+           **人工**（糾正／備註，跨階段）。「查看詳情」不屬於任何階段，單獨置頂。
+
+           動作標籤刻意只留動詞（「分類」而非「初判分類」）——階段前綴已由左側標籤承擔，重複寫
+           會在當時 132px 的欄寬裡擠成兩行（該欄現為 180，見 source-schema.constant.ts）。
+
+           每列都會重複這組按鈕，統一用 type="text" 輕量呈現（不套用 rules/frontend-vue.md
+           「視覺區分主次」的 primary/outline/dashed 分級——那條規則鎖定 toolbar/卡片動作列/彈窗
+           footer 這種「該區只出現一次」的場景；per-row 操作欄會隨列數重複出現，用色塊反而視覺噪音）。 -->
       <template #actions="{ record }">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">
-          <!-- 點擊直接開「確認初判分類」抽屜（模型/版本選擇+額度提示，見共用抽屜區塊），不再用小
-               popconfirm——本次執行前要確認的設定已不只是「要不要覆寫」。 -->
-          <a-button
-            type="text"
-            size="small"
-            :loading="isRowBusy(record._group)"
-            :disabled="!canPrejudge"
-            @click="openRowConfirm(record)"
-          >
-            初判分類
-          </a-button>
-          <!-- 未初判亦可查看：抽屜的原文/關聯資料恆常可看，歸因區塊空時走 a-empty 佔位 -->
-          <a-button size="small" type="text" @click="viewDetail(record)"> 查看詳情 </a-button>
-          <!-- 初判歷史（評論級時間軸：歷次初判快照／備註／初判失敗）-->
-          <a-button size="small" type="text" @click="openJudgmentHistory(record)">
-            初判歷史
-          </a-button>
+        <!-- 組間距（gap-2）刻意大於組內間距（.act-group 的 4px）：換行堆疊成七行時，
+             分組全靠這個間距層級表達（不再有「·」分隔點——它在並排時是多餘裝飾、
+             換行時會變成行尾的孤兒字元）。 -->
+        <div class="flex flex-col items-start gap-2">
+          <!-- ① 反饋：這則資料本身（不是流程階段）。未初判亦可查看，原文/關聯資料恆常可看。 -->
+          <div class="act-group">
+                        <a-button class="!px-0" size="mini" type="text" @click="viewDetail(record)">
+              <template #icon><icon-file /></template>
+              反饋詳情
+            </a-button>
+          </div>
+
+          <!-- ② 初判：AI 把反饋分類到 L1/L2 面向 -->
+          <div class="act-group">
+                        <!-- 點擊直接開「確認初判分類」抽屜（模型/版本選擇+額度提示），不用小 popconfirm
+                 ——本次執行前要確認的設定已不只是「要不要覆寫」。 -->
+            <a-button
+              class="!px-0"
+              type="text"
+              size="mini"
+              :loading="isRowBusy(record._group)"
+              :disabled="!canPrejudge"
+              @click="openRowConfirm(record)"
+            >
+              <template #icon><icon-robot /></template>
+              初判分類
+            </a-button>
+            <a-button class="!px-0" size="mini" type="text" @click="openTimeline(record, 'prejudge')">
+              <template #icon><icon-history /></template>
+              初判歷史
+            </a-button>
+          </div>
+
+          <!-- ③ 判決：在分類之上判定「責任方 · 嚴重度 · 建議行動」。兩者皆未實作，
+               點擊給明確說明而非死按鈕（見 comingSoon.util 的三條配套規則）。 -->
+          <div class="act-group">
+                        <a-button
+              class="!px-0"
+              type="text"
+              size="mini"
+              @click="notifyComingSoon('判決歸因', VERDICT_COMING_SOON)"
+            >
+              <template #icon><icon-robot /></template>
+              判決歸因
+            </a-button>
+            <a-button
+              class="!px-0"
+              type="text"
+              size="mini"
+              @click="notifyComingSoon('判決歷史', VERDICT_HISTORY_COMING_SOON)"
+            >
+              <template #icon><icon-history /></template>
+              判決歷史
+            </a-button>
+          </div>
+
+          <!-- ④ 人工：跨階段的人為介入。糾正改的是現值、備註留的是處理脈絡。 -->
+          <div class="act-group">
+                        <!-- 糾正過後該則反饋進入人工託管，重新初判不再覆蓋現值（改走待審建議），
+                 故文案用「糾正」而非「編輯」。
+                 ⚠️ **恆常顯示，不以 attributions.length 隱藏**（2026-08-07 修）：歸因全被標記為
+                 AI 誤判的列 attributions 是空陣列，若隱藏此鍵，那些列就再也進不去、還原不了——
+                 而這顆鍵對零歸因的列反而最需要（還原誤判、補上 AI 漏判的歸因都靠它）。 -->
+            <a-button
+              class="!px-0"
+              type="text"
+              size="mini"
+              :disabled="!canCorrect"
+              @click="openCorrection(record)"
+            >
+              <template #icon><icon-edit /></template>
+              人工糾正
+            </a-button>
+            <a-button class="!px-0" size="mini" type="text" @click="openTimeline(record, 'human')">
+              <template #icon><icon-history /></template>
+              人工歷史
+            </a-button>
+          </div>
         </div>
       </template>
     </TableLayout>
@@ -819,7 +1035,7 @@ onMounted(init);
                     size="mini"
                     type="primary"
                     @click="resumeJob"
-                  >
+                  ><template #icon><icon-undo /></template>
                     恢復
                   </a-button>
                   <a-button
@@ -827,7 +1043,7 @@ onMounted(init);
                     size="mini"
                     :disabled="jobStatus === 'cancelling'"
                     @click="pauseJob"
-                  >
+                  ><template #icon><icon-pause-circle /></template>
                     暫停
                   </a-button>
                   <a-popconfirm
@@ -885,8 +1101,8 @@ onMounted(init);
                 </template>
               </div>
               <div class="flex gap-2">
-                <a-button size="mini" type="text" @click="openLastRunLog">查看 LLM 日誌</a-button>
-                <a-button size="mini" type="text" @click="runsDrawerVisible = true">
+                <a-button size="mini" type="text" @click="openLastRunLog"><template #icon><icon-code /></template>查看 LLM 日誌</a-button>
+                <a-button size="mini" type="text" @click="runsDrawerVisible = true"><template #icon><icon-history /></template>
                   查看初判紀錄
                 </a-button>
               </div>
@@ -989,22 +1205,67 @@ onMounted(init);
 </template>
 
 <style scoped>
+/* ── 操作欄的分組（反饋 / 初判 / 判決 / 人工）─────────────────────────────────
+   icon 依**分組**配、不是每顆各給一個：同一分組的動作共用同一個 icon，讓「這兩顆是同一類」
+   不必讀文字就看得出來。四個 icon 各自的語義：
+     IconFile    反饋詳情——這則反饋的完整資料
+     IconRobot   初判分類 / 判決歸因——AI 產出的判定（工具列的批量初判分類**也是這個**，
+                 批量與單列是同一個動作的兩種範圍，用不同 icon 會讓人以為是兩件事）
+     IconHistory 初判歷史 / 判決歷史 / 人工歷史——回看時間軸
+     IconEdit    人工糾正——人改值
+
+   一組一行，**分類由按鈕文案自己承擔**——每顆都是四字完整文案，前兩字即所屬分類
+   （反饋詳情｜初判分類·初判歷史｜判決歸因·判決歷史｜人工糾正·人工紀錄）。
+
+   曾經試過「左側灰色分類標籤 + 兩字動詞」（初判 分類·歷史），兩個問題否決了它：
+   ① 「分類」「歸因」單看有歧義、「歷史」還重複兩次，而螢幕閱讀器與鍵盤焦點只讀得到按鈕本身，
+      讀不到旁邊那個標籤；② 全站其他動作標籤都是完整文案，兩字動詞會是唯一的例外。
+   拿掉標籤欄之後，省下的 30px 剛好給完整文案用。（欄寬後續因分組按鈕與 icon 兩度加寬，
+   後因改為自適應換行而收回 112；算式與實測依據見 source-schema.constant.ts 的操作欄註解。）
+
+   四行的前兩字天然對齊成一欄，分組不必畫線也看得出來；每顆按鈕都有分類，沒有孤兒
+   （落單的按鈕在 flex-col 容器裡會被 align-items:stretch 拉成整欄寬、文字置中，看起來像壞掉）。 */
+.act-group {
+  display: flex;
+  /* 允許換行：窄欄時兩顆按鈕自動上下堆疊，寬欄時並排。
+     這一行同時消滅了「操作欄被靜默裁切」這個失敗模式——**不夠寬就換行，不會切掉**，
+     所以欄寬不再需要「寧可留白也不要裁切」的保守下限（那正是它一路被推到 180 的原因）。 */
+  flex-wrap: wrap;
+  align-items: baseline;
+  /* 組內 4px < 組間 gap-2（8px）：分組靠間距層級表達，不靠分隔符號。 */
+  gap: 4px;
+  line-height: 1.35;
+}
+/* Arco text 按鈕預設 min-width/padding 會讓「初判分類 · 初判歷史」被撐開；歸零後靠 gap 控間距。 */
+.act-group :deep(.arco-btn-text) {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
 /* 複合評論欄星等縮小：Arco a-rate 預設星 ~20px 過大，主列精巧化縮至 14px，與傾向 tag / 標題同行不搶高。
    :deep 觸及 Arco 內部 .arco-rate-character（utility / prop 無法觸及第三方深層 DOM）。 */
 :deep(.review-rate .arco-rate-character) {
   font-size: 14px;
   margin-right: 2px;
 }
-/* 判決歸因合併欄：每條歸因一塊，塊間細線分隔（單欄內堆疊，無需跨欄等高，故不設 min-height）。 */
-.verdict-blk {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--color-neutral-3);
-}
-.verdict-blk:first-child {
-  padding-top: 0;
-}
-.verdict-blk:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+/**
+ * 判決歸因合併欄：每條歸因一塊，塊間細線分隔（單欄內堆疊，無需跨欄等高，故不設 min-height）。
+ *
+ * 這裡的 6px 是**塊與塊之間的分隔留白**（配 border-top），與儲存格內距是不同語義——
+ * 不能因為儲存格已統一 12px 就砍掉，砍了多條歸因會黏在一起。
+ *
+ * ⚠️ 用相鄰兄弟 `+` 而不是 `:first-child` / `:last-child` 歸零：本欄在 v-for 之前還有一個
+ * v-if 的徽記列（AI 建議數／備註數），同層同為 div——**有徽記時第一塊就不是 `:first-child`**，
+ * 舊寫法會多吐 6px 上內距（2026-08-07 實測重現：頂部變成 12+6=18px，與其餘四欄的 12px 對不齊，
+ * 而且只在「這則反饋剛好有徽記」時才發生，是資料驅動的間歇性不一致）。改成 `+` 之後
+ * 「第一塊沒有上內距、最後一塊沒有下內距」由結構保證，與徽記列在不在無關。
+ * 視覺與舊版相同：塊間仍是 6px ─ 線 ─ 6px。
+ */
+.verdict-blk + .verdict-blk {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-neutral-3);
 }
 </style>

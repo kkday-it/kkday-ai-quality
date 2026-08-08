@@ -278,7 +278,7 @@ const COLUMNS = [
       size="small"
     >
       <template #bdTag="{ record }">
-        <div class="flex flex-col gap-1 py-1">
+        <div class="flex flex-col gap-1">
           <span class="font-mono font-medium">{{ record.code }}</span>
           <a-textarea
             v-model="model.items[record.code].note"

@@ -4,6 +4,7 @@
  * 卡頭：kind 徽章(落後/領先/結構) + 標題 + ⓘhint + 來源連結 + 「放大」(Feature 1，僅 ECharts 圖)。
  * 卡身 flex-1 填滿，配合外層 a-row align=stretch 達成同列等高。data 由父元件依 spec 解析後傳入。
  */
+import { IconZoomIn } from '@arco-design/web-vue/es/icon';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import VChart from 'vue-echarts';
@@ -72,7 +73,7 @@ const goto = (route: string) => router.push(route);
       >
         來源 ↗
       </a>
-      <a-button v-if="zoomable" size="mini" @click="emit('zoom', spec)">放大</a-button>
+      <a-button v-if="zoomable" size="mini" @click="emit('zoom', spec)"><template #icon><icon-zoom-in /></template>放大</a-button>
     </div>
 
     <!-- 卡身（flex-1 填滿，配合 align=stretch 等高）-->

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { IconLoading } from '@arco-design/web-vue/es/icon';
+import { IconArrowLeft, IconCode, IconLoading } from '@arco-design/web-vue/es/icon';
 import { getPrejudgeRunLog } from '@/api';
 import PrejudgeLogView from './PrejudgeLogView.vue';
 import type { LogEntry } from './PrejudgeLogView.types';
@@ -123,7 +123,7 @@ const legacyNote = computed(
       <span>LLM 執行日誌</span>
       <a-tag size="small" class="ml-2 font-mono">{{ jobId }}</a-tag>
       <a-tag color="gray" size="small" class="ml-1">歷史快照</a-tag>
-      <a-tag v-if="itemId" size="small" class="ml-1 font-mono">評論 {{ itemId }}</a-tag>
+      <a-tag v-if="itemId" size="small" class="ml-1 font-mono">反饋 {{ itemId }}</a-tag>
     </template>
 
     <a-alert v-if="streamError" type="info" class="mb-2">{{ streamError }}</a-alert>
@@ -134,11 +134,11 @@ const legacyNote = computed(
     <a-alert v-if="legacyNote && !showAll" type="info" class="mb-2">
       此快照產生於逐評論標記機制之前：流程已按本評論過濾，但 LLM 調用（polarity / C-N）無法歸屬
       單一評論故未顯示——對本評論「重新初判」一次即可取得完整逐評論日誌。
-      <a-button size="mini" type="text" @click="showAll = true">查看整批原始日誌</a-button>
+      <a-button size="mini" type="text" @click="showAll = true"><template #icon><icon-code /></template>查看整批原始日誌</a-button>
     </a-alert>
     <a-alert v-if="legacyNote && showAll" type="info" class="mb-2">
       整批原始日誌（未過濾，含全部評論的混排條目）。
-      <a-button size="mini" type="text" @click="showAll = false">回到本評論視角</a-button>
+      <a-button size="mini" type="text" @click="showAll = false"><template #icon><icon-arrow-left /></template>回到單筆視角</a-button>
     </a-alert>
 
     <div v-if="loadingHistory" class="flex items-center gap-2 py-6 text-xs text-[#86909c]">

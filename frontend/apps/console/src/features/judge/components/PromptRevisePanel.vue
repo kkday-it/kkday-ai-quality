@@ -11,6 +11,7 @@
  *
  * 模型走獨立的 `prompt_revise` 功能區——裁決跑批要便宜，改 Prompt 要聰明，兩者不共用旋鈕。
  */
+import { IconBulb, IconCheck, IconCopy, IconRecordStop } from '@arco-design/web-vue/es/icon';
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { AsyncSection, LlmConfigSelect, MdTextDiff } from '@/components';
@@ -82,7 +83,7 @@ async function copyChangelog(): Promise<void> {
         </div>
         <a-space size="mini">
           <a-button v-if="revise.streaming.value" status="danger" size="small" @click="revise.abort"
-            >停止</a-button
+            ><template #icon><icon-record-stop /></template>停止</a-button
           >
           <a-button
             v-else
@@ -90,7 +91,7 @@ async function copyChangelog(): Promise<void> {
             size="small"
             :disabled="!canRun"
             @click="revise.run(llm.overrides.value)"
-          >
+          ><template #icon><icon-bulb /></template>
             產出補丁
           </a-button>
         </a-space>
@@ -169,7 +170,7 @@ async function copyChangelog(): Promise<void> {
           :loading="revise.applying.value"
           :disabled="!revise.canApply.value"
           @click="revise.apply()"
-        >
+        ><template #icon><icon-check /></template>
           套用勾選補丁
         </a-button>
       </div>
@@ -234,7 +235,7 @@ async function copyChangelog(): Promise<void> {
           type="outline"
           size="small"
           @click="copyChangelog"
-          >複製 CHANGELOG 草稿</a-button
+          ><template #icon><icon-copy /></template>複製 CHANGELOG 草稿</a-button
         >
       </div>
       <div class="diff-box">

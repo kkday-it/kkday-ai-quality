@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IconExperiment, IconSave } from '@arco-design/web-vue/es/icon';
 import { computed, nextTick, ref, watch } from 'vue';
 import { Message, type FormInstance } from '@arco-design/web-vue';
 import { testLlm, type LlmPingResult } from '@/api';
@@ -150,9 +151,9 @@ watch(testResult, async (r) => {
 
       <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest"
-          >測試連線</a-button
+          ><template #icon><icon-experiment /></template>測試連線</a-button
         >
-        <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
+        <a-button type="primary" :loading="saving" @click="onSave"><template #icon><icon-save /></template>儲存</a-button>
         <span class="text-xs text-[#86909c]">此供應商唯一一條連線；token 只存後端，不入 git</span>
       </a-space>
 

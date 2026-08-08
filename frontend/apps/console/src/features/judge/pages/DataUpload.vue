@@ -17,7 +17,7 @@ import {
   type SheetValidation,
   type UploadJobSnapshot,
 } from '@/api';
-import { IconExclamationCircleFill } from '@arco-design/web-vue/es/icon';
+import { IconExclamationCircleFill, IconUpload } from '@arco-design/web-vue/es/icon';
 import { StateGuard, CardSection } from '@/components';
 import { ALL_PAGINATION, SOURCE_LABEL, TABLE_DEFAULTS } from '../constants';
 
@@ -305,6 +305,7 @@ const batchCols = [
             :loading="importing"
             @click="confirmImport"
           >
+            <template #icon><icon-upload /></template>
             匯入勾選的 {{ selectedKeys.length }} 張工作表
           </a-button>
         </template>

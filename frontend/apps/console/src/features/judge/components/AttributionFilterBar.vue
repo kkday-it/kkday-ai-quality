@@ -12,6 +12,7 @@ import type { CascadeNode } from '@/api';
 import {
   BUCKET_FILTER_OPTS,
   HAS_EXTERNAL_OPTS,
+  HUMAN_STATE_OPTS,
   POLARITY_FILTER_OPTS,
   STAGE_OPTS,
   TIER_OPTS,
@@ -60,6 +61,7 @@ const FIELD_FLEX: Record<FilterField, string> = {
   model: '210px',
   taxonomy: '230px',
   hasExternal: '190px',
+  humanState: '170px',
   dateRange: '190px',
   recOid: '190px',
   prodOid: '190px',
@@ -77,6 +79,7 @@ const SECONDARY_FIELDS: FilterField[] = [
   'model',
   'taxonomy',
   'hasExternal',
+  'humanState',
   'bucket',
 ];
 const hasPrimary = computed(() => PRIMARY_FIELDS.some((f) => props.fields.includes(f)));
@@ -281,6 +284,18 @@ function applyRecentDays(n: number): void {
           placeholder="外部評論"
           class="w-full"
           :options="HAS_EXTERNAL_OPTS"
+          @change="onChange"
+        />
+      </a-col>
+      <!-- 人工介入狀態：AI 原判 / 已人工介入 / 有待審建議（全 5 來源皆適用）-->
+      <a-col v-if="has('humanState')" :flex="FIELD_FLEX.humanState">
+        <a-select
+          v-model="state.humanState"
+          :size="size"
+          allow-clear
+          placeholder="人工介入"
+          class="w-full"
+          :options="HUMAN_STATE_OPTS"
           @change="onChange"
         />
       </a-col>

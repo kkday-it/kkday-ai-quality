@@ -7,6 +7,7 @@
  * 填正解的控件不寫死，一律由後端 `output_schema` 反推（見 `reviewControl.util`）：受控 enum
  * 會隨分類 SSOT 演進，前端手抄一份必然 drift。
  */
+import { IconBookmark, IconCheckCircle, IconEraser } from '@arco-design/web-vue/es/icon';
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { usePromptReviewCasesStore } from '@/stores/promptReviewCases.store';
@@ -245,9 +246,9 @@ function displayValue(value: unknown): string {
         <span class="text-xs text-[#86909c]">已看 {{ reviewedCount }}/{{ fields.length }}</span>
       </div>
       <a-space size="mini">
-        <a-button size="mini" :disabled="disabled" @click="markAllOk">全部標對</a-button>
+        <a-button size="mini" :disabled="disabled" @click="markAllOk"><template #icon><icon-check-circle /></template>全部標對</a-button>
         <a-button size="mini" :disabled="disabled || !reviewedCount" @click="clearAll"
-          >清除標記</a-button
+          ><template #icon><icon-eraser /></template>清除標記</a-button
         >
       </a-space>
     </div>
@@ -355,7 +356,7 @@ function displayValue(value: unknown): string {
         <span v-else class="text-[11px] leading-snug text-[#86909c]">
           存下來的案例可餵給 AI 定點改寫，也會進回歸重跑清單
         </span>
-        <a-button type="primary" size="small" :loading="saving" :disabled="!canSave" @click="save">
+        <a-button type="primary" size="small" :loading="saving" :disabled="!canSave" @click="save"><template #icon><icon-bookmark /></template>
           存為案例
         </a-button>
       </div>

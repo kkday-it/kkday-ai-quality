@@ -16,13 +16,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { Message, type FileItem, type TableColumnData, type TableData } from '@arco-design/web-vue';
 import type { TableOperationColumn } from '@arco-design/web-vue/es/table/interface';
-import {
-  IconDelete,
-  IconDownload,
-  IconFile,
-  IconPlayArrow,
-  IconRefresh,
-} from '@arco-design/web-vue/es/icon';
+import { IconDelete, IconDownload, IconEye, IconFile, IconPlayArrow, IconRecordStop, IconRefresh, IconSync } from '@arco-design/web-vue/es/icon';
 import { useIntervalFn } from '@vueuse/core';
 import {
   cancelPromptDebugBatchRun,
@@ -777,7 +771,7 @@ watch(
               </a-tag>
             </div>
             <a-button v-if="member.run_id" type="text" size="mini" @click="track(member.run_id)"
-              >詳情</a-button
+              ><template #icon><icon-eye /></template>詳情</a-button
             >
           </div>
           <div v-if="!member.started" class="mt-1 text-xs text-[#f53f3f]">
@@ -815,7 +809,7 @@ watch(
           content="確定停止？已完成筆保留為斷點，之後可續跑。"
           @ok="onCancel(activeSnap.run_id)"
         >
-          <a-button size="small" status="danger">停止</a-button>
+          <a-button size="small" status="danger"><template #icon><icon-record-stop /></template>停止</a-button>
         </a-popconfirm>
       </div>
 
@@ -922,7 +916,7 @@ watch(
             :cell-style="{ verticalAlign: 'middle' }"
           >
             <template #cell="{ record }">
-              <div class="flex flex-col gap-1 py-0.5">
+              <div class="flex flex-col gap-1">
                 <div class="flex items-center gap-1.5">
                   <span class="whitespace-nowrap text-xs font-medium">
                     {{ fmtBeijingDt(record.created_at) }}
@@ -961,7 +955,7 @@ watch(
           <!-- 「執行」＝逐 model 各自一列：模型／結果／狀態／耗時同樣收成一個描述區塊 -->
           <a-table-column title="執行" :cell-style="{ verticalAlign: 'top' }">
             <template #cell="{ record }">
-              <div class="flex flex-col gap-1 py-0.5">
+              <div class="flex flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <!-- break-keep：配置名是「供應商 · model · 檔位」的組合，從單字中間斷開
                        （`m / edium`）比換行更難讀；容器窄時整段換行即可。 -->
@@ -997,7 +991,11 @@ watch(
           <!-- ⚠️ 「操作」欄刻意固定窄寬 + 按鈕直排：這一列的動作最多 3 顆（看進度/停止、續跑、重跑、
                CSV），橫排時得吃掉整表 1/3 寬度，而左邊兩欄的描述區塊本來就更需要空間。直排不會
                增加列高——同列的「執行」描述區塊本身就是 3 行高，按鈕正好落在同一段垂直空間內。 -->
-          <a-table-column title="操作" :width="96" :cell-style="{ verticalAlign: 'top' }">
+          <!-- 100 是實測下限：最寬的一列「重跑 · CSV」（icon + 2 字 + 分隔 + 3 字）需 65px，
+               加 Arco 預設左右內距 32px ＝ 97，取 100 留 3px 餘裕。
+               ⚠️ 2026-08-07 踩過：本輪替按鈕加 icon 後沒重量寬度，96 讓該列被切掉 1px（肉眼幾乎看不出，
+               但字會缺角）。改按鈕文案或 icon 後一律照 `.claude/rules/frontend-vue.md` 用瀏覽器重量。 -->
+          <a-table-column title="操作" :width="100" :cell-style="{ verticalAlign: 'top' }">
             <template #cell="{ record }">
               <div class="flex flex-col items-start gap-y-0.5">
                 <a-button
@@ -1005,14 +1003,14 @@ watch(
                   size="mini"
                   type="text"
                   @click="track(record.run_id)"
-                  >看進度</a-button
+                  ><template #icon><icon-eye /></template>看進度</a-button
                 >
                 <a-popconfirm
                   v-if="record.status === 'running'"
                   content="確定停止？已完成筆保留為斷點。"
                   @ok="onCancel(record.run_id)"
                 >
-                  <a-button size="mini" type="text" status="danger">停止</a-button>
+                  <a-button size="mini" type="text" status="danger"><template #icon><icon-record-stop /></template>停止</a-button>
                 </a-popconfirm>
                 <template v-if="record.status !== 'running' && record.status !== 'cancelling'">
                   <a-button
@@ -1021,7 +1019,7 @@ watch(
                     type="text"
                     :disabled="!canResume(record)"
                     @click="onResume(record, false)"
-                    >續跑</a-button
+                    ><template #icon><icon-play-arrow /></template>續跑</a-button
                   >
                   <a-popconfirm
                     content="忽略斷點、全部重打（重新計費），確定？"
@@ -1032,7 +1030,7 @@ watch(
                       type="text"
                       status="warning"
                       :disabled="!canResume(record)"
-                      >重跑</a-button
+                      ><template #icon><icon-sync /></template>重跑</a-button
                     >
                   </a-popconfirm>
                 </template>

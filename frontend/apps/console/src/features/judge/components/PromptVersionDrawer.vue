@@ -23,6 +23,7 @@
  * 它已是「抽屜內滿高滾動 + 完整分頁器」的 canonical 實作，這裡是單一主列表（47 列、要翻頁），
  * 不屬於「pagination=false 的輕量對照表」那個例外。
  */
+import { IconCheckCircle, IconSwap, IconToTop } from '@arco-design/web-vue/es/icon';
 import { type PromptDraftMeta, type PromptReleaseMeta } from '@/api';
 import { TableLayout } from '@/components';
 import { usePromptRelease } from '../composables';
@@ -163,7 +164,7 @@ watch(
   <a-drawer
     :visible="visible"
     :width="1040"
-    title="版本列表（草稿 / 正式版）"
+    title="版本列表 · 草稿與正式版"
     :footer="false"
     unmount-on-close
     :body-style="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
@@ -184,7 +185,7 @@ watch(
       </a-col>
       <a-col flex="none">
         <a-button type="primary" size="small" :disabled="allRows.length < 2" @click="openDiff()"
-          >版本對比</a-button
+          ><template #icon><icon-swap /></template>版本對比</a-button
         >
       </a-col>
     </a-row>
@@ -219,7 +220,11 @@ watch(
             <template #cell="{ record }">{{ formatActor(record.author) }}</template>
           </a-table-column>
           <a-table-column title="時間" data-index="at" :width="150" ellipsis tooltip />
-          <a-table-column title="操作" :width="128" align="right">
+          <!-- 134 是實測下限：最寬的一列「設為使用中」（icon + 5 字）需 100px，
+               加 Arco 預設左右內距 32px ＝ 132，取 134 留 2px 餘裕。
+               ⚠️ 2026-08-07 踩過：本輪替按鈕加 icon 後沒重量寬度，128 讓該列被靜默切掉 5px。
+               改動這一欄的按鈕文案或 icon 後，一律照 `.claude/rules/frontend-vue.md` 用瀏覽器重量。 -->
+          <a-table-column title="操作" :width="134" align="right">
             <template #cell="{ record }">
               <!--
               只放「沒有其他入口」的動作：對比可在對比抽屜內自選兩版、載入某版可用頁面頂部的
@@ -238,7 +243,7 @@ watch(
                 size="mini"
                 :disabled="!canManage"
                 @click="release.openPromote(record.name)"
-                >升為正式版</a-button
+                ><template #icon><icon-to-top /></template>升為正式版</a-button
               >
               <a-button
                 v-else-if="!record.isActive"
@@ -247,7 +252,7 @@ watch(
                 :disabled="!canManage"
                 :loading="activating === record.name"
                 @click="release.activate(record.name)"
-                >設為使用中</a-button
+                ><template #icon><icon-check-circle /></template>設為使用中</a-button
               >
               <span v-else class="text-xs text-[#c9cdd4]">—</span>
             </template>

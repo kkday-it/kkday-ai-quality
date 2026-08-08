@@ -2,6 +2,7 @@
 /**
  * 單一圖表放大查看抽屜（Feature 1）：大尺寸 ECharts + 底部原始資料表 + 來源連結 + PDF 匯出（複用 reportPdf）。
  */
+import { IconDownload, IconLaunch } from '@arco-design/web-vue/es/icon';
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import VChart from 'vue-echarts';
@@ -138,9 +139,9 @@ const onExport = async () => {
       />
     </div>
     <div class="mt-3 flex items-center gap-3">
-      <a-button type="primary" :loading="exporting" @click="onExport">匯出 PDF</a-button>
+      <a-button type="primary" :loading="exporting" @click="onExport"><template #icon><icon-download /></template>匯出 PDF</a-button>
       <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener noreferrer">
-        <a-button type="outline">開啟來源儀表板 ↗</a-button>
+        <a-button type="outline"><template #icon><icon-launch /></template>開啟來源儀表板</a-button>
       </a>
     </div>
   </a-drawer>

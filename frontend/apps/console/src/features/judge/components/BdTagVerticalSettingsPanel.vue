@@ -10,7 +10,7 @@
  */
 import { ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
-import { IconHistory } from '@arco-design/web-vue/es/icon';
+import { IconHistory, IconSave, IconUndo } from '@arco-design/web-vue/es/icon';
 import StateGuard from '@/components/StateGuard.vue';
 import { useVerticalFilterStore } from '@/stores/verticalFilter.store';
 import { useBdTagVerticalRule } from '../composables';
@@ -114,8 +114,8 @@ async function onRestored() {
         <template #icon><IconHistory /></template>
         歷史
       </a-button>
-      <a-button size="small" type="outline" status="warning" @click="doReset">恢復默認</a-button>
-      <a-button type="primary" size="small" :disabled="!dirty" @click="saveOpen = true">
+      <a-button size="small" type="outline" status="warning" @click="doReset"><template #icon><icon-undo /></template>恢復默認</a-button>
+      <a-button type="primary" size="small" :disabled="!dirty" @click="saveOpen = true"><template #icon><icon-save /></template>
         儲存
       </a-button>
     </div>

@@ -49,6 +49,27 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     return m?.label || RULE_LABELS_FALLBACK[code] || code;
   }
 
+  /**
+   * rule code → prompt 檔名（如 `01_C-1_content`）；非 prompt_* 規則回空字串。
+   *
+   * 來源是後端 meta 的 `prompt_id`（SSOT 在 `app.judge.prompt_source`），前端不自建對照表。
+   */
+  function promptIdFor(code: string): string {
+    return metas.value.find((x) => x.rule_code === code)?.prompt_id || '';
+  }
+
+  /**
+   * rule code → 帶檔名的完整顯示名（如 `01_C-1_content 商品內容`）。
+   *
+   * 給「要對得上 prompts/ 目錄實際檔案」的場景用（例如指定歷史版本重判時，使用者需要確認自己
+   * 選的是哪一支 prompt）。純選單顯示仍用 `labelFor`——那裡有 code 徽章當前綴，再帶檔名會太長。
+   */
+  function qualifiedLabelFor(code: string): string {
+    const pid = promptIdFor(code);
+    const label = labelFor(code);
+    return pid ? `${pid} ${label}` : label;
+  }
+
   /** 載入清單（各 rule active meta）。 */
   async function loadList() {
     metas.value = await listRules();
@@ -121,6 +142,8 @@ export const useJudgeRulesStore = defineStore('judgeRules', () => {
     dirty,
     currentMeta,
     labelFor,
+    promptIdFor,
+    qualifiedLabelFor,
     loadList,
     selectRule,
     setEdited,

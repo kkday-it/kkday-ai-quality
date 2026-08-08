@@ -11,6 +11,7 @@
  * 閘門判斷與「回退即失效」的判定全寫在一個地方，面板退化成純渲染，也不會出現「面板一份、抽屜
  * 又存一份」的雙份真相。
  */
+import { IconDelete } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, ref, toRef, watch } from 'vue';
 import { Modal } from '@arco-design/web-vue';
 import { TableLayout } from '@/components';
@@ -270,7 +271,7 @@ function confirmRemove(id: number): void {
   >
     <template #title>
       <div class="flex items-center gap-2">
-        <span>案例庫 × AI 改寫</span>
+        <span>案例庫 · AI 改寫</span>
         <a-tag size="small">{{ cases.cases.value.length }} 則</a-tag>
         <a-tag v-if="cases.selectedIds.value.length" color="arcoblue" size="small">
           已勾 {{ cases.selectedIds.value.length }}
@@ -357,12 +358,12 @@ function confirmRemove(id: number): void {
               status="danger"
               :disabled="!canManage"
               @click="confirmRemove(record.id)"
-              >刪除</a-button
+              ><template #icon><icon-delete /></template>刪除</a-button
             >
           </template>
 
           <template #expand-row="{ record }">
-            <div class="px-4 py-3">
+            <div>
               <div v-if="cases.badCount(record)" class="mb-3">
                 <div class="mb-1 text-xs font-semibold text-[#1d2129]">逐欄正解</div>
                 <div class="flex flex-col gap-1">

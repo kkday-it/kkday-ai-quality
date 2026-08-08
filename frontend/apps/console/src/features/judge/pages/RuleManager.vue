@@ -13,7 +13,7 @@ import { useLocalStorage } from '@vueuse/core';
 import { Message, Modal } from '@arco-design/web-vue';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
-import { IconDownload } from '@arco-design/web-vue/es/icon';
+import { IconDownload, IconSave, IconUndo } from '@arco-design/web-vue/es/icon';
 import JsonEditor from '@/components/JsonEditor.vue';
 import StateGuard from '@/components/StateGuard.vue';
 import { ExportProgressBar } from '@/components';
@@ -225,7 +225,7 @@ function doResetAll() {
             status="warning"
             :disabled="!canManage"
             @click="doResetAll"
-            >全部恢復默認</a-button
+            ><template #icon><icon-undo /></template>全部恢復默認</a-button
           >
           <a-button size="small" type="outline" :loading="exporting" @click="doExport">
             <template #icon><icon-download /></template>
@@ -262,14 +262,14 @@ function doResetAll() {
             status="warning"
             :disabled="!canManage"
             @click="doReset"
-            >恢復默認</a-button
+            ><template #icon><icon-undo /></template>恢復默認</a-button
           >
           <a-button
             type="primary"
             size="small"
             :disabled="!store.dirty || !canManage"
             @click="openSave"
-            >儲存</a-button
+            ><template #icon><icon-save /></template>儲存</a-button
           >
         </div>
 

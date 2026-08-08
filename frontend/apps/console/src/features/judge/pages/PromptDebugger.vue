@@ -13,7 +13,7 @@ import {
 } from '@/api';
 import { LlmConfigSelect } from '@/components';
 import { Message, Modal } from '@arco-design/web-vue';
-import { IconDownload } from '@arco-design/web-vue/es/icon';
+import { IconBulb, IconCopy, IconDownload, IconEraser, IconList, IconPlayArrow, IconPlus, IconRecordStop, IconToTop, IconUndo } from '@arco-design/web-vue/es/icon';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useLlmAreaConfig } from '@/composables';
@@ -496,7 +496,7 @@ function openLlmSettings(): void {
               size="small"
               :disabled="loadingDefaults"
               @click="versionVisible = true"
-              >版本列表</a-button
+              ><template #icon><icon-list /></template>版本列表</a-button
             >
             <a-button
               type="outline"
@@ -504,7 +504,7 @@ function openLlmSettings(): void {
               size="small"
               :disabled="loadingDefaults || streaming || savingVersion || !isEdited"
               @click="resetPrompt"
-              >恢復此版本</a-button
+              ><template #icon><icon-undo /></template>恢復此版本</a-button
             >
             <a-button
               type="primary"
@@ -512,7 +512,7 @@ function openLlmSettings(): void {
               :loading="savingVersion"
               :disabled="loadingDefaults || streaming || !isEdited"
               @click="saveVersion"
-              >存為新草稿</a-button
+              ><template #icon><icon-plus /></template>存為新草稿</a-button
             >
           </a-space>
         </div>
@@ -559,7 +559,7 @@ function openLlmSettings(): void {
                   size="small"
                   :disabled="!promotableDraft || loadingDefaults || streaming || savingVersion"
                   @click="openPromoteForCurrent"
-                  >升為正式版</a-button
+                  ><template #icon><icon-to-top /></template>升為正式版</a-button
                 >
               </a-tooltip>
             </a-col>
@@ -597,7 +597,10 @@ function openLlmSettings(): void {
             <div class="panel-title">調試文本</div>
             <div class="panel-sub">請貼完整對話；模型會把其中的指令視為資料而非系統命令</div>
           </div>
-          <a-button size="small" :disabled="streaming" @click="inputText = ''">清空</a-button>
+          <a-button size="small" :disabled="streaming" @click="inputText = ''">
+            <template #icon><icon-eraser /></template>
+            清空
+          </a-button>
         </div>
         <div class="mb-3 flex shrink-0 flex-wrap gap-2">
           <a-button
@@ -660,7 +663,7 @@ function openLlmSettings(): void {
                 type="outline"
                 :disabled="streaming || !systemPrompt.trim()"
                 @click="openRevise()"
-              >
+              ><template #icon><icon-bulb /></template>
                 案例庫／AI 改寫
               </a-button>
             </a-badge>
@@ -668,11 +671,11 @@ function openLlmSettings(): void {
               type="outline"
               :disabled="streaming || !systemPrompt.trim()"
               @click="batchVisible = true"
-            >
+            ><template #icon><icon-play-arrow /></template>
               跑批
             </a-button>
-            <a-button v-if="streaming" status="danger" @click="abort">停止</a-button>
-            <a-button v-else type="primary" size="large" :disabled="!canRun" @click="run">
+            <a-button v-if="streaming" status="danger" @click="abort"><template #icon><icon-record-stop /></template>停止</a-button>
+            <a-button v-else type="primary" size="large" :disabled="!canRun" @click="run"><template #icon><icon-play-arrow /></template>
               開始裁決
             </a-button>
           </a-space>
@@ -719,7 +722,7 @@ function openLlmSettings(): void {
               </div>
               <div class="panel-sub">原始 JSON 逐 token 顯示；完成後再做欄位相依校驗</div>
             </div>
-            <a-button size="small" :disabled="!rawOutput" @click="copyOutput">複製</a-button>
+            <a-button size="small" :disabled="!rawOutput" @click="copyOutput"><template #icon><icon-copy /></template>複製</a-button>
           </div>
 
           <!-- 輸出區捲動容器：串流黑框吃剩餘高度，結果／費用接在其下一起於本容器內捲動 -->

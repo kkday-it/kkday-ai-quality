@@ -153,11 +153,18 @@ const onExport = async () => {
 </script>
 
 <template>
+  <!--
+    檢視切換：切的是「看哪個來源」而非篩選條件（VIEWS 決定 active.source），語義同 tab 導航，
+    故送進主 tab 列正下方的子 tab 列（#page-subtabs）自成一排，不與下方篩選列混列爭寬度。
+  -->
+  <Teleport to="#page-subtabs">
+    <a-radio-group v-model="view" type="button" size="small">
+      <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ v.label }}</a-radio>
+    </a-radio-group>
+  </Teleport>
+
   <Teleport to="#page-toolbar">
     <div class="flex items-center gap-3">
-      <a-radio-group v-model="view" type="button" size="small">
-        <a-radio v-for="v in VIEWS" :key="v.key" :value="v.key">{{ v.label }}</a-radio>
-      </a-radio-group>
       <!-- 商品垂直分類複選（與歸因列表同一 SSOT；嚴格限定縱覽數據範圍在所選分類內，含分類的來源才計入）-->
       <a-select
         :model-value="verticalGroups"
@@ -280,7 +287,7 @@ const onExport = async () => {
           <CardSection
             data-report-block
             :title="`問題量趨勢（${granLabel}）`"
-            hint="依評論時間聚合 · 已初判 vs 負向問題量"
+            hint="依反饋時間聚合 · 已初判 vs 負向問題量"
           >
             <v-chart :option="trend" class="h-[320px]" autoresize />
           </CardSection>

@@ -3,6 +3,7 @@
  * 歷史對比恢復（頁內面板版）：版本清單（恢復鈕）+ 選兩版並排 JSON 檢視對比（含變動標紅 / 展開對齊）。
  * 由 RuleManager 於「歷史」模式渲染於編輯區；掛載即載入當前規則歷史。對比區塊委派共用 VersionDiffCompare。
  */
+import { IconUndo } from '@arco-design/web-vue/es/icon';
 import { onMounted } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { ScrollFadeArea } from '@/components';
@@ -68,7 +69,7 @@ const columns = [
           content="恢復此版本？（新增 active 版本）"
           @ok="restore(record.version)"
         >
-          <a-button size="mini">恢復</a-button>
+          <a-button size="mini"><template #icon><icon-undo /></template>恢復</a-button>
         </a-popconfirm>
       </template>
     </a-table>

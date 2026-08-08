@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IconExperiment, IconSave } from '@arco-design/web-vue/es/icon';
 import { computed, nextTick, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import qcDefaults from '@config/global/qc_db.json';
@@ -170,9 +171,9 @@ watch(testResult, async (r) => {
 
       <a-space v-if="canManage" align="center" :size="8">
         <a-button type="primary" status="success" :loading="testing" @click="onTest"
-          >測試連線</a-button
+          ><template #icon><icon-experiment /></template>測試連線</a-button
         >
-        <a-button type="primary" :loading="saving" @click="onSave">儲存</a-button>
+        <a-button type="primary" :loading="saving" @click="onSave"><template #icon><icon-save /></template>儲存</a-button>
         <span class="text-xs text-[#86909c]">此環境唯一一條連線</span>
       </a-space>
 

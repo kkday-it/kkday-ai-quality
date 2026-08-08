@@ -16,3 +16,6 @@ export { default as RuleHistoryPanel } from './RuleHistoryPanel.vue';
 export { default as VersionDiffCompare } from './VersionDiffCompare.vue';
 export { default as BdTagVerticalPanel } from './BdTagVerticalPanel.vue';
 export { default as BdTagVerticalSettingsPanel } from './BdTagVerticalSettingsPanel.vue';
+export { default as AttributionCorrectionDrawer } from './AttributionCorrectionDrawer.vue';
+export { default as AttributionSuggestionDrawer } from './AttributionSuggestionDrawer.vue';
+export { default as VerdictDimensionPanel } from './VerdictDimensionPanel.vue';

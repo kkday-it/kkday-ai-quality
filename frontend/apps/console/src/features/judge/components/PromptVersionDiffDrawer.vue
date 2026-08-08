@@ -9,6 +9,7 @@
  * 為什麼「選哪兩版」放在本抽屜內、而不是列表每列給選取鈕：47 列各掛選取鈕是純視覺噪音，
  * 且要比對得先在列表點兩次再點對比＝三步。改成在此用兩個下拉即時切換，比對多組時尤其省事。
  */
+import { IconSwap } from '@arco-design/web-vue/es/icon';
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import {
@@ -185,7 +186,10 @@ function swap(): void {
         />
       </a-col>
       <a-col flex="none">
-        <a-button size="small" type="text" :disabled="!ready" @click="swap">⇄ 互換</a-button>
+        <a-button size="small" type="text" :disabled="!ready" @click="swap">
+          <template #icon><icon-swap /></template>
+          互換
+        </a-button>
       </a-col>
     </a-row>
 

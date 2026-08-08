@@ -44,6 +44,18 @@ onMounted(() => {
       />
       <FeatureTabs v-if="activeModule.tabs.length" :tabs="activeModule.tabs" />
       <!--
+        頁面級「二級 tab」插槽：頁面以 <Teleport to="#page-subtabs"> 把切換同頁內檢視的 tab
+        （如歸因概覽的來源切換）送進主 tab 列正下方，成為該頁專屬的子 tab 列。
+        與下方 #page-toolbar 分兩條橫帶的理由：這裡放的是**導航**（切換看哪份資料），
+        工具列放的是**篩選與操作**（收斂當前資料）——兩者語義不同層，混在同一列會讓人
+        誤以為檢視切換也是一個篩選條件。
+        empty:hidden：無頁面注入時 display:none 收合為 0 高，其餘 tab 頁完全不受影響。
+      -->
+      <div
+        id="page-subtabs"
+        class="flex items-center border-b border-[var(--color-border)] bg-white px-5 py-2 empty:hidden"
+      ></div>
+      <!--
         頁面級工具列插槽：頁面以 <Teleport to="#page-toolbar"> 把自己的全局工具列（如歸因總覽的
         篩選列）送進這條固定 header，使其恆常可見且絕不與內容區的 ECharts canvas 重疊。
         橫帶樣式（bg / border / px-5 對齊 topbar 與內容區、py 呼吸）集中於此 host，

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { IconSettings } from '@arco-design/web-vue/es/icon';
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { PROVIDERS } from '@/features/settings/constants';
@@ -109,7 +110,7 @@ const anyMissingToken = computed(() => {
         size="small"
         class="shrink-0 whitespace-nowrap"
         @click="openSettings"
-      >
+      ><template #icon><icon-settings /></template>
         管理 LLM 設定
       </a-button>
     </div>
