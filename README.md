@@ -125,7 +125,12 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | POST | `/api/v1/prejudge/prompt-debug/revise` · `/revise/apply` | AI 定點改寫：把選中案例餵旗艦模型（獨立 `prompt_revise` 功能區，預設 gpt-5.5），SSE 串流回「診斷 + 補丁清單（每條含 anchor 命中狀態）+ CHANGELOG 草稿」；**不做整篇重寫**，每條補丁的 anchor 須在 Prompt 全文中逐字唯一命中才可套用。`apply` 把勾選補丁由後往前套進全文回新內容（不落檔，成為線上口徑仍走 `prompt-versions`）。**案例由請求整包帶上**（`cases[]`，來源＝前端本地案例庫），後端不落庫也無案例 CRUD 端點。需 `prejudge.run` |
 | POST/GET | `/api/v1/prejudge/prompt-debug/regression` · `/regression/{job_id}` | 回歸重跑：拿案例庫重跑候選 Prompt（可為未存版的草稿），逐欄比對回「修好 / 改壞 / 還是不對 / 守住」四類；人沒評判過的欄不計分。輕量 in-mem job（後端重啟即清空），進度輪詢。啟動需 `prejudge.run` |
 | GET | `/api/v1/prejudge/runs` · `/runs/{job_id}` | 初判紀錄（run 級 LLM 使用紀錄：批量/選取/單筆重新初判；詳情含 per-stage token/費用明細）|
-| GET/POST | `/api/attribution-history` · `/notes` · `/models` | 歸因歷史（**評論級**時間軸：初判快照／備註／初判失敗三類事件，內部遙測事件由後端白名單擋在外；重新初判結果與前次全同時去重不記）· 新增評論級備註 · 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
+| GET | `/api/attribution-history` · `/models` | **反饋時間軸**（單一條軸：初判快照／初判失敗／人工糾正／複審確認／待審建議／建議處置，加上另一張表的備註，由後端合併排序；內部遙測事件由白名單擋在外；重新初判結果與前次全同時去重不記）· 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
+| GET/POST | `/api/attribution-notes` · `/types` | 反饋備註讀寫 · 互動類型值域。**append-only**（無編輯/撤回端點）；`l1_code`+`l2_code` 同時給＝**面向備註**（綁面向不綁 attribution_oid，重判後仍在），同時省略＝**整則備註**。需登入 |
+| GET | `/api/attributions` · `/correction-policy` | 人工糾正工作台的資料源（一則反饋的全部歸因，`live`/`deleted` 兩陣列——tombstone 收在獨立陣列）· 可改欄白名單與理由長度門檻。需登入 |
+| POST | `/api/attributions/correct`·`create`·`delete`·`restore`·`confirm` | 人工糾正四操作（改值／新增／標記 AI 誤判〔tombstone 非硬刪〕／還原）+ 複審確認。**理由必填**；改後該反饋進入人工託管，重新初判不再覆蓋現值（改走待審建議）。前四者需 `attribution.correction.manage`、confirm 需 `attribution.review` |
+| GET/POST | `/api/attribution-suggestions` · `/resolve` | 人工託管的反饋重新初判後，AI 結論轉為待審建議 · 逐條或整組採納／駁回。需 `attribution.review` |
+| GET/POST | `/api/attribution-dimensions` · `/save` · `/reorder` | 值域主檔四軸（責任方／嚴重度／建議行動／備註類型），業務可於設定頁維護。**無刪除端點**（停用走 `is_active=false`——硬刪已被歷史引用的 code 會讓那些列顯示空白）。寫入需 `attribution.dimension.manage` |
 | CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯 / 歷史 / 恢復默認 / 導出 Prompt 包 zip）|
 | GET | `/api/auth/me`·`/permissions` | 當前身分（本地固定身分，無登入系統）+ 當前 user 權限清單（身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`；be2 `auth.business-list` 形狀 `{value,ttl}`，供前端 usePermission()/選單過濾）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 `setting_master`（機密設定表）。需 `data.datapack.export` 權限 |
