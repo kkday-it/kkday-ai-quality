@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import false as sa_false
+from sqlalchemy import true as sa_true
 
 from app.core.db import source_registry
 from app.core.db import tables as T
@@ -13,6 +15,7 @@ from app.core.db._shared import (
     _jg_join_cond,
     apply_table_filters,
     attribution_dto,
+    human_touched_cond,
 )
 
 # fan-out 需帶回的 attributions typed 初判欄（以 jg_ 前綴 label，避免與來源表欄名撞）。
@@ -34,6 +37,13 @@ _JG_COLS = (
     "model",
     "is_primary",
     "is_auto_accepted",
+    # 人工介入欄（is_deleted 刻意不帶：tombstone 已被讀取層過濾，不會出現在 fan-out 結果裡）
+    "is_manual_created",
+    "is_human_corrected",
+    "correction_reason",
+    "review_status",
+    "modify_user",
+    "modify_date",
 )
 
 
@@ -308,6 +318,7 @@ def list_problems(
     bucket: list[str] | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
+    human_state: str | None = None,
 ) -> dict:
     """統一問題列表（來源專表 LEFT JOIN attributions），分頁。回 {rows, total}。
 
@@ -359,6 +370,7 @@ def list_problems(
         sentiment=sentiment,
         model=model,
         bucket=bucket,
+        human_state=human_state,
     )
 
 
@@ -384,6 +396,7 @@ def _list_problems_spec(
     sentiment: list[int] | None = None,
     model: list[str] | None = None,
     bucket: list[str] | None = None,
+    human_state: str | None = None,
 ) -> dict:
     """list_problems 的已拆表來源分支：直接查該專表 LEFT JOIN attributions。
 
@@ -394,11 +407,17 @@ def _list_problems_spec(
     def _f(stmt):
         """spec 分支篩選：表級（vertical/日期/oid，SSOT＝_shared.apply_table_filters，與初判
         目標選取共用同一份語義）+ judged/polarity/stage/tier/歸因分類（初判 EXISTS，列表專屬結構）。"""
-        has_jg = _jg_exists(spec)
+        # 「這則反饋判過沒有」＝ **ever 口徑（含 tombstone）**，與 prejudge_targets 同一把尺。
+        # 人工標記為 AI 誤判代表「AI 判過、人說判錯了」——那仍然是判過。用 live 口徑的話，
+        # 歸因全被標記誤判的反饋會在列表顯示「未初判」，但按下初判分類時目標數是 0
+        # （prejudge_targets 認為它判過），使用者看到的是兩個互相矛盾的數字。
+        # ⚠️ 只有這個「判過沒有」的問題用 ever；下方 polarity / sentiment / stage / tier
+        # 等**歸因層**條件一律維持 live 口徑（tombstone 的值不該被篩選命中）。
+        ever_judged = _jg_exists(spec, include_deleted=True)
         if judged is True:
-            stmt = stmt.where(has_jg)
+            stmt = stmt.where(ever_judged)
         elif judged is False:
-            stmt = stmt.where(~has_jg)
+            stmt = stmt.where(~ever_judged)
         jg = T.attributions
         if polarity:
             # 傾向多選（positive/neutral/negative）；直接按 attributions.polarity 篩
@@ -408,10 +427,12 @@ def _list_problems_spec(
             # 情緒分多選（1-5；我方 sentiment_score 由 polarity 確定性映射 正5/中3/負1）
             stmt = stmt.where(_jg_exists(spec, jg.c.sentiment_score.in_(sentiment)))
         if stage:
-            # 多選階段：'unjudged'＝無初判(NOT EXISTS)，其餘＝stage IN；兩者 OR 併存
+            # 多選階段：'unjudged'＝從未判過（ever 口徑的 NOT EXISTS，同上），其餘＝stage IN；兩者 OR 併存。
+            # ⚠️ 歸因全被標記誤判的反饋兩邊都不match（它判過、又沒有存活的階段值）——那是刻意的：
+            # 它的狀態是 judge_state='dismissed'，靠列上的判定狀態或 human_state 篩選找，不塞進階段軸。
             conds = []
             if "unjudged" in stage:
-                conds.append(~has_jg)
+                conds.append(~_jg_exists(spec, include_deleted=True))
             judged_stages = [s for s in stage if s != "unjudged"]
             if judged_stages:
                 conds.append(_jg_exists(spec, jg.c.prejudge_stage.in_(judged_stages)))
@@ -419,6 +440,21 @@ def _list_problems_spec(
                 stmt = stmt.where(or_(*conds))
         if confidence_tier:
             stmt = stmt.where(_jg_exists(spec, jg.c.conf_tier == confidence_tier))
+        if human_state == "corrected":
+            # 已被人工介入（改值／新增／標記誤判任一）——走 idx_attribution_tbl_mix02 partial 索引
+            stmt = stmt.where(_jg_exists(spec, human_touched_cond(), include_deleted=True))
+        elif human_state == "ai_only":
+            stmt = stmt.where(~_jg_exists(spec, human_touched_cond(), include_deleted=True))
+        elif human_state == "suggested":
+            sg = T.attribution_suggestions
+            stmt = stmt.where(
+                exists().where(
+                    and_(
+                        sg.c.feedback_source_code == spec.source,
+                        sg.c.source_id == tbl.c[spec.natural_key],
+                    )
+                )
+            )
         if model:
             # 初判模型多選（當前初判維度）；任一歸因命中即列出
             stmt = stmt.where(_jg_exists(spec, jg.c.model.in_(model)))
@@ -469,4 +505,53 @@ def _list_problems_spec(
         )
     else:
         sort_expr = _sort_map.get(sort_by or "", tbl.c[spec.date_col])
-    return _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
+    data = _paged_fanout(spec, _f, sort_expr, sort_dir, limit, offset)
+    # 待審建議數（列表徽記）：本頁 id 一次查完，不做 per-row 查詢
+    # ⚠️ 取 `source_id` 而非 `spec.natural_key`：列已經過 _enrich_problem 正規化，
+    # 來源專屬的自然鍵欄名（rec_oid / session_oid…）在這裡已統一成 canonical 的 source_id。
+    from app.core.db import notes as _notes
+    from app.core.db import suggestions as _suggestions
+
+    ids = [str(r.get("source_id") or "") for r in data["rows"]]
+    counts = _suggestions.pending_counts(spec.source, ids)
+    states = _judge_states(spec.source, ids)
+    notes = _notes.note_counts(spec.source, ids)
+    for r in data["rows"]:
+        sid = str(r.get("source_id") or "")
+        r["suggestion_count"] = counts.get(sid, 0)
+        state, dismissed = states.get(sid, ("unjudged", 0))
+        r["judge_state"] = state
+        r["dismissed_count"] = dismissed
+        # 備註數徽記：**沒有可見性就沒人用**——這正是 2026-08-04 退役的人工判決軸的死法
+        # （6,242 條裡只有 1 個人按過那兩顆按鈕）。備註要在列表上看得到才會被使用。
+        r["note_count"] = notes.get(sid, 0)
+    return data
+
+
+def _judge_states(source: str, ids: list[str]) -> dict[str, tuple[str, int]]:
+    """每則反饋的判定狀態 → `{source_id: (judge_state, dismissed_count)}`。
+
+    三態由**兩個 SQL 計數**決定，不是靠「回傳陣列長不長」推斷——後者只是把同一個脆弱的推斷
+    從前端搬到後端，而且一旦有人改了 fan-out 的過濾就會靜默失準：
+
+    - `judged`：有存活歸因
+    - `dismissed`：判過，但歸因全被人工標記為 AI 誤判（列表要顯示得出來，否則使用者以為資料不見了）
+    - `unjudged`：從未判過
+
+    本頁 id 一次查完（與 `pending_counts` 同款批次樣式），不做 per-row 查詢。
+    """
+    if not ids:
+        return {}
+    jg = T.attributions
+    live = func.count().filter(jg.c.is_deleted == sa_false())
+    dead = func.count().filter(jg.c.is_deleted == sa_true())
+    with T.get_engine().connect() as c:
+        rows = c.execute(
+            select(jg.c.source_id, live.label("live_n"), dead.label("dead_n"))
+            .where(jg.c.source == source, jg.c.source_id.in_(ids))
+            .group_by(jg.c.source_id)
+        ).all()
+    out: dict[str, tuple[str, int]] = {i: ("unjudged", 0) for i in ids}
+    for sid, live_n, dead_n in rows:
+        out[str(sid)] = ("judged" if live_n else "dismissed", int(dead_n or 0))
+    return out

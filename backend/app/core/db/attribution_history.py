@@ -23,7 +23,7 @@ from sqlalchemy import insert as sa_insert
 
 from app.core.auth import SYSTEM_USER
 from app.core.db import tables as T
-from app.core.db._shared import select_wire, wire_row
+from app.core.db._shared import live_attr_cond, select_wire, wire_row
 
 _log = logging.getLogger(__name__)
 
@@ -151,6 +151,49 @@ def insert_prejudge_event(
     return not unchanged
 
 
+def insert_manual_event(
+    c,
+    source: str,
+    source_id: str,
+    *,
+    kind: str,
+    params: dict,
+    attributions: list[dict],
+    author: str,
+    reason: str = "",
+) -> None:
+    """寫入一筆**人工動作**事件（correction / review_confirm / suggestion_resolved）。
+
+    收呼叫端交易內的 connection——人工動作與其事件必須同交易，否則會出現「改了但時間軸沒記」
+    或反過來的半套狀態。
+
+    `attributions` 一律傳**動作後該反饋的完整現值快照**（與 kind='prejudge' 同形）：前端
+    `AttributionHistoryDrawer` 的「與前一次的差異」是 client-side 逐筆比對算出來的，同形才能讓
+    那套邏輯原封不動跨事件型別工作，不必為每種新事件另寫一套 diff。
+
+    理由寫進 `note_content` 這個 typed 欄而非埋在 params JSONB：理由要能被搜尋、導出、統計，
+    符合本表「查詢密集用 typed 欄」的一貫立場。
+
+    Args:
+        kind: 事件型別（須在 `_USER_VISIBLE_KINDS` 內，否則寫得進去但時間軸看不到）。
+        params: 事件細節（correction 存 {op, attribution_oid, changed}；review_confirm 存
+            {attribution_oid, confirmed_fields}；suggestion_resolved 存 {batch_id, decisions}）。
+        author: 動作執行者（無 SSO 時為 system，見 auth.actor）。
+        reason: 人工填寫的理由（correction 必填；review_confirm 可空）。
+    """
+    c.execute(
+        sa_insert(T.attribution_history).values(
+            source=source,
+            source_id=source_id,
+            kind=kind,
+            params=params,
+            attributions=attributions,
+            author=author,
+            content=reason or None,
+        )
+    )
+
+
 def insert_failure_event(
     source: str,
     source_id: str,
@@ -196,14 +239,73 @@ def _history_row(r) -> dict:
 # 用黑名單的話每加一種內部 kind 都會靜默漏進 UI，被前端 v-else 兜底渲染成 author/content 皆空的
 # 灰色「備註」——`failure` 就這樣在時間軸上假冒了 390 筆備註。白名單讓「不在清單上就不顯示」成為預設。
 # 目前被擋在外的：`router_shadow`（域路由召回量測留痕，純內部遙測，對看評論歷史的人沒有意義）。
-_USER_VISIBLE_KINDS = ("prejudge", "note", "failure")
+_USER_VISIBLE_KINDS = (
+    "prejudge",
+    "failure",
+    "correction",
+    "review_confirm",
+    "suggestion",
+    "suggestion_resolved",
+)
+
+
+def _slot_states(source: str, source_id: str) -> dict[str, dict]:
+    """該反饋每個 L2 面向當下的狀態（供備註標示「這個面向現在還在不在」）。
+
+    備註綁的是**面向**不是那一列歸因，所以歸因被改成別的分類、或被標記誤判之後，備註依然存在。
+    這是刻意的（搬走等於改寫歷史），但畫面上必須講清楚，否則使用者會以為備註「掉了」。
+
+    Returns:
+        `l2_code` → `{"l2_label": str, "l1_label": str, "state": "live"|"dismissed"}`。
+        查不到的面向＝該面向當下已無任何歸因，由 `_annotate_slot` 標成 `"gone"`。
+    """
+    jg = T.attributions
+    stmt = select(jg.c.l1_code, jg.c.l1_label, jg.c.l2_code, jg.c.l2_label, jg.c.is_deleted).where(
+        and_(jg.c.source == source, jg.c.source_id == source_id)
+    )
+    out: dict[str, dict] = {}
+    with T.get_engine().connect() as c:
+        for r in c.execute(stmt).mappings():
+            if not r["l2_code"]:
+                continue
+            # 同一面向不可能有兩列（自然鍵唯一），故直接覆寫即可。
+            out[r["l2_code"]] = {
+                "l1_label": r["l1_label"] or r["l1_code"],
+                "l2_label": r["l2_label"] or r["l2_code"],
+                "state": "dismissed" if r["is_deleted"] else "live",
+            }
+    return out
+
+
+def _annotate_slot(slot: dict | None, states: dict[str, dict]) -> dict | None:
+    """把備註的槽位鍵補上顯示名與當下狀態；整則備註（slot=None）原樣回 None。
+
+    補 label 是因為槽位鍵存的是 code（`quality` / `C-2-2`），直接顯示等於要使用者背代碼表；
+    補 state 是因為「此面向目前已無歸因」這件事只有比對現值才知道，前端另撈一次是多一個往返。
+    """
+    if not slot or not slot.get("l2_code"):
+        return slot
+    hit = states.get(slot["l2_code"])
+    return {
+        **slot,
+        "l1_label": hit["l1_label"] if hit else slot.get("l1_code"),
+        "l2_label": hit["l2_label"] if hit else slot.get("l2_code"),
+        "state": hit["state"] if hit else "gone",
+    }
 
 
 def list_attribution_history(source: str, source_id: str) -> list[dict]:
-    """列某則評論的歸因歷史時間軸（舊到新，時間遞增；初判快照 / 備註 / 初判失敗三類事件混排）。
+    """列某則反饋的**單一時間軸**（舊到新）：事件表的人可見事件 + 備註表的備註，按時間合併。
 
     只回 `_USER_VISIBLE_KINDS`——內部遙測事件不進使用者時間軸（原因見該常數註解）。
+
+    **備註存在另一張表**（`attribution_note_lst`）卻在這裡合併，是刻意的分工：
+    儲存層分開（備註的面向鍵是活查詢鍵，不能埋進事件表的凍結 params，理由見 db.notes 模組
+    docstring），但**呈現層只有一條軸**——前端仍只吃一個來源，不必在 client 端 merge 兩份再排序，
+    也不會讓「AI 判了 → 人改了 → 人留言說明」這條因果鏈被切成兩半。
     """
+    from app.core.db import notes as _notes
+
     h = T.attribution_history
     stmt = (
         select_wire(h)
@@ -217,18 +319,38 @@ def list_attribution_history(source: str, source_id: str) -> list[dict]:
         .order_by(h.c.created_at.asc(), h.c.id.asc())
     )
     with T.get_engine().connect() as c:
-        return [_history_row(r) for r in c.execute(stmt).mappings()]
+        events = [_history_row(r) for r in c.execute(stmt).mappings()]
 
+    slot_states = _slot_states(source, source_id)
 
-def add_history_note(source: str, source_id: str, *, author: str, content: str) -> dict:
-    """新增一則評論級備註（kind='note'，append-only）；回傳建立列（含 id / 時間）。"""
-    ins = (
-        sa_insert(T.attribution_history)
-        .values(source=source, source_id=source_id, kind="note", author=author, content=content)
-        .returning(*T.attribution_history.c)
-    )
-    with T.get_engine().begin() as c:
-        return _history_row(c.execute(ins).mappings().first())
+    # 備註轉成與事件同形（kind='note'），前端一套渲染吃兩種來源。
+    # `id` **保持 int**（不做 "note-N" 前綴）：wire 上同一個欄位有時是 int 有時是字串，正是
+    # test_wire_contract 該擋的多型。兩張表的 id 會撞，但 `kind` 已足以區辨——前端用
+    # `kind + id` 當複合 key（見 AttributionHistoryDrawer 的 v-for）。
+    for n in _notes.list_notes(source, source_id):
+        events.append(
+            {
+                "id": n["attribution_note_oid"],
+                "source": n["source"],
+                "source_id": n["source_id"],
+                "kind": "note",
+                "model": None,
+                "params": {
+                    "slot": _annotate_slot(n["slot"], slot_states),
+                    "note_type": n["note_type"],
+                },
+                "attributions": None,
+                "author": n["author"],
+                "content": n["content"],
+                "created_at": n["created_at"],
+                # 事件專屬欄補 None：兩種來源在 wire 上**必須同形**，否則前端要為備註另寫一套
+                # 渲染（而使用者看到的本來就該是一條軸）。少一個鍵 test_wire_contract 會紅。
+                "job_id": None,
+                "triggered_by": None,
+            }
+        )
+    events.sort(key=lambda e: (e["created_at"] is None, e["created_at"], e["kind"], e["id"]))
+    return events
 
 
 def latest_snapshots(source: str, model: str) -> dict[str, dict]:
@@ -270,7 +392,10 @@ def list_prejudge_models() -> list[str]:
         models = {
             r[0]
             for r in c.execute(
-                select(jg.c.model).distinct().where(jg.c.model.isnot(None), jg.c.model != "")
+                # tombstone 過濾（本 query 不經 _jg_join_cond，需顯式補；見 _shared.live_attr_cond）
+                select(jg.c.model)
+                .distinct()
+                .where(live_attr_cond(), jg.c.model.isnot(None), jg.c.model != "")
             )
         } | {
             r[0]

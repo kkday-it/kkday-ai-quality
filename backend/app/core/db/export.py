@@ -63,6 +63,10 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
         40,
     ),  # attr 級：LLM 繁中一句話概括（原 problem_summary，逐字佐證另存 evidence）
     ("情緒傾向", "our_sentiment", 10),  # 我方情緒分 1-5（正5/中3/負1；與外部評論同尺度）
+    # 判定狀態（review 級·合併）：解釋「歸因分類欄為何空白」——空白有兩種完全不同的意思，
+    # 「還沒判過」與「判過但歸因全被人工標記為 AI 誤判」在檔案上長得一模一樣。少了這一欄，
+    # 讀者只能誤以為那些列都還沒進管線（C3 收斂的正是這組矛盾，導出當時漏了同一步）。
+    ("判定狀態", "judge_state", 12),
     # 歸因分類（attr 級）：L1/L2 合併單欄、換行兩行顯示（「C-1 商品內容 \n C-1-1 …」），
     # 值由 _flat_attr 組出。合併的理由＝兩者恆為上下層同一件事，分兩欄讀者得左右對照才拼得回來。
     ("歸因分類", "taxonomy", 18),
@@ -75,7 +79,7 @@ _EXPORT_XLSX_COLS: list[tuple[str, str, int]] = [
     ("初判時間", "prejudged_at", 20),
 ]
 
-# 雙層表頭第一列的分類群組（key → 群組標題）：涵蓋 _EXPORT_XLSX_COLS 全部 26 欄，按語義分四組。
+# 雙層表頭第一列的分類群組（key → 群組標題）：涵蓋 _EXPORT_XLSX_COLS 全部 21 欄，按語義分四組。
 # ⚠️ 新增 _EXPORT_XLSX_COLS 欄位必須同步補這裡的映射——缺映射會落入 _group_of 的「其他」
 # 防禦分支（不算錯，但群組不精確，應視為漏補）。cmp_cols（cmp__ 前綴）依鍵前綴動態判定，
 # 不需在此列舉。
@@ -94,6 +98,7 @@ _COL_GROUPS: dict[str, str] = {
     "package_name": "訂單/商品資料",
     "summary": "AI 初判結果",
     "our_sentiment": "AI 初判結果",
+    "judge_state": "AI 初判結果",
     "taxonomy": "AI 初判結果",
     "confidence": "AI 初判結果",
     "confidence_tier": "AI 初判結果",
@@ -151,6 +156,7 @@ _REVIEW_EXPORT_COLS: list[tuple[str, str, int]] = [
     in {
         "summary",
         "our_sentiment",
+        "judge_state",
         "taxonomy",
         "confidence",
         "confidence_tier",
@@ -194,6 +200,7 @@ _REVIEW_COL_GROUPS: dict[str, str] = {
     # AI 判決結果尾段（與進線版面同組標題；此處直接列舉，避免引用尚未定義的 _CONV_COL_GROUPS）
     "summary": "AI 判決結果",
     "our_sentiment": "AI 判決結果",
+    "judge_state": "AI 判決結果",
     "taxonomy": "AI 判決結果",
     "confidence": "AI 判決結果",
     "confidence_tier": "AI 判決結果",
@@ -273,6 +280,7 @@ _CONV_EXPORT_COLS: list[tuple[str, str, int]] = [
     in {
         "summary",
         "our_sentiment",
+        "judge_state",
         "taxonomy",
         "confidence",
         "confidence_tier",
@@ -317,6 +325,7 @@ _CONV_COL_GROUPS: dict[str, str] = {
     "supplier_name": "供應商資訊",
     "summary": "AI 判決結果",
     "our_sentiment": "AI 判決結果",
+    "judge_state": "AI 判決結果",
     "taxonomy": "AI 判決結果",
     "confidence": "AI 判決結果",
     "confidence_tier": "AI 判決結果",
@@ -336,12 +345,21 @@ _EXPORT_LAYOUTS: dict[str, tuple[list[tuple[str, str, int]], dict[str, str], int
 # openpyxl 禁用的控制字元（\x00-\x08\x0b\x0c\x0e-\x1f）；源資料商品名/評論可能夾帶 → 寫 xlsx 前剔除
 _XLSX_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
+# 判定狀態 code → 繁中（導出是給人看的檔案，不出機器碼）。三態語義見
+# `db.problems` 的 judge_state 派生：judged＝有存活歸因｜dismissed＝判過但歸因全被人工
+# 標記為 AI 誤判（此時歸因欄空白，**但不是未初判**）｜unjudged＝從未進過初判管線。
+_JUDGE_STATE_LABEL_ZH: dict[str, str] = {
+    "judged": "已初判",
+    "dismissed": "全數誤判",
+    "unjudged": "未初判",
+}
+
 # 資料列每行文字高度（pt）：Excel 預設字體（Calibri 11）單行列高
 _LINE_HEIGHT_PT = 15
 
 
 def _export_cell(key: str, value) -> str:
-    """導出單格：時間欄正規化、傾向/分層/初判階段 code→繁中、情緒分數字化，其餘原樣。"""
+    """導出單格：時間欄正規化、傾向/分層/初判階段/判定狀態 code→繁中、情緒分數字化，其餘原樣。"""
     if value is None or value == "":
         return ""
     if key in ("occurred_at", "prejudged_at", "order_create_time"):
@@ -356,6 +374,8 @@ def _export_cell(key: str, value) -> str:
         return _TIER_LABEL_ZH.get(value, value)
     if key == "prejudge_stage":
         return _STAGE_LABEL_ZH.get(value, value)
+    if key == "judge_state":
+        return _JUDGE_STATE_LABEL_ZH.get(value, value)
     return value
 
 
@@ -400,14 +420,21 @@ def _taxonomy_text(a: dict) -> str:
 
 
 def _flat_attr(a: dict) -> dict:
-    """歸因巢狀 DTO（attribution_dto）→ 導出用扁平欄（對齊 _EXPORT_XLSX_COLS 的 attr key）。"""
+    """歸因巢狀 DTO（attribution_dto）→ 導出用扁平欄（對齊 _EXPORT_XLSX_COLS 的 attr key）。
+
+    ⚠️ **人工列的「初判模型」欄必須改印修改者，不能直出 `model`**：`correct_attribution` 只清
+    `conf_value` / `conf_raw`，**`model` 欄原封不動**（只有 `create_attribution` 才設 None）。
+    直出的話，一列被人改過分類的歸因會在交付檔上寫著「這是 gpt-5.4-mini 判的」——不是空白，
+    是**錯的溯源歸屬**。列表 UI 早就靠 `origin` 分流顯示「人工 · {修改者}」，導出漏了同一步。
+    """
+    manual = a.get("origin") == "human"
     return {
         "taxonomy": _taxonomy_text(a),
         "confidence": (a.get("confidence") or {}).get("value"),
         "confidence_tier": (a.get("confidence") or {}).get("tier"),
         "prejudge_stage": a.get("stage"),
         "summary": (a.get("content") or {}).get("summary"),
-        "model": a.get("model"),
+        "model": f"人工 · {a.get('corrected_by') or 'system'}" if manual else a.get("model"),
     }
 
 

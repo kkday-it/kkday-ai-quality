@@ -55,9 +55,18 @@ _LOAD_ORDER_TABLES: tuple[Table, ...] = (
     T.judge_rule_versions,
     # 人工評判案例庫：手工累積的判準金標，跨環境搬遷時最該帶走的資產之一。
     T.attributions,
+    # 待審建議：與 attributions 強耦合（attribution_oid 軟關聯）。若排除，匯入時本表不被 truncate
+    # 而 attributions 被整批換掉 → 殘留建議會指向已不存在的列，故必須同進同出。
+    T.attribution_suggestions,
+    # 判決值域主檔：業務可維護的參照資料，跨環境搬遷須帶走（同 settings/judge_rule_versions）。
+    T.attribution_dimensions,
     T.llm_usage,
     T.prejudge_runs,
     T.attribution_history,
+    # 反饋備註：人手寫的處理脈絡，是最不可重建的資產（重跑 AI 生不回來），跨環境搬遷必須帶走。
+    # 綁的是面向鍵 (source, source_id, l1_code, l2_code) 而非 attribution_oid，故不與 attributions
+    # 的 id 重編有耦合順序問題——但仍排在其後，讓時間軸相關的表集中。
+    T.attribution_notes,
 )
 
 TABLE_LOAD_ORDER: tuple[str, ...] = tuple(t.name for t in _LOAD_ORDER_TABLES)

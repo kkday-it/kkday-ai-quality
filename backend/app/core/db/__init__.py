@@ -12,14 +12,29 @@ from app.core.db.attribution import (
     attribution_overview,
 )
 from app.core.db.attribution_history import (
-    add_history_note,
     latest_snapshots,
     list_attribution_history,
     list_prejudge_models,
 )
+from app.core.db.corrections import (
+    CorrectionError,
+    confirm_attribution,
+    correct_attribution,
+    create_attribution,
+    delete_attribution,
+    editable_fields,
+    list_record_attributions,
+    restore_attribution,
+    swap_attribution_slots,
+)
+from app.core.db.dimensions import (
+    list_dimensions,
+    reorder_dimension,
+    save_dimension_item,
+    seed_dimensions_from_file,
+)
 from app.core.db.export import export_problems_xlsx
 from app.core.db.findings import (
-    insert_finding,
     replace_source_findings,
 )
 from app.core.db.ingest import (
@@ -33,6 +48,13 @@ from app.core.db.llm_usage import (
     insert_llm_usage_row,
     insert_llm_usage_rows,
     llm_usage_overview,
+)
+from app.core.db.notes import (
+    NoteError,
+    active_note_types,
+    add_note,
+    list_notes,
+    note_counts,
 )
 from app.core.db.prejudge_runs import (
     any_judged,
@@ -63,6 +85,11 @@ from app.core.db.settings_store import (
     load_settings_row,
     save_settings_row,
 )
+from app.core.db.suggestions import (
+    list_pending_suggestions,
+    pending_counts,
+    resolve_suggestions,
+)
 
 __all__ = [
     "RULE_CODES",
@@ -76,7 +103,6 @@ __all__ = [
     "get_rule_active",
     "get_rule_version",
     "init_db",
-    "insert_finding",
     "insert_source_batch",
     "list_batches",
     "list_problems",
@@ -91,7 +117,6 @@ __all__ = [
     "save_rule_version",
     "save_settings_row",
     "seed_rules_from_files",
-    "add_history_note",
     "latest_snapshots",
     "list_attribution_history",
     "list_prejudge_models",
@@ -100,6 +125,27 @@ __all__ = [
     "llm_usage_overview",
     "any_judged",
     "finish_prejudge_run",
+    "list_pending_suggestions",
+    "pending_counts",
+    "resolve_suggestions",
+    "list_dimensions",
+    "reorder_dimension",
+    "save_dimension_item",
+    "seed_dimensions_from_file",
+    "CorrectionError",
+    "confirm_attribution",
+    "correct_attribution",
+    "create_attribution",
+    "delete_attribution",
+    "editable_fields",
+    "list_record_attributions",
+    "swap_attribution_slots",
+    "NoteError",
+    "active_note_types",
+    "add_note",
+    "list_notes",
+    "note_counts",
+    "restore_attribution",
     "get_run_log",
     "insert_prejudge_run",
     "prejudge_run_detail",

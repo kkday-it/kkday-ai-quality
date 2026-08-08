@@ -68,7 +68,11 @@ def prejudge_target_ids(
         return []
     tbl, jg = spec.table, T.attributions
     nk = tbl.c[spec.natural_key]
-    j = tbl.outerjoin(jg, _jg_join_cond(spec))
+    # ⚠️ **全專案唯一刻意帶 include_deleted=True 的地方，不要「順手統一」把它拿掉**：
+    # 這裡問的是「這則反饋判過沒有」，人工標記為 AI 誤判的 tombstone 算判過。若排除它，
+    # 一則反饋的歸因全被標記誤判後 EXISTS 會變 false → 被 scope=unjudged 永遠重複撈取，
+    # 每次重判產生一批建議、每次被無視（無限重撈迴圈）。
+    j = tbl.outerjoin(jg, _jg_join_cond(spec, include_deleted=True))
 
     def _scope(stmt):
         """表級篩選（與列表共用 SSOT）：垂直分類/日期區間/關聯 oid + 勾選範圍收斂。"""

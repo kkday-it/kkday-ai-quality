@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.db import tables as T
 from app.core.db._shared import (
@@ -11,6 +11,9 @@ from app.core.db._shared import (
     _jg_join_cond,
     _vertical_codes,
     _vertical_scoped_spec,
+)
+from app.core.db._shared import (
+    live_attr_cond as _live_attr_cond,
 )
 
 # 概覽頁「內容類占比」KPI 的分子域機器值（＝content 域，見其 prompt `## Taxonomy` root）。具名常數＋此註解，
@@ -62,9 +65,26 @@ def attribution_overview(
     )
 
     def _by_tier(conf_rows) -> dict:
-        bt = {"auto_accept": 0, "jury": 0, "needs_review": 0}
+        """信心分層分佈。**人工列不做數值分箱，直接進 human 桶。**
+
+        人工糾正會把 `conf_value` 設為 NULL（原 AI 信心描述的是舊分類，掛在新分類上是謊言），
+        只留 `conf_tier='human'`。若這裡仍照數值分箱、查詢又過濾 `conf_value IS NOT NULL`，
+        人工列會從分佈裡整批消失 → `sum(by_tier) != attributed`，儀表板三桶對不上總數，
+        而且**不會有任何錯誤**——只是數字悄悄變小。
+
+        ⚠️ 2026-08-07 修：`db/corrections.py` 的寫入紀律 docstring 一直宣稱「用字面值則既有機制
+        照舊運作（含 by_tier 聚合）」，但當時本函式與其查詢端都不認識 `conf_tier`，那個保證是假的。
+        dev 尚無人工列所以完全隱形。現在改由 `conf_tier` 優先判定，數值分箱只作為 AI 列的兜底。
+        """
+        bt = {"auto_accept": 0, "jury": 0, "needs_review": 0, "human": 0}
         for r in conf_rows:
+            if r.get("tier") == "human":
+                bt["human"] += 1
+                continue
             conf = r["confidence"]
+            if conf is None:  # 非人工卻無信心值＝資料異常，歸入待複審而非靜默丟棄
+                bt["needs_review"] += 1
+                continue
             bt[
                 "auto_accept"
                 if conf >= tiers["auto_accept"]
@@ -73,7 +93,13 @@ def attribution_overview(
         return bt
 
     def _jgm(stmt):
-        """套初判模型篩選（僅初判級 query 呼叫；進線/星等 query 勿套——語義見 docstring）。"""
+        """套初判模型篩選 + 排除人工誤判 tombstone（僅初判級 query 呼叫；進線/星等 query 勿套）。
+
+        縱覽（source=None）分支直接 `select_from(jg)` 不經 `_jg_join_cond`，故 tombstone 過濾
+        必須在此補上——這是 `_shared` 兩個 chokepoint 之外需顯式處理的 4 處之一。
+        （單一來源分支的 join 已由 `_jg_join_cond` 自動過濾，此處重複套用同一述詞無害。）
+        """
+        stmt = stmt.where(_live_attr_cond())
         return stmt.where(jg.c.model.in_(model)) if model else stmt
 
     with T.get_engine().connect() as c:
@@ -158,9 +184,18 @@ def attribution_overview(
                 c.execute(
                     _jgm(
                         _src(
-                            select(jg.c.conf_value.label("confidence"))
+                            # 同時取 conf_tier：人工列 conf_value 為 NULL，靠 tier 才分得出來
+                            select(
+                                jg.c.conf_value.label("confidence"),
+                                jg.c.conf_tier.label("tier"),
+                            )
                             .select_from(j)
-                            .where(jg.c.conf_value.isnot(None))
+                            .where(
+                                or_(
+                                    jg.c.conf_value.isnot(None),
+                                    jg.c.conf_tier == "human",
+                                )
+                            )
                         )
                     )
                 ).mappings()
@@ -232,9 +267,18 @@ def attribution_overview(
             by_tier = _by_tier(
                 c.execute(
                     _jgm(
-                        select(jg.c.conf_value.label("confidence"))
+                        # 同時取 conf_tier：人工列 conf_value 為 NULL，靠 tier 才分得出來
+                        select(
+                            jg.c.conf_value.label("confidence"),
+                            jg.c.conf_tier.label("tier"),
+                        )
                         .select_from(jg)
-                        .where(jg.c.conf_value.isnot(None))
+                        .where(
+                            or_(
+                                jg.c.conf_value.isnot(None),
+                                jg.c.conf_tier == "human",
+                            )
+                        )
                     )
                 ).mappings()
             )
@@ -353,6 +397,13 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
     - ratio ＝ 該月「含 content 主因歸因的進線數」/「該月已初判進線數」（1:N 多歸因不重複計）。
     - substr 用於月分組 label（顯示分組非過濾，同 attribution_overview 趨勢註解）。
 
+    **tombstone 的兩種口徑（2026-08-07 收斂，不要「順手統一」）**：
+    - 分母 `judged`／`judged_items`＝**ever**（含人工標記為 AI 誤判的列）——問的是「判過沒有」，
+      必須與 `list_problems(judged=…)` 與 `prejudge_targets` 一致，否則同一件事三個畫面三個數字。
+    - 分子 `content`／`content_items` 與 `attributed_rows`＝**live**（排除 tombstone）——
+      問的是「現在有哪些歸因」，人說判錯的不該再算數。
+    → 一則歸因全被標記誤判的反饋：計入分母、不計入分子，ratio 因此下降。這是正確的。
+
     Args:
         months: 回傳最近 N 個月（trend/spark 消費端固定 6 點）。
 
@@ -371,9 +422,12 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
             c.execute(
                 select(
                     ym,
+                    # 分母＝已初判進線（**ever 口徑，含 tombstone**，與列表 judged / prejudge_targets
+                    # 同一把尺：人工標記為 AI 誤判代表「判過但判錯」，仍然是判過）
                     func.count(distinct(item)).label("judged"),
+                    # 分子＝有 content 主因的進線（**live 口徑**：被人工判定為誤判的歸因不該再算數）
                     func.count(distinct(item))
-                    .filter(jg.c.l1_code == _HEADLINE_DOMAIN)
+                    .filter(_live_attr_cond(), jg.c.l1_code == _HEADLINE_DOMAIN)
                     .label("content"),
                 )
                 .where(jg.c.created_at.isnot(None))
@@ -383,18 +437,30 @@ def ai_judge_overview_stats(months: int = 6) -> dict:
             .mappings()
             .all()
         )
-        judged_items = c.execute(select(func.count(distinct(item)))).scalar() or 0
+        judged_items = (
+            # 「已初判進線」＝**ever 口徑**（不套 live_attr_cond）。前端 label 就叫「已初判進線」，
+            # 與列表的「已初判」是同一個問題，必須同一把尺——用 live 口徑的話，歸因全被標記誤判的
+            # 反饋在概覽會消失、在列表卻還在，兩個畫面對同一件事給出不同數字。
+            c.execute(select(func.count(distinct(item)))).scalar() or 0
+        )
         attributed_rows = (
             c.execute(
                 select(func.count())
                 .select_from(jg)
-                .where(jg.c.l1_code.isnot(None), jg.c.l1_code != "")
+                # tombstone 過濾（本 query 不經 _jg_join_cond / _jgm，需顯式補）
+                .where(_live_attr_cond(), jg.c.l1_code.isnot(None), jg.c.l1_code != "")
             ).scalar()
             or 0
         )
         content_items = (
             c.execute(
-                select(func.count(distinct(item))).where(jg.c.l1_code == _HEADLINE_DOMAIN)
+                select(func.count(distinct(item))).where(
+                    # tombstone 過濾（同 attributed_rows：本 query 不經 _jg_join_cond / _jgm，需顯式補）。
+                    # 少了這條，content_share_pct 會變成「含 tombstone ÷ 不含 tombstone」——
+                    # 分子分母不同口徑，百分比會虛高且不報錯（2026-08-07 實際發生過）。
+                    _live_attr_cond(),
+                    jg.c.l1_code == _HEADLINE_DOMAIN,
+                )
             ).scalar()
             or 0
         )

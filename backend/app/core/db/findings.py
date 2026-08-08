@@ -1,17 +1,20 @@
 """初判結果（attributions）CRUD：寫入 / 整組替換 / 單筆讀取。
 
-歸因列完全由初判產生，無人工可改欄位——重新初判即整組替換，不需承接任何舊值。
+一則反饋有兩種託管狀態，`replace_source_findings` 依此分兩支：**AI 託管**（無任何人工痕跡）
+重新初判即整組替換、行為與人工介入功能上線前逐欄相同；**人工託管**（任一列被人工新增／改值／
+標記誤判）重新初判**完全不碰本表**，AI 結果轉入 `attribution_suggestion_lst` 待人工採納。
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert as sa_insert
 
 from app.core.db import attribution_history as _history
+from app.core.db import suggestions as _suggestions
 from app.core.db import tables as T
 from app.core.schema import TicketFinding
 
@@ -35,19 +38,13 @@ def _finding_values(f: TicketFinding, source: str) -> dict:
     }
 
 
-def insert_finding(f: TicketFinding, source: str) -> None:
-    """寫入初判結果（冪等：同 (來源, 評論, L1, L2) 重複則覆蓋）。
-
-    衝突鍵＝該表真正的自然鍵四欄 (feedback_source_code, source_id, l1_code, l2_code)。
-    """
-    with T.get_engine().begin() as c:
-        c.execute(
-            T.upsert(
-                T.attributions,
-                _finding_values(f, source),
-                ["source", "source_id", "l1_code", "l2_code"],
-            )
-        )
+# `insert_finding`（對自然鍵四欄做 upsert 的單筆寫入）於 2026-08-07 退役：
+#   - production 零呼叫端，只剩測試 fixture 在用；
+#   - 它與本模組唯一的 production 寫入路徑 `replace_source_findings` 語義相反
+#     （後者刻意「整組刪除後重插」，見下方 docstring：逐筆 upsert 會讓舊面向殘留孤兒列）；
+#   - `idx_attribution_tbl_unique01` 已改成 DEFERRABLE 約束（migration a3e58d21c9f4）以支援
+#     互換面向，而 PG 不允許 deferrable 約束當 `ON CONFLICT` 的 arbiter——這條 upsert 從此
+#     在物理上不可能成立。原本只寫在註解裡的約定，現在由 PG 強制。
 
 
 def replace_source_findings(
@@ -58,14 +55,19 @@ def replace_source_findings(
     params: dict | None = None,
     job_id: str | None = None,
     triggered_by: str | None = None,
-) -> int:
-    """整組替換某來源列的所有歸因（1:N；刪 (source, source_id) 舊列 → 插新列）。
+) -> dict:
+    """寫入一次初判的結果——**依託管狀態分兩支**（2026-08-06 起）。
 
     多歸因下一個來源列對應多筆 attributions（每(域,面向)一筆，同 L1 多 L2 面向並列）；重新初判以最新
     結果整組替換舊列（冪等），非逐筆 upsert——否則舊面向殘留孤兒列。
 
-    整組替換是**無承接**的：歸因列沒有任何人工可改、需跨重判存活的欄位，故刪除前不撈舊值回填
-    （評論級的人為輸入與歷次軌跡都由 attribution_history 承擔）。
+    - **AI 託管**（該反饋無任何人工痕跡）→ 整組替換，行為與人工介入功能上線前**逐欄相同**：
+      刪 (source, source_id) 舊列 → 插新列（冪等，非逐筆 upsert，否則舊面向殘留孤兒列）。
+    - **人工託管**（任一列被人工新增／改值／標記誤判）→ **一列都不寫** `attribution_tbl`，
+      AI 結果整組轉入 `attribution_suggestion_lst` 待人工採納（見 db.suggestions 模組 docstring）。
+
+    這條分岔讓「人工改分類後 AI 新結果撞自然鍵」在物理上不可能發生——人工託管下根本沒有寫入，
+    故 `idx_attribution_tbl_unique01` 不必為此讓步。
 
     同交易尾端寫入評論級歸因歷史（attribution_history kind='prejudge'）：model+params+result_digest
     與最新一筆完全相同即 skip（全欄位嚴格去重）。
@@ -79,13 +81,47 @@ def replace_source_findings(
         triggered_by: 觸發人（user email；歷史留痕）。
 
     Returns:
-        寫入的歸因列數。
+        `{"mode": "replace"|"suggest", "written": 落庫歸因列數, "suggested": 產生的建議項數}`。
+        （2026-08-06 由 `int` 改為 dict：呼叫端要能區分「跑了但轉建議」與「跑了且落庫」，
+        否則使用者會覺得「我重判了但畫面沒變」是 bug。）
     """
     if not source_id:
-        return 0
+        return {"mode": "replace", "written": 0, "suggested": 0}
     jg = T.attributions
     key = and_(jg.c.source == source, jg.c.source_id == source_id)
     with T.get_engine().begin() as c:
+        # ── 人工託管分支：AI 結果不覆蓋現值，整組轉為待審建議 ──────────────────
+        # 判定與寫入必須同交易（下方 begin() 區塊內），否則兩個並發重新初判可能同時讀到
+        # 「還是 AI 託管」而雙雙走整組替換，把人工值輾過去。
+        if _suggestions.is_human_managed(c, source, source_id):
+            current = (
+                c.execute(select(jg).where(key).order_by(jg.c.attribution_oid)).mappings().all()
+            )
+            proposed = [_finding_values(f, source) for f in findings]
+            items = _suggestions.diff_findings([dict(r) for r in current], proposed)
+            model = findings[0].model_used if findings else str((params or {}).get("model") or "")
+            batch_id = _suggestions.write_suggestions(
+                c, source, source_id, items, model=model, job_id=job_id, author=triggered_by or ""
+            )
+            _history.insert_manual_event(
+                c,
+                source,
+                source_id,
+                kind="suggestion",
+                params={
+                    "batch_id": batch_id,
+                    "model": model,
+                    "counts": {
+                        t: sum(1 for i in items if i["change_type"] == t)
+                        for t in ("replace", "add", "remove")
+                    },
+                },
+                attributions=[_history.snapshot_of(v) for v in proposed],
+                author=triggered_by or "",
+            )
+            return {"mode": "suggest", "written": 0, "suggested": len(items)}
+
+        # ── AI 託管分支：與本次改動前**逐欄相同**的既有行為 ────────────────────
         c.execute(sa_delete(jg).where(key))
         snapshots: list[dict] = []
         for f in findings:
@@ -105,4 +141,4 @@ def replace_source_findings(
             job_id=job_id,
             triggered_by=triggered_by,
         )
-    return len(findings)
+    return {"mode": "replace", "written": len(findings), "suggested": 0}
