@@ -147,22 +147,65 @@ attributions = Table(
     # `Bitmap Index Scan on idx_attribution_tbl_polarity` 當驅動節點——與「EXISTS 不走
     # index path」的說法相反。本表還會隨初判推進成長約一個數量級（來源表 7.4 萬列僅 8% 已初判），
     # 屆時 Seq Scan 成本線性上升而索引不變。
-    Index("idx_attribution_tbl_polarity", "polarity"),
-    Index("idx_attribution_tbl_prejudge_stage", "prejudge_stage"),
-    Index("idx_attribution_tbl_l1_code", "l1_code"),
-    # L2 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/sentiment 全表掃）
-    Index("idx_attribution_tbl_l2_code", "l2_code"),
-    Index("idx_attribution_tbl_sentiment_score", "sentiment_score"),
-    Index("idx_attribution_tbl_conf_tier", "conf_tier"),
-    # 真正的自然鍵＝(來源, 評論, L1, L2)：一則反饋在同一個 L1/L2 面向上只會有一條歸因，
-    # 重新初判時 upsert 就靠這組鍵對得上舊列（身分職責則由 attribution_oid 承擔）。
+    #
+    # ⚠️ **2026-08-06 起全部改為 partial（`WHERE is_deleted = false`）**：人工誤判 tombstone 上線後
+    # 每條讀取路徑都多帶一個 `is_deleted = false` 述詞，而該欄不在索引裡 → planner 必須回堆表驗證，
+    # 上面實測到的 Index Only Scan（Heap Fetches 0）會退化成 Index Scan，整段論證失效。partial 化
+    # 讓述詞恆真於索引內容，index-only 得以保住，且索引體積不含已刪列。
+    # ⚠️ 查詢端述詞必須渲染成 `is_deleted = false`（用 `sa.false()`，**不要 `.is_(False)`**——後者
+    # 渲染 `IS false`，PG 的 predicate implication 不保證能推導出等價，索引會靜默失效不報錯）。
+    # partial 化後於 dev 庫（6,321 列）實測 planner 行為與上述一致：`conf_tier='needs_review'`
+    # 走 Index Only Scan；`polarity='negative'` 走 Bitmap Index Scan；而列表的 EXISTS 相關子查詢
+    # 仍由 `Bitmap Index Scan on idx_attribution_tbl_polarity` 當驅動節點（來源表側 Heap Fetches 0）。
+    Index("idx_attribution_tbl_polarity", "polarity", postgresql_where=text("is_deleted = false")),
     Index(
-        "idx_attribution_tbl_unique01",
+        "idx_attribution_tbl_prejudge_stage",
+        "prejudge_stage",
+        postgresql_where=text("is_deleted = false"),
+    ),
+    Index("idx_attribution_tbl_l1_code", "l1_code", postgresql_where=text("is_deleted = false")),
+    # L2 taxonomy 子樹篩選 + 情緒分篩選熱路徑（原僅 l1 有索引，l2/sentiment 全表掃）
+    Index("idx_attribution_tbl_l2_code", "l2_code", postgresql_where=text("is_deleted = false")),
+    Index(
+        "idx_attribution_tbl_sentiment_score",
+        "sentiment_score",
+        postgresql_where=text("is_deleted = false"),
+    ),
+    Index(
+        "idx_attribution_tbl_conf_tier", "conf_tier", postgresql_where=text("is_deleted = false")
+    ),
+    # 「這則反饋是否人工託管」的 EXISTS 熱路徑（決定重新初判走整組替換還是轉待審建議）。
+    # partial 使索引只含人工碰過的極少數列（初期個位數），近乎零成本。
+    Index(
+        "idx_attribution_tbl_mix02",
+        "source",
+        "source_id",
+        # ⚠️ 謂詞必須與 `_shared.human_touched_cond()` **逐條對齊**：partial 索引只在「查詢條件蘊含
+        # 索引謂詞」時才會被採用。少列一個 OR 分支不會讓結果變錯，但查詢從此不蘊含謂詞 → 索引
+        # 靜默失效退回 seq scan（2026-08-07 加 review_status 時差點漏掉）。
+        postgresql_where=text(
+            "is_manual_created OR is_human_corrected OR is_deleted OR review_status = 'confirmed'"
+        ),
+    ),
+    # 真正的自然鍵＝(來源, 評論, L1, L2)：一則反饋在同一個 L1/L2 面向上只會有一條歸因。
+    #
+    # **用 UniqueConstraint + DEFERRABLE 而非裸的 unique Index**（2026-08-07）：
+    # 兩條歸因要互換面向時，任何「先改 A 再改 B」的順序都會在中途撞上這組鍵。延後到 commit
+    # 才檢查，互換就是單一交易內兩次 UPDATE，不需要塞暫存假值繞路（見 db.corrections.swap_slots）。
+    # PG 的 deferrable 唯一性只能掛在**約束**上、掛不到裸索引，故改用 UniqueConstraint；
+    # 兩者產生的 `pg_indexes.indexdef` 逐字相同，test_schema_parity 不受影響。
+    #
+    # 副作用（刻意的）：deferrable 約束不能當 `ON CONFLICT` 的 arbiter，所以對本表做 upsert 會
+    # 直接報錯。這正是我們要的——`replace_source_findings` 早就是「整組刪除後重插」而非逐筆
+    # upsert（見該函式 docstring），這條約束把原本只寫在註解裡的約定變成 PG 強制。
+    UniqueConstraint(
         "source",
         "source_id",
         "l1_code",
         "l2_code",
-        unique=True,
+        name="idx_attribution_tbl_unique01",
+        deferrable=True,
+        initially="IMMEDIATE",
     ),
     Column(
         "create_user", String(255), comment="建立者（SSO 接入前一律 system，接入後為使用者 email）"
@@ -173,9 +216,52 @@ attributions = Table(
         comment="最後修改者（SSO 接入前一律 system，接入後為使用者 email；NULL＝從未修改）",
     ),
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
+    # ── 人工介入欄（2026-08-06 新增）──────────────────────────────────────────
+    # ⚠️ **刻意宣告在審計欄之後**（而非與內容欄同區）：PG 的 ADD COLUMN 一律追加到最後，
+    # 只有「宣告序＝追加序」時 test_schema_parity 的 column_order 比對才會過。為了美觀把它們
+    # 插到中間，就得為 6 千列的表做一次全表重建（見 f1b78d3a95c2），成本效益不成立。
+    Column(
+        "is_manual_created",
+        Boolean,
+        nullable=False,
+        server_default="false",
+        comment="人工手動新增的歸因（AI 未產出、由人補上）",
+    ),
+    Column(
+        "is_human_corrected",
+        Boolean,
+        nullable=False,
+        server_default="false",
+        comment="AI 產出後由人工改過值（分類／傾向／情緒分）",
+    ),
+    Column(
+        "is_deleted",
+        Boolean,
+        nullable=False,
+        server_default="false",
+        comment="人工標記為 AI 誤判（tombstone）：所有讀取路徑排除，但**保留列以佔住自然鍵**——"
+        "使「重新初判把人工刪掉的歸因悄悄復活」在物理上不可能。還原走 restore",
+    ),
+    Column(
+        "correction_reason",
+        Text,
+        comment="最近一次人工糾正／刪除的理由（提交時強制必填）；歷次理由完整保存於 "
+        "attribution_event_lst 的 kind='correction' 事件",
+    ),
+    Column(
+        "review_status",
+        Text,
+        nullable=False,
+        server_default="unreviewed",
+        comment="人工複審狀態：unreviewed（未複審）/ confirmed（人工確認 AI 判對）/ "
+        "corrected（人工已糾正）——補上 pending_review 進來後沒有出口的缺口",
+    ),
     comment="初判歸因結果（一列＝一條歸因，同一則反饋可有多列）。全 typed scalar 欄無 JSONB blob——"
     "本表是查詢／聚合／篩選密集的分析核心，typed 欄可直接 btree 索引且 SQL 乾淨；巢狀物件屬呈現層，"
-    "在 API DTO（_shared.attribution_dto）才組。無任何人工可改欄位，重新初判即整組替換",
+    "在 API DTO（_shared.attribution_dto）才組。"
+    "一則反饋有兩種託管狀態：**AI 託管**（無任何人工痕跡）重新初判即整組替換；**人工託管**"
+    "（任一列 is_manual_created / is_human_corrected / is_deleted）重新初判完全不碰本表，"
+    "LLM 結果轉入 attribution_suggestion_lst 待人工採納",
 )
 
 # ── 5 反饋來源獨立實體表（各自對齊源表 schema，PK=特徵 id；欄位存原始源值 raw text）─────
@@ -682,8 +768,11 @@ attribution_history = Table(
         "kind",
         Text,
         nullable=False,
-        comment="事件類型：prejudge（初判快照）/ note（人工備註）/ failure（初判失敗留痕）/ "
-        "router_shadow（域路由召回量測，內部遙測不進使用者時間軸）",
+        comment="事件類型：prejudge（初判快照）/ failure（初判失敗留痕）/ correction（人工糾正）/ "
+        "review_confirm（複審確認）/ suggestion（重判轉待審建議）/ "
+        "suggestion_resolved（建議採納或駁回）/ "
+        "router_shadow（域路由召回量測，內部遙測不進使用者時間軸）。"
+        "備註不在此表——見 attribution_note_lst（活查詢鍵不埋 JSONB）",
     ),
     Column("model", Text, comment="初判模型（kind=prejudge）"),
     Column(
@@ -739,6 +828,186 @@ attribution_history = Table(
     comment="評論級歸因歷史（append-only 事件流）：補 attributions「刪+插」重新初判不留痕的缺口——"
     "prejudge_runs 是 run 級、llm_usage 是 call 級，皆無法重建單一評論的初判演進。"
     "無 FK，以 (source, source_id) 邏輯鍵關聯（該鍵跨重新初判穩定；歸因列本身會整批換掉）",
+)
+
+
+attribution_suggestions = Table(
+    "attribution_suggestion_lst",
+    metadata,
+    Column(
+        "attribution_suggestion_oid",
+        Integer,
+        Identity(),
+        primary_key=True,
+        comment="流水號主鍵（serial）",
+    ),
+    # 本表刻意**不用別名欄**（不寫 key=）：`test_wire_contract` 從 metadata 自動派生「含別名欄的表」
+    # 清單並要求每張都登記 wire 探針，而本表在待審建議 API 落地前沒有任何端點會直出它。
+    # 待 PR3 接上端點時再依實際 wire 形狀決定是否要別名。
+    Column("feedback_source_code", Text, nullable=False, comment="反饋來源 code（reviews…）"),
+    Column("source_id", Text, nullable=False, comment="該來源的特徵 id（評論級鍵）"),
+    Column(
+        "suggestion_batch_id",
+        Text,
+        nullable=False,
+        comment="一次重新初判對一則反饋產生的一組建議（整組採納／事件關聯用）",
+    ),
+    Column(
+        "change_type",
+        Text,
+        nullable=False,
+        comment="變更型別：replace（同 L1/L2 面向但值有異）/ add（AI 新發現的面向）/ "
+        "remove（AI 認為現值面向不再成立）",
+    ),
+    Column(
+        "attribution_oid",
+        Integer,
+        comment="對應的現值列（replace / remove 有值；add 為空）。軟關聯無 FK",
+    ),
+    # ── LLM 建議值（欄型與 attribution_tbl 對應欄一致；remove 型取自現值，供 UI 顯示要移除什麼）──
+    Column("polarity", Text, comment="建議的情緒傾向"),
+    Column("sentiment_score", Integer, comment="建議的情緒分 1-5"),
+    Column("l1_code", Text, comment="建議的 L1 域代碼"),
+    Column("l1_label", Text, comment="建議的 L1 域中文名（產生當下的快照）"),
+    Column("l2_code", Text, comment="建議的 L2 面向代碼"),
+    Column("l2_label", Text, comment="建議的 L2 面向中文名（產生當下的快照）"),
+    Column("conf_value", Float, comment="建議的信心值（校準後）"),
+    Column("conf_raw", Float, comment="建議的原始信心值"),
+    Column("conf_tier", Text, comment="建議的信心分層"),
+    Column("summary", JSONB, comment="建議的反饋摘要（語系→摘要 map）"),
+    Column("evidence", Text, comment="建議的佐證原文"),
+    Column("recommended_action", Text, comment="建議的建議行動"),
+    Column("model", Text, comment="產生本建議的初判模型"),
+    Column("job_id", Text, comment="產生本建議的初判任務 id（與 prejudge_runs.job_id 對齊）"),
+    Column("create_user", String(255), comment="觸發本次重新初判的人"),
+    Column(
+        "create_date",
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment="建議產生時間",
+    ),
+    # 索引宣告在全部 Column 之後：inline Index 以欄名引用時，該欄必須先出現於 Table args
+    # 列表徽記與抽屜取數熱路徑
+    Index("idx_attribution_suggestion_lst_mix01", "feedback_source_code", "source_id"),
+    # 批內去重：使同一次重新初判重跑時的寫入冪等
+    Index(
+        "idx_attribution_suggestion_lst_unique01",
+        "suggestion_batch_id",
+        "l1_code",
+        "l2_code",
+        unique=True,
+    ),
+    Index("idx_attribution_suggestion_lst_create_date", "create_date"),
+    comment="待審 LLM 建議（人工託管的反饋重新初判時，AI 結果不寫 attribution_tbl 而轉入本表）。"
+    "本表語義是「**當前尚未處理**的建議」：採納／駁回即刪除該列（決策本身記在 attribution_event_lst "
+    "的 kind='suggestion_resolved' 事件），再次重新初判即先清光舊 pending 再插新的——故刻意"
+    "沒有 review_status 狀態機",
+)
+
+
+attribution_dimensions = Table(
+    "attribution_dimension_master",
+    metadata,
+    Column(
+        "attribution_dimension_oid",
+        Integer,
+        Identity(),
+        primary_key=True,
+        comment="流水號主鍵（serial）",
+    ),
+    Column(
+        "dimension_code",
+        Text,
+        nullable=False,
+        comment="值域維度：responsible_party（責任方）/ severity（嚴重度）/ "
+        "verdict_action（建議行動）",
+    ),
+    Column(
+        "item_code",
+        Text,
+        nullable=False,
+        comment="項目機器碼（落入判決欄的值；改碼＝改歷史語義，禁改）",
+    ),
+    Column(
+        "item_label",
+        Text,
+        nullable=False,
+        comment="項目中文名（顯示用可改；判決落庫時同存快照，改名不回溯污染歷史判決）",
+    ),
+    Column("item_desc", Text, comment="判準說明（給定責的人看的口徑描述）"),
+    Column(
+        "sort_order",
+        Integer,
+        nullable=False,
+        server_default="0",
+        comment="同維度內顯示排序（小在前）",
+    ),
+    Column(
+        "is_active",
+        Boolean,
+        nullable=False,
+        server_default="true",
+        comment="是否可選（停用不刪——硬刪已被歷史判決引用的 code 會讓那些列顯示空白）",
+    ),
+    Column("create_user", String(255), comment="建立者"),
+    Column("create_date", DateTime(timezone=True), server_default=func.now(), comment="建立時間"),
+    Column("modify_user", String(255), comment="最後修改者"),
+    Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
+    Index("idx_attribution_dimension_master_unique01", "dimension_code", "item_code", unique=True),
+    Index("idx_attribution_dimension_master_mix01", "dimension_code", "sort_order"),
+    comment="判決歸因值域主檔（責任方／嚴重度／建議行動三軸共用一表，以 dimension_code 判別）。"
+    "三者欄形完全相同，拆三張表＝三套 migration／API／畫面；判別式單表是既有慣例"
+    "（judge_rule_version_lst 用 rule_code 判別）。檔案 config/ai_judge/attribution_dimension.json "
+    "為默認 seed，本表存 live",
+)
+
+
+# ── 反饋備註（人在時間軸上留的處理脈絡；反饋級或面向級）────────────────────────────
+attribution_notes = Table(
+    "attribution_note_lst",
+    metadata,
+    Column(
+        "attribution_note_oid",
+        Integer,
+        Identity(),
+        primary_key=True,
+        comment="流水號主鍵（serial）",
+    ),
+    Column(
+        "feedback_source_code",
+        Text,
+        key="source",
+        nullable=False,
+        comment="反饋來源 code（reviews…）",
+    ),
+    Column("source_id", Text, nullable=False, comment="該來源的特徵 id（反饋級鍵）"),
+    Column(
+        "l1_code",
+        Text,
+        comment="歸因域機器碼；與 l2_code 皆 NULL＝整則備註，皆有值＝面向備註。"
+        "**綁面向而非 attribution_oid**：歸因列每次重新初判都整批換掉（先刪後插），綁流水號的"
+        "東西一重判就成孤兒——2026-08-04 退役的 finding_notes 表 8 列裡有 6 列正是這樣死的。"
+        "面向鍵跨重判穩定，而且即使該面向之後消失，備註本身仍自我描述（讀得懂當初在講什麼）",
+    ),
+    Column("l2_code", Text, comment="歸因面向機器碼（同 l1_code 的說明）"),
+    Column(
+        "note_type",
+        Text,
+        nullable=False,
+        comment="互動類型機器碼；值域＝attribution_dimension_master 的 note_type 軸（業務可維護）",
+    ),
+    Column("content", Text, nullable=False, comment="備註內容"),
+    Column("create_user", String(255), comment="留下這則備註的人（無 SSO 時為 system）"),
+    Column("create_date", DateTime(timezone=True), server_default=func.now(), comment="建立時間"),
+    # **刻意不宣告 modify_user / modify_date**：本表 append-only，「只進不改」寫死在 schema 上
+    # 而不是靠慣例。備註是互動軌跡，寫出去之後若能改成別的，這條軌跡的稽核價值就沒了。
+    # ⚠️ Index 的字串以 **Python key** 解析（`source` 而非 DB 欄名 `feedback_source_code`）——
+    # 帶 `key=` 別名的欄用 DB 名會拋 ConstraintColumnNotFoundError。
+    Index("idx_attribution_note_lst_mix01", "source", "source_id", "create_date"),
+    comment="反饋備註（append-only，不剪枝）。l1_code/l2_code 皆 NULL＝整則備註、皆有值＝面向備註。"
+    "**不與 attribution_event_lst 共用**：那張表的 params 承載的是「事件當下發生了什麼」的凍結"
+    "快照（寫完就不再查詢的死指標），而備註的面向鍵是活的查詢鍵（每次開工作台都要按面向撈、"
+    "列表要算數量）——活查詢鍵埋進凍結 JSONB 就永遠無法建索引、無法對 note_type 做參照約束",
 )
 
 

@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Mapping
 
-from sqlalchemy import Table, and_, exists, select
+from sqlalchemy import Table, and_, exists, false, or_, select
 from sqlalchemy.sql import Select
 
 from app.core.db import source_registry
@@ -142,22 +142,80 @@ def attribution_dto(r: dict) -> dict:
             "action": r.get("action"),
         },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
+        # ⚠️ 與判決歸因的 responsible_party 語義重疊、來源不同——補判決功能時必須收斂成一個。
         "owner": _domain_owner(l1_code or ""),
+        # ── 人工介入（現值來源／複審狀態；is_deleted 刻意不出 wire）──
+        # origin＝顯示來源的 SSOT：前端據此決定顯示「人工 · 修改者」還是初判 model，
+        # 判斷收在服務端不散在 template（需求：糾正後顯示來源不再是 model 而是人工修改者）。
+        "origin": "human" if (r.get("is_manual_created") or r.get("is_human_corrected")) else "ai",
+        "is_manual_created": bool(r.get("is_manual_created")),
+        "is_human_corrected": bool(r.get("is_human_corrected")),
+        # 人工新增列從未 modify 過，故 modify_user 回退 create_user
+        "corrected_by": r.get("modify_user") or r.get("create_user"),
+        "corrected_at": _iso_if_dt(r.get("modify_date")),
+        "correction_reason": r.get("correction_reason"),
+        "review_status": r.get("review_status"),
         "model": r.get("model"),  # 初判模型（stub / ensemble 同 attributions.model 語意）
         "is_primary": r.get("is_primary"),
         "is_auto_accepted": r.get("is_auto_accepted"),  # G1 系統自動採納旗標
     }
 
 
-def _jg_join_cond(spec):
-    """attributions 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。"""
+def live_attr_cond():
+    """「這條歸因仍是現值」的述詞：排除人工標記為 AI 誤判的 tombstone 列。
+
+    ⚠️ 刻意寫成 `== false` 而非 `.is_(False)`：`attribution_tbl` 的 6 條篩選索引是
+    `WHERE is_deleted = false` 的 partial index，PG 的 predicate implication 對 `IS false`
+    不保證能推導出等價——寫錯的下場是索引靜默失效（不報錯，只是慢），見 tables.py 該段註解。
+    """
+    return T.attributions.c.is_deleted == false()
+
+
+def human_touched_cond():
+    """「這則反饋已被人工介入」的述詞（人工託管判定）。
+
+    任一列被人工新增／改值／標記誤判／**複審確認**，整則反饋即進入人工託管——重新初判不再覆蓋
+    `attribution_tbl`，LLM 結果轉入 `attribution_suggestion_lst` 待審（見 findings.replace_source_findings）。
+    補判決功能時只要在此 `or_()` 加 `is_verdicted == True`，其餘機制全部沿用。
+
+    **`review_status == 'confirmed'` 也算人工介入**（2026-08-07 拍板）：少了這條，「人說過這條 AI
+    判對了」不會鎖住該反饋，下次重新初判走 AI 託管分支整組 DELETE，複審記錄隨列消失——複審做完
+    等於白做。用 `== 'confirmed'` 而非 `!= 'unreviewed'`：`'corrected'` 的列已被 `is_human_corrected`
+    涵蓋，精確表達比寬鬆表達好讀。
+    """
     jg = T.attributions
-    return and_(jg.c.source == spec.source, jg.c.source_id == spec.table.c[spec.natural_key])
+    return or_(
+        jg.c.is_manual_created,
+        jg.c.is_human_corrected,
+        jg.c.is_deleted,
+        jg.c.review_status == "confirmed",
+    )
 
 
-def _jg_exists(spec, *extra):
-    """`EXISTS (SELECT 1 FROM attributions WHERE source=X AND source_id=特徵id [AND ...])`。"""
-    return exists().where(and_(_jg_join_cond(spec), *extra))
+def _jg_join_cond(spec, *, include_deleted: bool = False):
+    """attributions 與來源表的複合鍵 join 條件：source + source_id == 該表特徵 id 欄。
+
+    **預設排除 tombstone**（`include_deleted=False`）——本函式與 `_jg_exists` 是 12 個歸因查詢點
+    中 10 個的必經 chokepoint，把過濾放在這裡即一次到位，不必在每個呼叫端散改（散改漏一處的
+    後果是靜默的數字變大，不會報錯）。
+
+    Args:
+        spec: 來源表 spec（table + natural_key + source）。
+        include_deleted: True＝連人工標記誤判的列也算。**目前唯一合法用途是
+            `prejudge_targets`**：那裡問的是「這則反饋判過沒有」，tombstone 算判過；
+            若排除它，所有歸因都被標記誤判的反饋會被 scope=unjudged 永遠重複撈取。
+    """
+    jg = T.attributions
+    cond = and_(jg.c.source == spec.source, jg.c.source_id == spec.table.c[spec.natural_key])
+    return cond if include_deleted else and_(cond, live_attr_cond())
+
+
+def _jg_exists(spec, *extra, include_deleted: bool = False):
+    """`EXISTS (SELECT 1 FROM attributions WHERE source=X AND source_id=特徵id [AND ...])`。
+
+    預設排除 tombstone，語義與參數見 `_jg_join_cond`。
+    """
+    return exists().where(and_(_jg_join_cond(spec, include_deleted=include_deleted), *extra))
 
 
 def _csv_ids(value: str) -> list[str]:
