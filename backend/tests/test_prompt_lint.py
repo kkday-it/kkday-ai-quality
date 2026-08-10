@@ -133,10 +133,7 @@ def _quota_of(facet_body: str, domain: str) -> tuple[int, int, int]:
 
 @pytest.mark.parametrize("prompt_id", ps.DOMAIN_PROMPT_IDS)
 def test_facet_example_quota(prompt_id: str) -> None:
-    """每個 facet 的例證配額。
-
-    ⚠️ 目前為 **xfail 觀測模式**：C-5-2／C-5-3 的域外反例數為 0，Phase 6 補齊後拿掉 xfail。
-    """
+    """每個 facet 的例證配額（2026-08-10 起全數達標，硬斷言）。"""
     domain = ps.rule_code_for_prompt(prompt_id).removeprefix("prompt_")
     bad: list[str] = []
     for code, body in _facets_of(_system_of(prompt_id)).items():
@@ -147,8 +144,7 @@ def test_facet_example_quota(prompt_id: str) -> None:
             bad.append(f"{code}: ❌總{neg} < {_MIN_NEGATIVE_TOTAL}")
         if out < _MIN_NEGATIVE_OUTBOUND:
             bad.append(f"{code}: ❌域外{out} < {_MIN_NEGATIVE_OUTBOUND}（域內指路不算防誤收）")
-    if bad:
-        pytest.xfail(f"{prompt_id} 例證配額待補（Phase 6）：" + "；".join(bad))
+    assert not bad, f"{prompt_id} 例證配額不足：" + "；".join(bad)
 
 
 # ─────────────────────────── 骨架 ───────────────────────────
@@ -176,15 +172,22 @@ def test_domain_skeleton_complete(prompt_id: str) -> None:
 
 
 def test_polarity_skeleton() -> None:
-    """polarity 骨架。
-
-    ⚠️ 目前為 **xfail 觀測模式**：兩輪六域結構統一工程（bcfde20／5fa28e5）都跳過了這支，
-    Phase 3 補齊後拿掉 xfail。
-    """
+    """polarity 骨架——兩輪六域結構統一工程（bcfde20／5fa28e5）都跳過了這支，2026-08-10 補齊。"""
     system = _system_of(ps.POLARITY_ID)
-    want = ("judge_identity", "critical_rules", "decision_process", "output_format", "limitations")
-    if missing := [t for t in want if f"<{t}>" not in system]:
-        pytest.xfail(f"polarity 缺區塊（Phase 3）：{missing}")
+    want = (
+        "judge_identity",
+        "critical_rules",
+        "polarity_boundary",
+        "sentiment_scale",
+        "decision_process",
+        "output_format",
+        "limitations",
+    )
+    assert not (missing := [t for t in want if f"<{t}>" not in system]), (
+        f"polarity 缺區塊：{missing}"
+    )
+    # <input_format> 已整塊退役（防注入句併入 critical_rules）——不留 tombstone
+    assert "<input_format>" not in system, "<input_format> 已退役，不應復活"
 
 
 # ─────────────────────────── 交付面 ───────────────────────────
