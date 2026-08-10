@@ -7,7 +7,7 @@
   **不得超過**當前基線，只能往下不能往上。存量清零後把該規則移進 ``_HARD_LINT_RULES``，
   本檔的閂鎖同步改成 ``== 0``。
 
-為何需要遞減閂鎖而非直接設硬閘門：L1a／L1b／L1e 現有 107 處存量違規，直接硬擋會讓六支
+為何需要遞減閂鎖而非直接設硬閘門：L1a／L1e 現有 92 處存量違規，直接硬擋會讓六支
 prompt 全部存不了檔。清零工程分多批進行，期間需要一道「不會更糟」的保證。
 """
 
@@ -26,10 +26,9 @@ from app.judge import prompt_source as ps
 # 每批清理後**必須同步調降**這裡的數字；只准降不准升。降到 0 就把規則移進
 # prompt_source._HARD_LINT_RULES 並把本表對應項刪掉（改由 test_no_hard_lint_violations 守）。
 _RATCHET: dict[str, int] = {
-    "L1a": 86,  # 「不屬本項」無本域 code 可指涉 → 應為「不屬本域、棄權」
-    "L1b": 15,  # 「不屬本域」與 facet code 同行（語義互斥）
-    "L1e": 6,  # 禁詞：「取最核心、最直接的」×3、「且…已合理/正常/成功」×3
+    "L1e": 6,  # 禁詞：「取最核心、最直接的」×3、「且…已合理/正常/成功」×3（Phase 3 清）
 }
+# L1a 原有 86 處存量，2026-08-10 三詞制改寫後清零 → 已升級為 _HARD_LINT_RULES（存檔閘門直接擋）。
 
 # ── 六域逐字共用的區塊（改一支就要六支一起改，否則判準分裂）──
 _SHARED_BLOCKS = ("judgment_rules", "abstain_rules", "critical_rules")

@@ -389,7 +389,7 @@ _BANNED_PHRASES = re.compile(r"取最核心、最直接的|且[^。；\n]*已(?:
 
 # validate() 會**拒絕存檔**的規則。其餘規則現況尚有存量違規（見 tests/test_prompt_lint.py 的
 # 遞減閂鎖），若此刻設成硬閘門會讓六支 prompt 全部存不了檔——存量清零後再移進本集合。
-_HARD_LINT_RULES: frozenset[str] = frozenset({"L1c", "PSCHEMA"})
+_HARD_LINT_RULES: frozenset[str] = frozenset({"L1a", "L1c", "PSCHEMA"})
 
 
 def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
@@ -401,7 +401,6 @@ def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
     規則：
         L1a: 「不屬本項／不歸本項」該行須有本域 code——否則「本項」無指涉對象，判官只能
              讀成「換同域另一個 facet 試試」，這是 false positive 的直接引擎。
-        L1b: 「不屬本域」與任何 facet code 不得同行——兩者語義互斥（前者＝整域棄權）。
         L1c: 不得出現他域 code（2026-07-16 使用者拍板；域內互指允許）。
         L1e: 禁詞（見 ``_BANNED_PHRASES`` 上方註解）。
         PSCHEMA: polarity 專屬——輸出 schema 形狀須與 ``SENTIMENT_BANDS`` 對齊。
@@ -428,10 +427,12 @@ def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
             )
         if domain and ("不屬本項" in line or "不歸本項" in line) and not own:
             issues.append(("L1a", f"L{no}: 「不屬本項」無本域 code 可指涉——應為「不屬本域、棄權」"))
-        if "不屬本域" in line and codes:
-            issues.append(
-                ("L1b", f"L{no}: 「不屬本域」與 code {sorted(set(codes))} 同行——語義互斥")
-            )
+        # 曾有一條 L1b「『不屬本域』不得與 facet code 同行」——2026-08-10 實測 15 處命中
+        # **全是誤報、零真陽性**，已移除。誤報來自兩種合法寫法：① `⚠️ 易混淆邊界裁定` 的雙分支句
+        # 「情境 A → 本域（C-x-y）；情境 B → 不屬本域、棄權」，code 與棄權分屬不同分支；
+        # ② 例外子句「不屬本域（除非…才可能是 C-3-5）」。它想表達的不變式（單一主張內不得
+        # 既整域棄權又指名 facet）需要切出「主張」邊界，regex 在散文上做不到——留著一條
+        # 100% 誤報的規則只會訓練人忽略 lint 輸出，故不保留。
         if m := _BANNED_PHRASES.search(line):
             issues.append(("L1e", f"L{no}: 禁詞「{m.group(0)}」"))
 
