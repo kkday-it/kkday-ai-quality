@@ -26,6 +26,12 @@
   域層 metadata 全進 `## Taxonomy` root。
 - **護欄**：`validate` 驗各節可解析 + Schema 合法 + User 含 `{TEXT}` + 域 prompt `## Taxonomy` 可解析且
   至少一 facet。（enum 由 taxonomy 派生，先天無 drift，故無 facet==enum 護欄。）
+  另跑 `lint_prompt()` 的**硬規則**：① 禁出現他域 code（單域判官只認自己的 code，域內互指允許）
+  ② polarity 輸出 schema 形狀須與 `core/schema.SENTIMENT_BANDS` 對齊（enum **集合相等**——少一個
+  成員或多一個第四態都擋，因為 `prejudge` 對非三態值的處置是**靜默降級為 neutral**、無日誌，
+  而 neutral 在 `attribute_when` 內，錯誤會一路無聲滲進歸因）。
+  措辭類規則（三詞制、禁詞）目前有存量違規，暫由 `backend/tests/test_prompt_lint.py` 的**遞減閂鎖**
+  盯著（只准降不准升），清零後移進 `_HARD_LINT_RULES`。撰寫規範見 `.claude/rules/prompt-authoring.md`。
 - **初判引擎**：`prejudge.py` 的 `_attrs_pack`——極性閘門（`00_polarity`）→ 六域 prompt **並行**
   各自判斷是否命中該域 → 合流去重排序 + 信心閘門（`prejudge._gate_attrs`）。
 

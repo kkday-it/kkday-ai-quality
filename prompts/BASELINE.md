@@ -38,8 +38,10 @@
 → ⚠️ 改檔後**必須先發版**：rule_versions.reset_rule_default('prompt_<X>')
    （eval 走 prompt_source＝DB active 優先、檔案 fallback，且無 --versions 參數；
      不發版就測到舊的 DB active 版，而且不會報錯）
-→ docker cp scripts/tools/eval_prompt_single.py 進容器（scripts/ 未掛載）
-→ eval_prompt_single.py --prompt <X> --n 20 --repeats 3 --compare tmp/BASELINE_<X>.json
+→ docker compose -f docker-compose.dev.yml exec -T backend \
+    python /app/scripts/tools/eval_prompt_single.py --prompt <X> --n 20 --repeats 3 \
+    --compare /app/tmp/BASELINE_<X>.json
+  （scripts/ 與 prompts/ 皆已 bind mount，免 docker cp；工具本身的 docstring 尚寫「先 docker cp」，已過期）
    （--repeats 3 非選配：噪音帶 ±0.05~0.10 在 n=20 下＝±1~2 案例，單跑分不出改善與抖動）
 → 對本表：超出噪音帶的提升才採納
 ```

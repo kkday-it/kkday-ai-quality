@@ -329,7 +329,8 @@ def validate(text: str, prompt_id: str) -> None:
     """存檔前驗證 prompt md（存檔閘門）；不過拋 ValueError。
 
     驗：三節可解析 + Schema 合法 JSON Schema + User 含 {TEXT}（域另需 {POLARITY}）
-    + 域 prompt 的 ``## Taxonomy`` 可解析、至少一個 facet、schema 有 l2_code 供派生 enum 注入。
+    + 域 prompt 的 ``## Taxonomy`` 可解析、至少一個 facet、schema 有 l2_code 供派生 enum 注入
+    + ``lint_prompt()`` 的 ``_HARD_LINT_RULES``（禁他域 code、polarity schema 形狀）。
     （enum 由 taxonomy 派生，無 drift 之虞，故無 facet==enum 護欄。）
 
     Args:
@@ -353,6 +354,10 @@ def validate(text: str, prompt_id: str) -> None:
     if "{TEXT}" not in parsed["user_template"]:
         raise ValueError("User 模板必須含 {TEXT} 佔位符")
 
+    # 措辭與 schema 形狀 lint（只擋 _HARD_LINT_RULES；其餘規則的存量違規由遞減閂鎖測試盯著）
+    if blocking := [m for r, m in lint_prompt(text, prompt_id) if r in _HARD_LINT_RULES]:
+        raise ValueError("；".join(blocking))
+
     if not _is_domain(prompt_id):  # polarity：無域、無 taxonomy,止於前述通用驗證
         return
 
@@ -365,3 +370,103 @@ def validate(text: str, prompt_id: str) -> None:
     if not _flatten_taxonomy(root):
         raise ValueError("`## Taxonomy` 至少需一個 facet 節點")
     _inject_derived_enum(parsed["schema"], [])  # 只驗 schema 有 l2_code 路徑（enum 由 load 派生）
+
+
+# ─────────────────────────── 措辭 lint（存檔閘門的第二道）───────────────────────────
+# 為何需要：人實際改 prompt 是在 RuleManager 熱編介面上，該路徑**不經過 repo、不進 git、
+# 不跑 pytest**——純 repo 的 lint 對真實工作流無效，只有 validate() 這道存檔閘門擋得住。
+
+# 任一 facet code（C-域-面向）。Taxonomy／Schema 區塊內只會出現本域 code，故可全檔掃。
+_ANY_FACET_CODE = re.compile(r"C-[1-6]-\d+")
+
+# 禁詞：
+# - 「取最核心、最直接的」與 <judgment_rules>「列出所有明確命中、最多 3 條」正面矛盾。
+#   Schema maxItems:3 已是硬上限，收斂該在合流層（prejudge._attrs_pack 去重排序＋信心閘門）做；
+#   單域先自我壓縮會讓合流層拿不到候選、且不可還原。
+# - 「且…已合理／正常／成功」是**不可從原文驗證的正向前提**，與各域「不以常識推定」直接衝突，
+#   且預設方向偏向免責。一律改寫成負向測試（「且原文未指出…失職」）。
+_BANNED_PHRASES = re.compile(r"取最核心、最直接的|且[^。；\n]*已(?:合理|正常|成功)")
+
+# validate() 會**拒絕存檔**的規則。其餘規則現況尚有存量違規（見 tests/test_prompt_lint.py 的
+# 遞減閂鎖），若此刻設成硬閘門會讓六支 prompt 全部存不了檔——存量清零後再移進本集合。
+_HARD_LINT_RULES: frozenset[str] = frozenset({"L1c", "PSCHEMA"})
+
+
+def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
+    """檢查 prompt md 的措辭與 schema 形狀；回 [(規則代號, 訊息)]，全過回空。
+
+    純函式、零 I/O，供 validate()（存檔閘門，只採 ``_HARD_LINT_RULES``）與
+    tests/test_prompt_lint.py（遞減閂鎖，採全部）共用。
+
+    規則：
+        L1a: 「不屬本項／不歸本項」該行須有本域 code——否則「本項」無指涉對象，判官只能
+             讀成「換同域另一個 facet 試試」，這是 false positive 的直接引擎。
+        L1b: 「不屬本域」與任何 facet code 不得同行——兩者語義互斥（前者＝整域棄權）。
+        L1c: 不得出現他域 code（2026-07-16 使用者拍板；域內互指允許）。
+        L1e: 禁詞（見 ``_BANNED_PHRASES`` 上方註解）。
+        PSCHEMA: polarity 專屬——輸出 schema 形狀須與 ``SENTIMENT_BANDS`` 對齊。
+
+    Args:
+        text: 待檢查的 md 全文。
+        prompt_id: PROMPT_IDS 之一；決定「本域」是誰、以及要不要跑 PSCHEMA。
+
+    Returns:
+        [(rule, message)] 清單，message 含行號便於定位。
+    """
+    issues: list[tuple[str, str]] = []
+    rule_code = _PROMPT_RULE.get(prompt_id, "")
+    domain = rule_code.removeprefix("prompt_") if rule_code.startswith("prompt_C-") else ""
+
+    for no, line in enumerate(text.splitlines(), 1):
+        codes = _ANY_FACET_CODE.findall(line)
+        own = [c for c in codes if domain and c.startswith(f"{domain}-")]
+        foreign = [c for c in codes if c not in own]
+
+        if foreign:
+            issues.append(
+                ("L1c", f"L{no}: 出現他域 code {sorted(set(foreign))}——改寫為「不屬本域、棄權」")
+            )
+        if domain and ("不屬本項" in line or "不歸本項" in line) and not own:
+            issues.append(("L1a", f"L{no}: 「不屬本項」無本域 code 可指涉——應為「不屬本域、棄權」"))
+        if "不屬本域" in line and codes:
+            issues.append(
+                ("L1b", f"L{no}: 「不屬本域」與 code {sorted(set(codes))} 同行——語義互斥")
+            )
+        if m := _BANNED_PHRASES.search(line):
+            issues.append(("L1e", f"L{no}: 禁詞「{m.group(0)}」"))
+
+    if prompt_id == POLARITY_ID:
+        issues += _lint_polarity_schema(parse_md(text)["schema"])
+    return issues
+
+
+def _lint_polarity_schema(schema: dict[str, Any]) -> list[tuple[str, str]]:
+    """驗 polarity 輸出 schema 形狀（enum 三態、sentiment 值域）。
+
+    為何非驗不可：polarity 是**單點閘門**，判 positive 即短路六域。而 prejudge 對「回傳值
+    不在 enum 內」的處置是**靜默降級為 neutral**（無日誌），neutral 又在 attribute_when 內
+    → 熱編把 enum 改壞之後，錯誤會一路無聲地滲進歸因。
+
+    enum 用**集合相等**而非包含：實際失效路徑是有人移掉一個成員或加第四個，兩者都要擋。
+    三態詞彙從 ``SENTIMENT_BANDS`` 派生而非另寫字面值——該常數已是傾向↔情緒分的唯一真相源
+    （見 core/schema.py），再寫一份必然漂移。
+    """
+    from app.core.schema import (
+        SENTIMENT_BANDS,  # lazy：避免 import-time 循環（schema 只依賴 pydantic）
+    )
+
+    out: list[tuple[str, str]] = []
+    props = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+
+    if missing := {"polarity", "sentiment"} - required:
+        out.append(("PSCHEMA", f"required 缺 {sorted(missing)}"))
+    got = set((props.get("polarity") or {}).get("enum") or [])
+    if got != set(SENTIMENT_BANDS):
+        out.append(
+            ("PSCHEMA", f"polarity.enum 應恰為 {sorted(SENTIMENT_BANDS)}，實得 {sorted(got)}")
+        )
+    sent = props.get("sentiment") or {}
+    if sent.get("type") != "integer" or (sent.get("minimum"), sent.get("maximum")) != (1, 5):
+        out.append(("PSCHEMA", f"sentiment 應為 integer 1–5，實得 {sent!r}"))
+    return out
