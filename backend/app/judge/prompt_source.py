@@ -389,7 +389,7 @@ _BANNED_PHRASES = re.compile(r"取最核心、最直接的|且[^。；\n]*已(?:
 
 # validate() 會**拒絕存檔**的規則。其餘規則現況尚有存量違規（見 tests/test_prompt_lint.py 的
 # 遞減閂鎖），若此刻設成硬閘門會讓六支 prompt 全部存不了檔——存量清零後再移進本集合。
-_HARD_LINT_RULES: frozenset[str] = frozenset({"L1a", "L1c", "PSCHEMA"})
+_HARD_LINT_RULES: frozenset[str] = frozenset({"L1a", "L1c", "L1e", "PSCHEMA"})
 
 
 def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
@@ -418,15 +418,22 @@ def lint_prompt(text: str, prompt_id: str) -> list[tuple[str, str]]:
 
     for no, line in enumerate(text.splitlines(), 1):
         codes = _ANY_FACET_CODE.findall(line)
-        own = [c for c in codes if domain and c.startswith(f"{domain}-")]
-        foreign = [c for c in codes if c not in own]
+        foreign = [c for c in codes if not (domain and c.startswith(f"{domain}-"))]
 
         if foreign:
             issues.append(
                 ("L1c", f"L{no}: 出現他域 code {sorted(set(foreign))}——改寫為「不屬本域、棄權」")
             )
-        if domain and ("不屬本項" in line or "不歸本項" in line) and not own:
-            issues.append(("L1a", f"L{no}: 「不屬本項」無本域 code 可指涉——應為「不屬本域、棄權」"))
+        # L1a 以「；」切分支判定，不以整行——`⚠️ 易混淆邊界裁定` 與 facet 判定範圍常寫成
+        # 「情境 A → 本域（C-x-y）；情境 B → 不屬本項」，整行判會因為 A 分支有 code 而漏放
+        # B 分支（2026-08-10 實測 8 處這樣的漏網）。
+        for clause in re.split(r"[；;]", line):
+            if not domain or ("不屬本項" not in clause and "不歸本項" not in clause):
+                continue
+            if not re.search(rf"{domain}-\d", clause):
+                issues.append(
+                    ("L1a", f"L{no}: 「不屬本項」無本域 code 可指涉——應為「不屬本域、棄權」")
+                )
         # 曾有一條 L1b「『不屬本域』不得與 facet code 同行」——2026-08-10 實測 15 處命中
         # **全是誤報、零真陽性**，已移除。誤報來自兩種合法寫法：① `⚠️ 易混淆邊界裁定` 的雙分支句
         # 「情境 A → 本域（C-x-y）；情境 B → 不屬本域、棄權」，code 與棄權分屬不同分支；
