@@ -96,7 +96,6 @@ def _to_attributions(
                 "stage": "judged",
                 "l1": {"code": l1_domain, "label": l1_label},
                 "l2": {"code": l2_code, "label": l2_label},
-                "l3": {"code": None, "label": None},
                 "confidence": {"value": a.get("conf", 0.8), "raw": None, "tier": None},
                 "content": {"summary": None, "evidence": None, "action": None},
                 "is_primary": bool(a.get("primary")) or (i == 0),

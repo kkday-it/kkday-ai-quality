@@ -7,7 +7,7 @@
 |---|---|
 | `db/` | **資料存取層**（package）：`tables`（SQLAlchemy schema+engine）、`source_registry`（來源→表 SSOT）、`_shared`（共用 helper/常數），及 15 個職責模組（schema_bootstrap / settings_store / rule_versions / ingest / findings / qc_evidence / problems / prejudge_targets / attribution / attribution_history / prejudge_runs / llm_usage / export / export_stats / datapack）。`__init__` barrel re-export 全函式 → `from app.core import db; db.X()`。見 `db/README.md`。 |
 | `judge_config/` | **判準 config loader**（package）：ai_judge / bd_tag_vertical / source_mapping / sources / pricing / rule_export，讀 `config/ai_judge`、`config/global` JSON。`app/core/__init__` re-export → `from app.core import ai_judge`（判準流程設定見 `judge_config/README.md`）。|
-| `schema.py` | Pydantic 領域模型（`TicketFinding` 初判單元 + `AdequacyResult`）；初判引擎與 db 兩側平行消費。 |
+| `schema.py` | Pydantic 領域模型（`TicketFinding` 初判單元）；初判引擎與 db 兩側平行消費。 |
 | `job_registry.py` | **in-mem job registry 共用機制層**（`JobStore`：dict+lock+快照深拷貝+終態掃描）——2026-07-23 從 export_jobs/import_jobs/judge.prejudge_batch/judge.ingest.upload_batch 等各自手刻的同型骨架收斂而來（composition，非強制繼承）；只管「怎麼安全存取一份 dict」，暫停/取消/AIMD 自適應併發等控制流留在各自呼叫端模組不進此基底。⚠️ 目前共 **6 個 `JobStore` 實例**（export / import / prejudge_batch / upload_batch / prompt_debug_batch / prompt_regression），但 `shutdown.mark_running_jobs_interrupted()` 只收尾前 5 套——`prompt_regression` 沒有 `mark_running_interrupted()`，其 job 在行程重啟後會永遠停在 `running`。 |
 | `export_jobs.py` | 通用導出背景 job registry（`JobStore` + `ExportCtx`(report/check) + start/cancel/pop_result）；問題列表 / 初判規則導出共用，端點見 `api/routers/exports.py`。 |
 | `import_jobs.py` | 資料包匯入背景 job registry（`JobStore` + `ImportCtx` 逐表回報進度）；與 `export_jobs.py` 對稱，端點見 `api/routers/admin_import.py`。 |

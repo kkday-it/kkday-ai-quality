@@ -91,12 +91,12 @@ def test_list_problems_reviews_derives_vertical_pm_from_bd_tag(temp_db, monkeypa
 
 
 def test_list_problems_source_registry_taxonomy_filter(temp_db) -> None:
-    """source='reviews' + taxonomy 篩選：任意層級 code（l1/l2/l3_code 任一 IN）子樹語義。"""
+    """source='reviews' + taxonomy 篩選：任意層級 code（l1/l2_code 任一 IN）子樹語義。"""
     db.insert_source_batch(
         "reviews",
         [_pr_row(rec_oid="R1", rec_scores="5"), _pr_row(rec_oid="R2", rec_scores="2")],
     )
-    # R1 判到 L2（l3 空）；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
+    # R1 判到 L2；R2 判另一域 → 篩 L1 'content' 應命中 R1（涵蓋只判到 L2 的列）
     _seed_finding(
         TicketFinding(
             ticket_id="R1",

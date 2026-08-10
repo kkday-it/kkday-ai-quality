@@ -107,7 +107,6 @@ def _judge_one(item: dict, model: str) -> dict:
                 "l1_label": f.l1_label,
                 "l2_code": f.l2_code,
                 "l2_label": f.l2_label,
-                "l3_label": f.l3_label,
                 "conf": round(f.confidence, 3),
                 "primary": f.is_primary,
             }
@@ -121,6 +120,7 @@ def _run_eval(evalset: list[dict], model: str, workers: int) -> list[dict]:
     """對評測集全量重新初判（ThreadPool + copy_context 繼承 LLM 配置 contextvar）。"""
     ids = [e["rec_oid"] for e in evalset]
     results: list[dict] = []
+    failures: list[str] = []
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = []
@@ -134,9 +134,20 @@ def _run_eval(evalset: list[dict], model: str, workers: int) -> list[dict]:
             try:
                 results.append(fut.result())
             except Exception as exc:  # noqa: BLE001  單則失敗隔離，不中斷整批
-                print(f"  ⚠️ 單則失敗：{exc}")
+                failures.append(str(exc))
+                if len(failures) <= 3:  # 只印前 3 則，其餘彙總於收尾
+                    print(f"  ⚠️ 單則失敗：{exc}")
             if i % 20 == 0 or i == total:
                 print(f"  進度 {i}/{total}（{time.time() - t0:.0f}s）")
+    # ⚠️ 失敗率必須顯性化：2026-08-10 踩過——l3_label 欄位在 L1~L4 改名後消失，
+    # 100 則有 66 則拋錯被上面的 except 吃掉，卻仍印「✅ 評測完成 34 則」，看起來像成功。
+    if failures:
+        from collections import Counter
+        top = Counter(failures).most_common(3)
+        rate = len(failures) / max(1, total)
+        print(f"  ❌ 失敗 {len(failures)}/{total}（{rate:.0%}）：{top}")
+        if rate > 0.1:
+            raise SystemExit(f"失敗率 {rate:.0%} > 10%，拒絕產出不完整結果——先修錯誤再跑。")
     return results
 
 

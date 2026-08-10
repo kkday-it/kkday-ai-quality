@@ -1,7 +1,7 @@
 """AI 法官核心資料模型（Pydantic v2）。
 
 對應 folder 2117435397 SD §3 的 TicketFinding；前端對應型別見 frontend/src/types/finding.ts。
-初判邏輯（classify / adequacy / arbiter）沿用 ProductContentAIChecker 的 Python 資產。
+初判邏輯（classify / arbiter）沿用 ProductContentAIChecker 的 Python 資產。
 """
 
 from __future__ import annotations
@@ -51,14 +51,6 @@ EvidenceLevel = Literal["symptom_only", "with_product_page", "with_order", "with
 Severity = Literal["P0", "P1", "P2", "P3"]
 
 
-class AdequacyResult(BaseModel):
-    """L3 充分度檢查結果（第二意見）。"""
-
-    status: Literal["adequate", "unclear", "missing", "contradictory", "field_empty"]
-    evidence: str = ""
-    reason: str = ""
-
-
 class TicketFinding(BaseModel):
     """初判單元（SSOT）。"""
 
@@ -66,15 +58,12 @@ class TicketFinding(BaseModel):
     pkg_oid: str = ""
     # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
     summary: dict[str, str] = Field(default_factory=dict)
-    # L3 歸因 + 驗證（LLM 可回 codex 細欄名，故放寬為 str；7 logical field 仍是 adequacy 查詢用）
-    suspected_field: str = "none"
     evidence_quote: str = ""  # 逐字原文佐證（防捏造 grounding 錨點 + FindingCard 佐證欄；非摘要）
     ground_truth_quote: str = ""  # 客服對話擷取的正確答案（零幻覺）
     confidence: float = 0.0  # 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）
     raw_confidence: float = 0.0  # arbiter LLM 原始信心（校準輸入；Cleanlab 離線擬合用）
     is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重新初判）
     enhance_model: str = ""  # 複判使用的模型（空＝未複判）
-    adequacy_check: AdequacyResult | None = None
     # L4 行動
     recommended_action: RecommendedAction
     action_detail: str = ""

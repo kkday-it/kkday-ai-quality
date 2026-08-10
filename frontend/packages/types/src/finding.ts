@@ -18,13 +18,6 @@ export type EvidenceLevel = 'symptom_only' | 'with_product_page' | 'with_order' 
 /** 嚴重度（軸B · ITIL Priority）。 */
 export type Severity = 'P0' | 'P1' | 'P2' | 'P3';
 
-/** L3 充分度檢查結果（第二意見）。 */
-export interface AdequacyResult {
-  status: 'adequate' | 'unclear' | 'missing' | 'contradictory' | 'field_empty';
-  evidence: string;
-  reason: string;
-}
-
 /** 初判單元（SSOT）。 */
 export interface TicketFinding {
   /** 特徵 id（source_id）；落庫時進 attribution_tbl.source_id。 */
@@ -32,8 +25,6 @@ export interface TicketFinding {
   pkg_oid: string;
   /** 反饋摘要：語系 → 簡明摘要 map（務必含 'zh-tw'；表格只顯示 zh-tw）。 */
   summary: Record<string, string>;
-  /** LLM 可回細欄名，故為寬鬆 string（非固定 logical field 列舉），與後端一致。 */
-  suspected_field: string;
   /** 逐字原文佐證（防捏造的 grounding 錨點，非摘要）。 */
   evidence_quote: string;
   /** 客服對話擷取的正確答案（零幻覺）。 */
@@ -46,7 +37,6 @@ export interface TicketFinding {
   is_enhanced: boolean;
   /** 複判使用的模型（空＝未複判）。 */
   enhance_model: string;
-  adequacy_check?: AdequacyResult | null;
   recommended_action: RecommendedAction;
   action_detail: string;
   writer_handoff: boolean;

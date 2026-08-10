@@ -47,15 +47,15 @@ def test_tier_for_boundaries(fixed_config) -> None:
 
 def test_derive_stage_all_branches() -> None:
     """初判階段派生（歸因 finding 專用；混合中性歸因與負向同規則）。"""
-    # 無 L3 或 evidence-cap → pending_data（不分負向/混合中性）
+    # 無 L2 落點（abstain）或 evidence-cap → pending_data（不分負向/混合中性）
     assert prejudge._derive_stage("negative", "", "auto_accept", False) == "pending_data"
     assert prejudge._derive_stage("neutral", "", "jury", False) == "pending_data"
-    assert prejudge._derive_stage("negative", "L3-1", "auto_accept", True) == "pending_data"
-    # 有 L3 + 未 cap：高信心 judged、否則 pending_review
-    assert prejudge._derive_stage("negative", "L3-1", "auto_accept", False) == "judged"
-    assert prejudge._derive_stage("neutral", "L3-1", "auto_accept", False) == "judged"
-    assert prejudge._derive_stage("negative", "L3-1", "jury", False) == "pending_review"
-    assert prejudge._derive_stage("negative", "L3-1", "needs_review", False) == "pending_review"
+    assert prejudge._derive_stage("negative", "C-2-2", "auto_accept", True) == "pending_data"
+    # 有 L2 落點 + 未 cap：高信心 judged、否則 pending_review
+    assert prejudge._derive_stage("negative", "C-2-2", "auto_accept", False) == "judged"
+    assert prejudge._derive_stage("neutral", "C-2-2", "auto_accept", False) == "judged"
+    assert prejudge._derive_stage("negative", "C-2-2", "jury", False) == "pending_review"
+    assert prejudge._derive_stage("negative", "C-2-2", "needs_review", False) == "pending_review"
 
 
 def test_attribute_when_parses_config(monkeypatch) -> None:
@@ -86,8 +86,6 @@ def test_to_findings_neutral_enters_attribution(monkeypatch, fixed_config) -> No
         "l1_label": "供應商履約",
         "l2_code": "C-3-2",
         "l2_label": "成團履約",
-        "l3_code": "",
-        "l3_label": "",
         "confidence": 0.85,
         "raw_confidence": 0.85,
         "evidence_quote": "船沒搭到",
@@ -345,17 +343,15 @@ def test_resolve_attrs_multi_same_domain_multi_l2_coexist(non_stub, monkeypatch)
         prejudge, "_evidence_policy", lambda: {}
     )  # 關閉 secondary/attr 閘門，純測去重粒度
     synthetic = [
-        {"l1_domain_code": "service", "l2_code": "C-5-1", "l3_code": "", "confidence": 0.9},
+        {"l1_domain_code": "service", "l2_code": "C-5-1", "confidence": 0.9},
         {
             "l1_domain_code": "service",
             "l2_code": "C-5-2",
-            "l3_code": "",
             "confidence": 0.6,
         },  # 同域異面向 → 並列
         {
             "l1_domain_code": "service",
             "l2_code": "C-5-1",
-            "l3_code": "",
             "confidence": 0.4,
         },  # 同(域,面向) → 被 0.9 覆蓋
     ]
@@ -375,8 +371,8 @@ def test_resolve_attrs_multi_stub_returns_empty(monkeypatch) -> None:
 
 def test_resolve_attrs_min_confidence_gate(non_stub, monkeypatch) -> None:
     """attr 級最低信心閘門：低於 evidence_policy.attr_min_confidence 整條丟棄（湊數殭屍列）；0=關閉。"""
-    low = {"l1_domain_code": "quality", "l2_code": "C-2-1", "l3_code": "", "confidence": 0.09}
-    ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
+    low = {"l1_domain_code": "quality", "l2_code": "C-2-1", "confidence": 0.09}
+    ok = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "confidence": 0.9}
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(low), dict(ok)])
     monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"attr_min_confidence": 0.2})
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
@@ -388,8 +384,8 @@ def test_resolve_attrs_min_confidence_gate(non_stub, monkeypatch) -> None:
 
 def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> None:
     """次要歸因信心閘門：非 primary 條目低於 secondary_min_confidence 丟棄只留主因；primary 不受影響；缺鍵=關閉。"""
-    primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "l3_code": "", "confidence": 0.9}
-    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.55}
+    primary = {"l1_domain_code": "supplier", "l2_code": "C-3-4", "confidence": 0.9}
+    weak2nd = {"l1_domain_code": "customer", "l2_code": "C-6-3", "confidence": 0.55}
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(primary), dict(weak2nd)])
     monkeypatch.setattr(
         prejudge,
@@ -399,7 +395,7 @@ def test_resolve_attrs_secondary_min_confidence_gate(non_stub, monkeypatch) -> N
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert [a["l1_domain_code"] for a in out] == ["supplier"]  # 0.55 次要歸因被殺、主因保留
     # 單條 primary 信心 0.4（低於 secondary 閘門、高於 attr 閘門）→ 不受影響（閘門只管非 primary）
-    lone = {"l1_domain_code": "customer", "l2_code": "C-6-3", "l3_code": "", "confidence": 0.4}
+    lone = {"l1_domain_code": "customer", "l2_code": "C-6-3", "confidence": 0.4}
     monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: [dict(lone)])
     out = prejudge._resolve_attrs_multi({}, "t", "m", 2)
     assert len(out) == 1
