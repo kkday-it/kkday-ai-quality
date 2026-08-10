@@ -86,10 +86,14 @@ def test_soft_lint_ratchet(rule: str, baseline: int) -> None:
 # ─────────────────────────── L4：跨檔一致性 ───────────────────────────
 @pytest.mark.parametrize("block", _SHARED_BLOCKS)
 def test_shared_blocks_identical_across_domains(block: str) -> None:
-    """六域共用區塊必須逐位元組相同——只改一支＝判準分裂，且不會報錯。"""
+    """六域共用區塊必須逐位元組相同——只改一支＝判準分裂，且不會報錯。
+
+    ⚠️ 區塊標籤必須錨定行首：judgment_rules 內有一句「見 <abstain_rules>」的行內交叉引用，
+    不錨定的話 regex 會從那個提及開始匹配、跨進別的區塊，造成連鎖誤報（2026-08-10 實際踩到）。
+    """
     seen: dict[str, list[str]] = {}
     for pid in ps.DOMAIN_PROMPT_IDS:
-        m = re.search(rf"<{block}>(.*?)</{block}>", _system_of(pid), re.S)
+        m = re.search(rf"^<{block}>$(.*?)^</{block}>$", _system_of(pid), re.S | re.M)
         assert m, f"{pid} 缺 <{block}> 區塊"
         seen.setdefault(hashlib.md5(m.group(1).encode()).hexdigest()[:8], []).append(pid)
     assert len(seen) == 1, f"<{block}> 六域不一致：{ {h: v for h, v in seen.items()} }"
