@@ -34,8 +34,17 @@
 ## 單支調適閉環
 
 ```
-改 config/ai_judge/prompt_templates/<單支>.md（或該域 DB 規則）
-→ docker cp gen_eval_prompt_pack.py 進容器（模板免 cp，config 掛載即時生效）
-→ eval_prompt_single.py --prompt <X> --n 20 --user <email>
-→ 對本表：超出噪音帶的提升才採納 → 重生成 prompts/ 入版
+改 prompts/<單支>.md（Prompt-as-Source 頂層；或於 RuleManager 線上熱編 DB active 版）
+→ ⚠️ 改檔後**必須先發版**：rule_versions.reset_rule_default('prompt_<X>')
+   （eval 走 prompt_source＝DB active 優先、檔案 fallback，且無 --versions 參數；
+     不發版就測到舊的 DB active 版，而且不會報錯）
+→ docker cp scripts/tools/eval_prompt_single.py 進容器（scripts/ 未掛載）
+→ eval_prompt_single.py --prompt <X> --n 20 --repeats 3 --compare tmp/BASELINE_<X>.json
+   （--repeats 3 非選配：噪音帶 ±0.05~0.10 在 n=20 下＝±1~2 案例，單跑分不出改善與抖動）
+→ 對本表：超出噪音帶的提升才採納
 ```
+
+⚠️ **改動方向決定判準，不能一律看「有沒有進步」**：
+- **零變化型**（格式、骨架、同義改寫）→ 全指標 ±0.10 內，**且逐案 improvements/regressions 清單為空**。聚合沒動但逐案非空（改善 3＋退步 3 抵銷）要當失敗處理。
+- **收斂型**（收緊界線、修正措辭）→ 多報率↓ 或 棄權正確率↑，命中率不得跌出噪音帶。本表對這類完全有效。
+- **擴張型**（補覆蓋盲區）→ **本表失效**。參照集是 production attributions＝舊 prompt 的產物，新增的正確歸因會被算成「多報」而顯示為退步。改走 `scripts/tools/eval_equivalence.py` 的版本 pin 雙跑（比自己不比真值），或查「負向但六域全棄權」的靜默漏判池做單向驗證。
