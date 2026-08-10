@@ -30,8 +30,24 @@
   ② polarity 輸出 schema 形狀須與 `core/schema.SENTIMENT_BANDS` 對齊（enum **集合相等**——少一個
   成員或多一個第四態都擋，因為 `prejudge` 對非三態值的處置是**靜默降級為 neutral**、無日誌，
   而 neutral 在 `attribute_when` 內，錯誤會一路無聲滲進歸因）。
-  措辭類規則（三詞制、禁詞）目前有存量違規，暫由 `backend/tests/test_prompt_lint.py` 的**遞減閂鎖**
-  盯著（只准降不准升），清零後移進 `_HARD_LINT_RULES`。撰寫規範見 `.claude/rules/prompt-authoring.md`。
+  ③ 「不屬本項」該分支須有本域 code（否則「本項」無指涉對象，判官只能讀成「換同域另一個 facet
+  試試」）④ 禁詞「取最核心、最直接的」（與 judgment_rules 正面矛盾）與「且…已合理／正常／成功」
+  （不可從原文驗證的正向前提）。
+  `backend/tests/test_prompt_lint.py` 另守：六域共用區塊逐位元組相同、`{POLARITY}` 括號說明一致、
+  Schema 六域一致、**每 facet 例證配額**（✅≥2／❌總≥3／**❌域外棄權≥2**）、骨架完整性。
+
+### 撰寫規範（摘要；完整版見 `.claude/rules/prompt-authoring.md`，編輯 `prompts/**` 時自動載入）
+
+1. **覆蓋率靠「各域認領夠寬」**：六域全平行、各域不路由，A 說「不屬本項」而 B 沒認領＝六域皆
+   棄權、零報錯。補洞要加寬**目標域的判定範圍**，不是在來源域加指路。
+2. **措辭三詞制**：`改由本域〈名〉（C-x-y）判定，不歸本項`（同域有承接）／`不屬本域、棄權`
+   （同域無承接，禁出現 code）／`不構成問題點、不歸因`（這根本不是問題）。
+3. **預設方向宣告**：判準依賴原文通常不會明說的事實時，寫成「原文**未自承**／未指明 A → **不預設**
+   A 成立」。凡會把責任推向旅客的判準，一律以旅客自承為門檻。
+4. **boundary ↔ facet 雙向完備**：判官選碼讀的是 facet 層，boundary 的一行交辦撐不住整個類別——
+   寫了「→ 本域（C-x-y）」就要去該 facet 判定範圍補語彙與例句。
+5. **`## Taxonomy` / `## Schema` 是機器契約，不得改動。**
+6. ⚠️ **改完必發 DB 版**（`reset_rule_default`），否則線上與 eval 都還在跑舊版，且不會報錯。
 - **初判引擎**：`prejudge.py` 的 `_attrs_pack`——極性閘門（`00_polarity`）→ 六域 prompt **並行**
   各自判斷是否命中該域 → 合流去重排序 + 信心閘門（`prejudge._gate_attrs`）。
 

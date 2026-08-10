@@ -64,6 +64,7 @@
 | `config-and-hardcode.md` | `config/**` `backend/app/**` `**/*.constant.ts` `**/constants/**` `start.sh` `docker-compose*.yml` | 禁硬編碼配置化完整規範 + start.sh 一鍵啟動引導鐵律 |
 | `docs-sync.md` | `**/*.py` `**/*.ts` `**/*.vue` `config/**` `constants/**` | 改邏輯/結構/契約 → 同步更新所有相關文檔（寫前先核實 code）|
 | `feature-retirement.md` | `**/alembic/versions/**` `**/tables.py` `**/migrations/**` | 功能退場機制：盤點消費點 → 全棧清退（代碼/DB/前端/config/文件/註釋/測試零殘留）→ 驗證清單（呼應核心原則 4）|
+| `prompt-authoring.md` | `prompts/**` | 判官 Prompt 撰寫規範：六域平行架構前提（覆蓋率靠各域認領夠寬）+ 三條硬禁令（禁他域 code / 禁「不屬本項」無指涉 / 禁詞）+ 措辭三詞制 + 預設方向宣告（防卸責）+ 例證配額（❌**域外**≥2）+ boundary↔facet 雙向完備 + 機器契約禁區 + **改完必發 DB 版**否則不生效 |
 | `datapack-consistency.md` | `**/tables.py` `**/alembic/versions/**` `**/migrations/**` `**/datapack.py` `**/dump_datapack.py` `**/import_jobs.py` | 資料包匯出/匯入數據一致性：改 DB 表/欄/JSONB 內容形狀時同步檢查 `TABLE_LOAD_ORDER`/`_SEQUENCE_TABLES`/前端消費端顯性防禦，避免匯入後靜默空白 |
 
 > 冷啟動問「有什麼規則」時，只答本檔常駐部分；rules/ 條件規則不列為常駐。
