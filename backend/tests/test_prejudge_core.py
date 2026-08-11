@@ -449,3 +449,48 @@ def test_to_findings_negative_pending_stays_new(stub_engine) -> None:
     """負向未歸因（needs_review 分層 + pending_data）→ 不自動採納（需人工）。"""
     out = prejudge.to_findings(_item(1, "服務很差要退款"), model="gpt-5-nano")
     assert out[0].is_auto_accepted is False
+
+
+def test_resolve_attrs_multi_tie_break_by_facet_priority(non_stub, monkeypatch) -> None:
+    """信心完全同分時由 evidence_policy.facet_priority 決勝（人身安全／商業誠信優先）。
+
+    沒有這道 tie-break 時，Python 穩定排序讓「域的列舉順序」實質當裁判——2026-08-10
+    實測 rec_oid 3331217 的 C-2-2@0.98 壓過 C-3-7@0.98，把「變相強迫消費」記成餐飲品質，
+    而 C-3-7 是需要供應商管理／法務關注的訊號。
+    """
+    monkeypatch.setattr(
+        prejudge, "_evidence_policy", lambda: {"facet_priority": {"C-3-5": 1, "C-3-7": 1}}
+    )
+    synthetic = [  # 刻意讓低優先者排在前面，證明贏的是權重不是輸入順序
+        {"l1_domain_code": "quality", "l2_code": "C-2-2", "confidence": 0.98},
+        {"l1_domain_code": "supplier", "l2_code": "C-3-7", "confidence": 0.98},
+    ]
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 6)
+    assert out[0]["l2_code"] == "C-3-7", "同分時 facet_priority 應決勝"
+
+
+def test_resolve_attrs_multi_priority_never_beats_confidence(non_stub, monkeypatch) -> None:
+    """facet_priority **只在同分時**生效，不得推翻信心排序——否則低信心的高優先 facet 會硬搶主歸因。"""
+    monkeypatch.setattr(prejudge, "_evidence_policy", lambda: {"facet_priority": {"C-3-7": 99}})
+    synthetic = [
+        {"l1_domain_code": "supplier", "l2_code": "C-3-7", "confidence": 0.50},
+        {"l1_domain_code": "quality", "l2_code": "C-2-2", "confidence": 0.90},
+    ]
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 6)
+    assert out[0]["l2_code"] == "C-2-2", "信心較高者仍須為主歸因"
+
+
+def test_resolve_attrs_multi_tie_without_priority_is_unchanged(non_stub, monkeypatch) -> None:
+    """未列入 facet_priority 的兩條同分時，行為與加 tie-break 前一致（不引入新的隱性排序）。"""
+    monkeypatch.setattr(
+        prejudge, "_evidence_policy", lambda: {"facet_priority": {"C-3-5": 1, "C-3-7": 1}}
+    )
+    synthetic = [
+        {"l1_domain_code": "service", "l2_code": "C-5-2", "confidence": 0.84},
+        {"l1_domain_code": "customer", "l2_code": "C-6-2", "confidence": 0.84},
+    ]
+    monkeypatch.setattr(prejudge, "_attrs_pack", lambda *a, **k: synthetic)
+    out = prejudge._resolve_attrs_multi({"source": "pr", "source_id": "R1"}, "text", "m", 6)
+    assert out[0]["l2_code"] == "C-5-2", "兩者皆無權重 → 維持穩定排序的原有結果"

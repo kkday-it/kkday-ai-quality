@@ -40,6 +40,9 @@ _SHARED_BLOCKS = ("judgment_rules", "abstain_rules", "critical_rules")
 _MIN_POSITIVE = 2
 _MIN_NEGATIVE_TOTAL = 3
 _MIN_NEGATIVE_OUTBOUND = 2
+# ❌/✅ 上限：反例遠多於正例的 facet 會過度保守而漏收（原本只是撰寫規範裡的建議值，
+# 2026-08-10 實測 C-2-3 到 3.00、C-6-2 到 2.67 都沒紅燈，改為硬斷言）。
+_MAX_NEG_POS_RATIO = 2.5
 
 
 def _text(prompt_id: str) -> str:
@@ -130,7 +133,11 @@ def _quota_of(facet_body: str, domain: str) -> tuple[int, int, int]:
             pos += 1
         elif t.startswith("❌"):
             neg += 1
-            if not re.search(rf"{domain}-\d", t):
+            # ⚠️ 域外＝結論逐字為「不屬本域、棄權」（三詞制第二式）。
+            # 2026-08-10 踩過：原本只判「不含本域 code」，於是第三式「不構成問題點、不歸因」
+            # 也被計入——C-3-7 靠兩條**逐字重複**的第三式湊過 ≥2，實際零防誤收能力，
+            # 而它正是嚴重度最高（應觸發供應商管理/法務關注）的 facet。
+            if "不屬本域、棄權" in t:
                 outbound += 1
     return pos, neg, outbound
 
@@ -147,8 +154,38 @@ def test_facet_example_quota(prompt_id: str) -> None:
         if neg < _MIN_NEGATIVE_TOTAL:
             bad.append(f"{code}: ❌總{neg} < {_MIN_NEGATIVE_TOTAL}")
         if out < _MIN_NEGATIVE_OUTBOUND:
-            bad.append(f"{code}: ❌域外{out} < {_MIN_NEGATIVE_OUTBOUND}（域內指路不算防誤收）")
+            bad.append(
+                f"{code}: ❌域外棄權{out} < {_MIN_NEGATIVE_OUTBOUND}（域內指路與「不構成問題點」不算防誤收）"
+            )
+        if neg > pos * _MAX_NEG_POS_RATIO:
+            bad.append(
+                f"{code}: ❌/✅={neg / max(1, pos):.2f} > {_MAX_NEG_POS_RATIO}（反例壓過正例，facet 會過度保守）"
+            )
     assert not bad, f"{prompt_id} 例證配額不足：" + "；".join(bad)
+
+
+@pytest.mark.parametrize("prompt_id", ps.DOMAIN_PROMPT_IDS)
+def test_no_duplicate_examples(prompt_id: str) -> None:
+    """同一 facet 內禁止逐字重複的例證行。
+
+    重複行不提供任何額外判別力，卻會把配額硬斷言灌滿——2026-08-10 的 C-3-7
+    就是靠一組重複的 ❌ 通過 ``_MIN_NEGATIVE_OUTBOUND``。比對只取引號內的例句本體，
+    因為「同一例句、換句話說結論」同樣是湊數。
+    """
+    dup: list[str] = []
+    for code, body in _facets_of(_system_of(prompt_id)).items():
+        seen: dict[str, str] = {}
+        for ln in body.splitlines():
+            t = ln.strip()
+            if not (t.startswith("✅") or t.startswith("❌")):
+                continue
+            m = re.search(r"「(.+?)」", t)
+            key = m.group(1) if m else t.lstrip("✅❌")
+            if key in seen:
+                dup.append(f"{code}: 例句「{key[:28]}…」重複出現（{seen[key][:1]} 與 {t[:1]}）")
+            else:
+                seen[key] = t
+    assert not dup, f"{prompt_id} 例證重複：" + "；".join(dup)
 
 
 # ─────────────────────────── 骨架 ───────────────────────────

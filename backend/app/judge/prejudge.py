@@ -474,7 +474,17 @@ def _gate_attrs(attrs: list[dict], max_n: int) -> list[dict]:
         key = (dom, a.get("l2_code", ""))  # 同(域,面向)才去重；同域不同面向各自保留
         if key not in by_facet or a.get("confidence", 0.0) > by_facet[key].get("confidence", 0.0):
             by_facet[key] = a
-    ranked = sorted(by_facet.values(), key=lambda a: a.get("confidence", 0.0), reverse=True)
+    # 主歸因排序：confidence 降冪；**完全同分時**才由 facet_priority 決勝。
+    # 沒有這個 tie-break 時，Python 穩定排序會讓「域的列舉順序」實質當裁判——實測
+    # C-2-2@0.98 壓過 C-3-7@0.98（變相強迫消費被記成餐飲品質）。權重刻意只給
+    # 人身安全與商業誠信兩類（config evidence_policy.facet_priority），未列者為 0：
+    # 通用的「客觀域 > 殘餘域」排序會在別的案例上反向出錯（如純價值感抱怨被 C-5-2 搶走）。
+    prio = _evidence_policy().get("facet_priority") or {}
+    ranked = sorted(
+        by_facet.values(),
+        key=lambda a: (a.get("confidence", 0.0), _as_float(prio.get(a.get("l2_code", "")), 0.0)),
+        reverse=True,
+    )
     # 次要歸因信心閘門（config evidence_policy.secondary_min_confidence；0＝關）：多歸因時
     # 非 primary 條目要求更高信心——低信心第二歸因（實測 conf 0.49~0.65 的「順帶一提」面向）
     # 是與多模型多數決不一致的 extra 簇主因；primary 不受影響，仍走 attr_min_confidence。
