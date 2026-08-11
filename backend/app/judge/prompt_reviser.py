@@ -296,15 +296,7 @@ def stream_frames(
     if not token:
         raise ValueError("目前配置沒有可用 API token，請先在「配置 › LLM 模型連線」完成設定")
 
-    cfg = {
-        "token": token,
-        "base_url": (effective.get("base_url") or "").strip(),
-        "model": effective.get("model") or "",
-        "temperature": effective.get("temperature"),
-        "thinking": effective.get("thinking", "default"),
-        "reasoning_effort": effective.get("reasoning_effort", "default"),
-        "service_tier": None,
-    }
+    cfg = client.cfg_from_effective(effective, service_tier=None)
     kwargs: dict[str, Any] = {
         "model": cfg["model"],
         "messages": [
@@ -328,7 +320,7 @@ def stream_frames(
         {
             "job_id": job_id,
             "model": cfg["model"],
-            "provider": app_settings.provider_id_for(cfg["base_url"]),
+            "provider": cfg.get("provider") or app_settings.provider_id_for(cfg["base_url"]),
             "reasoning_effort": cfg["reasoning_effort"],
             "case_count": len(cases),
             "prompt_chars": len(system_prompt),

@@ -237,15 +237,7 @@ def start(
         # stub 假結果會讓人以為改寫沒問題，比直接失敗更糟——寧可直接失敗
         raise ValueError("目前配置沒有可用 API token，拒絕以假結果執行回歸")
 
-    cfg = {
-        "token": token,
-        "base_url": (effective.get("base_url") or "").strip(),
-        "model": effective.get("model") or "",
-        "temperature": effective.get("temperature"),
-        "thinking": effective.get("thinking", "default"),
-        "reasoning_effort": effective.get("reasoning_effort", "default"),
-        "service_tier": None,
-    }
+    cfg = client.cfg_from_effective(effective, service_tier=None)
 
     job_id = f"prompt_regression_{uuid.uuid4().hex}"
     _store.put(job_id, _new_snapshot(job_id, len(cases), cfg["model"], len(system_prompt)))

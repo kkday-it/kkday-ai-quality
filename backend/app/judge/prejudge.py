@@ -347,7 +347,6 @@ def _attributed_finding(
     attr: dict,
     model: str,
     *,
-    enhanced: bool,
     polarity: str = "negative",
     sentiment: int = 0,
 ) -> TicketFinding:
@@ -374,8 +373,6 @@ def _attributed_finding(
         raw_confidence=attr.get("raw_confidence", conf),
         confidence_tier=tier,
         prejudge_stage=stage,
-        is_enhanced=enhanced,
-        enhance_model=model if enhanced else "",
         l1_domain_code=attr["l1_domain_code"],
         l1_label=attr["l1_label"],
         l2_code=attr["l2_code"],
@@ -597,9 +594,7 @@ def to_findings(
         return _route([f])
     findings: list[TicketFinding] = []
     for i, attr in enumerate(attrs):  # attrs 已依 confidence 降冪、同(域,面向)去重
-        f = _attributed_finding(
-            item, attr, used_model, enhanced=False, polarity=polarity, sentiment=sentiment
-        )
+        f = _attributed_finding(item, attr, used_model, polarity=polarity, sentiment=sentiment)
         f.is_primary = i == 0  # 信心最高一條為主歸因
         findings.append(f)
     return _route(findings)

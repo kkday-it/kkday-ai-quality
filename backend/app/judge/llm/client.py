@@ -203,7 +203,10 @@ def embed_one(text: str, *, model: str) -> list[float] | None:
     if not model:
         return None
     cfg = _resolve()
-    if not cfg["token"] or _settings.provider_id_for(cfg["base_url"]) != "openai":
+    if (
+        not cfg["token"]
+        or (cfg.get("provider") or _settings.provider_id_for(cfg["base_url"])) != "openai"
+    ):
         return None
     try:
         cli = _get_client(cfg["token"], cfg["base_url"])
@@ -369,6 +372,35 @@ def _mentions_reasoning_effort(emsg: str) -> bool:
     return "reasoning_effort" in low or "reasoning.effort" in low
 
 
+def cfg_from_effective(effective: dict, *, service_tier: str | None = None) -> dict:
+    """effective LLM dict → 本模組呼叫用的 cfg（單一組裝出口）。
+
+    2026-08-11 之前這八個鍵在四個模組各手寫一份（prompt_debug / prompt_reviser /
+    prompt_debug_batch / prompt_regression），且**四份都漏帶 `provider`**——而 provider 才是
+    供應商判別的主軸（`effective_llm_dict()` 明確回傳它）。缺了它的後果不是丟個開關而已：
+    降級階梯 `prompt_debug._request_compat` 與 `can_use_responses_api()` 都會退回從
+    `base_url` 反推，自訂 gateway 上的 bytedance 因此被判成 openai，
+    **整條相容降級被跳過、400 硬失敗**。
+
+    Args:
+        effective: `settings.effective_llm_dict()` 的產出。
+        service_tier: OpenAI serving tier（"flex" 等）；單次互動路徑一律 None。
+
+    Returns:
+        cfg dict。新增 per-call 旋鈕只改這裡一處，四條路徑同步生效。
+    """
+    return {
+        "token": _settings.resolve_provider_token(effective),
+        "base_url": (effective.get("base_url") or "").strip(),
+        "model": effective.get("model") or "",
+        "provider": effective.get("provider") or "",
+        "temperature": effective.get("temperature"),
+        "thinking": effective.get("thinking", "default"),
+        "reasoning_effort": effective.get("reasoning_effort", "default"),
+        "service_tier": service_tier,
+    }
+
+
 def can_use_responses_api(cfg: dict, kwargs: dict) -> bool:
     """本次請求是否**可以**改走 Responses API（兩道硬否決，與「該不該走」分開判斷）。
 
@@ -380,7 +412,8 @@ def can_use_responses_api(cfg: dict, kwargs: dict) -> bool:
 
     if kwargs.get(responses_api.WIRE_API_KEY) == responses_api.WIRE_RESPONSES:
         return False
-    return _settings.provider_has_responses_api(cfg.get("base_url") or "")
+    pid = cfg.get("provider") or _settings.provider_id_for(cfg.get("base_url") or "")
+    return _settings.provider_has_responses_api_by_id(pid)
 
 
 # 「該 (provider, model) 的 response_format 最終收斂成什麼形狀」的進程級記憶。
@@ -398,7 +431,8 @@ _SHAPE_REMOVED = "__removed__"
 
 def _shape_memo_key(cfg: dict) -> tuple[str, str]:
     """記憶鍵＝(provider, model)——同 provider 不同 model 的支援度不同（實測 Ark 新舊版相反）。"""
-    return (_settings.provider_id_for(cfg.get("base_url") or ""), str(cfg.get("model") or ""))
+    pid = cfg.get("provider") or _settings.provider_id_for(cfg.get("base_url") or "")
+    return (pid, str(cfg.get("model") or ""))
 
 
 def _remember_shape(cfg: dict, kwargs: dict) -> None:

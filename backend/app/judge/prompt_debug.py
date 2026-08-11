@@ -472,7 +472,8 @@ def _record_usage_best_effort(cfg: dict[str, Any], payload: dict[str, Any], job_
             {
                 "stage": "prompt_debug",
                 "model": cfg["model"],
-                "provider": app_settings.provider_id_for(cfg.get("base_url") or ""),
+                "provider": cfg.get("provider")
+                or app_settings.provider_id_for(cfg.get("base_url") or ""),
                 "prompt_tokens": payload["prompt_tokens"],
                 "completion_tokens": payload["completion_tokens"],
                 "reasoning_tokens": payload["reasoning_tokens"],
@@ -549,7 +550,7 @@ def _request_compat(
     from openai import BadRequestError, NotFoundError
 
     warnings: list[str] = []
-    provider = app_settings.provider_id_for(cfg.get("base_url") or "")
+    provider = cfg.get("provider") or app_settings.provider_id_for(cfg.get("base_url") or "")
     # 這一輪是否已經試過改走 Responses API。
     # ⚠️ **不能改用 `kwargs` 裡的 wire 標記來判斷「試過沒有」**：標記在失敗時必須被清掉（否則跑批的
     # `_settle_request_shape` 會把死標記發給所有 worker），而 `can_use_responses_api()` 又是以
@@ -631,15 +632,7 @@ def stream_frames(
     if not token:
         raise ValueError("目前配置沒有可用 API token，請先在「配置 › LLM 模型連線」完成設定")
 
-    cfg = {
-        "token": token,
-        "base_url": (effective.get("base_url") or "").strip(),
-        "model": effective.get("model") or "",
-        "temperature": effective.get("temperature"),
-        "thinking": effective.get("thinking", "default"),
-        "reasoning_effort": effective.get("reasoning_effort", "default"),
-        "service_tier": None,
-    }
+    cfg = client.cfg_from_effective(effective, service_tier=None)
     user_prompt = user_prompt_for(text)
     kwargs: dict[str, Any] = {
         "model": cfg["model"],
@@ -668,7 +661,7 @@ def stream_frames(
         {
             "job_id": job_id,
             "model": cfg["model"],
-            "provider": app_settings.provider_id_for(cfg["base_url"]),
+            "provider": cfg.get("provider") or app_settings.provider_id_for(cfg["base_url"]),
             "base_url": cfg["base_url"] or app_settings.default_base_url_for("openai"),
             "temperature": cfg["temperature"],
             "thinking": cfg["thinking"],

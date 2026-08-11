@@ -82,10 +82,6 @@ LLM_DEFAULT_MODEL_CONFIGS: list = _LLM_DEFAULTS.get("modelConfigs", [])
 # 功能區的出廠預設配置 id（area → config id）：使用者在該區還沒選過配置時的起點。
 # 各區合適的模型檔次差很多——裁決跑批要便宜、改寫 Prompt 要聰明——所以不能全區共用一筆。
 LLM_AREA_DEFAULT_CONFIG_IDS: dict = _LLM_DEFAULTS.get("areaDefaults", {})
-# QC DB 環境清單（連線 key）：與 qc_db.json 的 environments 對齊（通常 sit/stage/production）。
-QC_ENVS: tuple[str, ...] = tuple(
-    e["id"] for e in QC_DB_DEFAULTS.get("environments", []) if e.get("id")
-)
 
 
 def model_capabilities_for(model_id: str, provider: str | None = None) -> dict:
@@ -295,15 +291,23 @@ def provider_has_responses_api(base_url: str) -> bool:
     """該 base_url 所屬 provider 是否有 `/responses` 端點（SSOT＝llm_model.json `providers[].responsesApi`）。
 
     這是**端點存在性**的靜態事實，不是 per-model 能力宣告（後者走錯誤驅動探測，見
-    `client._wire_api_for`）。之所以必須靜態宣告：Gemini 的 OpenAI 相容層沒有 `/responses`，
+    `llm.responses_api.WIRE_API_KEY`）。之所以必須靜態宣告：Gemini 的 OpenAI 相容層沒有 `/responses`，
     打過去回 **404 而非 400**——400 降級階梯攔不住 404，會變成與結構化輸出完全無關的離奇錯誤。
     此欄同時是單一 kill switch：改回 `absent` 即整條 Responses 路徑關閉，不需動程式碼。
 
     Args:
         base_url: 連線端點；未知/自訂值由 `provider_id_for` 歸 openai。
     """
-    pid = provider_id_for(base_url)
-    hit = next((p for p in LLM_PROVIDERS if p.get("id") == pid), {})
+    return provider_has_responses_api_by_id(provider_id_for(base_url))
+
+
+def provider_has_responses_api_by_id(provider_id: str) -> bool:
+    """同上，但直接吃 provider id。
+
+    cfg 自帶 `provider` 時應走這條——從 base_url 反推會把自訂 gateway 上的非 OpenAI
+    供應商誤歸 openai（`provider_id_for` 對未知端點的回退），進而誤判端點存在性。
+    """
+    hit = next((p for p in LLM_PROVIDERS if p.get("id") == provider_id), {})
     return hit.get("responsesApi") == "supported"
 
 
