@@ -32,7 +32,20 @@ from app.judge import prompt_source as ps
 _RATCHET: dict[str, int] = {}
 
 # ── 六域逐字共用的區塊（改一支就要六支一起改，否則判準分裂）──
-_SHARED_BLOCKS = ("judgment_rules", "abstain_rules", "critical_rules")
+# output_format / limitations 早已 6/6 逐位元組相同，只是一直沒被鎖（2026-08-11 補上）。
+_SHARED_BLOCKS = (
+    "judgment_rules",
+    "abstain_rules",
+    "critical_rules",
+    "output_format",
+    "limitations",
+)
+
+# ── decision_process 骨架：第 1／2／4／5 步六域逐字相同，只有第 3 步是域專屬 ──
+# 有意讓某域的固定步分歧時，在此登記 {prompt_id: {步號索引}} 並寫理由；空 dict＝零例外。
+# ⚠️ 比照 _RATCHET 的雙向斷言：登記了卻其實沒分歧也要紅，否則過期 entry 會靜默解鎖。
+_ALLOWED_STEP_DIVERGENCE: dict[str, set[int]] = {}
+_FIXED_STEP_IDX = (0, 1, 3, 4)  # 0-based；index 2＝第 3 步
 
 # ── 例證配額 ──
 # ❌**域外棄權**反例數才是健康指標，不是 ❌ 總數：六域全平行、每域只判自己，facet 唯一的
@@ -242,3 +255,103 @@ def test_prompts_dir_has_exactly_the_declared_ids() -> None:
     """`prompts/` 的 md 檔與 `_PROMPT_RULE` 宣告一致——多一支少一支都會讓 structure() 靜默漏域。"""
     on_disk = {p.stem for p in Path(PROMPTS_DIR).glob("[0-9][0-9]_*.md")}
     assert on_disk == set(ps.PROMPT_IDS), f"檔案 {sorted(on_disk)} vs 宣告 {sorted(ps.PROMPT_IDS)}"
+
+
+# ─────────────────────── 骨架跨檔一致性（2026-08-11） ───────────────────────
+# ⚠️ 這批測試守的是「六域骨架不漂移」，**不是**判準品質，也**偵測不到根因 A**
+#    （新規則寫進 L1/L3 卻沒下放到第 3 步）——那種情況下第 3 步與自己上一版逐字相同、
+#    與其餘五域仍相異，以下所有斷言都會全綠。別把「骨架有測試」讀成「執行層安全」。
+# ⚠️ 另一個邊界：validate() 只拿得到單支檔，跨檔一致性做不成存檔閘門，
+#    因此 RuleManager 熱編路徑仍可把骨架改裂，只有 CI 跑 repo 檔才會紅。
+
+
+def _steps_of(prompt_id: str) -> list[str]:
+    """取 <decision_process> 的編號步驟；順帶驗形狀（恰 5 步、依序 1.~5.）。"""
+    m = re.search(
+        r"^<decision_process>$(.*?)^</decision_process>$", _system_of(prompt_id), re.S | re.M
+    )
+    assert m, f"{prompt_id} 缺 <decision_process>"
+    steps = [
+        ln.strip() for ln in m.group(1).strip().splitlines() if re.match(r"^\d\.\s", ln.strip())
+    ]
+    assert len(steps) == 5, f"{prompt_id} decision_process 應為 5 步，實得 {len(steps)}"
+    for i, s in enumerate(steps, 1):
+        assert s.startswith(f"{i}. "), f"{prompt_id} 第 {i} 步編號不符：{s[:30]}"
+    return steps
+
+
+def test_decision_process_fixed_steps_identical() -> None:
+    """第 1／2／4／5 步六域必須逐字相同（第 3 步例外，見下一個測試）。"""
+    steps = {pid: _steps_of(pid) for pid in ps.DOMAIN_PROMPT_IDS}
+    for idx in _FIXED_STEP_IDX:
+        seen: dict[str, list[str]] = {}
+        for pid, ss in steps.items():
+            if idx in _ALLOWED_STEP_DIVERGENCE.get(pid, set()):
+                continue
+            seen.setdefault(ss[idx], []).append(pid)
+        assert len(seen) == 1, (
+            f"decision_process 第 {idx + 1} 步在六域間分裂成 {len(seen)} 種："
+            + "；".join(f"{v} → 「{k[:46]}…」" for k, v in seen.items())
+        )
+    # 雙向斷言：登記了例外卻其實沒分歧 → 紅（防過期 entry 靜默解鎖）
+    for pid, idxs in _ALLOWED_STEP_DIVERGENCE.items():
+        for idx in idxs:
+            others = {steps[o][idx] for o in ps.DOMAIN_PROMPT_IDS if o != pid}
+            assert steps[pid][idx] not in others, (
+                f"_ALLOWED_STEP_DIVERGENCE[{pid}] 登記了第 {idx + 1} 步，但它與其他域相同——過期例外請移除"
+            )
+
+
+def test_decision_process_step3_is_domain_specific() -> None:
+    """第 3 步必須六域兩兩相異，且不得被清成一句廢話。
+
+    這條才是真正抓得到東西的斷言。實際會發生的不是「有人單獨改了第 4 步」，而是
+    **複製既有檔當模板**（開新域或大改寫）時，第 3 步留著來源域的問句——那是該域執行層
+    完全失效，但輸出仍 schema 合法、仍非空、零報錯，目前沒有任何其他機制抓得到。
+    """
+    third = {pid: _steps_of(pid)[2] for pid in ps.DOMAIN_PROMPT_IDS}
+    dup: dict[str, list[str]] = {}
+    for pid, s in third.items():
+        dup.setdefault(s, []).append(pid)
+    clones = {k: v for k, v in dup.items() if len(v) > 1}
+    assert not clones, "decision_process 第 3 步被複製貼上：" + "；".join(
+        f"{v} 共用「{k[:56]}…」" for k, v in clones.items()
+    )
+    short = [f"{pid}({len(s)}字)" for pid, s in third.items() if len(s) < 40]
+    assert not short, f"第 3 步過短、恐已被清成廢話：{short}"
+
+
+def test_domain_boundary_header_and_footer() -> None:
+    """boundary 的 ⚠️ 標頭與收束句六域逐字相同，且收束句必須是區塊最後一個非空行。
+
+    收束句用「是最後一行」而非「有出現」來斷言是刻意的：用 contains 的話，有人在收束句
+    **之後**追加一條新裁定會全綠，但那條裁定在閱讀順序上已從「規則」降格成「附註」。
+    """
+    heads: dict[str, list[str]] = {}
+    feet: dict[str, list[str]] = {}
+    for pid in ps.DOMAIN_PROMPT_IDS:
+        m = re.search(r"^<domain_boundary>$(.*?)^</domain_boundary>$", _system_of(pid), re.S | re.M)
+        assert m, f"{pid} 缺 <domain_boundary>"
+        lines = [ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip()]
+        h = [ln for ln in lines if ln.startswith("⚠️ 易混淆邊界裁定")]
+        assert len(h) == 1, f"{pid} 的 ⚠️ 標頭應恰一行，實得 {len(h)}"
+        heads.setdefault(h[0], []).append(pid)
+        feet.setdefault(lines[-1], []).append(pid)
+        assert any(ln.startswith("- ") for ln in lines), f"{pid} boundary 標頭後無任何裁定條目"
+    assert len(heads) == 1, "boundary ⚠️ 標頭分裂：" + "；".join(f"{v}" for v in heads.values())
+    assert len(feet) == 1, "boundary 收束句分裂（或有人在收束句之後追加了條目）：" + "；".join(
+        f"{v} → 「{k[:46]}…」" for k, v in feet.items()
+    )
+
+
+def test_domain_block_order_identical() -> None:
+    """六域的區塊出現順序必須一致（C-1 專屬的 evidence_gate 除外）。"""
+    orders: dict[tuple[str, ...], list[str]] = {}
+    for pid in ps.DOMAIN_PROMPT_IDS:
+        tags = tuple(
+            t for t in re.findall(r"^<([a-z_]+)>$", _system_of(pid), re.M) if t != "evidence_gate"
+        )
+        orders.setdefault(tags, []).append(pid)
+    assert len(orders) == 1, "六域區塊順序不一致：" + "；".join(
+        f"{v} → {k}" for k, v in orders.items()
+    )
