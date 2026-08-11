@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -14,6 +13,8 @@ from app.core import source_mapping as srcmap
 from app.core.db import source_registry
 from app.core.permissions import permission_keys, require_permission
 from app.judge.ingest import entry, upload_batch
+
+from ._sse import job_progress_stream
 
 router = APIRouter()
 
@@ -115,27 +116,7 @@ async def upload_inbound_stream(job_id: str) -> StreamingResponse:
     關閉 nginx 緩衝確保即時。前端以原生 EventSource 接收、status≠running 時關閉連線。
     """
 
-    async def _events():
-        """快照 → SSE event 產生器；job 不存在推 error、終態推完即 return 結束串流。"""
-        while True:
-            snap = upload_batch.get_job(job_id)
-            if snap is None:
-                yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
-                return
-            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
-            if snap["status"] in ("done", "error"):
-                return
-            await asyncio.sleep(0.6)
-
-    return StreamingResponse(
-        _events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return job_progress_stream(lambda: upload_batch.get_job(job_id), interval=0.6)
 
 
 @router.get("/api/batches")

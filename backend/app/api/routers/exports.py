@@ -9,14 +9,14 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 from app.core import auth, export_jobs
+
+from ._sse import job_progress_stream
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 
@@ -41,27 +41,7 @@ async def export_stream(job_id: str) -> StreamingResponse:
     capability token（僅發起導出的登入者取得），以其本身作為存取憑證（與 prejudge/上傳 SSE 一致）。
     """
 
-    async def _events():
-        """快照 → SSE event 產生器；job 不存在推 error、終態推完即 return 結束串流。"""
-        while True:
-            snap = export_jobs.get_job(job_id)
-            if snap is None:
-                yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
-                return
-            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
-            if export_jobs.is_terminal(snap["status"]):
-                return
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(
-        _events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return job_progress_stream(lambda: export_jobs.get_job(job_id), interval=0.5)
 
 
 @router.post("/cancel")

@@ -22,6 +22,8 @@ from app.core.config import env, is_production
 from app.core.permissions import permission_keys, require_permission
 from app.judge import prejudge_batch, run_log
 
+from .._sse import SSE_HEADERS, job_progress_stream
+
 router = APIRouter(prefix="/prejudge", tags=["prejudge"])
 
 # SSE 輪詢間隔：/stream 推初判進度、/log-stream 推逐筆執行日誌，皆非跨環境變化值，具名純為避免裸數字。
@@ -315,33 +317,15 @@ def run_log_detail(
 
 @router.get("/stream")
 async def prejudge_stream(job_id: str) -> StreamingResponse:
-    """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job done/error/cancelled 即關閉。
+    """SSE 長連線推送初判歸因進度（免前端輪詢）：每 ~0.8s 推一次快照，job 進入終態（含收尾時的 interrupted）即關閉。
 
     不加 auth Depends：原生 EventSource 無法帶 Authorization header；job_id 為不可猜的隨機
     capability token（僅發起初判的登入者取得），以其本身作為存取憑證（與上傳 SSE 一致）。
     `X-Accel-Buffering: no` 關 nginx 緩衝確保即時推送。
     """
 
-    async def _events():
-        """快照 → SSE event 產生器；job 不存在推 error、終態推完即 return 結束串流。"""
-        while True:
-            snap = prejudge_batch.get_job(job_id)
-            if snap is None:
-                yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
-                return
-            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
-            if snap["status"] in ("done", "error", "cancelled"):
-                return
-            await asyncio.sleep(_PREJUDGE_SSE_POLL_INTERVAL)
-
-    return StreamingResponse(
-        _events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+    return job_progress_stream(
+        lambda: prejudge_batch.get_job(job_id), interval=_PREJUDGE_SSE_POLL_INTERVAL
     )
 
 
@@ -385,12 +369,4 @@ async def prejudge_log_stream(job_id: str, offset: int = 0) -> StreamingResponse
                 return
             await asyncio.sleep(_LOG_SSE_POLL_INTERVAL)
 
-    return StreamingResponse(
-        _events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return StreamingResponse(_events(), media_type="text/event-stream", headers=SSE_HEADERS)

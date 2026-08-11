@@ -23,6 +23,17 @@ from typing import Generic, TypeVar
 
 _log = logging.getLogger(__name__)
 
+# 終態 SSOT：原本 export_jobs 與 prompt_debug_batch 各寫一份相同的 tuple，
+# 而 import_jobs / upload_batch 的 SSE 又各自硬編碼了不完整的子集（漏 cancelled/interrupted），
+# 導致收尾時被標成 interrupted 的 job 串流永不結束。集中在此，加新終態只改一處。
+TERMINAL_STATUSES: tuple[str, ...] = ("done", "error", "cancelled", "interrupted")
+
+
+def is_terminal(status: str) -> bool:
+    """job 狀態是否為終態（不會再變動）。"""
+    return status in TERMINAL_STATUSES
+
+
 T = TypeVar("T", bound=dict)
 R = TypeVar("R")
 

@@ -16,7 +16,7 @@ import time
 import uuid
 from collections.abc import Callable
 
-from app.core import paths
+from app.core import job_registry, paths
 from app.core.job_registry import JobStore
 
 _log = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ _log = logging.getLogger(__name__)
 _TERMINAL_TTL_SECONDS = 3600
 # interrupted＝行程重啟打斷（見 mark_running_interrupted）：對前端同樣是終態（停止串流），
 # 也同樣要被 TTL 回收，只是訊息不同——它不是「失敗」，是「沒跑完就被中斷了」。
-_TERMINAL_STATUSES = ("done", "error", "cancelled", "interrupted")
+_TERMINAL_STATUSES = job_registry.TERMINAL_STATUSES  # SSOT 見 core.job_registry
 
 # persist_dir：只落「被行程重啟打斷」的快照，讓下個行程回答得出使用者的導出怎麼了。
 # 結果 bytes 刻意不落盤——done 到前端 download 的窗口是毫秒級（實測 0.5s 內），

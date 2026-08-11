@@ -12,7 +12,7 @@ import logging
 import threading
 import uuid
 
-from app.core import db
+from app.core import db, job_registry
 from app.core import source_mapping as srcmap
 from app.core.job_registry import JobStore
 from app.judge.ingest import entry
@@ -191,7 +191,7 @@ def start_upload_job(content: bytes, filename: str, selections: list[dict]) -> d
     # 終態快照 TTL 回收（比照 export_jobs / import_jobs / prompt_debug_batch 的慣例，在 start 前掃一次）。
     # 缺這行時進度快照只增不減——單筆雖小，但長跑行程沒有任何回收路徑。
     # 註：整份上傳列（`_job_rows`）另有 `_run` 的 finally 清理，不在此列。
-    _store.sweep_terminal(_TERMINAL_TTL_SECONDS, terminal_statuses=("done", "error", "interrupted"))
+    _store.sweep_terminal(_TERMINAL_TTL_SECONDS, terminal_statuses=job_registry.TERMINAL_STATUSES)
 
     job_id = f"up_{uuid.uuid4().hex[:12]}"
     _store.put(

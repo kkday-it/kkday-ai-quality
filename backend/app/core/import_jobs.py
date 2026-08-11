@@ -15,6 +15,7 @@ import time
 import uuid
 from collections.abc import Callable
 
+from app.core import job_registry
 from app.core.job_registry import JobStore
 
 _log = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ def _run(job_id: str, runner: Runner) -> None:
 def start_import(runner: Runner) -> str:
     """註冊並背景啟動一個匯入 job；立即回 job_id（不阻塞請求）。"""
     job_id = f"im_{uuid.uuid4().hex[:12]}"
-    _store.sweep_terminal(_STALE_TTL_SECONDS, terminal_statuses=("done", "error"))
+    _store.sweep_terminal(_STALE_TTL_SECONDS, terminal_statuses=job_registry.TERMINAL_STATUSES)
     _store.put(job_id, _new_snapshot())
     threading.Thread(
         target=_run, args=(job_id, runner), name=f"import-{job_id}", daemon=True

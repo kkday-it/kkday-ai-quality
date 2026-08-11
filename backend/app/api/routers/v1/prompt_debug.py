@@ -40,6 +40,7 @@ from app.core import auth
 from app.core import settings as app_settings
 from app.core.permissions import permission_keys, require_permission
 
+from .._sse import SSE_HEADERS
 from .prejudge import LlmOverridesIn
 
 router = APIRouter(prefix="/prejudge", tags=["prompt-debug"])
@@ -234,7 +235,7 @@ def prompt_debug_stream(
     return StreamingResponse(
         prompt_debug.stream_frames(body.text, system_prompt, effective),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=SSE_HEADERS,
     )
 
 
@@ -322,7 +323,7 @@ def prompt_debug_revise(
     return StreamingResponse(
         prompt_reviser.stream_frames(system_prompt, cases, effective),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=SSE_HEADERS,
     )
 
 

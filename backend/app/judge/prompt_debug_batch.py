@@ -43,7 +43,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.core import db
+from app.core import db, job_registry
 from app.core.concurrency import ConcurrencyGovernor, is_rate_limit
 from app.core.config import env
 from app.core.job_registry import JobStore
@@ -72,7 +72,7 @@ _DB_FETCH_CHUNK = 500
 _MAX_FAILED_ITEMS = 200  # 失敗明細清單上限：系統性失敗只計數不細列，防快照撐爆
 _RECENT_ITEMS = 8  # 快照內最近完成明細條數（前端「即時回報」用，全量明細在 jsonl）
 
-_TERMINAL_STATUSES = ("done", "error", "cancelled", "interrupted")
+_TERMINAL_STATUSES = job_registry.TERMINAL_STATUSES  # SSOT 見 core.job_registry
 
 _store: JobStore = JobStore()
 # 每 run 一個協作式取消旗標（與快照同生命週期但非 JSON-safe，不進 JobStore；同 prejudge_batch 慣例）
@@ -539,23 +539,15 @@ def _build_cfg(effective: dict) -> dict:
     Raises:
         ValueError: 配置解不出 API token 或未指定 model（router 已前置檢查，此處為第二道防線）。
     """
-    from app.core import settings as app_settings
 
-    token = app_settings.resolve_provider_token(effective)
-    if not token:
+    cfg = client.cfg_from_effective(effective)
+    if not cfg["token"]:
         raise ValueError("目前配置沒有可用 API token，請先在「配置 › LLM 模型連線」完成設定")
-    model = (effective.get("model") or "").strip()
-    if not model:
+    # 跑批多一道 model 必填檢查（單次互動路徑允許沿用 area 默認，批次不允許）
+    cfg["model"] = cfg["model"].strip()
+    if not cfg["model"]:
         raise ValueError("本次跑批未指定 model")
-    return {
-        "token": token,
-        "base_url": (effective.get("base_url") or "").strip(),
-        "model": model,
-        "temperature": effective.get("temperature"),
-        "thinking": effective.get("thinking", "default"),
-        "reasoning_effort": effective.get("reasoning_effort", "default"),
-        "service_tier": None,
-    }
+    return cfg
 
 
 def _messages(plan: _RunPlan, row: InputRow) -> list[dict[str, str]]:

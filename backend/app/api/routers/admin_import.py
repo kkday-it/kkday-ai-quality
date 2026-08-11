@@ -11,8 +11,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -22,6 +20,8 @@ from app.core import export_jobs, import_jobs
 from app.core.config import env, is_production
 from app.core.db import datapack
 from app.core.permissions import permission_keys, require_permission
+
+from ._sse import job_progress_stream
 
 router = APIRouter()
 
@@ -91,26 +91,7 @@ async def import_stream(job_id: str) -> StreamingResponse:
     比照 inbound/exports SSE 慣例；job_id 為不可猜的能力 token（EventSource 無法帶 Authorization header）。
     """
 
-    async def _events():
-        while True:
-            snap = import_jobs.get_job(job_id)
-            if snap is None:
-                yield f"event: error\ndata: {json.dumps({'detail': 'job 不存在'}, ensure_ascii=False)}\n\n"
-                return
-            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n"
-            if snap["status"] in ("done", "error"):
-                return
-            await asyncio.sleep(0.6)
-
-    return StreamingResponse(
-        _events(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return job_progress_stream(lambda: import_jobs.get_job(job_id), interval=0.6)
 
 
 @router.post("/api/admin/export/start")
