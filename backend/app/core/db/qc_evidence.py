@@ -69,11 +69,6 @@ def reload() -> None:
         _cfg_cache = None
 
 
-def summary_cfg() -> dict:
-    """摘要器旋鈕（summary 區塊複本；prejudge._summarize_evidence 消費）。"""
-    return dict(_cfg().get("summary") or {})
-
-
 def probe(creds: dict) -> bool:
     """輕量連線探測（job 啟動前，R9）：SELECT 1；任何失敗回 False（呼叫端整批降級）。
 

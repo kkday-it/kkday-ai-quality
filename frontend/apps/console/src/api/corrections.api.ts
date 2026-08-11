@@ -1,5 +1,5 @@
 /**
- * 人工糾正歸因 + 待審建議 + 判決值域（全 POST，遵循本專案零 PUT/PATCH/DELETE 慣例）。
+ * 人工糾正歸因 + 待審建議 + 值域主檔（全 POST，遵循本專案零 PUT/PATCH/DELETE 慣例）。
  *
  * 糾正是 `attribution_tbl` 唯一的人工寫入路徑，也是「人工託管」的入口：一旦改過，該則反饋的
  * 重新初判就不再覆蓋現值，AI 的新結論改走待審建議。
@@ -37,7 +37,7 @@ export interface PendingSuggestions {
   items: SuggestionItem[];
 }
 
-/** 判決值域主檔的單一選項。 */
+/** 值域主檔的單一選項。 */
 export interface DimensionItem {
   attribution_dimension_oid?: number;
   dimension_code: string;
@@ -152,7 +152,7 @@ export const resolveSuggestions = (body: {
 }): Promise<{ applied: number; rejected: number; remaining: number }> =>
   post('/attribution-suggestions/resolve', body);
 
-/** 值域四軸（責任方／嚴重度／建議行動／備註類型）。 */
+/** 值域主檔各軸（目前僅 note_type 備註互動類型）。 */
 export const getDimensions = (includeInactive = false): Promise<Record<string, DimensionItem[]>> =>
   j(`${BASE}/attribution-dimensions${includeInactive ? '?include_inactive=true' : ''}`);
 
@@ -160,6 +160,3 @@ export const getDimensions = (includeInactive = false): Promise<Record<string, D
 export const saveDimensionItem = (body: DimensionItem): Promise<DimensionItem> =>
   post('/attribution-dimensions/save', body);
 
-/** 重寫某軸的顯示順序。 */
-export const reorderDimension = (body: { dimension_code: string; item_codes: string[] }): Promise<{ updated: number }> =>
-  post('/attribution-dimensions/reorder', body);

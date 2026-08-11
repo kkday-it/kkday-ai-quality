@@ -1,7 +1,9 @@
-"""判決歸因值域主檔（責任方／嚴重度／建議行動）——業務可於後台維護的參照資料。
+"""值域主檔——業務可於「🗂️ 分類與選項」抽屜維護的參照資料。
 
-三軸共用一張表（以 `dimension_code` 判別），與 `judge_rule_version_lst` 用 `rule_code` 判別是
-同一個慣例。拆三張表要付三套 migration／API／畫面，而三者欄形完全相同。
+多軸共用一張表（以 `dimension_code` 判別），與 `judge_rule_version_lst` 用 `rule_code` 判別是
+同一個慣例：欄形相同的值域共用一表，避免每加一軸就多一套 migration／API／畫面。
+**目前僅 `note_type`（備註互動類型）一軸**——責任方／嚴重度／建議行動三軸零消費者，
+已於 migration `f2a91c7b4d08` 清退。
 
 **檔案是 seed、DB 是 live**（同 bd_tag_vertical / source_mapping 的既有慣例）：空庫首次讀取時自
 `config/ai_judge/attribution_dimension.json` 冪等灌入，之後以 DB 為準。
@@ -23,11 +25,10 @@ from app.core.paths import AI_JUDGE_DIR
 
 # 值域各軸的顯示順序（前端下拉分組用）。
 #
-# 前三軸是**判決歸因**的維度（定責＋行動）；`note_type` 是**備註的互動類型**，語義上與判決無關，
-# 但欄形完全相同（code / label / 說明 / 排序 / 啟用 / 稽核），共用同一張表是既有的判別式單表慣例
-# （見 tables.py 的 attribution_dimension_master 表註解）。拆一張新表只為了語義分組，
-# 代價是再多一套 migration / API / 維護畫面。
-DIMENSION_CODES = ("responsible_party", "severity", "verdict_action", "note_type")
+# 目前只有 `note_type`（備註的互動類型）一軸。表以 `dimension_code` 判別，保留多軸能力：
+# 日後新增值域（欄形同為 code / label / 說明 / 排序 / 啟用 / 稽核）直接加一個 code 即可，
+# 不必再開一張表與一套 migration / API / 維護畫面。
+DIMENSION_CODES = ("note_type",)
 
 _WIRE = (
     "attribution_dimension_oid",
@@ -80,7 +81,7 @@ def seed_dimensions_from_file() -> int:
 
 
 def list_dimensions(include_inactive: bool = False) -> dict[str, list[dict]]:
-    """三軸值域 → {dimension_code: [選項…]}（一次取齊，表單只打一發請求）。
+    """各軸值域 → {dimension_code: [選項…]}（一次取齊，表單只打一發請求）。
 
     Args:
         include_inactive: True＝連停用項也回（維護畫面用）；False＝只回可選項（表單下拉用）。

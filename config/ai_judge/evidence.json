@@ -13,10 +13,5 @@
   "cache": {
     "order_ttl_hours": 6
   },
-  "singleflight_wait_timeout_s": 20,
-  "summary": {
-    "lang_fallback": "zh-tw",
-    "max_chars_per_field": 500,
-    "max_total_chars": 1800
-  }
+  "singleflight_wait_timeout_s": 20
 }

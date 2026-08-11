@@ -45,10 +45,8 @@ def polarity_for_sentiment(score: int) -> str:
 # ── SSOT v2.7 軸A/軸B 共用型別 ──
 # 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）
 # 初判硬閘依此封鎖：< with_order ⇒ 禁判 ②contract_breach
-EvidenceLevel = Literal["symptom_only", "with_product_page", "with_order", "with_both"]
 
 # 嚴重度（軸B · ITIL Priority）
-Severity = Literal["P0", "P1", "P2", "P3"]
 
 
 class TicketFinding(BaseModel):
@@ -59,20 +57,12 @@ class TicketFinding(BaseModel):
     # 反饋摘要：語系 → 簡明摘要 map（LLM 產·去重·務必含 'zh-tw' 台灣繁體；表格只顯示 zh-tw）。空則回退 evidence 片段。
     summary: dict[str, str] = Field(default_factory=dict)
     evidence_quote: str = ""  # 逐字原文佐證（防捏造 grounding 錨點 + FindingCard 佐證欄；非摘要）
-    ground_truth_quote: str = ""  # 客服對話擷取的正確答案（零幻覺）
     confidence: float = 0.0  # 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）
     raw_confidence: float = 0.0  # arbiter LLM 原始信心（校準輸入；Cleanlab 離線擬合用）
-    is_enhanced: bool = False  # 是否經灰度複判（中信賴 [jury_low, jury_high) 重新初判）
-    enhance_model: str = ""  # 複判使用的模型（空＝未複判）
     # L4 行動
     recommended_action: RecommendedAction
-    action_detail: str = ""
-    writer_handoff: bool = False  # 防幻覺：content_missing 一律 false
     # 簿記
     is_primary: bool = False
-    hit_rule_id: str = (
-        ""  # 命中的法典 Rule ID（R1-1~R5-5；codex.scan_misplacement/empty_rule_for 溯源）
-    )
     # G1 自動確認路由的結果：高信心且已判定 → true（系統自動採納，不進人工佇列）。
     is_auto_accepted: bool = False
     created_at: str = ""  # ISO 8601；落庫時空字串會被 _finding_values 轉為 None
@@ -80,13 +70,6 @@ class TicketFinding(BaseModel):
     # （ai_judge.domain_owner，SSOT＝rule _meta.owner_role），避免每列 denormalize 一份衍生值。
     order_oid: str = ""  # 訂單編號（B 客人進線可定位具體訂單；A/C 管道通常為空）
     supplier_oid: str = ""  # 供應商編號（order_message 進線可定位；chatbot/平台主動通常為空）
-    root_cause_candidates: list[str] = Field(default_factory=list)  # 預判候選域（初判前可給）
-    evidence_level: EvidenceLevel = "symptom_only"  # 初判當下實際證據層級
-    # ── 軸B 初判 vector（初判後 evidence-gated；responsible_party 由 domain 推導）──
-    root_cause_domain: str = ""  # 收斂單選歸因域 ①~⑦（候選集不足/卡預判時為空）
-    sub_cause: str = ""  # 子類（如：集合執行、語言服務）
-    severity: Severity = "P3"  # 嚴重度（本期不判斷，保留預設供既有 pipeline 相容）
-    responsible_party: str = ""  # 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）
     # ── config/ai_judge L2 歸因（prejudge 產出；歸因分類後新增的數據）──
     l1_domain_code: str = ""  # L1 域機器碼（content/supplier…；root_cause_domain 為其圈號）
     l1_label: str = ""  # L1 域中文名
@@ -106,7 +89,7 @@ class TicketFinding(BaseModel):
         """初判 payload → attributions typed 欄位 dict（落庫形狀 SSOT）。
 
         攤平為 typed scalar 欄（可直接 btree 索引 / 乾淨 SQL），只取真訊號欄；
-        殘留 / legacy 欄（verdict 軸、severity、evidence_level…）一律不入庫。source /
+        非落庫欄（來源關聯、UI 衍生欄）不在此。source /
         source_id / created_at / is_auto_accepted
         由 db.findings._finding_values 補齊（來源關聯 + 人工判決軸）。
 

@@ -91,7 +91,7 @@ def align_schema() -> None:
     """依判定結果把 DB schema 對齊到 head；無法安全處理時拋錯（entrypoint 據此中止啟動）。
 
     Raises:
-        RuntimeError: DB 版本認不得且未登記於 `LEGACY_COMPATIBLE_HEADS`（可能是降級殘留、
+        RuntimeError: DB 版本認不得且未登記於本模組的 `SQUASHED_REVISIONS`（可能是降級殘留、
             人為改動，或停在 squash 前的中間版本）。自動 stamp 會謊稱已是最新並永久漏掉 DDL。
     """
     from alembic import command
@@ -116,7 +116,7 @@ def align_schema() -> None:
     elif mode.startswith(MODE_ABORT_PREFIX):
         current = mode[len(MODE_ABORT_PREFIX) :]
         raise RuntimeError(
-            f"alembic_version={current} 既不在 script 目錄、也未登記於 LEGACY_COMPATIBLE_HEADS。"
+            f"alembic_version={current} 既不在 script 目錄、也未登記於本模組的 SQUASHED_REVISIONS。"
             "可能是降級殘留、人為改動，或停在 squash 前的中間版本（schema 實際落後）。"
             "自動 stamp 會謊稱已是最新並永久漏掉 DDL，故拒絕處理——請人工確認後手動 stamp。"
         )

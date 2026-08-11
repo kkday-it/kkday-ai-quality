@@ -9,7 +9,7 @@ metadata:
     # config-manager 維護的 ConfigMap/Secret 變動時自動 rolling restart（公司慣例）
     reloader.stakater.com/auto: "true"
 spec:
-  # ⚠️ Recreate + replicas:1（非典型，刻意）：4 套 job registry（export/import/prejudge/upload）
+  # ⚠️ Recreate + replicas:1（非典型，刻意）：6 套 job registry（export/import/prejudge/upload/prompt_debug_batch/prompt_regression）
   # 為 in-mem dict，多 replica / RollingUpdate 下 job 進度、SSE、下載會分裂到不同 pod。
   # 代價＝部署更新有短暫空窗（舊 pod 終止→新 pod 就緒），與「滾動更新無 5xx」DoD 存在張力，
   # 需與 SRE 對齊可接受空窗（詳見 deploy/README.md）。P1 遷 Redis/PG 後可改多 replica。

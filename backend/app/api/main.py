@@ -125,7 +125,7 @@ for _r in (
     app.include_router(_r)
 
 db.seed_rules_from_files()  # 初次播種：無 DB 版的 rule 以默認檔建 v1 active（冪等）
-db.seed_dimensions_from_file()  # 初次播種：判決值域三軸以默認檔灌入（冪等；空庫才會實際寫入）
+db.seed_dimensions_from_file()  # 初次播種：值域主檔以默認檔灌入（冪等；空庫才會實際寫入）
 
 # Prometheus /metrics（EKS Step 6 Grafana 驗收契約；PHP fpm-exporter 的 Python 等效）。
 # 免 auth（Prometheus scrape 不帶憑證）、不進 OpenAPI schema、access log 排除見 logging_setup。

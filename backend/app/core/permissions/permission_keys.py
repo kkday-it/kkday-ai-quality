@@ -12,7 +12,7 @@ from __future__ import annotations
 JUDGE_RULE_MANAGE = "judge-rule.version.manage"  # 發布 / 恢復版本 / 恢復默認初判規則
 DATA_DATAPACK_IMPORT = "data.datapack.import"  # 全庫資料包匯入（truncate-then-load·最高破壞性）
 ATTRIBUTION_DIMENSION_MANAGE = (
-    "attribution.dimension.manage"  # 維護判決值域主檔（改 label 影響全庫判決顯示）
+    "attribution.dimension.manage"  # 維護值域主檔（改 label 影響全庫既有備註的顯示）
 )
 
 # ── 日常質檢作業（入 default，登入即可用）──

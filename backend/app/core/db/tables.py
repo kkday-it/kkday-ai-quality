@@ -802,9 +802,14 @@ attribution_history = Table(
     Column(
         "author",
         String(255),
-        comment="備註人（SSO 接入前一律 system，接入後為使用者 email；kind=note）",
+        comment="操作者（SSO 接入前一律 system，接入後為使用者 email）",
     ),
-    Column("note_content", Text, key="content", comment="備註內容（kind=note）"),
+    Column(
+        "note_content",
+        Text,
+        key="content",
+        comment="人工動作的理由文字（correction／review_confirm／suggestion 事件；欄名沿用歷史，語義非備註）",
+    ),
     Column(
         "create_date",
         DateTime(timezone=True),
@@ -919,8 +924,7 @@ attribution_dimensions = Table(
         "dimension_code",
         Text,
         nullable=False,
-        comment="值域維度：responsible_party（責任方）/ severity（嚴重度）/ "
-        "verdict_action（建議行動）",
+        comment="值域維度：note_type（備註的互動類型）",
     ),
     Column(
         "item_code",
@@ -955,10 +959,10 @@ attribution_dimensions = Table(
     Column("modify_date", DateTime(timezone=True), comment="最後修改時間"),
     Index("idx_attribution_dimension_master_unique01", "dimension_code", "item_code", unique=True),
     Index("idx_attribution_dimension_master_mix01", "dimension_code", "sort_order"),
-    comment="判決歸因值域主檔（責任方／嚴重度／建議行動三軸共用一表，以 dimension_code 判別）。"
-    "三者欄形完全相同，拆三張表＝三套 migration／API／畫面；判別式單表是既有慣例"
-    "（judge_rule_version_lst 用 rule_code 判別）。檔案 config/ai_judge/attribution_dimension.json "
-    "為默認 seed，本表存 live",
+    comment="值域主檔（以 dimension_code 判別的判別式單表，保留多軸能力；目前僅 note_type 備註互動類型一軸）。"
+    "判別式單表是既有慣例（judge_rule_version_lst 用 rule_code 判別），"
+    "欄形相同的值域共用一表，避免每加一軸就多一套 migration／API／畫面。"
+    "檔案 config/ai_judge/attribution_dimension.json 為默認 seed，本表存 live",
 )
 
 

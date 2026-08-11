@@ -29,6 +29,9 @@ def handler(user: dict = Depends(require_permission(permission_keys.PROBLEM_LIST
 ## business-key ↔ 端點 ↔ default/grants
 | key | 端點 | 授予層級 |
 |---|---|---|
+| `attribution.correction.manage` | attributions correct/create/delete/restore/swap | default |
+| `attribution.review` | attributions confirm | default |
+| `attribution.dimension.manage` | attribution-dimensions save/reorder | default |
 | `judge-rule.version.manage` | judge-rules save/restore/reset×2 | 僅 grants |
 | `data.datapack.import` | admin import validate/run | default（登入即可用） |
 | `data.datapack.export` | admin export/start | default |

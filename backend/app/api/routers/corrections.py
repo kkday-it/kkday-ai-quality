@@ -274,7 +274,7 @@ class ReorderIn(BaseModel):
 def get_dimensions(
     include_inactive: bool = False, _: dict = Depends(auth.get_current_user)
 ) -> dict:
-    """判決值域三軸（責任方／嚴重度／建議行動）；預設只回可選項。"""
+    """值域主檔（目前僅備註互動類型 note_type 一軸）；預設只回可選項。"""
     return db.list_dimensions(include_inactive=include_inactive)
 
 

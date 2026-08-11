@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores';
-import { AppTopbar, FeatureTabs, SettingsDrawer } from './components';
+import { AppTopbar, FeatureTabs, SettingsDrawer, ValueDomainDrawer } from './components';
 import { MODULES, moduleByPath } from './modules';
 
 // 應用殼層：固定 topbar（品牌列 + 視圖 tab）+ 內部滾動內容區 + 公共設定抽屜。
@@ -23,9 +23,12 @@ const switchModule = (value: string) => {
   if (target && target.value !== activeModule.value.value) router.push(target.home);
 };
 
-// ⚙️ 設定＝公共配置抽屜（LLM/QC/導出偏好）。
+// ⚙️ 設定＝系統配置與維運抽屜（LLM／QC 連線／資料匯出入）；
+// 🗂️ 分類與選項＝業務自己增減的分類與選項清單（商品垂直分類／備註類型），2026-08-11 自配置抽屜拆出。
 const settingsVisible = ref(false);
 const openSettings = () => (settingsVisible.value = true);
+const valueDomainVisible = ref(false);
+const openValueDomain = () => (valueDomainVisible.value = true);
 
 onMounted(() => {
   auth.fetchMe(); // 以既有 token 拉當前 user（be2 模式用；同時觸發權限清單載入）
@@ -39,6 +42,7 @@ onMounted(() => {
     <div class="z-10 flex-none">
       <AppTopbar
         :active-module="activeModule.value"
+        @open-value-domain="openValueDomain"
         @open-settings="openSettings"
         @switch-module="switchModule"
       />
@@ -73,6 +77,7 @@ onMounted(() => {
       <router-view />
     </div>
 
+    <ValueDomainDrawer v-model:visible="valueDomainVisible" />
     <SettingsDrawer v-model:visible="settingsVisible" />
   </a-layout>
 </template>

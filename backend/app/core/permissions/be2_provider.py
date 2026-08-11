@@ -12,7 +12,7 @@
    （`{category}.{business}.{action}`）——後端驗證 accessToken 後向 Auth SVC 取該 user 的
    business-list（server-to-server 契約待 auth team），與本專案 permission_keys 交集即權限集。
 2. **每請求 verify**：打 Auth SVC `verify-be2-ci {userUuid, method, uri}` fail-closed 403 +
-   whiteList（auth.config.json 已預留）——be2 base controller 模式，無需先抓全集。
+   whiteList——be2 base controller 模式，無需先抓全集（屆時再於 auth.config.json 補該鍵，不預留空佔位）。
 
 token 過期語義：403 + response header `x-kkday-auth-svc-status: AU9404`（前端據此觸發
 refresh，見前端 http.api.ts 續期攔截）。

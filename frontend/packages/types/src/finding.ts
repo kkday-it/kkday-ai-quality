@@ -13,10 +13,8 @@ export type RecommendedAction =
   | 'escalate_ux';
 
 /** 證據層級（漸進升級：純症狀 → 有商品頁 → 有訂單 → 兩者皆有）；初判硬閘依此封鎖履約不符歸因。 */
-export type EvidenceLevel = 'symptom_only' | 'with_product_page' | 'with_order' | 'with_both';
 
 /** 嚴重度（軸B · ITIL Priority）。 */
-export type Severity = 'P0' | 'P1' | 'P2' | 'P3';
 
 /** 初判單元（SSOT）。 */
 export interface TicketFinding {
@@ -27,22 +25,12 @@ export interface TicketFinding {
   summary: Record<string, string>;
   /** 逐字原文佐證（防捏造的 grounding 錨點，非摘要）。 */
   evidence_quote: string;
-  /** 客服對話擷取的正確答案（零幻覺）。 */
-  ground_truth_quote: string;
   /** 最終信心（raw → 灰度複判 → cap 封頂 → 線上校準後值）。 */
   confidence: number;
   /** arbiter LLM 原始信心（校準輸入）。 */
   raw_confidence: number;
-  /** 是否經灰度複判（中信賴區間重新初判）。 */
-  is_enhanced: boolean;
-  /** 複判使用的模型（空＝未複判）。 */
-  enhance_model: string;
   recommended_action: RecommendedAction;
-  action_detail: string;
-  writer_handoff: boolean;
   is_primary: boolean;
-  /** 命中的法典 Rule ID（R1-1~R5-5）。 */
-  hit_rule_id: string;
   /** 高信心且已判定 → 系統自動採納，不進人工佇列。 */
   is_auto_accepted: boolean;
   /** ISO 8601。 */
@@ -51,17 +39,6 @@ export interface TicketFinding {
   order_oid: string;
   /** 供應商編號（order_message 進線可定位）。 */
   supplier_oid: string;
-  /** 預判候選域（初判前可給）。 */
-  root_cause_candidates: string[];
-  /** 初判當下的實際證據層級。 */
-  evidence_level: EvidenceLevel;
-  /** 收斂單選歸因域（候選集不足／卡預判時為空）。 */
-  root_cause_domain: string;
-  /** 子類（如：集合執行、語言服務）。 */
-  sub_cause: string;
-  severity: Severity;
-  /** 誰錯（由 root_cause_domain 推導，非 LLM 直接輸出）。 */
-  responsible_party: string;
   /** L1 域機器碼（content/supplier…）。 */
   l1_domain_code: string;
   l1_label: string;

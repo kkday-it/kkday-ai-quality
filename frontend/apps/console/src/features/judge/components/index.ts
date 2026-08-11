@@ -18,4 +18,4 @@ export { default as BdTagVerticalPanel } from './BdTagVerticalPanel.vue';
 export { default as BdTagVerticalSettingsPanel } from './BdTagVerticalSettingsPanel.vue';
 export { default as AttributionCorrectionDrawer } from './AttributionCorrectionDrawer.vue';
 export { default as AttributionSuggestionDrawer } from './AttributionSuggestionDrawer.vue';
-export { default as VerdictDimensionPanel } from './VerdictDimensionPanel.vue';
+export { default as NoteTypePanel } from './NoteTypePanel.vue';

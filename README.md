@@ -28,7 +28,7 @@
 backend/                     # Python（FastAPI + SQLAlchemy + PostgreSQL）
   app/
     core/                    # 領域基礎層（見 core/README.md）
-      db/                    # 資料存取（tables/source_registry/_shared/schema_bootstrap + 14 職責模組 + barrel）
+      db/                    # 資料存取（tables/source_registry/_shared/schema_bootstrap + 18 職責模組 + barrel）
       judge_config/          # 判準 config loader（ai_judge/bd_tag_vertical/source_mapping/…）
       auth · config · paths · schema · settings
     judge/                   # 初判引擎（prejudge 初判歸因 + batch 編排 + ingest 上傳 + llm client）
@@ -128,9 +128,9 @@ cd frontend && pnpm install && cd apps/console && npx vite   # :5273，dev proxy
 | GET | `/api/attribution-history` · `/models` | **反饋時間軸**（單一條軸：初判快照／初判失敗／人工糾正／複審確認／待審建議／建議處置，加上另一張表的備註，由後端合併排序；內部遙測事件由白名單擋在外；重新初判結果與前次全同時去重不記）· 歷來初判過的模型清單（篩選/導出下拉選項）。需登入 |
 | GET/POST | `/api/attribution-notes` · `/types` | 反饋備註讀寫 · 互動類型值域。**append-only**（無編輯/撤回端點）；`l1_code`+`l2_code` 同時給＝**面向備註**（綁面向不綁 attribution_oid，重判後仍在），同時省略＝**整則備註**。需登入 |
 | GET | `/api/attributions` · `/correction-policy` | 人工糾正工作台的資料源（一則反饋的全部歸因，`live`/`deleted` 兩陣列——tombstone 收在獨立陣列）· 可改欄白名單與理由長度門檻。需登入 |
-| POST | `/api/attributions/correct`·`create`·`delete`·`restore`·`confirm` | 人工糾正四操作（改值／新增／標記 AI 誤判〔tombstone 非硬刪〕／還原）+ 複審確認。**理由必填**；改後該反饋進入人工託管，重新初判不再覆蓋現值（改走待審建議）。前四者需 `attribution.correction.manage`、confirm 需 `attribution.review` |
+| POST | `/api/attributions/correct`·`create`·`delete`·`restore`·`confirm`·`swap` | 人工糾正四操作（改值／新增／標記 AI 誤判〔tombstone 非硬刪〕／還原）+ 複審確認。**理由必填**；改後該反饋進入人工託管，重新初判不再覆蓋現值（改走待審建議）。前四者需 `attribution.correction.manage`、confirm 需 `attribution.review` |
 | GET/POST | `/api/attribution-suggestions` · `/resolve` | 人工託管的反饋重新初判後，AI 結論轉為待審建議 · 逐條或整組採納／駁回。需 `attribution.review` |
-| GET/POST | `/api/attribution-dimensions` · `/save` · `/reorder` | 值域主檔四軸（責任方／嚴重度／建議行動／備註類型），業務可於設定頁維護。**無刪除端點**（停用走 `is_active=false`——硬刪已被歷史引用的 code 會讓那些列顯示空白）。寫入需 `attribution.dimension.manage` |
+| GET/POST | `/api/attribution-dimensions` · `/save` · `/reorder` | 值域主檔（目前僅備註互動類型一軸），業務可於「🗂️ 分類與選項」抽屜維護。**無刪除端點**（停用走 `is_active=false`——硬刪已被歷史引用的 code 會讓那些列顯示空白）。寫入需 `attribution.dimension.manage` |
 | CRUD | `/api/judge-rules/*` | 初判規則版本化（面板編輯 / 歷史 / 恢復默認 / 導出 Prompt 包 zip）|
 | GET | `/api/auth/me`·`/permissions` | 當前身分（本地固定身分，無登入系統）+ 當前 user 權限清單（身分驗證已 provider 化——`auth.config.json` `authProvider` local/be2 分流，見 `core/auth_verifiers.py`；be2 `auth.business-list` 形狀 `{value,ttl}`，供前端 usePermission()/選單過濾）|
 | POST | `/api/admin/export/start` | 啟動全庫資料包導出背景 job（逐表 SSE 進度）→ {job_id}；進度/下載走通用 `/api/exports/{stream,download}`。`include_sensitive` 才含 `setting_master`（機密設定表）。需 `data.datapack.export` 權限 |

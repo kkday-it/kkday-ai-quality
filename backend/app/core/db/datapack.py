@@ -58,7 +58,7 @@ _LOAD_ORDER_TABLES: tuple[Table, ...] = (
     # 待審建議：與 attributions 強耦合（attribution_oid 軟關聯）。若排除，匯入時本表不被 truncate
     # 而 attributions 被整批換掉 → 殘留建議會指向已不存在的列，故必須同進同出。
     T.attribution_suggestions,
-    # 判決值域主檔：業務可維護的參照資料，跨環境搬遷須帶走（同 settings/judge_rule_versions）。
+    # 值域主檔（備註互動類型）：業務可維護的參照資料，跨環境搬遷須帶走（同 settings/judge_rule_versions）。
     T.attribution_dimensions,
     T.llm_usage,
     T.prejudge_runs,

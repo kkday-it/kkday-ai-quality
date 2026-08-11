@@ -12,7 +12,7 @@
   },
 
   "attribution_event_lst": {
-    "_rationale": "failure 事件的查詢條件是『該 source_id 最近一次成功初判之後的失敗』，一旦成功初判過，舊的 failure 永遠讀不到。prejudge 快照則是多模型對比與匯出的資料源，但兩者都只取 DISTINCT ON 最新一筆——保留數筆供人工回溯演進即足夠。note 為人工輸入，永久保留。",
+    "_rationale": "failure 事件的查詢條件是『該 source_id 最近一次成功初判之後的失敗』，一旦成功初判過，舊的 failure 永遠讀不到。prejudge 快照則是多模型對比與匯出的資料源，但兩者都只取 DISTINCT ON 最新一筆——保留數筆供人工回溯演進即足夠。（備註已於 b7d419e0c852 全數遷往 attribution_note_lst，本表不再有 note 事件。）",
     "delete_superseded_failures": true,
     "keep_prejudge_snapshots_per_model": 3
   },

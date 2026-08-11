@@ -142,7 +142,7 @@ def attribution_dto(r: dict) -> dict:
             "action": r.get("action"),
         },
         # 負責單位：讀取時自 l1_code 派生（SSOT＝rule _meta.owner_role；業務未填時為空字串，前端不顯示）
-        # ⚠️ 與判決歸因的 responsible_party 語義重疊、來源不同——補判決功能時必須收斂成一個。
+        # ⚠️ 與「判決」功能未來的責任方語義重疊、來源不同——補判決功能時必須收斂成一個。
         "owner": _domain_owner(l1_code or ""),
         # ── 人工介入（現值來源／複審狀態；is_deleted 刻意不出 wire）──
         # origin＝顯示來源的 SSOT：前端據此決定顯示「人工 · 修改者」還是初判 model，

@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core import auth, config, db  # noqa: F401  config import 觸發 .env 載入
+from app.core import auth, config  # noqa: F401  config import 觸發 .env 載入
 from app.core.permissions import get_provider, permission_keys, require_permission
 from app.judge.llm import client as llm_client
 

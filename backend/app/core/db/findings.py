@@ -38,15 +38,6 @@ def _finding_values(f: TicketFinding, source: str) -> dict:
     }
 
 
-# `insert_finding`（對自然鍵四欄做 upsert 的單筆寫入）於 2026-08-07 退役：
-#   - production 零呼叫端，只剩測試 fixture 在用；
-#   - 它與本模組唯一的 production 寫入路徑 `replace_source_findings` 語義相反
-#     （後者刻意「整組刪除後重插」，見下方 docstring：逐筆 upsert 會讓舊面向殘留孤兒列）；
-#   - `idx_attribution_tbl_unique01` 已改成 DEFERRABLE 約束（migration a3e58d21c9f4）以支援
-#     互換面向，而 PG 不允許 deferrable 約束當 `ON CONFLICT` 的 arbiter——這條 upsert 從此
-#     在物理上不可能成立。原本只寫在註解裡的約定，現在由 PG 強制。
-
-
 def replace_source_findings(
     source: str,
     source_id: str,

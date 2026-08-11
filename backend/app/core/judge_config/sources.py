@@ -21,11 +21,6 @@ _SOURCES: list[dict] = json.loads((_GLOBAL_DIR / "sources.json").read_text(encod
 _BY_VALUE: dict[str, dict] = {s["value"]: s for s in _SOURCES}
 
 
-def all_sources() -> list[dict]:
-    """回傳所有反饋來源定義（{value, label, hint, natural_key}），順序同 config。"""
-    return list(_SOURCES)
-
-
 def label_for(source: str) -> str:
     """來源 code → 中文顯示 label；未知 code 回傳原 code（不拋錯，供顯示層安全回退）。
 

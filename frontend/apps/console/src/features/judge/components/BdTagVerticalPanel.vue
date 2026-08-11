@@ -192,12 +192,20 @@ useListDragSort(
   { draggable: '.arco-tag' },
 );
 
-/** bd_tag 表格欄位（設定面板輕量小表，`pagination=false` 例外，不套 TableLayout）。 */
+/** bd_tag 表格欄位（設定面板輕量小表，`pagination=false` 例外，不套 TableLayout）。
+ *
+ * ⚠️ 寬度總和必須 ≤ 抽屜可用寬，否則會出現橫向捲軸——`frontend-vue.md` 明令窄容器表格
+ * 禁止靠橫捲硬撐。原本 220+160+160+72=612 > 640 抽屜的可用寬（約 590），實測有橫捲。
+ * 現為 196+96+136+48=476（先前 550 仍有橫捲——drawer body padding 與 StickyTabs 內距吃掉的比預期多；
+ * 總和壓低不吃虧：Arco 於總和 < 容器時等比拉伸，比例才是決定性的）：BD TAG 內含代碼＋可換行 textarea 故給最多；PM 值最長「N/A(Bily)」、
+ * Vertical 最長「Airport Transfer」故 Vertical 略寬於 PM；操作欄只有一顆 icon 按鈕。
+ * 改動任一欄或按鈕內容後，依規範用瀏覽器在 ≤1280px 視窗實量，不要估。
+ */
 const COLUMNS = [
-  { title: 'BD TAG', slotName: 'bdTag', width: 220 },
-  { title: 'PM', slotName: 'pm', width: 160 },
-  { title: 'Vertical', slotName: 'vertical', width: 160 },
-  { title: '操作', slotName: 'actions', width: 72 },
+  { title: 'BD TAG', slotName: 'bdTag', width: 196 },
+  { title: 'PM', slotName: 'pm', width: 96 },
+  { title: 'Vertical', slotName: 'vertical', width: 136 },
+  { title: '操作', slotName: 'actions', width: 48 },
 ];
 </script>
 

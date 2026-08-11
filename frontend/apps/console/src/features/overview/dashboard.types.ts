@@ -40,8 +40,6 @@ export interface ChartSpec {
   /** 歸屬目標；'all' 為跨目標（總覽用）。 */
   goal: GoalKey | 'all';
   kind?: 'lagging' | 'leading' | 'structural';
-  /** 公共部分（跨目標重用，如落後 scorecard / 來源表）。 */
-  common?: boolean;
   hint?: string;
   /** 資料出處標註（DAP 表 / 外部儀表板 URL）。 */
   source?: { dapTable?: string; dashboardUrl?: string };

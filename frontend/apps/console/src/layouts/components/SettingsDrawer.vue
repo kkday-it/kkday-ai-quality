@@ -2,8 +2,6 @@
 import { watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { LlmSettingsPanel, QcConnectionsPanel, DataImportPanel } from '@/features/settings/pages';
-import { BdTagVerticalSettingsPanel } from '@/features/judge/components';
-import { VerdictDimensionPanel } from '@/features/judge/components';
 import { StickyTabs } from '@/components';
 import { PERM } from '@/api';
 import { usePermission } from '@/composables/usePermission';
@@ -12,20 +10,20 @@ import { usePermission } from '@/composables/usePermission';
 // gating 接線保留，日後要收緊只改 config/global/permissions.json 的 default，前端零改。
 const { can } = usePermission();
 
-// ⚙️ 配置抽屜＝「公共配置」：右滑疊加，五分頁 —— 🤖 LLM 設定 ｜ 🗄️ QC DB 連線 ｜ 🧭 商品垂直分類 ｜
-// ⚖️ 判決值域 ｜ 💾 資料匯出入。
+// ⚙️ 配置抽屜＝「系統配置與維運」：右滑疊加，三分頁 —— 🤖 LLM 設定 ｜ 🗄️ QC DB 連線 ｜ 💾 資料匯出入。
+// 業務自己增減的參照資料（商品垂直分類／備註類型）不在這裡——2026-08-11 拆到並列的 📇 主檔維護抽屜
+// （MasterDataDrawer.vue）；判準是「改的是系統怎麼跑，還是業務語彙」。
 // LLM tab 內再分三個供應商 tab，每個底下＝連線（base_url+token）+ 模型配置庫（具名配置增刪改）；
 // 各功能區頁面只留一個配置下拉，不再內嵌旋鈕（見 LlmSettingsPanel / useLlmAreaConfig）。
-// vertical tab 維護 BD 代碼↔PM/Vertical 對照（版本化）；
 // import tab＝全庫資料包安全匯入（覆蓋式；admin 閘現階段延後）+ 導出偏好（Google Drive 資料夾，原
 // 「帳號」抽屜內容，2026-07-22 帳號抽屜整個退役後併入——與「導出資料包」按鈕消費同一份偏好，放
 // 一起最直覺，見 DataImportPanel.vue）。
-// verdict-dimension tab＝判決值域主檔（責任方／嚴重度／建議行動／備註類型四軸，業務可自行增修）。
 // 歸因判準規則 → AI 法官主頁路由 /judge/rules（不在此）。
-// 分頁狀態同步 URL query(?settings=llm|qc|vertical|verdict-dimension|import)，並相容舊深連結。
+// 分頁狀態同步 URL query(?settings=llm|qc|import)，並相容舊深連結。
 // ⚠️ 新增 tab 時**務必同步補下方 watch 的分支**：少一支不會有任何錯誤，只是該 tab 的深連結
 // 靜默失效（重整／分享連結時抽屜不開）。verdict-dimension 就這樣漏過一次。
-type SettingsTab = 'llm' | 'qc' | 'vertical' | 'verdict-dimension' | 'import';
+// ?settings=vertical|note-type|verdict-dimension 現由 MasterDataDrawer 承接（搬家後的舊連結別名）。
+type SettingsTab = 'llm' | 'qc' | 'import';
 
 const visible = defineModel<boolean>('visible', { default: false });
 const tab = defineModel<SettingsTab>('tab', { default: 'llm' });
@@ -52,12 +50,6 @@ watch(
   (s) => {
     if (s === 'qc' || s === 'datasource') {
       tab.value = 'qc';
-      visible.value = true;
-    } else if (s === 'vertical') {
-      tab.value = 'vertical';
-      visible.value = true;
-    } else if (s === 'verdict-dimension') {
-      tab.value = 'verdict-dimension';
       visible.value = true;
     } else if (
       (s === 'import' || s === 'export' || s === 'account') &&
@@ -94,12 +86,6 @@ watch(
     <StickyTabs v-model:active-key="tab">
       <a-tab-pane key="llm" title="🤖 LLM 設定"><LlmSettingsPanel /></a-tab-pane>
       <a-tab-pane key="qc" title="🗄️ QC DB 連線"><QcConnectionsPanel /></a-tab-pane>
-      <a-tab-pane key="vertical" title="🧭 商品垂直分類">
-        <BdTagVerticalSettingsPanel :active="tab === 'vertical'" />
-      </a-tab-pane>
-      <a-tab-pane key="verdict-dimension" title="⚖️ 判決值域">
-        <VerdictDimensionPanel :active="tab === 'verdict-dimension'" />
-      </a-tab-pane>
       <a-tab-pane v-if="can(PERM.dataDatapackImport)" key="import" title="💾 資料匯出入">
         <DataImportPanel />
       </a-tab-pane>

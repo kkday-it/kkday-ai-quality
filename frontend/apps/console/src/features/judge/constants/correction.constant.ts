@@ -5,14 +5,6 @@
  * 那是業務會調的設定，SSOT 在 `config/ai_judge/correction.json`，前端不另抄一份。
  */
 
-/** 糾正抽屜的四種操作模式。 */
-export const CORRECTION_MODES = [
-  { value: 'correct', label: '修改歸因' },
-  { value: 'create', label: '新增遺漏歸因' },
-  { value: 'delete', label: '標記 AI 誤判' },
-] as const;
-
-export type CorrectionMode = (typeof CORRECTION_MODES)[number]['value'];
 
 /** 待審建議的三種變更型別。 */
 export const CHANGE_TYPE_LABELS: Record<string, string> = {
