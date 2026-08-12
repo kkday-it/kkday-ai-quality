@@ -188,7 +188,10 @@ def main() -> None:
         sys.exit(1)
 
     with open(args.eval_set, encoding="utf-8") as f:
-        evalset = json.load(f)
+        raw = json.load(f)
+    # 兩種形狀都吃：舊版是扁平陣列；新版是 {seed, quota, population, items}——
+    # 分層抽樣的層權重必須跟著評測集走，否則事後算不出母體加權的真實表現。
+    evalset = raw["items"] if isinstance(raw, dict) else raw
     if args.limit:
         evalset = evalset[: args.limit]
 
