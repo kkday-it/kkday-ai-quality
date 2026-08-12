@@ -156,6 +156,28 @@ def _quota_of(facet_body: str, domain: str) -> tuple[int, int, int]:
 
 
 @pytest.mark.parametrize("prompt_id", ps.DOMAIN_PROMPT_IDS)
+def test_facet_has_scope_label(prompt_id: str) -> None:
+    """每個 facet 的定義行下一行必須是「判定範圍：」。
+
+    這是 facet 層的**第一條**護欄——在此之前只有區塊級 tag 檢查，27 個 facet 的內部
+    格式完全無人看守。2026-08-12 實測 C-3 的 7 個與 C-5 的 3 個寫成同行式
+    「■ C-3-1 人員服務：抱怨現場人員（…」，與其餘四域不一致。
+
+    ⚠️ 這不只是美觀：`<decision_process>` 明示判官選碼時讀的是 facet 層，而任何想機械檢查
+    「boundary 指名的 facet 判定範圍是否含關鍵語彙」的工具都得先定位得到判定範圍——
+    格式分裂會讓那類檢查**靜默跳過**那 10 個 facet（本次分析工具就是這樣漏掉 C-3-4）。
+    """
+    lines = _system_of(prompt_id).splitlines()
+    bad = [
+        lines[i].strip()[:24]
+        for i, ln in enumerate(lines)
+        if ln.startswith("■ C-")
+        and not (i + 1 < len(lines) and lines[i + 1].startswith("判定範圍："))
+    ]
+    assert not bad, f"{prompt_id} 這些 facet 的下一行不是「判定範圍：」：{bad}"
+
+
+@pytest.mark.parametrize("prompt_id", ps.DOMAIN_PROMPT_IDS)
 def test_facet_example_quota(prompt_id: str) -> None:
     """每個 facet 的例證配額（2026-08-10 起全數達標，硬斷言）。"""
     domain = ps.rule_code_for_prompt(prompt_id).removeprefix("prompt_")

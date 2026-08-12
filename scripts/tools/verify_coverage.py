@@ -31,11 +31,15 @@ _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-from app.core import settings as app_settings  # noqa: E402
-from app.judge import prejudge  # noqa: E402
-from app.judge.llm import client  # noqa: E402
+from app.core import settings as app_settings
+from app.judge import prejudge
+from app.judge.llm import client
 
 # (場景, 拍板歸屬域, 合成反饋)。新增覆蓋定案時在此登記，該定案才有回歸保護。
+# 拍板歸屬域填 `_ABSTAIN`（"—"）＝**預期六域皆棄權**，用來鎖三詞制第三式「不構成問題點」的
+# 裁定。少了這個值域，工具只鎖得住「該收的有沒有收」，鎖不住「不該收的有沒有被亂收」——
+# 而後者正是放寬覆蓋時最容易壞掉的一半。
+_ABSTAIN = "—"
 CASES: list[tuple[str, str, str]] = [
     ("#1 頁面寫有X現場沒有", "supplier",
      "網頁明明寫含迎賓飲料，到現場店員說根本沒有這個東西，白期待一場。"),
@@ -66,6 +70,29 @@ CASES: list[tuple[str, str, str]] = [
     # 只加正向案例會讓「改過頭」與「改對了」在報表上長得一模一樣。
     ("#9b 憑證缺兌換碼", "platform",
      "拿到的憑證上完全沒有任何兌換碼或 QR，就像一張普通的資訊說明單，根本沒辦法核銷。"),
+    # 2026-08-12 定案：C-4 三個 facet 原本都以「終局卡死」為門檻（尚未成功用上／換票卡住／
+    # 平台壞了），收不了「過程反覆失敗但最終走通」。新增第三型態＝流程摩擦。
+    ("#10 流程繞路最終完成", "platform",
+     "兌換路徑繞得莫名其妙，換了三個地方、跑了兩趟才終於把票換到手。"),
+    # 反向守備兩條：C-4 放寬後**不得**把這兩類一併收走，否則等於推翻既有邊界。
+    ("#10b 流程順但東西差", "quality",
+     "兌換過程一路順暢沒卡到，但換到的餐券內容很寒酸，東西也不新鮮。"),
+    ("#10c 說明沒寫非流程繞", "content",
+     "頁面完全沒說要先線上預約才能入場，我到現場才知道有這個步驟。"),
+    # 輕語氣變體：只給流程一句負向評價、未敘述失敗次數。原本 (d) 要求「原文須寫出過程」，
+    # 真實案例 3336305 就卡在這道門檻上（3/3 棄權），故放寬並在此鎖住。
+    ("#10d 流程複雜輕語氣", "platform",
+     "這張券要打開的途徑不太方便，路徑實在太複雜了。"),
+    # 2026-08-12 定案（真實案例 3358488）：行前該給的資訊拖到最後一刻／要催才給 → C-3-4。
+    # 原本 C-3-4 的列舉只有「成團未告知」「憑證未如期發出」，無此語彙；且另有一條
+    # ❌「已應變、只是告知較慢」會被誤讀成涵蓋本型，已一併收窄回風險應變語境。
+    ("#11 行前資訊要催才給", "supplier",
+     "接送業者硬是拖到班機抵達前四小時才肯給司機資訊，我一再要求才拿到，態度還很差。"),
+    # 反向守備：風險應變情境下「已應變且已告知、只是公告慢一點」＝無失職事實，六域皆應棄權。
+    # C-3-6 對同型情境的裁定就是第三式（「商家有先通知也協助改期…不構成問題點」），
+    # C-3-4 原本卻寫成第二式「不屬本域、棄權」，兩者矛盾；已一併改齊。
+    ("#11b 應變已做只是公告慢", _ABSTAIN,
+     "颱風當天供應商有安排替代行程也照常出團，只是公告晚了一個多小時才發出來。"),
 ]
 
 
@@ -103,8 +130,14 @@ def main() -> None:
         votes = [_primary_domain(text, app_settings.current().get("model"), name) for _ in range(args.repeats)]
         dom = Counter(v[0] for v in votes).most_common(1)[0][0]
         detail, others = next((d, o) for g, d, o in votes if g == dom)
-        okmark = "✅" if dom == want else ("❌ 無人接" if dom is None else f"❌ 主歸因為 {dom}")
-        bad += dom != want
+        got = dom or _ABSTAIN  # 六域皆棄權時 _primary_domain 回 None，統一成 _ABSTAIN 才比得了
+        if got == want:
+            okmark = "✅"
+        elif want == _ABSTAIN:
+            okmark = f"❌ 不該收卻收了 {dom}"
+        else:
+            okmark = "❌ 無人接" if dom is None else f"❌ 主歸因為 {dom}"
+        bad += got != want
         tail = f"  次要域 {others}" if others else ""
         spread = "" if args.repeats == 1 else f"  ({Counter(v[0] for v in votes).most_common()})"
         print(f"  {okmark:<18} {name:<18} 期望 {want:<9} 主歸因 {detail}{tail}{spread}", flush=True)
